@@ -930,6 +930,9 @@ endif()
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SLIC3R_GUI_SOURCES})
 
+# PLYO: ajoute les sources du panneau Assistant Plyo ; la liste vit dans src/plyo/ pour limiter les conflits avec Orca.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../plyo/plyo.cmake)
+
 encoding_check(libslic3r_gui)
 
 # Only BuildCommit.cpp includes the generated header, plus BaseException.cpp on

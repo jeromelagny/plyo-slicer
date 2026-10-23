@@ -124,6 +124,7 @@
 #include "Widgets/WebView.hpp"
 #include "DailyTips.hpp"
 #include "FilamentMapDialog.hpp"
+#include "plyo/PlyoAssistant.hpp" // PLYO: panneau Assistant Plyo
 
 #include "DeviceCore/DevManager.h"
 
@@ -3471,6 +3472,12 @@ void MainFrame::init_menubar_as_editor()
                 return is_prepare_or_preview_tab() && m_plater->is_sidebar_enabled();
             },
             this);
+
+        // PLYO: affiche ou masque le panneau Assistant Plyo (code dans src/plyo/).
+        append_menu_check_item(
+            viewMenu, wxID_ANY, "Assistant Plyo", "Afficher ou masquer le panneau Assistant Plyo",
+            [this](wxCommandEvent&) { Plyo::toggle_assistant(m_plater); }, this,
+            [this]() { return is_prepare_or_preview_tab(); }, []() { return Plyo::is_assistant_shown(); }, this);
 
         viewMenu->AppendSeparator();
         wxMenuItem* show_labels = append_menu_check_item(viewMenu, wxID_ANY, shortcut_label(_L("Show &Labels"), Shortcut::ShowLabels, true), _L("Show object labels in 3D scene."),
