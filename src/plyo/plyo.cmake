@@ -11,6 +11,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoLoginDialog.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPhoneDialog.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPhoneDialog.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoMakerWorldWindow.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoMakerWorldWindow.hpp
 )
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_LIST_DIR} PREFIX plyo FILES ${PLYO_SOURCES})

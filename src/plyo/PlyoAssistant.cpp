@@ -1,5 +1,6 @@
 #include "PlyoAssistant.hpp"
 #include "PlyoLoginDialog.hpp"
+#include "PlyoMakerWorldWindow.hpp"
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
@@ -112,6 +113,17 @@ void handle_page_message(const nlohmann::json& data)
                 if (result == wxID_OK)
                     send({{"type", "phone_batch_ready"}});
             }
+        } else if (type == "makerworld") {
+            // PROTOTYPE : page MakerWorld dans une fenêtre Plyo ; le lien « Ouvrir dans … » est confié à Orca.
+            const std::string url = data.value("url", std::string());
+            if (MakerWorldWindow::is_makerworld_url(url)) {
+                auto* window = new MakerWorldWindow(Slic3r::GUI::wxGetApp().mainframe, url, [](const std::string& open_url) {
+                    send({{"type", "makerworld_opened"}});
+                    Slic3r::GUI::wxGetApp().start_download(open_url);
+                });
+                window->Show();
+            } else
+                send_result({{"ok", false}, {"text", "Adresse MakerWorld non reconnue."}});
         } else if (type == "session_clear") {
             Session::clear();
             send({{"type", "session"}, {"session", nullptr}});

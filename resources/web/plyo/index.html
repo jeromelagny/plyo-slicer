@@ -528,6 +528,13 @@
   // `photosFromPhone` : envoi venu du téléphone (photos fournies, zone de saisie laissée intacte).
   function send(text, photosFromPhone, fromPhone) {
     var note = (text || '').trim();
+    // PROTOTYPE MakerWorld : une adresse de modèle ouvre la page dans une fenêtre Plyo (rien n'est lu par l'IA).
+    if (!photosFromPhone && /^https:\/\/(www\.)?makerworld\.com\/\S*$/i.test(note)) {
+      window.orca.postMessage({ type: 'makerworld', url: note });
+      noteInput.value = '';
+      noteLine('Page MakerWorld ouverte : connectez-vous si besoin, puis cliquez sur « Ouvrir dans Bambu Studio » sous le profil voulu.');
+      return;
+    }
     if (busy) return;
     if (!note && !attachments.length && !photosFromPhone) { noteInput.focus(); return; }
     if (!lastValues) { noteLine('Les réglages du slicer ne sont pas encore lus. Réessayez dans un instant.', true); return; }
@@ -762,6 +769,8 @@
     } else if (msg.type === 'result') {
       if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text); }
       else noteLine(msg.text, !msg.ok);
+    } else if (msg.type === 'makerworld_opened') {
+      noteLine('Modèle reçu de MakerWorld : Orca le télécharge et l’ouvre.');
     } else if (msg.type === 'phone_batch_ready') {
       pollPhone(); // la fenêtre QR s'est fermée sur un envoi : on le traite sans attendre le prochain tour
     }
