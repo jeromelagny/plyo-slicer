@@ -131,6 +131,26 @@
   .send { margin-left: auto; width: 32px; height: 32px; padding: 0; border-radius: 8px; border: 0; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer; }
   .send:disabled { opacity: .5; cursor: default; }
 
+  /* Premiers pas : carte du parcours, puce « Tu regardes », fiche d'un réglage */
+  .tour { border: 1px solid var(--accent); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); padding: 11px 12px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .tour .step { font-size: 11px; font-weight: 650; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+  .tour h3 { margin: 0; font-size: 15px; font-weight: 650; }
+  .tour p { margin: 0; }
+  .tour .where { color: var(--muted); font-size: 12px; }
+  .tour .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tour .acts .btn { height: auto; min-height: 30px; padding: 5px 11px; white-space: normal; }
+  .tour .bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .tour .link { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 12px; padding: 0; }
+  .focus-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-size: 12px; align-self: flex-start; max-width: 100%; }
+  .focus-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .focus-chip button { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; padding: 0; white-space: nowrap; }
+  .focus-chip .x { color: var(--muted); font-weight: 400; }
+  .fiche h4 { margin: 4px 0 0; font-size: 12px; color: var(--muted); font-weight: 650; }
+  .fiche .value { font-variant-numeric: tabular-nums; }
+  .why-link { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 12px; padding: 0; text-decoration: underline; }
+  .login-inline { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+  .login-inline p { margin: 0; }
+
   /* Réglages lus (volet) */
   .drawer { position: absolute; inset: 0; background: var(--bg); z-index: 20; display: flex; flex-direction: column; }
   .drawer .top button { margin-left: auto; }
@@ -153,13 +173,16 @@
       <button type="button" id="m-new" role="menuitem">Nouvelle conversation</button>
       <button type="button" id="m-undo" role="menuitem" disabled>Annuler les derniers réglages appliqués</button>
       <button type="button" id="m-values" role="menuitem">Voir les réglages lus par l'assistant</button>
-      <hr>
+      <button type="button" id="m-tour" role="menuitem">Refaire la visite « Ma première impression »</button>
+      <hr id="m-account-sep">
       <div class="who" id="m-email"></div>
       <button type="button" id="m-logout" role="menuitem">Se déconnecter</button>
     </div>
   </div>
 
   <div class="body" id="body">
+    <!-- Premiers pas : étape du parcours en cours -->
+    <div id="tour-slot"></div>
     <!-- Déconnecté -->
     <div class="login-card hidden" id="login">
       <div class="hello"><h2>Bienvenue 👋</h2></div>
@@ -172,19 +195,19 @@
     <div class="hidden" id="home">
       <div class="hello">
         <h2>Bonjour 👋</h2>
-        <p>Montrez-moi une impression ratée ou dites-moi ce que vous voulez obtenir. Je propose les réglages, vous choisissez ce qu'on applique.</p>
+        <p>Montre-moi une impression ratée ou dis-moi ce que tu veux obtenir. Je propose les réglages, tu choisis ce qu’on applique.</p>
       </div>
       <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 14px;">
         <button class="action" type="button" data-action="phone">
           <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18h2"/></svg></span>
-          <span><b>Prendre des photos avec mon téléphone</b><span class="sub">Scannez un QR code, les photos arrivent ici</span></span>
+          <span><b>Prendre des photos avec mon téléphone</b><span class="sub">Scanne un QR code, les photos arrivent ici</span></span>
         </button>
         <button class="action" type="button" data-action="files">
           <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg></span>
           <span><b>Ajouter une photo depuis l'ordinateur</b><span class="sub">JPEG ou PNG, une ou plusieurs</span></span>
         </button>
       </div>
-      <p class="label">Ou partez d'un objectif</p>
+      <p class="label">Ou pars d’un objectif</p>
       <div class="chips" id="goals">
         <button class="chip" type="button">Je veux une surface du dessus bien lisse</button>
         <button class="chip" type="button">Je veux imprimer plus vite</button>
@@ -199,9 +222,10 @@
   </div>
 
   <div class="composer hidden" id="composer">
+    <div class="focus-chip hidden" id="focus-chip"><span>🔎 Tu regardes :</span><b id="focus-label"></b><button type="button" id="focus-explain">Explique-moi</button><button type="button" class="x" id="focus-close" title="Masquer">×</button></div>
     <div class="attached hidden" id="attached"></div>
     <div class="box">
-      <textarea id="note" maxlength="500" rows="2" placeholder="Décrivez le problème ou ce que vous voulez obtenir…"></textarea>
+      <textarea id="note" maxlength="500" rows="2" placeholder="Décris le problème ou ce que tu veux obtenir…"></textarea>
       <div class="tools">
         <button class="icon-btn" id="btn-files" type="button" title="Ajouter des photos depuis l'ordinateur">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5L12.5 4a4 4 0 0 1 5.7 5.7l-8.5 8.5a2 2 0 0 1-2.8-2.8l8-8"/></svg>
@@ -243,7 +267,6 @@
   var attachments = [];      // [{ media_type, data, preview }]
   var history = [];          // [{ role, text }]
   var busy = false;
-  var loginOffered = false;
   var pendingSheet = null;   // fiche dont on attend le résultat d'application ou d'annulation
   var phoneLink = null;      // lien téléphone de la conversation : { id, qr_svg }
   var phoneTimer = null;
@@ -287,13 +310,15 @@
   }
 
   // ---------- Vues ----------
+  // Sans compte, tout reste visible (accueil, parcours, fiches) : la connexion n'est demandée qu'au moment
+  // d'un appel à l'IA (requireLogin).
   function showLoggedIn(loggedIn) {
-    loginView.classList.toggle('hidden', loggedIn);
-    composer.classList.toggle('hidden', !loggedIn);
+    loginView.classList.add('hidden');
+    composer.classList.remove('hidden');
     $('credits').classList.toggle('hidden', !loggedIn);
-    $('btn-more').classList.toggle('hidden', !loggedIn);
-    if (!loggedIn) { home.classList.add('hidden'); thread.classList.add('hidden'); menu.classList.add('hidden'); }
-    else if (!thread.children.length) home.classList.remove('hidden');
+    $('btn-more').classList.remove('hidden');
+    ['m-email', 'm-logout', 'm-account-sep'].forEach(function (id) { $(id).classList.toggle('hidden', !loggedIn); });
+    if (!thread.children.length) { home.classList.remove('hidden'); thread.classList.add('hidden'); }
     else thread.classList.remove('hidden');
   }
   function showConversation() { home.classList.add('hidden'); thread.classList.remove('hidden'); }
@@ -344,8 +369,8 @@
     unlinkPhone(true);
     session = null;
     window.orca.postMessage({ type: 'session_clear' });
-    $('login-error').textContent = message || '';
     showLoggedIn(false);
+    if (message) noteLine(message, true);
   }
 
   function openLogin() {
@@ -353,6 +378,24 @@
     window.orca.postMessage({ type: 'login' });
   }
   $('btn-login').addEventListener('click', openLogin);
+
+  // Une action qui appelle l'IA sans compte : on dit pourquoi, on ouvre la connexion, puis on rejoue l'action.
+  var afterLogin = null;
+  function requireLogin(reason, retry) {
+    if (session) return false;
+    afterLogin = retry || null;
+    showConversation();
+    var card = el('div', 'login-inline');
+    card.appendChild(el('p', '', reason + ' Pour ça, connecte-toi : pas de mot de passe, un code arrive par e-mail.'));
+    var go = el('button', 'btn', 'Se connecter');
+    go.type = 'button';
+    go.addEventListener('click', openLogin);
+    card.appendChild(go);
+    thread.appendChild(card);
+    scrollDown();
+    openLogin();
+    return true;
+  }
 
   // ---------- Menu « ⋯ » ----------
   $('btn-more').addEventListener('click', function (e) { e.stopPropagation(); menu.classList.toggle('hidden'); });
@@ -372,6 +415,10 @@
   $('m-values').addEventListener('click', function () { menu.classList.add('hidden'); $('drawer').classList.remove('hidden'); });
   $('drawer-close').addEventListener('click', function () { $('drawer').classList.add('hidden'); });
   $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
+  $('m-tour').addEventListener('click', function () {
+    menu.classList.add('hidden');
+    window.orca.postMessage({ type: 'firststeps_set', patch: { level: 'beginner', tour_step: 'model' } });
+  });
 
   // ---------- Réglages lus par le slicer ----------
   function formatValue(value, unit) {
@@ -460,6 +507,7 @@
   // Le panneau crée le lien et garde son QR ; la fenêtre QR (PhoneDialog) l'affiche. Chaque « Envoyer »
   // du téléphone crée un envoi, que le panneau récupère et envoie aussitôt à l'assistant.
   function openPhone() {
+    if (requireLogin('Les photos du téléphone passent par le service Plyo.', openPhone)) return;
     refreshAccount().then(function (valid) {
       if (!valid) return;
       if (!phoneLink && !phoneCreating) {
@@ -846,7 +894,12 @@
         filament: lastValues && lastValues.context ? lastValues.context.filament : undefined,
         printer: lastValues && lastValues.context ? lastValues.context.printer : undefined
       };
-      if (!session) { status.textContent = 'Connecte-toi pour que l’assistant lise la photo, ou choisis toi-même le meilleur palier.'; card.awaiting = true; card.analyzing = false; setPhotoButtons(true); return; }
+      if (!session) {
+        status.textContent = 'Connecte-toi pour que l’assistant lise la photo, ou choisis toi-même le meilleur palier.';
+        card.awaiting = true; card.analyzing = false; setPhotoButtons(true);
+        requireLogin('Pour lire la photo de ton test, je l’envoie à l’IA (1 crédit environ).', function () { analyze(photos); });
+        return;
+      }
       apiFetch('/api/calibration/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
         .then(function (r) {
@@ -946,6 +999,173 @@
     window.orca.postMessage({ type: 'calib_restore' });
   }
 
+  // ---------- Premiers pas : parcours « Ma première impression », « Tu regardes », fiches ----------
+  var FS = window.PlyoFirstSteps;
+  var fsState = {};
+  var tourCard = null;     // { box, where } de l'étape affichée
+  var tourTimer = null;
+  var tourSignals = null;  // derniers signaux : objets, découpage, temps, poids
+  var focusKey = null;
+  // Repli de « Montre-moi » quand la zone n'a pas pu être encadrée.
+  var WHERE = {
+    printer: 'Dans la colonne de gauche, sous « Imprimante » : le nom de ta machine.',
+    filament: 'Dans la colonne de gauche, sous « Filament » : la bobine utilisée.',
+    slice: 'En haut à droite, le bouton « Découper la plaque ».',
+    print: 'En haut à droite, juste à côté de « Découper la plaque ».',
+    plate: 'Au centre de la fenêtre : le plateau en 3D.'
+  };
+
+  function durationText(seconds) {
+    var m = Math.max(1, Math.round(seconds / 60));
+    return m < 60 ? 'environ ' + m + ' min' : 'environ ' + Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0');
+  }
+  function printSummary() {
+    if (!tourSignals || !tourSignals.sliced || !tourSignals.time_s) return '';
+    var grams = tourSignals.weight_g ? ' et ' + Math.round(tourSignals.weight_g) + ' g de filament' : '';
+    return 'Ton impression prendra ' + durationText(tourSignals.time_s) + grams + '.';
+  }
+  function setTourStep(step) { window.orca.postMessage({ type: 'firststeps_set', patch: { tour_step: step } }); }
+
+  function tourButton(label, onClick, ghost) {
+    var b = el('button', 'btn' + (ghost ? ' ghost' : ''), label);
+    b.type = 'button';
+    b.addEventListener('click', onClick);
+    return b;
+  }
+  function showMe(target) { window.orca.postMessage({ type: 'show_me', target: target }); }
+
+  function renderTour() {
+    var slot = $('tour-slot');
+    slot.textContent = '';
+    tourCard = null;
+    var step = fsState.level === 'beginner' ? fsState.tour_step : null;
+    if (!step || FS.TOUR_STEPS.indexOf(step) < 0) { stopTourTimer(); return; }
+    var n = FS.TOUR_STEPS.indexOf(step) + 1;
+    var box = el('div', 'tour');
+    box.appendChild(el('div', 'step', 'Ma première impression · étape ' + n + ' sur ' + FS.TOUR_STEPS.length));
+    var acts = el('div', 'acts');
+    var where = el('div', 'where');
+    function next() { setTourStep(FS.TOUR_STEPS[n] || null); }
+    if (step === 'model') {
+      box.appendChild(el('h3', '', 'Le modèle à imprimer'));
+      box.appendChild(el('p', '', 'On commence par un petit bateau : c’est le test classique, rapide, et parfait pour une première fois.'));
+      acts.appendChild(tourButton('Ajouter le bateau', function () { window.orca.postMessage({ type: 'tour_add_benchy' }); }));
+      acts.appendChild(tourButton('J’ai déjà mon modèle', function () {
+        where.textContent = '📂 Glisse ton fichier (STL ou 3MF) sur le plateau, ou passe par Fichier › Importer. Je passe à la suite dès qu’il est posé.';
+        showMe('plate');
+      }, true));
+    } else if (step === 'presets') {
+      box.appendChild(el('h3', '', 'Ton imprimante et ton filament'));
+      box.appendChild(el('p', '', 'Vérifie juste que c’est bien ta machine et la bobine que tu vas utiliser. Si c’est bon, tu n’as rien d’autre à régler : le profil s’occupe du reste.'));
+      acts.appendChild(tourButton('Montre-moi l’imprimante', function () { showMe('printer'); }, true));
+      acts.appendChild(tourButton('Montre-moi le filament', function () { showMe('filament'); }, true));
+      acts.appendChild(tourButton('C’est bon, suivant', next));
+    } else if (step === 'slice') {
+      box.appendChild(el('h3', '', 'Découper'));
+      box.appendChild(el('p', '', '« Découper », c’est transformer ton modèle en trajets pour la buse, couche par couche. Clique sur « Découper la plaque » : je te dirai combien de temps ça prendra.'));
+      acts.appendChild(tourButton('Montre-moi', function () { showMe('slice'); }));
+    } else if (step === 'print') {
+      box.appendChild(el('h3', '', 'Imprimer'));
+      var summary = printSummary();
+      if (summary) box.appendChild(el('p', '', '✓ ' + summary));
+      box.appendChild(el('p', '', 'Si ton imprimante est reliée, « Imprimer la plaque » l’envoie directement. Sinon, ouvre la petite flèche de ce bouton, choisis « Exporter le fichier G-code », puis copie le fichier sur la clé USB ou la carte SD de ton imprimante.'));
+      acts.appendChild(tourButton('Montre-moi', function () { showMe('print'); }, true));
+      acts.appendChild(tourButton('C’est lancé, suivant', next));
+    } else if (step === 'after') {
+      box.appendChild(el('h3', '', 'Après l’impression'));
+      box.appendChild(el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer. (Lire une photo utilise environ 1 crédit.)'));
+      acts.appendChild(tourButton('📱 Téléphone', openPhone));
+      acts.appendChild(tourButton('Ajouter une photo', pickFiles, true));
+    }
+    box.appendChild(acts);
+    box.appendChild(where);
+    var bottom = el('div', 'bottom');
+    var skip = el('button', 'link', step === 'after' ? 'Terminer la visite' : 'Passer la visite');
+    skip.type = 'button';
+    skip.addEventListener('click', function () { setTourStep(null); });
+    bottom.appendChild(skip);
+    if (step === 'model' || step === 'slice') {
+      var skipStep = el('button', 'link', 'Passer cette étape');
+      skipStep.type = 'button';
+      skipStep.addEventListener('click', next);
+      bottom.appendChild(skipStep);
+    }
+    box.appendChild(bottom);
+    slot.appendChild(box);
+    tourCard = { box: box, where: where };
+    startTourTimer();
+  }
+
+  function startTourTimer() {
+    if (tourTimer) return;
+    tourTimer = setInterval(function () { window.orca.postMessage({ type: 'tour_signals' }); }, 2000);
+    window.orca.postMessage({ type: 'tour_signals' });
+  }
+  function stopTourTimer() { if (tourTimer) { clearInterval(tourTimer); tourTimer = null; } }
+
+  function onTourSignals(signals) {
+    var hadSummary = !!printSummary();
+    tourSignals = signals;
+    var step = fsState.level === 'beginner' ? fsState.tour_step : null;
+    if (!step) return;
+    var nextStep = FS.nextTourStep(step, signals);
+    if (nextStep !== step) setTourStep(nextStep);
+    else if (step === 'print' && !hadSummary && printSummary()) renderTour();
+  }
+
+  function onFirstSteps(state) {
+    var first = !fsState.hasOwnProperty('seen');
+    fsState = state;
+    renderTour();
+    if (first && state.level === 'expert' && !state.greeted) {
+      var hello = home.querySelector('.hello p');
+      if (hello) hello.textContent = 'Je suis là si tu as besoin : pose ta question en bas, ou clique dans un réglage d’Orca pour que je te l’explique.';
+      window.orca.postMessage({ type: 'firststeps_set', patch: { greeted: true } });
+    }
+  }
+
+  function explain(key) { window.orca.postMessage({ type: 'explain', key: key }); }
+
+  // Fiche d'un réglage : texte livré dans Plyo (fiches.js), sinon l'aide d'Orca ; valeur actuelle jugée hors ligne.
+  function renderFiche(msg) {
+    var fiche = window.PLYO_FICHES[msg.key];
+    showConversation();
+    var box = el('div', 'ai fiche');
+    var who = el('div', 'who');
+    who.appendChild(el('i', '', 'P'));
+    who.appendChild(document.createTextNode('Assistant · explication gratuite'));
+    box.appendChild(who);
+    var label = fiche ? fiche.label : msg.label;
+    box.appendChild(el('h3', '', label));
+    function part(title, text) { if (text) { box.appendChild(el('h4', '', title)); box.appendChild(el('p', '', text)); } }
+    if (fiche) {
+      part('À quoi ça sert', fiche.what);
+      part('Si c’est trop haut', fiche.high);
+      part('Si c’est trop bas', fiche.low);
+      part('Faut-il y toucher ?', fiche.touch);
+    } else {
+      part('À quoi ça sert', msg.tooltip || 'Je n’ai pas encore de fiche pour ce réglage : demande-moi, je t’explique.');
+    }
+    if (msg.value !== null && msg.value !== undefined) {
+      var shown = typeof msg.value === 'number' ? String(msg.value).replace('.', ',') : msg.value;
+      var judged = FS.judgeValue({ value: msg.value, min: msg.min === null ? undefined : msg.min, max: msg.max === null ? undefined : msg.max,
+        systemValue: typeof msg.system_value === 'number' ? msg.system_value : undefined });
+      box.appendChild(el('h4', '', 'Chez toi'));
+      box.appendChild(el('p', 'value', 'Valeur actuelle : ' + shown + (msg.unit ? ' ' + msg.unit : '') + '. ' + judged.text));
+    }
+    var ask = el('button', 'btn ghost', 'Et dans mon cas, je mets combien ? (≈ 1 crédit)');
+    ask.type = 'button';
+    ask.style.alignSelf = 'flex-start';
+    ask.addEventListener('click', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); });
+    box.appendChild(ask);
+    thread.appendChild(box);
+    scrollDown();
+  }
+
+  $('focus-explain').addEventListener('click', function () { if (focusKey) explain(focusKey); });
+  $('focus-close').addEventListener('click', function () { $('focus-chip').classList.add('hidden'); });
+
+
   // ---------- Envoi d'une demande ----------
   // `photosFromPhone` : envoi venu du téléphone (photos fournies, zone de saisie laissée intacte).
   function send(text, photosFromPhone, fromPhone) {
@@ -960,6 +1180,18 @@
     if (busy) return;
     if (!note && !attachments.length && !photosFromPhone) { noteInput.focus(); return; }
     if (!lastValues) { noteLine('Les réglages du slicer ne sont pas encore lus. Réessayez dans un instant.', true); return; }
+    // « C'est quoi la rétraction ? » : la fiche du réglage répond, gratuitement et sans compte.
+    var ficheKey = !photosFromPhone && !attachments.length ? window.PlyoFirstSteps.matchSettingQuestion(note, window.PLYO_FICHES) : null;
+    if (ficheKey) {
+      showConversation();
+      var asked = el('div', 'me');
+      asked.appendChild(el('div', 'text', note));
+      thread.appendChild(asked);
+      noteInput.value = '';
+      explain(ficheKey);
+      return;
+    }
+    if (requireLogin('Pour te répondre, je dois envoyer ta demande à l’IA (1 crédit environ).', function () { send(text, photosFromPhone, fromPhone); })) return;
 
     var photos = photosFromPhone || attachments.slice();
     showConversation();
@@ -1063,6 +1295,13 @@
       delta.appendChild(el('span', 'new', c.after));
       info.appendChild(delta);
       if (s.reason) info.appendChild(el('div', 'why', s.reason));
+      var key = paramOf(s.id).key;
+      if (key && window.PLYO_FICHES[key]) {
+        var why = el('button', 'why-link', 'Pourquoi ? C’est quoi ce réglage ?');
+        why.type = 'button';
+        why.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); explain(key); });
+        info.appendChild(why);
+      }
       row.appendChild(box);
       row.appendChild(info);
       sheet.appendChild(row);
@@ -1186,8 +1425,10 @@
     if (msg.type === 'session') {
       session = msg.session;
       showLoggedIn(!!session);
-      if (session) refreshAccount();
-      else if (!loginOffered) { loginOffered = true; openLogin(); }
+      if (session) {
+        refreshAccount();
+        if (afterLogin) { var retry = afterLogin; afterLogin = null; retry(); }
+      }
     } else if (msg.type === 'values') {
       renderValues(msg);
       window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
@@ -1205,11 +1446,25 @@
       noteLine('Modèle reçu de MakerWorld : Orca le télécharge et l’ouvre.');
     } else if (msg.type === 'phone_batch_ready') {
       pollPhone(); // la fenêtre QR s'est fermée sur un envoi : on le traite sans attendre le prochain tour
+    } else if (msg.type === 'firststeps') {
+      onFirstSteps(msg.state || {});
+    } else if (msg.type === 'tour_signals') {
+      onTourSignals(msg);
+    } else if (msg.type === 'show_me') {
+      if (!msg.ok && tourCard && WHERE[msg.target]) tourCard.where.textContent = '📍 ' + WHERE[msg.target];
+      else if (!msg.ok && WHERE[msg.target]) noteLine('📍 ' + WHERE[msg.target]);
+    } else if (msg.type === 'explain') {
+      renderFiche(msg);
+    } else if (msg.type === 'focus_setting') {
+      $('focus-label').textContent = msg.label;
+      focusKey = msg.key;
+      $('focus-chip').classList.remove('hidden');
     }
   });
 
   window.orca.postMessage({ type: 'ready' });
   window.orca.postMessage({ type: 'session_load' });
+  window.orca.postMessage({ type: 'firststeps_state' });
 })();
 </script>
 </body>

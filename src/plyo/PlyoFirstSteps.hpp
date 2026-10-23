@@ -7,7 +7,7 @@
 
 // Premiers pas : accueil au premier lancement, ouverture du panneau au démarrage, parcours « Ma première impression »
 // et « Explique-moi ce réglage ». État dans datadir/plyo/premiers-pas.json :
-// {seen, level: "beginner"|"expert"|"skipped", panel_closed, tour_step}.
+// {seen, level: "beginner"|"expert"|"skipped", panel_closed, tour_step, greeted (message « je suis là » déjà montré)}.
 namespace Plyo { namespace FirstSteps {
 
 // Appelé à la fin du constructeur de MainFrame (seule accroche dans Orca).

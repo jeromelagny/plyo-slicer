@@ -36,7 +36,7 @@ namespace {
 
 fs::path state_path() { return fs::path(Slic3r::data_dir()) / "plyo" / "premiers-pas.json"; }
 
-nlohmann::json defaults() { return {{"seen", false}, {"level", nullptr}, {"panel_closed", false}, {"tour_step", nullptr}}; }
+nlohmann::json defaults() { return {{"seen", false}, {"level", nullptr}, {"panel_closed", false}, {"tour_step", nullptr}, {"greeted", false}}; }
 
 nlohmann::json load_state()
 {
