@@ -524,11 +524,207 @@
     send(next.message, next.photos, true);
   }
 
+  // ---------- Import MakerWorld : fiche « créateur → toi » ----------
+  // Choix du créateur reportés sur ton profil (même liste que CARRIED_PARAM_IDS dans plyo-api/src/lib/adapt-prompt.ts).
+  var CARRIED_PARAM_IDS = ['layer_height', 'wall_loops', 'sparse_infill_density', 'top_shell_layers', 'bottom_shell_layers',
+    'support', 'support_type', 'support_style', 'support_on_build_plate_only', 'support_threshold_angle', 'brim_width',
+    'ironing_type', 'ironing_speed', 'ironing_flow', 'ironing_spacing'];
+  var MONO_ADVICE = 'Ton imprimante ne change pas de couleur toute seule. Trois façons de faire : imprimer en une seule couleur ' +
+    '(bouton ci-dessous), changer de bobine à la main avec une pause « changement de couleur » placée dans l’aperçu à la bonne hauteur, ' +
+    'ou imprimer séparément les parties de chaque couleur si le modèle s’y prête.';
+  var mwSheet = null;
+
+  function findParam(list, id) { return list.find(function (p) { return p.id === id; }) || null; }
+  function sameValue(a, b) { return typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) < 1e-9 : a === b; }
+  // Nom d'origine d'un préréglage de projet (« Bambu Lab A1 0.4 nozzle(fichier.3mf) » → « Bambu Lab A1 0.4 nozzle »).
+  function baseName(name) { return (name || '').replace(/\([^()]*\.3mf\)$/i, '').trim(); }
+  function inRange(p, v) {
+    if (typeof v !== 'number') return true;
+    return (typeof p.min !== 'number' || v >= p.min - 1e-9) && (typeof p.max !== 'number' || v <= p.max + 1e-9);
+  }
+
+  function onMakerWorldImported(msg) {
+    if (mwSheet) mwSheet.remove();
+    showConversation();
+    var creator = msg.creator, mine = msg.mine;
+    var multi = creator.filament_count > 1;
+    var box = el('div', 'ai');
+    mwSheet = box;
+    var who = el('div', 'who');
+    who.appendChild(el('i', '', 'P'));
+    who.appendChild(document.createTextNode('Assistant · modèle MakerWorld'));
+    box.appendChild(who);
+    box.appendChild(el('p', '', 'Ce modèle a été réglé pour « ' + baseName(creator.context.printer) + ' ». Je te remets ton imprimante en gardant les choix du créateur.'));
+
+    var sheet = el('div', 'sheet');
+    sheet.appendChild(el('header', '', 'Créateur → toi'));
+    function infoRow(name, before, after, why) {
+      var row = el('div', 'row');
+      row.appendChild(el('span', '', '•'));
+      var info = el('div');
+      info.appendChild(el('div', 'name', name));
+      var delta = el('div', 'delta');
+      if (before !== null) { delta.appendChild(el('span', 'old', before)); delta.appendChild(el('span', 'arrow', '→')); }
+      delta.appendChild(el('span', 'new', after));
+      info.appendChild(delta);
+      if (why) info.appendChild(el('div', 'why', why));
+      row.appendChild(info);
+      sheet.appendChild(row);
+    }
+    var samePrinter = baseName(creator.context.printer) === baseName(mine.context.printer);
+    infoRow('Imprimante', samePrinter ? null : baseName(creator.context.printer), baseName(mine.context.printer),
+      samePrinter ? 'Même imprimante que le créateur : ton propre profil est remis.' : 'Ton imprimante et ton profil d’impression.');
+    if (multi) infoRow('Filaments', null, creator.filament_count + ' filaments du créateur conservés', 'Vérifie que tes bobines correspondent aux couleurs du modèle.');
+    else infoRow('Filament', baseName(creator.context.filament), baseName(mine.context.filament), 'Ta bobine : ses températures et sa rétraction s’appliquent.');
+
+    // Lignes cochables : valeur de ton profil → valeur retenue (choix du créateur, puis adaptations de l’IA).
+    var rows = {};
+    var rowsEl = el('div');
+    sheet.appendChild(rowsEl);
+    function setRow(id, before, after, why, p) {
+      if (rows[id]) rows[id].row.remove();
+      var row = el('label', 'row');
+      var check = el('input');
+      check.type = 'checkbox';
+      check.checked = true;
+      var info = el('div');
+      info.appendChild(el('div', 'name', p.label || id));
+      var delta = el('div', 'delta');
+      delta.appendChild(el('span', 'old', formatValue(before, p.unit)));
+      delta.appendChild(el('span', 'arrow', '→'));
+      delta.appendChild(el('span', 'new', formatValue(after, p.unit)));
+      info.appendChild(delta);
+      info.appendChild(el('div', 'why', why));
+      row.appendChild(check);
+      row.appendChild(info);
+      rowsEl.appendChild(row);
+      check.addEventListener('change', function () { row.classList.toggle('off', !check.checked); });
+      rows[id] = { row: row, check: check, id: id, value: after };
+    }
+    CARRIED_PARAM_IDS.forEach(function (id) {
+      var c = findParam(creator.params, id), m = findParam(mine.params, id);
+      if (!c || c.value === null || (m && sameValue(m.value, c.value))) return;
+      if (!inRange(c, c.value)) {
+        infoRow(c.label || id, null, formatValue(c.value, c.unit) + ' : non reportée', 'Hors des limites de Plyo (' + formatValue(c.min, c.unit) + ' – ' + formatValue(c.max, c.unit) + ').');
+        return;
+      }
+      setRow(id, m ? m.value : null, c.value, 'Choix du créateur.', c);
+    });
+
+    var status = el('div', 'why');
+    status.style.padding = '8px 12px';
+    status.textContent = 'L’assistant vérifie ce qu’il faut adapter à ta machine…';
+    sheet.appendChild(status);
+
+    var footer = el('footer');
+    var apply = el('button', 'btn wide', 'Appliquer');
+    apply.type = 'button';
+    apply.disabled = true;
+    var ignore = el('button', 'btn ghost', 'Ignorer');
+    ignore.type = 'button';
+    footer.appendChild(apply);
+    footer.appendChild(ignore);
+    sheet.appendChild(footer);
+    var fail = el('div', 'fail hidden');
+    sheet.appendChild(fail);
+    box.appendChild(sheet);
+
+    var advice = el('div', 'tip hidden');
+    box.appendChild(advice);
+    function showAdvice(text) {
+      if (!multi || mine.can_multicolor) return;
+      advice.textContent = '';
+      advice.appendChild(el('span', '', '🎨'));
+      var body = el('div');
+      body.appendChild(el('div', '', text || MONO_ADVICE));
+      var mono = el('button', 'btn ghost', 'Tout dans mon filament');
+      mono.type = 'button';
+      mono.style.marginTop = '8px';
+      mono.addEventListener('click', function () {
+        mono.disabled = true;
+        pendingSheet = { kind: 'mono', onResult: function (ok, t) { mono.replaceWith(el('div', ok ? 'why' : 'fail', ok ? '✓ Ton filament est dans tous les emplacements.' : t)); } };
+        window.orca.postMessage({ type: 'makerworld_mono' });
+      });
+      body.appendChild(mono);
+      advice.appendChild(body);
+      advice.classList.remove('hidden');
+    }
+    thread.appendChild(box);
+    scrollDown();
+
+    function ready(note) {
+      status.textContent = note;
+      apply.disabled = false;
+      scrollDown();
+    }
+
+    apply.addEventListener('click', function () {
+      var changes = Object.keys(rows).filter(function (id) { return rows[id].check.checked; })
+        .map(function (id) { return { id: id, value: rows[id].value }; });
+      apply.disabled = true;
+      ignore.disabled = true;
+      fail.classList.add('hidden');
+      pendingSheet = { kind: 'apply', onResult: function (ok, text) {
+        if (!ok) { apply.disabled = false; ignore.disabled = false; fail.textContent = text; fail.classList.remove('hidden'); return; }
+        Object.keys(rows).forEach(function (id) { if (!rows[id].check.checked) rows[id].row.remove(); else rows[id].check.replaceWith(el('span', '', '✓')); });
+        sheet.querySelector('header').textContent = 'Appliqué sur ton imprimante';
+        footer.textContent = '';
+        footer.appendChild(el('span', 'done', '✓ Appliqué'));
+        var undo = el('button', 'link', 'Annuler');
+        undo.type = 'button';
+        undo.addEventListener('click', function () {
+          pendingSheet = { kind: 'undo', onResult: function (okUndo, t) {
+            footer.textContent = '';
+            footer.appendChild(el('span', okUndo ? 'done' : 'fail', okUndo ? '↺ Réglages du créateur restaurés' : t));
+          } };
+          window.orca.postMessage({ type: 'makerworld_undo' });
+        });
+        footer.appendChild(undo);
+      } };
+      window.orca.postMessage({ type: 'makerworld_apply', keep_filaments: multi, changes: changes });
+    });
+    ignore.addEventListener('click', function () { box.remove(); if (mwSheet === box) mwSheet = null; });
+
+    if (!session) { showAdvice(''); ready('Connecte-toi pour que l’assistant adapte aussi les réglages à ta machine.'); return; }
+    var body = {
+      locale: (lastValues && lastValues.locale) || 'fr',
+      creator: { context: creator.context, params: creator.params, filament_count: creator.filament_count },
+      mine: { context: mine.context, params: mine.params, can_multicolor: mine.can_multicolor }
+    };
+    apiFetch('/api/adapt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+      .then(function (r) {
+        if (mwSheet !== box) return; // un autre import a remplacé cette fiche
+        if (!r.ok) {
+          if (r.data.error === 'insufficient_credits') setBalance(r.data.balance);
+          showAdvice('');
+          ready(r.data.error === 'insufficient_credits'
+            ? 'Crédits insuffisants : les choix du créateur sont reportés, sans adaptation par l’assistant.'
+            : 'L’assistant n’a pas pu adapter les réglages : les choix du créateur sont reportés tels quels.');
+          return;
+        }
+        if (r.data.credits) setBalance(r.data.credits.balance);
+        r.data.suggestions.forEach(function (s) {
+          var c = findParam(creator.params, s.id), m = findParam(mine.params, s.id);
+          var carried = CARRIED_PARAM_IDS.indexOf(s.id) >= 0;
+          var p = (carried ? c : m) || c || m || { label: s.id, unit: '' };
+          setRow(s.id, m ? m.value : null, s.value, s.reason, p);
+        });
+        showAdvice(r.data.multicolor_advice);
+        ready(r.data.message);
+      })
+      .catch(function () {
+        if (mwSheet !== box) return;
+        showAdvice('');
+        ready('Service Plyo injoignable : les choix du créateur sont reportés tels quels.');
+      });
+  }
+
   // ---------- Envoi d'une demande ----------
   // `photosFromPhone` : envoi venu du téléphone (photos fournies, zone de saisie laissée intacte).
   function send(text, photosFromPhone, fromPhone) {
     var note = (text || '').trim();
-    // PROTOTYPE MakerWorld : une adresse de modèle ouvre la page dans une fenêtre Plyo (rien n'est lu par l'IA).
+    // Une adresse MakerWorld ouvre la page dans une fenêtre Plyo (la page n'est jamais lue par Plyo ni par l'IA).
     if (!photosFromPhone && /^https:\/\/(www\.)?makerworld\.com\/\S*$/i.test(note)) {
       window.orca.postMessage({ type: 'makerworld', url: note });
       noteInput.value = '';
@@ -769,6 +965,8 @@
     } else if (msg.type === 'result') {
       if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text); }
       else noteLine(msg.text, !msg.ok);
+    } else if (msg.type === 'makerworld_imported') {
+      onMakerWorldImported(msg);
     } else if (msg.type === 'makerworld_opened') {
       noteLine('Modèle reçu de MakerWorld : Orca le télécharge et l’ouvre.');
     } else if (msg.type === 'phone_batch_ready') {
