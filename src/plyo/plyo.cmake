@@ -17,6 +17,10 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoMakerWorldImport.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibration.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibration.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoFirstSteps.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoFirstSteps.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoWelcomeDialog.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoWelcomeDialog.hpp
 )
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_LIST_DIR} PREFIX plyo FILES ${PLYO_SOURCES})

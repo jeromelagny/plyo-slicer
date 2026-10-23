@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bienvenue dans Plyo</title>
+<style>
+  /* Variables --orca-* injectées par OrcaSlicer (thème clair ou sombre) ; valeurs de repli pour un navigateur. */
+  :root {
+    --bg: var(--orca-bg, #ffffff);
+    --fg: var(--orca-fg, #262e30);
+    --muted: var(--orca-muted, #6b6b6b);
+    --border: var(--orca-border, #dbdbdb);
+    --accent: var(--orca-accent, #009688);
+    --accent-fg: var(--orca-accent-fg, #ffffff);
+    --font: var(--orca-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 14px; line-height: 1.55;
+         display: flex; flex-direction: column; }
+  main { flex: 1; padding: 30px 34px 8px; }
+  .hello { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+  .avatar { width: 46px; height: 46px; border-radius: 50%; flex: none; display: grid; place-items: center;
+            background: var(--accent); color: var(--accent-fg); font-weight: 700; font-size: 20px; }
+  h1 { margin: 0; font-size: 21px; font-weight: 650; line-height: 1.25; }
+  p { margin: 0 0 12px; }
+  .soft { color: var(--muted); }
+  .question { margin-top: 20px; font-weight: 600; font-size: 15px; }
+  .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .choice { text-align: left; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg);
+            color: var(--fg); font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
+  .choice:hover, .choice:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg)); outline: none; }
+  .choice strong { display: block; font-size: 15px; margin-bottom: 2px; }
+  .choice span { color: var(--muted); font-size: 13px; }
+  ol.tips { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  ol.tips li { display: flex; gap: 12px; align-items: flex-start; }
+  ol.tips b { width: 26px; height: 26px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 13px;
+              background: var(--accent); color: var(--accent-fg); }
+  ol.tips strong { display: block; }
+  footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 34px 24px; }
+  .skip { padding: 0; background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+  .skip:hover { color: var(--fg); text-decoration: underline; }
+  .main { height: 40px; min-width: 150px; padding: 0 20px; border-radius: var(--radius); border: 1px solid var(--accent);
+          background: var(--accent); color: var(--accent-fg); font: inherit; font-weight: 600; cursor: pointer; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <main>
+    <section id="hello">
+      <div class="hello">
+        <div class="avatar" aria-hidden="true">P</div>
+        <h1>Bienvenue ! Je suis l’assistant Plyo.</h1>
+      </div>
+      <p>Je suis spécialisé en impression 3D et je suis là pour t’accompagner. Pose-moi n’importe quelle question, avec tes mots : il n’y a pas de question bête.</p>
+      <p class="soft">Un slicer, ça peut impressionner au début. Pas d’inquiétude : tu n’as pas besoin de tout connaître pour bien imprimer, on avance ensemble.</p>
+      <p class="question">Tu débutes en impression 3D, ou tu connais déjà ?</p>
+      <div class="choices">
+        <button class="choice" id="beginner" type="button"><strong>Je débute</strong><span>Guide-moi pas à pas.</span></button>
+        <button class="choice" id="expert" type="button"><strong>Je connais déjà</strong><span>Je me débrouille, tu restes à côté.</span></button>
+      </div>
+    </section>
+
+    <section id="setup" class="hidden">
+      <div class="hello">
+        <div class="avatar" aria-hidden="true">P</div>
+        <h1>D’abord, présentons ton imprimante</h1>
+      </div>
+      <p>Juste après, une fenêtre te demande ta machine. Trois repères pour bien la remplir :</p>
+      <ol class="tips">
+        <li><b>1</b><div><strong>Ton imprimante</strong><span class="soft">Son nom est écrit dessus, souvent à l’avant (par exemple « Bambu Lab A1 » ou « Creality Ender-3 V3 »).</span></div></li>
+        <li><b>2</b><div><strong>La taille de buse</strong><span class="soft">Si tu ne sais pas, c’est presque toujours 0,4 mm : c’est la taille livrée avec l’imprimante.</span></div></li>
+        <li><b>3</b><div><strong>Tes filaments</strong><span class="soft">Coche ceux que tu as. Si tu ne sais pas, prends PLA : c’est le plus courant et le plus facile.</span></div></li>
+      </ol>
+      <p class="soft" style="margin-top:16px">Ensuite, je te guide pour ta première impression, dans le panneau à droite.</p>
+    </section>
+
+    <section id="tour" class="hidden">
+      <div class="hello">
+        <div class="avatar" aria-hidden="true">P</div>
+        <h1>Parfait, on y va ensemble</h1>
+      </div>
+      <p>Je vais te guider pour ta première impression, étape par étape, dans le panneau à droite. À chaque étape, « Montre-moi » t’indique où regarder.</p>
+      <p class="soft">Tu peux me poser une question à tout moment, ou passer une étape si tu la connais déjà.</p>
+    </section>
+  </main>
+  <footer>
+    <button class="skip" id="skip" type="button">Passer</button>
+    <button class="main hidden" id="go" type="button">C’est parti</button>
+  </footer>
+<script>
+(function () {
+  var withSetup = false;
+  function toSlicer(message) { if (window.wx && window.wx.postMessage) window.wx.postMessage(JSON.stringify(message)); }
+  function show(id) {
+    ['hello', 'setup', 'tour'].forEach(function (s) { document.getElementById(s).classList.toggle('hidden', s !== id); });
+    document.getElementById('go').classList.toggle('hidden', id === 'hello');
+    document.getElementById('go').focus();
+  }
+  function done(choice) { toSlicer({ command: 'welcome_choice', choice: choice }); }
+
+  // Appelé par Plyo une fois la page chargée : true quand l'écran de configuration d'Orca suit.
+  window.plyoWelcomeSetup = function (setup) { withSetup = !!setup; };
+
+  document.getElementById('beginner').addEventListener('click', function () { show(withSetup ? 'setup' : 'tour'); });
+  document.getElementById('expert').addEventListener('click', function () { done('expert'); });
+  document.getElementById('go').addEventListener('click', function () { done('beginner'); });
+  document.getElementById('skip').addEventListener('click', function () { done('skipped'); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') done('skipped'); });
+  toSlicer({ command: 'welcome_ready' });
+})();
+</script>
+</body>
+</html>

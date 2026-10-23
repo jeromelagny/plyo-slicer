@@ -125,6 +125,7 @@
 #include "DailyTips.hpp"
 #include "FilamentMapDialog.hpp"
 #include "plyo/PlyoAssistant.hpp" // PLYO: panneau Assistant Plyo
+#include "plyo/PlyoFirstSteps.hpp" // PLYO: premiers pas (accueil, ouverture du panneau)
 
 #include "DeviceCore/DevManager.h"
 
@@ -828,6 +829,7 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, BORDERLESS_FRAME_
 
     wxGetApp().persist_window_geometry(this, true);
     wxGetApp().persist_window_geometry(&m_settings_dialog, true);
+    Plyo::FirstSteps::on_startup(); // PLYO: accueil du premier lancement et ouverture du panneau Assistant Plyo
 }
 
 bool MainFrame::handle_global_shortcut(const KeyChord& chord)

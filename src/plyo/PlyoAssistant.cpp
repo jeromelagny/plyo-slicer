@@ -1,5 +1,6 @@
 #include "PlyoAssistant.hpp"
 #include "PlyoCalibration.hpp"
+#include "PlyoFirstSteps.hpp"
 #include "PlyoLoginDialog.hpp"
 #include "PlyoMakerWorldImport.hpp"
 #include "PlyoMakerWorldWindow.hpp"
@@ -38,17 +39,32 @@ constexpr const char* PANE_NAME = "plyo:assistant";
 wxWeakRef<DockPanel> s_panel;
 bool                 s_refresh_pending = false;
 
-std::string load_page()
+std::string read_resource(const std::string& name)
 {
-    const boost::filesystem::path path = boost::filesystem::path(Slic3r::resources_dir()) / "web" / "plyo" / "index.html";
+    const boost::filesystem::path path = boost::filesystem::path(Slic3r::resources_dir()) / "web" / "plyo" / name;
     std::ifstream                 file(path.string(), std::ios::binary);
     if (!file) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: impossible de lire " << path.string();
-        return "<h3>Assistant Plyo</h3><p>Page introuvable : resources/web/plyo/index.html</p>";
+        return std::string();
     }
     std::ostringstream content;
     content << file.rdbuf();
     return content.str();
+}
+
+// La page est chargée comme texte (sans adresse de base dans resources/web/plyo) : les scripts annexes
+// sont insérés à la place de leurs marqueurs « <!--plyo-include:nom.js--> ».
+std::string load_page()
+{
+    std::string page = read_resource("index.html");
+    if (page.empty())
+        return "<h3>Assistant Plyo</h3><p>Page introuvable : resources/web/plyo/index.html</p>";
+    for (const char* name : {"fiches.js", "premiers-pas.js"}) {
+        const std::string marker = std::string("<!--plyo-include:") + name + "-->";
+        if (const size_t at = page.find(marker); at != std::string::npos)
+            page.replace(at, marker.size(), "<script>\n" + read_resource(name) + "\n</script>");
+    }
+    return page;
 }
 
 void send(const nlohmann::json& message)
@@ -183,7 +199,9 @@ void toggle_assistant(Plater* plater)
     if (plater == nullptr)
         return;
 
-    auto* panel       = new DockPanel(plater, load_page(), on_page_message, nullptr, nullptr);
+    // Fermé par l'utilisateur (pas par la fermeture d'Orca) : il ne se rouvre plus tout seul au lancement.
+    FirstSteps::set_state({{"panel_closed", false}});
+    auto* panel = new DockPanel(plater, load_page(), on_page_message, [] { FirstSteps::set_state({{"panel_closed", true}}); }, nullptr);
     s_panel           = panel;
     s_refresh_pending = false; // un rafraîchissement en attente meurt avec l'ancien panneau
     plater->add_dock_pane(panel, PANE_NAME, "Assistant Plyo", "right", wxSize(340, 600), [panel]() { panel->fire_close(); });
