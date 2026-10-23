@@ -1,4 +1,5 @@
 #include "PlyoAssistant.hpp"
+#include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/Utils.hpp"
@@ -79,6 +80,14 @@ void handle_page_message(const nlohmann::json& data)
             send_result(SettingsBridge::apply_changes(data.contains("changes") ? data["changes"] : nlohmann::json()));
         else if (type == "undo")
             send_result(SettingsBridge::undo_last());
+        else if (type == "session_load")
+            send({{"type", "session"}, {"session", Session::load()}});
+        else if (type == "session_save")
+            send({{"type", "session_saved"}, {"ok", Session::save(data.contains("session") ? data["session"] : nlohmann::json())}});
+        else if (type == "session_clear") {
+            Session::clear();
+            send({{"type", "session"}, {"session", nullptr}});
+        }
         else
             BOOST_LOG_TRIVIAL(warning) << "Plyo: message inconnu reçu du panneau : " << data.dump();
     } catch (const std::exception& e) {

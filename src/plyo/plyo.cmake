@@ -5,6 +5,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoAssistant.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSettingsBridge.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSettingsBridge.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSession.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSession.hpp
 )
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_LIST_DIR} PREFIX plyo FILES ${PLYO_SOURCES})
