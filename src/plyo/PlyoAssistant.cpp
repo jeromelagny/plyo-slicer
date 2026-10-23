@@ -1,6 +1,7 @@
 #include "PlyoAssistant.hpp"
 #include "PlyoCalibration.hpp"
 #include "PlyoFirstSteps.hpp"
+#include "PlyoHighlight.hpp"
 #include "PlyoLoginDialog.hpp"
 #include "PlyoMakerWorldImport.hpp"
 #include "PlyoMakerWorldWindow.hpp"
@@ -177,7 +178,10 @@ void handle_page_message(const nlohmann::json& data)
             send(signals);
         } else if (type == "tour_add_benchy")
             send_result(FirstSteps::add_benchy());
-        else if (type == "explain") {
+        else if (type == "show_me") {
+            const std::string target = data.value("target", std::string());
+            send({{"type", "show_me"}, {"target", target}, {"ok", Highlight::show(target).value("ok", false)}});
+        } else if (type == "explain") {
             nlohmann::json fiche = FirstSteps::explain(data.value("key", std::string()));
             fiche["type"]        = "explain";
             send(fiche);
