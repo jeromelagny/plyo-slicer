@@ -63,7 +63,7 @@ void send_result(const nlohmann::json& result)
     send(message);
 }
 
-void on_page_message(const nlohmann::json& data)
+void handle_page_message(const nlohmann::json& data)
 {
     const std::string type = data.is_object() ? data.value("type", std::string()) : std::string();
     try {
@@ -83,6 +83,15 @@ void on_page_message(const nlohmann::json& data)
         send_result({{"ok", false}, {"text", std::string("Erreur interne : ") + e.what()}});
     }
     // Les valeurs affichées sont rafraîchies par on_config_changed() après une modification.
+}
+
+// Appelé pendant le callback de message de la vue web : on ne touche pas à l'interface ici
+// (règle Orca/wxWidgets), on reporte le traitement. CallAfter sur le panneau : si le panneau
+// est détruit d'ici là, l'appel en attente est abandonné avec lui.
+void on_page_message(const nlohmann::json& data)
+{
+    if (s_panel)
+        s_panel->CallAfter([data]() { handle_page_message(data); });
 }
 
 } // namespace
