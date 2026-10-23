@@ -129,12 +129,30 @@ std::string to_config_string(double value, Kind kind)
     return kind == Kind::Percent ? out.str() + "%" : out.str();
 }
 
-// Valeur textuelle d'un réglage à choix (ex. « no ironing », « tree(auto) »).
-std::string enum_value(const Param& p)
+// Configurations lues : celles en cours d'édition, ou celles d'un préréglage quelconque (import MakerWorld).
+struct Configs
 {
-    const Slic3r::ConfigOption* opt = edited_config(p.preset).option(resolve_key(p));
+    const DynamicPrintConfig& print;
+    const DynamicPrintConfig& filament;
+    const DynamicPrintConfig& printer;
+
+    const DynamicPrintConfig& of(Preset::Type type) const { return type == Preset::TYPE_PRINT ? print : filament; }
+};
+
+Configs edited_configs()
+{
+    return {bundle().prints.get_edited_preset().config, bundle().filaments.get_edited_preset().config,
+            bundle().printers.get_edited_preset().config};
+}
+
+// Valeur textuelle d'un réglage à choix (ex. « no ironing », « tree(auto) »).
+std::string enum_value(const Param& p, const Configs& configs)
+{
+    const Slic3r::ConfigOption* opt = configs.of(p.preset).option(resolve_key(p));
     return opt ? opt->serialize() : std::string();
 }
+
+std::string enum_value(const Param& p) { return enum_value(p, edited_configs()); }
 
 // Première valeur d'une option (les options « tableau » ont une valeur par filament ou variante d'extrudeur).
 std::optional<double> first_value(const DynamicPrintConfig& config, const std::string& key)
@@ -158,16 +176,40 @@ std::optional<double> first_value(const DynamicPrintConfig& config, const std::s
 }
 
 // Valeur affichée et utilisée pour un delta. Une rétraction filament « nil » hérite de l'imprimante.
-std::optional<double> current_value(const Param& p, std::string* note = nullptr)
+std::optional<double> current_value(const Param& p, const Configs& configs, std::string* note = nullptr)
 {
     const std::string key   = resolve_key(p);
-    std::optional<double> v = first_value(edited_config(p.preset), key);
+    std::optional<double> v = first_value(configs.of(p.preset), key);
     if (!v && key == "filament_retraction_length") {
-        v = first_value(bundle().printers.get_edited_preset().config, "retraction_length");
+        v = first_value(configs.printer, "retraction_length");
         if (note)
             *note = "valeur de l'imprimante (pas de surcharge filament)";
     }
     return v;
+}
+
+std::optional<double> current_value(const Param& p, std::string* note = nullptr) { return current_value(p, edited_configs(), note); }
+
+// Valeurs de la liste blanche lues dans `configs`, au format envoyé au panneau.
+nlohmann::json read_params(const Configs& configs)
+{
+    nlohmann::json params = nlohmann::json::array();
+    for (const Param& p : WHITELIST) {
+        std::string           note;
+        std::optional<double> v = current_value(p, configs, &note);
+        nlohmann::json        item{{"id", p.id}, {"label", p.label}, {"key", resolve_key(p)}, {"unit", p.unit},
+                                   {"min", p.min}, {"max", p.max}, {"note", note}};
+        if (p.kind == Kind::Enum)
+            item["value"] = enum_value(p, configs);
+        else if (!v)
+            item["value"] = nullptr;
+        else if (p.kind == Kind::Bool)
+            item["value"] = *v != 0;
+        else
+            item["value"] = *v;
+        params.push_back(item);
+    }
+    return params;
 }
 
 // Écrit `text` dans toutes les cases d'une option tableau (ou dans l'option simple).
@@ -206,24 +248,16 @@ void load_into_tabs(const std::map<Preset::Type, DynamicPrintConfig>& configs)
 
 } // namespace
 
+nlohmann::json read_values_from(const DynamicPrintConfig& print, const DynamicPrintConfig& filament, const DynamicPrintConfig& printer)
+{
+    return read_params({print, filament, printer});
+}
+
+void clear_undo() { s_undo_stack.clear(); }
+
 nlohmann::json read_values()
 {
-    nlohmann::json params = nlohmann::json::array();
-    for (const Param& p : WHITELIST) {
-        std::string           note;
-        std::optional<double> v = current_value(p, &note);
-        nlohmann::json        item{{"id", p.id}, {"label", p.label}, {"key", resolve_key(p)}, {"unit", p.unit},
-                                   {"min", p.min}, {"max", p.max}, {"note", note}};
-        if (p.kind == Kind::Enum)
-            item["value"] = enum_value(p);
-        else if (!v)
-            item["value"] = nullptr;
-        else if (p.kind == Kind::Bool)
-            item["value"] = *v != 0;
-        else
-            item["value"] = *v;
-        params.push_back(item);
-    }
+    const nlohmann::json params = read_params(edited_configs());
     // Noms des préréglages en cours, transmis au service Plyo (type de filament, imprimante).
     const nlohmann::json context{{"printer", bundle().printers.get_edited_preset().name},
                                  {"filament", bundle().filaments.get_edited_preset().name},
