@@ -4,6 +4,9 @@
 #include <string>
 
 #include <wx/frame.h>
+#include <wx/timer.h>
+
+class wxStaticText;
 
 class wxWebView;
 class wxWebViewEvent;
@@ -19,6 +22,7 @@ class MakerWorldWindow : public wxFrame
 public:
     // `on_open` est appelé avec le lien capté, juste avant la fermeture de la fenêtre.
     MakerWorldWindow(wxWindow* parent, const std::string& url, std::function<void(const std::string&)> on_open);
+    ~MakerWorldWindow() override;
 
     // Adresse acceptée : une page https de makerworld.com.
     static bool is_makerworld_url(const std::string& url);
@@ -28,8 +32,12 @@ private:
     void on_new_window(wxWebViewEvent& evt);
     void on_loaded(wxWebViewEvent& evt);
     bool capture(const std::string& url);
+    void update_guide(const std::string& url);
 
     wxWebView*                              m_browser = nullptr;
+    wxStaticText*                           m_guide   = nullptr;
+    wxStaticText*                           m_pill    = nullptr;
+    wxTimer                                 m_url_timer;
     std::function<void(const std::string&)> m_on_open;
     bool                                    m_captured = false;
     std::string                             m_model_url;

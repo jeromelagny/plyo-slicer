@@ -10,6 +10,7 @@
 
 #include <wx/button.h>
 #include <wx/sizer.h>
+#include <wx/timer.h>
 #include <wx/stattext.h>
 #include <wx/webview.h>
 #include <wx/weakref.h>
@@ -44,8 +45,17 @@ MakerWorldWindow::MakerWorldWindow(wxWindow* parent, const std::string& url, std
     auto* bar     = new wxBoxSizer(wxHORIZONTAL);
     auto* back    = new wxButton(this, wxID_ANY, wxString::FromUTF8("← Retour"));
     auto* model   = new wxButton(this, wxID_ANY, wxString::FromUTF8("Page du modèle"));
-    bar->Add(back, 0, wxRIGHT, FromDIP(6));
-    bar->Add(model, 0);
+    bar->Add(back, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(6));
+    bar->Add(model, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(16));
+
+    // Guide d'import, hors de la page (on ne modifie pas le site) : étapes et repère du bouton à cliquer.
+    m_guide = new wxStaticText(this, wxID_ANY, wxEmptyString);
+    m_pill  = new wxStaticText(this, wxID_ANY, wxString::FromUTF8("  Ouvrir dans Bambu Studio  "));
+    m_pill->SetBackgroundColour(wxColour(0, 174, 66)); // vert proche du bouton du site, dessiné par nous
+    m_pill->SetForegroundColour(*wxWHITE);
+    m_pill->SetFont(m_pill->GetFont().Bold());
+    bar->Add(m_guide, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(6));
+    bar->Add(m_pill, 0, wxALIGN_CENTER_VERTICAL);
     sizer->Add(bar, 0, wxALL, FromDIP(8));
 
     // Créée vide, pour que la première page soit déjà demandée avec la signature d'un navigateur ordinaire.
@@ -62,11 +72,31 @@ MakerWorldWindow::MakerWorldWindow(wxWindow* parent, const std::string& url, std
                 m_browser->GoBack();
         });
         model->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { m_browser->LoadURL(wxString::FromUTF8(m_model_url)); });
+        // Le site change de page sans rechargement : on suit l'adresse (seule information lue) chaque seconde.
+        m_url_timer.SetOwner(this);
+        Bind(wxEVT_TIMER, [this](wxTimerEvent&) { update_guide(m_browser->GetCurrentURL().utf8_string()); });
+        m_url_timer.Start(1000);
     } else
         sizer->Add(new wxStaticText(this, wxID_ANY, wxS("wxWebView unavailable")), wxSizerFlags().Border(wxALL, FromDIP(20)));
     SetSizer(sizer);
     SetSize(FromDIP(wxSize(1100, 800)));
     CentreOnParent();
+    update_guide(url);
+}
+
+MakerWorldWindow::~MakerWorldWindow() { m_url_timer.Stop(); }
+
+void MakerWorldWindow::update_guide(const std::string& url)
+{
+    if (m_captured || m_guide == nullptr)
+        return;
+    const bool on_model = loggable(url).find("/models/") != std::string::npos;
+    const wxString text = wxString::FromUTF8(on_model ? "① Choisis un profil d'impression   ② Clique sur" : "Ouvre la page d'un modèle pour l'importer dans Plyo.");
+    if (m_guide->GetLabel() == text)
+        return;
+    m_guide->SetLabel(text);
+    m_pill->Show(on_model);
+    Layout();
 }
 
 // Lien « Ouvrir dans … » cliqué par l'utilisateur : on le garde pour Orca au lieu de l'ouvrir dans macOS.
@@ -77,6 +107,11 @@ bool MakerWorldWindow::capture(const std::string& url)
     if (m_captured)
         return true;
     m_captured = true;
+    if (m_guide != nullptr) {
+        m_guide->SetLabel(wxString::FromUTF8("Modèle reçu, ouverture dans Plyo…"));
+        m_pill->Hide();
+        Layout();
+    }
     BOOST_LOG_TRIVIAL(info) << "Plyo: lien MakerWorld capté (" << url.substr(0, url.find(':')) << ")";
     // Hors du callback de la vue web : fermeture de la fenêtre puis téléchargement par Orca.
     Slic3r::GUI::wxGetApp().CallAfter([self = wxWeakRef<wxFrame>(this), url, on_open = m_on_open] {
