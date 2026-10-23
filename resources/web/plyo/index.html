@@ -780,11 +780,12 @@
     var sheet = el('div', 'sheet');
     sheet.appendChild(el('header', '', 'Paliers du test'));
     var choice = null;
+    var group = 'calib-' + Date.now();
     var rows = msg.sections.map(function (s) {
       var row = el('label', 'row');
       var radio = el('input');
       radio.type = 'radio';
-      radio.name = 'calib-' + Date.now();
+      radio.name = group;
       var info2 = el('div');
       info2.appendChild(el('div', 'name', s.label));
       row.appendChild(radio);
@@ -825,8 +826,13 @@
       action.textContent = msg.test === 'flow' && msg.pass === 1 ? 'Lancer la passe fine' : 'Enregistrer pour ce filament sur cette imprimante';
     }
 
+    function setPhotoButtons(enabled) { photoBtn.disabled = !enabled; phoneBtn.disabled = !enabled; }
+
     function analyze(photos) {
+      if (card.analyzing) return;
+      card.analyzing = true;
       card.awaiting = false;
+      setPhotoButtons(false);
       status.textContent = 'L’assistant regarde ta photo…';
       scrollDown();
       var body = {
@@ -838,10 +844,12 @@
         filament: lastValues && lastValues.context ? lastValues.context.filament : undefined,
         printer: lastValues && lastValues.context ? lastValues.context.printer : undefined
       };
-      if (!session) { status.textContent = 'Connecte-toi pour que l’assistant lise la photo, ou choisis toi-même le meilleur palier.'; card.awaiting = true; return; }
+      if (!session) { status.textContent = 'Connecte-toi pour que l’assistant lise la photo, ou choisis toi-même le meilleur palier.'; card.awaiting = true; card.analyzing = false; setPhotoButtons(true); return; }
       apiFetch('/api/calibration/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
         .then(function (r) {
+          card.analyzing = false;
+          setPhotoButtons(true);
           if (calibCard !== card) return;
           if (!r.ok) {
             if (r.data.error === 'insufficient_credits') setBalance(r.data.balance);
@@ -865,7 +873,7 @@
           updateActions();
           scrollDown();
         })
-        .catch(function () { if (calibCard === card) { status.textContent = 'Service Plyo injoignable. Choisis toi-même le meilleur palier.'; card.awaiting = true; } });
+        .catch(function () { card.analyzing = false; setPhotoButtons(true); if (calibCard === card) { status.textContent = 'Service Plyo injoignable. Choisis toi-même le meilleur palier.'; card.awaiting = true; } });
     }
     card.receivePhotos = analyze;
 
@@ -889,6 +897,7 @@
     action.addEventListener('click', function () {
       action.disabled = true;
       if (msg.test === 'flow' && msg.pass === 1) {
+        pendingSheet = { kind: 'calib', onResult: function (ok, t) { if (!ok) { action.disabled = false; status.textContent = t; } } };
         window.orca.postMessage({ type: 'calib_start', test: 'flow', pass: 2, base_value: choice.value });
         return;
       }
@@ -898,15 +907,22 @@
         footer.appendChild(el('span', 'done', '✓ ' + t));
         var restore = el('button', 'btn wide', 'Remettre ma pièce');
         restore.type = 'button';
-        restore.addEventListener('click', function () { restoreCalibration(restore); });
+        var restored = false;
+        restore.addEventListener('click', function () { restoreCalibration(restore, function (okR) { restored = okR; }); });
         footer.appendChild(restore);
         if (msg.test === 'ironing') {
-          var on = el('button', 'btn ghost', 'Activer le lissage');
+          // Le lissage s'active sur le profil de ta pièce : la remettre d'abord, sinon la remise l'effacerait.
+          var on = el('button', 'btn ghost', 'Remettre ma pièce et activer le lissage');
           on.type = 'button';
-          on.addEventListener('click', function () {
-            on.disabled = true;
+          on.dataset.keep = '1';
+          var activate = function () {
             pendingSheet = { kind: 'apply', onResult: function (okOn, tt) { on.replaceWith(el('span', okOn ? 'done' : 'fail', okOn ? '✓ Lissage activé' : tt)); } };
             window.orca.postMessage({ type: 'apply', changes: [{ id: 'ironing_type', value: 'top' }] });
+          };
+          on.addEventListener('click', function () {
+            on.disabled = true;
+            if (restored) { activate(); return; }
+            restoreCalibration(on, function (okR) { restored = okR; if (okR) activate(); else on.disabled = false; });
           });
           footer.appendChild(on);
         }
@@ -916,12 +932,14 @@
     back.addEventListener('click', function () { restoreCalibration(back); });
   }
 
-  function restoreCalibration(button) {
+  function restoreCalibration(button, after) {
     button.disabled = true;
     pendingSheet = { kind: 'calib_restore', onResult: function (ok, t) {
-      if (calibCard) { calibCard.awaiting = false; calibCard.box.querySelectorAll('button').forEach(function (b) { b.disabled = true; }); }
+      if (!ok) { button.disabled = false; noteLine(t, true); if (after) after(false); return; }
+      if (calibCard) { calibCard.awaiting = false; calibCard.box.querySelectorAll('button:not([data-keep])').forEach(function (b) { b.disabled = true; }); }
       calibCard = null;
-      noteLine(t, !ok);
+      noteLine(t, false);
+      if (after) after(true);
     } };
     window.orca.postMessage({ type: 'calib_restore' });
   }
