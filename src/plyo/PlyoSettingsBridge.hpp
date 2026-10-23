@@ -2,6 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <string>
+
 namespace Slic3r { class DynamicPrintConfig; }
 
 // Pont entre le panneau Assistant et la configuration d'Orca.
@@ -27,5 +29,8 @@ nlohmann::json apply_changes(const nlohmann::json& changes);
 
 // Annule le dernier lot de changements appliqué par Plyo.
 nlohmann::json undo_last();
+
+// Plage Plyo d'une clé de configuration de la liste blanche : {min, max, unit}, ou null hors liste blanche.
+nlohmann::json whitelist_range(const std::string& key);
 
 }} // namespace Plyo::SettingsBridge

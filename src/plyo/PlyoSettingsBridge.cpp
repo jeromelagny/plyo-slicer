@@ -383,4 +383,18 @@ nlohmann::json undo_last()
     return {{"ok", true}, {"text", "Annulé : valeurs d'avant restaurées."}};
 }
 
+nlohmann::json whitelist_range(const std::string& key)
+{
+    // La température de plateau a une clé par type de plateau (hot_plate_temp, textured_plate_temp…).
+    const bool        bed     = key.size() > 10 && key.find("plate_temp") != std::string::npos;
+    const std::string bed_id  = key.find("initial_layer") != std::string::npos ? "bed_temp_initial" : "bed_temp";
+    for (const Param& p : WHITELIST) {
+        if (p.kind == Kind::Bool || p.kind == Kind::Enum)
+            continue;
+        if (bed ? bed_id == p.id : key == p.key)
+            return {{"min", p.min}, {"max", p.max}, {"unit", p.unit}};
+    }
+    return nullptr;
+}
+
 }} // namespace Plyo::SettingsBridge

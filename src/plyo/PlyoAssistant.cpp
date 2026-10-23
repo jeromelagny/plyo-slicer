@@ -166,7 +166,22 @@ void handle_page_message(const nlohmann::json& data)
             send_result(Calibration::restore());
         else if (type == "calib_history")
             send({{"type", "calib_history"}, {"items", Calibration::history_for_current()}});
-        else if (type == "session_clear") {
+        else if (type == "firststeps_state")
+            send({{"type", "firststeps"}, {"state", FirstSteps::state()}});
+        else if (type == "firststeps_set") {
+            FirstSteps::set_state(data.value("patch", nlohmann::json::object()));
+            send({{"type", "firststeps"}, {"state", FirstSteps::state()}});
+        } else if (type == "tour_signals") {
+            nlohmann::json signals = FirstSteps::tour_signals();
+            signals["type"]        = "tour_signals";
+            send(signals);
+        } else if (type == "tour_add_benchy")
+            send_result(FirstSteps::add_benchy());
+        else if (type == "explain") {
+            nlohmann::json fiche = FirstSteps::explain(data.value("key", std::string()));
+            fiche["type"]        = "explain";
+            send(fiche);
+        } else if (type == "session_clear") {
             Session::clear();
             send({{"type", "session"}, {"session", nullptr}});
         }
@@ -201,6 +216,11 @@ void toggle_assistant(Plater* plater)
 
     // Fermé par l'utilisateur (pas par la fermeture d'Orca) : il ne se rouvre plus tout seul au lancement.
     FirstSteps::set_state({{"panel_closed", false}});
+    FirstSteps::set_focus_listener([](const nlohmann::json& focus) {
+        nlohmann::json message = focus;
+        message["type"]        = "focus_setting";
+        send(message);
+    });
     auto* panel = new DockPanel(plater, load_page(), on_page_message, [] { FirstSteps::set_state({{"panel_closed", true}}); }, nullptr);
     s_panel           = panel;
     s_refresh_pending = false; // un rafraîchissement en attente meurt avec l'ancien panneau
