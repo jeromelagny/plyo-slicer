@@ -101,6 +101,13 @@
   .row .why { color: var(--muted); font-size: 12px; }
   .row.off { opacity: .45; }
   .row.best { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  /* Bas de carte empilé (panneau étroit) : action principale pleine largeur, puis deux boutons côte à côte. */
+  .sheet footer.stack { flex-wrap: wrap; }
+  .sheet footer.stack .btn { flex: 1 1 calc(50% - 4px); height: auto; min-height: 34px; padding: 7px 10px; line-height: 1.25; white-space: normal; }
+  .sheet footer.stack .btn.full { flex-basis: 100%; order: -1; }
+  .sheet footer.stack .btn.wide { flex-basis: 100%; }
+  .sheet footer.stack .link { flex-basis: 100%; text-align: center; padding: 4px 0 0; }
+  .sheet footer.stack .done { flex-basis: 100%; }
   .sheet footer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); align-items: center; }
   .sheet .done { color: var(--accent); font-size: 12px; font-weight: 600; flex: 1; }
   .sheet .link { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 12px; padding: 0; }
@@ -790,12 +797,12 @@
     status.style.padding = '8px 12px';
     status.textContent = 'Une fois le test imprimé, envoie-moi une photo.';
     sheet.appendChild(status);
-    var footer = el('footer');
+    var footer = el('footer', 'stack');
     var photoBtn = el('button', 'btn', 'Ajouter la photo');
     photoBtn.type = 'button';
     var phoneBtn = el('button', 'btn ghost', '📱 Téléphone');
     phoneBtn.type = 'button';
-    var action = el('button', 'btn hidden', '');
+    var action = el('button', 'btn full hidden', '');
     action.type = 'button';
     var back = el('button', 'link', 'Remettre ma pièce');
     back.type = 'button';
@@ -889,7 +896,7 @@
         if (!ok) { action.disabled = false; status.textContent = t; return; }
         footer.textContent = '';
         footer.appendChild(el('span', 'done', '✓ ' + t));
-        var restore = el('button', 'btn', 'Remettre ma pièce');
+        var restore = el('button', 'btn wide', 'Remettre ma pièce');
         restore.type = 'button';
         restore.addEventListener('click', function () { restoreCalibration(restore); });
         footer.appendChild(restore);
