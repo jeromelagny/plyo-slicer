@@ -237,6 +237,9 @@
   var pendingSheet = null;   // fiche dont on attend le résultat d'application ou d'annulation
   var phoneLink = null;      // lien téléphone de la conversation : { id, qr_svg }
   var phoneTimer = null;
+  var phoneCreating = null;  // création du lien en cours (évite deux liens sur un double clic)
+  var phoneCollecting = false;
+  var phoneQueue = [];       // envois du téléphone récupérés, en attente que l'assistant soit libre
   var PHONE_POLL_MS = 3000;
 
   var ERRORS = {
@@ -449,14 +452,19 @@
   function openPhone() {
     refreshAccount().then(function (valid) {
       if (!valid) return;
-      var ready = phoneLink ? Promise.resolve(phoneLink) : apiFetch('/api/phone-sessions', { method: 'POST' })
-        .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-        .then(function (created) {
-          phoneLink = { id: created.id, qr_svg: created.qr_svg };
-          $('phone-linked').classList.remove('hidden');
-          phoneTimer = setInterval(pollPhone, PHONE_POLL_MS);
-          return phoneLink;
-        });
+      if (!phoneLink && !phoneCreating) {
+        phoneCreating = apiFetch('/api/phone-sessions', { method: 'POST' })
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+          .then(function (created) {
+            phoneLink = { id: created.id, qr_svg: created.qr_svg };
+            $('phone-linked').classList.remove('hidden');
+            clearInterval(phoneTimer);
+            phoneTimer = setInterval(pollPhone, PHONE_POLL_MS);
+            return phoneLink;
+          });
+        phoneCreating.then(function () { phoneCreating = null; }, function () { phoneCreating = null; });
+      }
+      var ready = phoneLink ? Promise.resolve(phoneLink) : phoneCreating;
       ready
         .then(function (link) { window.orca.postMessage({ type: 'phone', link: link }); })
         .catch(function () { noteLine('Le QR code n’a pas pu être créé. Le service Plyo est-il démarré ?', true); });
@@ -469,11 +477,12 @@
     if (close && session) apiFetch('/api/phone-sessions/' + encodeURIComponent(phoneLink.id), { method: 'DELETE' }).catch(function () {});
     clearInterval(phoneTimer);
     phoneLink = null;
+    phoneQueue = [];
     $('phone-linked').classList.add('hidden');
   }
 
   function pollPhone() {
-    if (!phoneLink || busy || !session) return;
+    if (!phoneLink || phoneCollecting || !session) return;
     var id = phoneLink.id;
     apiFetch('/api/phone-sessions/' + encodeURIComponent(id), { method: 'GET' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
@@ -483,22 +492,36 @@
           noteLine('Le lien avec le téléphone a expiré. Cliquez sur 📱 pour en créer un nouveau.');
           return;
         }
-        if (s.pending_batches > 0 && !busy) return collectBatch(id);
+        if (s.pending_batches > 0) return collectBatch(id);
       })
       .catch(function (status) { if (status === 404) unlinkPhone(false); });
   }
 
+  // Une seule récupération à la fois ; l'envoi récupéré est mis en file (le serveur l'a déjà effacé),
+  // puis transmis à l'assistant dès qu'il est libre, pour ne jamais perdre de photos.
   function collectBatch(id) {
+    phoneCollecting = true;
     return apiFetch('/api/phone-sessions/' + encodeURIComponent(id) + '/photos', { method: 'GET' })
       .then(function (r) { return r.status === 200 ? r.json() : null; })
       .then(function (batch) {
-        if (!batch || !batch.images.length) return;
-        var photos = batch.images.map(function (img) {
-          return { media_type: img.media_type, data: img.data, preview: 'data:' + img.media_type + ';base64,' + img.data };
+        if (!batch) return;
+        if (!batch.images.length) { noteLine('Les photos du téléphone n’ont pas pu être récupérées.', true); return; }
+        phoneQueue.push({
+          message: batch.message,
+          photos: batch.images.map(function (img) {
+            return { media_type: img.media_type, data: img.data, preview: 'data:' + img.media_type + ';base64,' + img.data };
+          })
         });
-        send(batch.message, photos, true);
+        drainPhoneQueue();
       })
-      .catch(function () { noteLine('Les photos du téléphone n’ont pas pu être récupérées.', true); });
+      .catch(function () { noteLine('Les photos du téléphone n’ont pas pu être récupérées.', true); })
+      .then(function () { phoneCollecting = false; });
+  }
+
+  function drainPhoneQueue() {
+    if (busy || !lastValues || !phoneQueue.length) return;
+    var next = phoneQueue.shift();
+    send(next.message, next.photos, true);
   }
 
   // ---------- Envoi d'une demande ----------
@@ -575,7 +598,7 @@
         thinking.remove();
         noteLine('Service Plyo injoignable. Est-il démarré (npm run dev dans plyo-api) ?', true);
       })
-      .then(function () { busy = false; sendButton.disabled = false; scrollDown(); });
+      .then(function () { busy = false; sendButton.disabled = false; scrollDown(); drainPhoneQueue(); });
   }
 
   // Ce que l'assistant a répondu, pour le renvoyer dans l'historique au tour suivant.
@@ -735,6 +758,7 @@
       else if (!loginOffered) { loginOffered = true; openLogin(); }
     } else if (msg.type === 'values') {
       renderValues(msg);
+      drainPhoneQueue();
     } else if (msg.type === 'result') {
       if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text); }
       else noteLine(msg.text, !msg.ok);

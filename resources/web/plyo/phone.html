@@ -82,6 +82,7 @@
   var slots = document.getElementById('slots');
   var hint = document.getElementById('hint');
   var timer = null;
+  var receivedAtOpen = null; // envois déjà reçus à l'ouverture : on ferme dès que ce nombre augmente
 
   function toSlicer(message) {
     if (window.wx && window.wx.postMessage) window.wx.postMessage(JSON.stringify(message));
@@ -110,7 +111,9 @@
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (s) {
         if (s.expired || s.status === 'closed') return stop('Ce lien a expiré.', 'Fermez cette fenêtre, puis recliquez sur l’icône du téléphone pour un nouveau QR code.');
-        if (s.pending_batches > 0) {
+        if (receivedAtOpen === null) receivedAtOpen = s.batches_received - s.pending_batches;
+        // Le panneau peut avoir déjà récupéré l'envoi : on se fie au compteur, pas à la file d'attente.
+        if (s.batches_received > receivedAtOpen) {
           clearInterval(timer);
           statusLine.textContent = 'Photos reçues : l’assistant les analyse…';
           return toSlicer({ command: 'phone_done' });
