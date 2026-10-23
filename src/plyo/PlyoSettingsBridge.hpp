@@ -7,7 +7,8 @@
 // toujours dans le préréglage « édité » (jamais sauvegardé sur disque).
 namespace Plyo { namespace SettingsBridge {
 
-// {"params": [{"id", "label", "key", "value", "unit", "min", "max", "note"}...], "can_undo": bool}
+// {"params": [{"id", "label", "key", "value", "unit", "min", "max", "note"}...],
+//  "context": {"printer", "filament", "process"}, "can_undo": bool}
 nlohmann::json read_values();
 
 // changes : [{"id": "...", "value": x} ou {"id": "...", "delta": x}, ...]

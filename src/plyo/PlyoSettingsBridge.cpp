@@ -25,7 +25,7 @@ using Slic3r::Preset;
 
 namespace {
 
-enum class Kind { Int, Float, Bool };
+enum class Kind { Int, Float, Percent, Bool, Enum };
 
 struct Param
 {
@@ -42,14 +42,38 @@ struct Param
 // Liste blanche Plyo. Les plages sont volontairement plus étroites que celles d'Orca.
 // La rétraction passe par la surcharge du filament : on ne touche jamais au préréglage imprimante.
 const std::vector<Param> WHITELIST = {
-    {"nozzle_temp",      "Température de buse",         Preset::TYPE_FILAMENT, "nozzle_temperature",         Kind::Int,   170, 300, "°C"},
-    {"bed_temp",         "Température de plateau",      Preset::TYPE_FILAMENT, "",                           Kind::Int,   0,   110, "°C"},
+    {"nozzle_temp",         "Température de buse",                     Preset::TYPE_FILAMENT, "nozzle_temperature",               Kind::Int, 170, 300, "°C"},
+    {"nozzle_temp_initial", "Température de buse (première couche)",   Preset::TYPE_FILAMENT, "nozzle_temperature_initial_layer", Kind::Int, 170, 300, "°C"},
+    {"bed_temp",            "Température de plateau",                  Preset::TYPE_FILAMENT, "",                                 Kind::Int, 0,   110, "°C"},
+    {"bed_temp_initial",    "Température de plateau (première couche)", Preset::TYPE_FILAMENT, "",                                Kind::Int, 0,   110, "°C"},
     {"layer_height",     "Hauteur de couche",           Preset::TYPE_PRINT,    "layer_height",               Kind::Float, 0.05, 0.35, "mm"},
     {"outer_wall_speed", "Vitesse des parois externes", Preset::TYPE_PRINT,    "outer_wall_speed",           Kind::Float, 10,  300, "mm/s"},
     {"retraction",       "Longueur de rétraction",      Preset::TYPE_FILAMENT, "filament_retraction_length", Kind::Float, 0,   8,   "mm"},
     {"brim_width",       "Largeur de bordure",          Preset::TYPE_PRINT,    "brim_width",                 Kind::Float, 0,   20,  "mm"},
     {"support",          "Supports activés",            Preset::TYPE_PRINT,    "enable_support",             Kind::Bool,  0,   1,   ""},
+    {"ironing_type",     "Lissage",                     Preset::TYPE_PRINT,    "ironing_type",               Kind::Enum,  0,   0,   ""},
+    {"ironing_speed",    "Vitesse de lissage",          Preset::TYPE_PRINT,    "ironing_speed",              Kind::Float, 5,   100, "mm/s"},
+    {"ironing_flow",     "Débit de lissage",            Preset::TYPE_PRINT,    "ironing_flow",               Kind::Percent, 1, 40,  "%"},
+    {"ironing_spacing",  "Espacement du lissage",       Preset::TYPE_PRINT,    "ironing_spacing",            Kind::Float, 0.05, 0.4, "mm"},
+    {"support_type",     "Type de support",             Preset::TYPE_PRINT,    "support_type",               Kind::Enum,  0,   0,   ""},
+    {"support_style",    "Style de support",            Preset::TYPE_PRINT,    "support_style",              Kind::Enum,  0,   0,   ""},
+    {"support_on_build_plate_only", "Supports sur le plateau uniquement", Preset::TYPE_PRINT, "support_on_build_plate_only", Kind::Bool, 0, 1, ""},
+    {"support_threshold_angle", "Angle de déclenchement des supports", Preset::TYPE_PRINT, "support_threshold_angle", Kind::Int, 15, 60, "°"},
 };
+
+// Valeurs permises pour les réglages à choix. Les modes de support « manual » (zones peintes) sont exclus,
+// et le style doit correspondre au type : les styles arborescents n'existent que pour tree(auto).
+std::vector<std::string> allowed_values(const std::string& id, const std::string& support_type)
+{
+    if (id == "ironing_type")
+        return {"no ironing", "top", "topmost", "solid"};
+    if (id == "support_type")
+        return {"normal(auto)", "tree(auto)"};
+    if (id == "support_style")
+        return support_type == "tree(auto)" ? std::vector<std::string>{"default", "organic", "tree_slim", "tree_strong", "tree_hybrid"}
+                                            : std::vector<std::string>{"default", "grid", "snug"};
+    return {};
+}
 
 // Une valeur d'avant modification, sous forme sérialisée Orca (restaure exactement, y compris « nil »).
 struct SavedValue
@@ -75,15 +99,18 @@ const Param* find_param(const std::string& id)
     return nullptr;
 }
 
-// La clé de température de plateau dépend du type de plateau choisi pour le projet.
+// Les clés de température de plateau dépendent du type de plateau choisi pour le projet.
 std::string resolve_key(const Param& p)
 {
     if (*p.key != '\0')
         return p.key;
+    const bool  initial = std::string(p.id) == "bed_temp_initial";
     std::string key;
     if (auto* opt = bundle().project_config.option<Slic3r::ConfigOptionEnum<Slic3r::BedType>>("curr_bed_type"))
-        key = Slic3r::get_bed_temp_key(opt->value);
-    return key.empty() ? "hot_plate_temp" : key;
+        key = initial ? Slic3r::get_bed_temp_1st_layer_key(opt->value) : Slic3r::get_bed_temp_key(opt->value);
+    if (!key.empty())
+        return key;
+    return initial ? "hot_plate_temp_initial_layer" : "hot_plate_temp";
 }
 
 std::string to_config_string(double value, Kind kind)
@@ -95,7 +122,14 @@ std::string to_config_string(double value, Kind kind)
     std::ostringstream out;
     out.imbue(std::locale::classic()); // point décimal, quelle que soit la langue du système
     out << std::setprecision(6) << std::round(value * 1000.) / 1000.;
-    return out.str();
+    return kind == Kind::Percent ? out.str() + "%" : out.str();
+}
+
+// Valeur textuelle d'un réglage à choix (ex. « no ironing », « tree(auto) »).
+std::string enum_value(const Param& p)
+{
+    const Slic3r::ConfigOption* opt = edited_config(p.preset).option(resolve_key(p));
+    return opt ? opt->serialize() : std::string();
 }
 
 // Première valeur d'une option (les options « tableau » ont une valeur par filament ou variante d'extrudeur).
@@ -144,9 +178,10 @@ void set_value(DynamicPrintConfig& config, const std::string& key, const std::st
     config.set_deserialize_strict(key, serialized);
 }
 
+// Nombre affiché à l'utilisateur (virgule décimale, sans « % » : l'unité est ajoutée à part).
 std::string format_number(double value, Kind kind)
 {
-    std::string s = to_config_string(value, kind);
+    std::string s = to_config_string(value, kind == Kind::Percent ? Kind::Float : kind);
     std::replace(s.begin(), s.end(), '.', ',');
     return s;
 }
@@ -175,7 +210,9 @@ nlohmann::json read_values()
         std::optional<double> v = current_value(p, &note);
         nlohmann::json        item{{"id", p.id}, {"label", p.label}, {"key", resolve_key(p)}, {"unit", p.unit},
                                    {"min", p.min}, {"max", p.max}, {"note", note}};
-        if (!v)
+        if (p.kind == Kind::Enum)
+            item["value"] = enum_value(p);
+        else if (!v)
             item["value"] = nullptr;
         else if (p.kind == Kind::Bool)
             item["value"] = *v != 0;
@@ -183,7 +220,11 @@ nlohmann::json read_values()
             item["value"] = *v;
         params.push_back(item);
     }
-    return {{"params", params}, {"can_undo", !s_undo_stack.empty()}};
+    // Noms des préréglages en cours, transmis au service Plyo (type de filament, imprimante).
+    const nlohmann::json context{{"printer", bundle().printers.get_edited_preset().name},
+                                 {"filament", bundle().filaments.get_edited_preset().name},
+                                 {"process", bundle().prints.get_edited_preset().name}};
+    return {{"params", params}, {"context", context}, {"can_undo", !s_undo_stack.empty()}};
 }
 
 nlohmann::json apply_changes(const nlohmann::json& changes)
@@ -191,8 +232,14 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
     if (!changes.is_array() || changes.empty())
         return {{"ok", false}, {"text", "Refusé : aucune modification reçue."}};
 
-    struct Planned { const Param* param; std::string key; double value; };
+    struct Planned { const Param* param; std::string key; double value; std::string text; };
     std::vector<Planned> planned;
+
+    // Type de support final (demandé dans ce lot, sinon actuel), pour vérifier la cohérence du style.
+    std::string support_type = enum_value(*find_param("support_type"));
+    for (const nlohmann::json& change : changes)
+        if (change.is_object() && change.value("id", std::string()) == "support_type" && change.contains("value") && change["value"].is_string())
+            support_type = change["value"].get<std::string>();
 
     // 1. Validation complète avant toute écriture (tout ou rien).
     for (const nlohmann::json& change : changes) {
@@ -200,6 +247,16 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
         const Param*      param = find_param(id);
         if (param == nullptr)
             return {{"ok", false}, {"text", "Refusé : « " + id + " » ne fait pas partie des paramètres modifiables."}};
+
+        if (param->kind == Kind::Enum) {
+            const std::string text = change.contains("value") && change["value"].is_string() ? change["value"].get<std::string>() : std::string();
+            const auto allowed = allowed_values(id, support_type);
+            if (std::find(allowed.begin(), allowed.end(), text) == allowed.end())
+                return {{"ok", false},
+                        {"text", std::string("Refusé : « ") + text + " » n'est pas un choix autorisé pour « " + param->label + " ». Aucune modification appliquée."}};
+            planned.push_back({param, resolve_key(*param), 0, text});
+            continue;
+        }
 
         double value = 0;
         if (change.contains("value") && change["value"].is_boolean())
@@ -219,7 +276,7 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
                     {"text", std::string("Refusé : ") + param->label + " à " + format_number(value, param->kind) + " " + param->unit +
                                  " est hors de la plage autorisée (" + range_text(*param) + "). Aucune modification appliquée."}};
 
-        planned.push_back({param, resolve_key(*param), value});
+        planned.push_back({param, resolve_key(*param), value, to_config_string(value, param->kind)});
     }
 
     // 2. Mémorise les valeurs d'avant (pour l'annulation), puis prépare les nouvelles configs.
@@ -231,9 +288,11 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
         if (!configs.count(type))
             configs.emplace(type, edited_config(type));
         saved.push_back({type, p.key, edited_config(type).opt_serialize(p.key)});
-        set_value(configs[type], p.key, to_config_string(p.value, p.param->kind));
-        summary += std::string(summary.empty() ? "" : ", ") + p.param->label + " → " +
-                   (p.param->kind == Kind::Bool ? (p.value != 0 ? "oui" : "non") : format_number(p.value, p.param->kind) + " " + p.param->unit);
+        set_value(configs[type], p.key, p.text);
+        const std::string shown = p.param->kind == Kind::Enum ? p.text
+                                : p.param->kind == Kind::Bool ? (p.value != 0 ? "oui" : "non")
+                                                              : format_number(p.value, p.param->kind) + " " + p.param->unit;
+        summary += std::string(summary.empty() ? "" : ", ") + p.param->label + " → " + shown;
     }
 
     // 3. Écriture.

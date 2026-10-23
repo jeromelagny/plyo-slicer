@@ -122,6 +122,7 @@
   function formatValue(p) {
     if (p.value === null || p.value === undefined) return '—';
     if (typeof p.value === 'boolean') return p.value ? 'Oui' : 'Non';
+    if (typeof p.value === 'string') return p.value;
     var n = Math.round(p.value * 1000) / 1000;
     return n.toLocaleString('fr-FR') + (p.unit ? ' ' + p.unit : '');
   }
