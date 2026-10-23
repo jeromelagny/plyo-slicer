@@ -13,7 +13,9 @@
     --muted: var(--orca-muted, #6b6b6b);
     --border: var(--orca-border, #dbdbdb);
     --accent: var(--orca-accent, #009688);
+    --accent-fg: var(--orca-accent-fg, #ffffff);
     --font: var(--orca-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    --danger: #e14747;
   }
   html, body { height: 100%; }
   body {
@@ -35,37 +37,46 @@
   header h1 { margin: 0; font-size: 14px; font-weight: 600; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
   .dot.on { background: var(--accent); }
-  section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
-  section h2 {
-    margin: 0 0 8px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--muted);
-  }
-  #messages { flex: 1; overflow-y: auto; border-bottom: 1px solid var(--border); }
-  .message {
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    border-radius: 4px;
-    line-height: 1.4;
-  }
-  .message + .message { margin-top: 6px; }
-  .message.error { border-left-color: #e14747; }
-  .empty { color: var(--muted); font-style: italic; }
-  table { width: 100%; border-collapse: collapse; }
+
+  /* Conversation */
+  #thread { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .bubble { padding: 8px 10px; border-radius: 6px; line-height: 1.45; border: 1px solid var(--border); }
+  .bubble.user { align-self: flex-end; max-width: 85%; background: color-mix(in srgb, var(--accent) 12%, var(--bg)); border-color: transparent; }
+  .bubble.user img { display: block; max-width: 100%; max-height: 120px; border-radius: 4px; margin-bottom: 4px; }
+  .bubble.assistant { border-left: 3px solid var(--accent); }
+  .bubble.info { color: var(--muted); border-style: dashed; }
+  .bubble.error { border-left: 3px solid var(--danger); }
+  .bubble h3 { margin: 0 0 4px; font-size: 13px; }
+  .bubble p { margin: 0 0 6px; }
+  .bubble p:last-child { margin-bottom: 0; }
+  .suggestion { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--border); }
+  .suggestion:first-of-type { margin-top: 6px; }
+  .suggestion input { margin-top: 2px; }
+  .suggestion .change { font-weight: 600; }
+  .suggestion .why { color: var(--muted); font-size: 12px; display: block; }
+  .choices { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+  .choices button, button.secondary { color: var(--fg); background: transparent; border: 1px solid var(--border); }
+  .choices button:hover { border-color: var(--accent); }
+  .bubble .apply { margin-top: 6px; width: 100%; }
+
+  /* Zone de saisie */
+  #composer { border-top: 1px solid var(--border); padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 6px; }
+  #composer textarea { width: 100%; box-sizing: border-box; resize: none; min-height: 52px; }
+  #composer .row { display: flex; gap: 6px; align-items: center; }
+  #composer .row .grow { flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #photo-input { display: none; }
+
+  /* Sections repliées */
+  details { border-top: 1px solid var(--border); padding: 8px 14px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
   td { padding: 5px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
   tr:last-child td { border-bottom: 0; }
   td.value { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 12px; }
   .note { color: var(--muted); font-size: 11px; display: block; }
   td.value.changed { color: var(--accent); font-weight: 600; }
-  .actions { display: flex; flex-direction: column; gap: 6px; }
+  .actions { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
   .actions button { width: 100%; }
-  button.secondary {
-    color: var(--fg);
-    background: transparent;
-    border: 1px solid var(--border);
-  }
 </style>
 </head>
 <body>
@@ -74,38 +85,83 @@
     <h1>Assistant Plyo</h1>
   </header>
 
-  <section id="messages">
-    <h2>Messages</h2>
-    <div id="message-list"><p class="empty">En attente du slicer…</p></div>
-  </section>
+  <div id="thread">
+    <div class="bubble info">Décrivez ce que vous voulez (par exemple « une surface bien lisse ») ou envoyez une photo d'une impression ratée.</div>
+  </div>
 
-  <section>
-    <h2>Paramètres lus</h2>
+  <div id="composer">
+    <textarea id="note" maxlength="500" placeholder="Votre question ou le problème rencontré…"></textarea>
+    <div class="row">
+      <button id="btn-photo" class="secondary" type="button">📷 Photo</button>
+      <span class="grow" id="photo-name"></span>
+      <button id="btn-send" type="button">Envoyer</button>
+    </div>
+    <input id="photo-input" type="file" accept="image/*">
+  </div>
+
+  <details>
+    <summary>Réglages lus</summary>
     <table><tbody id="params"></tbody></table>
-    <p class="empty" id="params-empty">Aucun paramètre lu pour l'instant.</p>
-  </section>
+  </details>
 
-  <section>
-    <h2>Tests</h2>
+  <details>
+    <summary>Tests</summary>
     <div class="actions">
       <button id="btn-suggest">Appliquer une suggestion factice</button>
       <button id="btn-refuse" class="secondary">Envoyer une valeur hors plage</button>
       <button id="btn-undo" class="secondary" disabled>Annuler la dernière modification</button>
       <button id="btn-network" class="secondary">Tester un appel réseau (https)</button>
     </div>
-  </section>
+  </details>
 
 <script>
 (function () {
-  var messageList = document.getElementById('message-list');
+  // Service Plyo (prototype local). Plus tard : l'URL du service hébergé.
+  var PLYO_API_URL = 'http://localhost:3000';
+  var MAX_SIDE = 1600;
+  var MAX_HISTORY = 10;
+
+  var thread = document.getElementById('thread');
   var statusDot = document.getElementById('status-dot');
+  var noteInput = document.getElementById('note');
+  var photoInput = document.getElementById('photo-input');
+  var photoName = document.getElementById('photo-name');
+  var sendButton = document.getElementById('btn-send');
+  var paramsBody = document.getElementById('params');
+  var undoButton = document.getElementById('btn-undo');
+
+  var lastValues = null;      // dernier message « values » du slicer (réglages, contexte, langue)
+  var previousValues = {};
+  var pendingPhoto = null;    // { media_type, data, preview }
+  var history = [];           // [{ role: 'user' | 'assistant', text }]
+  var busy = false;
+
+  var ERRORS = {
+    config_missing: "Le service Plyo n'est pas configuré (clé API manquante).",
+    assistant_unavailable: "L'assistant n'a pas pu répondre à cette demande. Essayez de la reformuler.",
+    incomplete_answer: "La réponse de l'assistant est incomplète. Réessayez.",
+    upstream_error: "Le service d'IA est momentanément indisponible. Réessayez dans un instant.",
+    invalid_request: "La demande n'a pas pu être envoyée (photo trop lourde ou format non pris en charge ?).",
+    internal: "Erreur interne du service Plyo."
+  };
+
+  function el(tag, className, text) {
+    var e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function addBubble(kind, build) {
+    var b = el('div', 'bubble ' + kind);
+    if (typeof build === 'string') b.textContent = build; else build(b);
+    thread.appendChild(b);
+    thread.scrollTop = thread.scrollHeight;
+    return b;
+  }
 
   function showMessage(text, isError) {
-    if (messageList.querySelector('.empty')) messageList.innerHTML = '';
-    var div = document.createElement('div');
-    div.className = 'message' + (isError ? ' error' : '');
-    div.textContent = text;
-    messageList.appendChild(div);
+    addBubble(isError ? 'error' : 'info', text);
   }
 
   // window.orca est fourni par OrcaSlicer (pont JS <-> C++). Absent dans un navigateur.
@@ -114,11 +170,7 @@
     return;
   }
 
-  var paramsBody = document.getElementById('params');
-  var paramsEmpty = document.getElementById('params-empty');
-  var undoButton = document.getElementById('btn-undo');
-  var previousValues = {};
-
+  // ---------- Réglages lus ----------
   function formatValue(p) {
     if (p.value === null || p.value === undefined) return '—';
     if (typeof p.value === 'boolean') return p.value ? 'Oui' : 'Non';
@@ -128,19 +180,13 @@
   }
 
   function renderValues(msg) {
+    lastValues = msg;
     paramsBody.innerHTML = '';
-    paramsEmpty.style.display = msg.params.length ? 'none' : '';
     msg.params.forEach(function (p) {
-      var tr = document.createElement('tr');
-      var label = document.createElement('td');
-      label.textContent = p.label;
-      var key = document.createElement('span');
-      key.className = 'note';
-      key.textContent = p.key + (p.note ? ' — ' + p.note : '');
-      label.appendChild(key);
-      var value = document.createElement('td');
-      value.className = 'value';
-      value.textContent = formatValue(p);
+      var tr = el('tr');
+      var label = el('td', '', p.label);
+      label.appendChild(el('span', 'note', p.key + (p.note ? ' — ' + p.note : '')));
+      var value = el('td', 'value', formatValue(p));
       if (p.id in previousValues && previousValues[p.id] !== p.value) value.classList.add('changed');
       previousValues[p.id] = p.value;
       tr.appendChild(label);
@@ -150,11 +196,179 @@
     undoButton.disabled = !msg.can_undo;
   }
 
+  function labelOf(id) {
+    var p = lastValues && lastValues.params.find(function (x) { return x.id === id; });
+    return p ? p : { label: id, unit: '' };
+  }
+
+  // ---------- Photo : réduite à 1600 px, JPEG 85 % ----------
+  document.getElementById('btn-photo').addEventListener('click', function () { photoInput.click(); });
+  photoInput.addEventListener('change', function () {
+    var file = photoInput.files && photoInput.files[0];
+    photoInput.value = '';
+    if (!file) return;
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      var scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      pendingPhoto = { media_type: 'image/jpeg', data: dataUrl.split(',')[1], preview: dataUrl };
+      photoName.textContent = file.name;
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(url);
+      showMessage('Ce fichier image ne peut pas être lu. Essayez une photo JPEG ou PNG.', true);
+    };
+    img.src = url;
+  });
+
+  // ---------- Envoi d'une demande ----------
+  function send(note) {
+    note = (note || '').trim();
+    if (busy) return;
+    if (!note && !pendingPhoto) {
+      showMessage('Écrivez une demande ou ajoutez une photo.', true);
+      return;
+    }
+    if (!lastValues) {
+      showMessage('Les réglages du slicer ne sont pas encore lus. Réessayez dans un instant.', true);
+      return;
+    }
+
+    var photo = pendingPhoto;
+    addBubble('user', function (b) {
+      if (photo) { var i = el('img'); i.src = photo.preview; b.appendChild(i); }
+      if (note) b.appendChild(el('div', '', note));
+    });
+
+    var body = {
+      locale: lastValues.locale || 'fr',
+      settings: { params: lastValues.params.map(function (p) { return { id: p.id, value: p.value, unit: p.unit }; }) },
+      context: lastValues.context,
+      history: history.slice(-MAX_HISTORY)
+    };
+    if (photo) body.image = { media_type: photo.media_type, data: photo.data };
+    if (note) body.note = note;
+
+    pendingPhoto = null;
+    photoName.textContent = '';
+    noteInput.value = '';
+    busy = true;
+    sendButton.disabled = true;
+    var waiting = addBubble('info', 'L’assistant réfléchit…');
+
+    fetch(PLYO_API_URL + '/api/diagnose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(function (response) {
+        return response.json().then(function (data) { return { ok: response.ok, data: data }; });
+      })
+      .then(function (r) {
+        waiting.remove();
+        if (!r.ok) { showMessage(ERRORS[r.data.error] || ERRORS.internal, true); return; }
+        history.push({ role: 'user', text: (photo ? '(photo envoyée) ' : '') + note });
+        history.push({ role: 'assistant', text: summaryForHistory(r.data) });
+        history = history.slice(-MAX_HISTORY);
+        renderAnswer(r.data);
+      })
+      .catch(function () {
+        waiting.remove();
+        showMessage('Service Plyo injoignable. Est-il démarré (npm run dev dans plyo-api) ?', true);
+      })
+      .then(function () {
+        busy = false;
+        sendButton.disabled = false;
+      });
+  }
+
+  // Ce que l'assistant a répondu, pour le renvoyer dans l'historique au tour suivant.
+  function summaryForHistory(a) {
+    var parts = [a.message];
+    a.questions.forEach(function (q) { parts.push(q.text + ' (' + q.choices.join(' / ') + ')'); });
+    a.suggestions.forEach(function (s) { parts.push('suggestion: ' + s.id + ' ' + (s.delta !== null ? 'delta ' + s.delta : '= ' + s.value)); });
+    return parts.join('\n').slice(0, 2000);
+  }
+
+  function describeChange(s) {
+    var p = labelOf(s.id);
+    var unit = p.unit ? ' ' + p.unit : '';
+    if (typeof s.value === 'boolean') return p.label + ' : ' + (s.value ? 'oui' : 'non');
+    if (typeof s.value === 'string') return p.label + ' : ' + s.value;
+    if (s.delta !== null) {
+      var target = typeof p.value === 'number' ? ' (→ ' + formatValue({ value: p.value + s.delta, unit: p.unit }) + ')' : '';
+      return p.label + ' : ' + (s.delta > 0 ? '+' : '') + s.delta.toLocaleString('fr-FR') + unit + target;
+    }
+    return p.label + ' : ' + formatValue({ value: s.value, unit: p.unit });
+  }
+
+  function renderAnswer(a) {
+    addBubble('assistant', function (b) {
+      if (a.defect && a.defect.name && a.status !== 'question') b.appendChild(el('h3', '', a.defect.name));
+      if (a.defect && a.defect.explanation && a.status !== 'question') b.appendChild(el('p', '', a.defect.explanation));
+      b.appendChild(el('p', '', a.message));
+
+      // Questions : chaque choix est un bouton qui répond à la place de l'utilisateur.
+      a.questions.forEach(function (q) {
+        b.appendChild(el('p', '', q.text));
+        var row = el('div', 'choices');
+        q.choices.forEach(function (c) {
+          var btn = el('button', '', c);
+          btn.type = 'button';
+          btn.addEventListener('click', function () { send(q.text + ' → ' + c); });
+          row.appendChild(btn);
+        });
+        b.appendChild(row);
+      });
+
+      // Suggestions : cochées par défaut, appliquées en un seul lot (annulable).
+      if (a.suggestions.length) {
+        var boxes = [];
+        a.suggestions.forEach(function (s) {
+          var line = el('label', 'suggestion');
+          var box = el('input');
+          box.type = 'checkbox';
+          box.checked = true;
+          boxes.push({ box: box, s: s });
+          var text = el('span');
+          text.appendChild(el('span', 'change', describeChange(s)));
+          text.appendChild(el('span', 'why', s.reason));
+          line.appendChild(box);
+          line.appendChild(text);
+          b.appendChild(line);
+        });
+        var apply = el('button', 'apply', 'Appliquer la sélection');
+        apply.type = 'button';
+        apply.addEventListener('click', function () {
+          var changes = boxes.filter(function (x) { return x.box.checked; }).map(function (x) {
+            return x.s.delta !== null ? { id: x.s.id, delta: x.s.delta } : { id: x.s.id, value: x.s.value };
+          });
+          if (!changes.length) { showMessage('Aucune suggestion cochée.', true); return; }
+          window.orca.postMessage({ type: 'apply', changes: changes });
+          apply.disabled = true;
+          boxes.forEach(function (x) { x.box.disabled = true; });
+        });
+        b.appendChild(apply);
+      }
+    });
+  }
+
+  sendButton.addEventListener('click', function () { send(noteInput.value); });
+  noteInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(noteInput.value);
+  });
+
+  // ---------- Messages du slicer ----------
   window.orca.onMessage(function (msg) {
     if (!msg || !msg.type) return;
     if (msg.type === 'status') {
       statusDot.classList.add('on');
-      showMessage(msg.text);
     } else if (msg.type === 'values') {
       renderValues(msg);
     } else if (msg.type === 'result') {
@@ -162,7 +376,7 @@
     }
   });
 
-  // Réponses factices de « l'IA », au format que le futur service web enverra.
+  // ---------- Tests (phase de faisabilité) ----------
   document.getElementById('btn-suggest').addEventListener('click', function () {
     window.orca.postMessage({ type: 'apply', changes: [
       { id: 'nozzle_temp', delta: -5 },
@@ -176,7 +390,7 @@
     window.orca.postMessage({ type: 'undo' });
   });
 
-  // Test de faisabilité : la page (chargée depuis file://) peut-elle appeler une API https ?
+  // La page (chargée depuis file://) peut-elle appeler une API https ?
   // httpbin.org renvoie la requête reçue et autorise CORS ; example.com n'envoie pas d'en-têtes CORS.
   function networkTest(label, url, options) {
     var start = Date.now();

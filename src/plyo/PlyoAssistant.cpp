@@ -3,6 +3,7 @@
 
 #include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/DockPanel.hpp"
+#include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/Plater.hpp"
 
 #include <boost/filesystem/path.hpp>
@@ -53,6 +54,8 @@ void send_values()
 {
     nlohmann::json message = SettingsBridge::read_values();
     message["type"]        = "values";
+    // Langue de l'interface d'Orca (ex. « fr_FR ») : l'assistant répond dans cette langue.
+    message["locale"]      = Slic3r::GUI::wxGetApp().current_language_code().utf8_string();
     send(message);
 }
 
