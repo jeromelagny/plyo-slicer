@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Assistant Plyo</title>
 <style>
-  /* Les variables --orca-* sont injectées par OrcaSlicer (thème clair ou sombre).
-     Les valeurs de repli servent seulement à ouvrir la page dans un navigateur. */
+  /* Panneau Assistant Plyo — maquette validée : plyo-api/docs/design/assistant-v2-maquette.html.
+     Variables --orca-* injectées par OrcaSlicer (thème clair ou sombre) ; valeurs de repli pour un navigateur. */
   :root {
     --bg: var(--orca-bg, #ffffff);
     --fg: var(--orca-fg, #262e30);
@@ -15,146 +15,221 @@
     --accent: var(--orca-accent, #009688);
     --accent-fg: var(--orca-accent-fg, #ffffff);
     --font: var(--orca-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    --surface: color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --raised: color-mix(in srgb, var(--fg) 9%, var(--bg));
+    --accent-soft: color-mix(in srgb, var(--accent) 15%, var(--bg));
     --danger: #e14747;
+    --radius: 10px;
   }
+  * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--fg);
-    font-family: var(--font);
-    font-size: 13px;
-    display: flex;
-    flex-direction: column;
-  }
-  header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 14px 10px;
-    border-bottom: 1px solid var(--border);
-  }
-  header h1 { margin: 0; font-size: 14px; font-weight: 600; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
-  .dot.on { background: var(--accent); }
-
-  /* Conversation */
-  #thread { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-  .bubble { padding: 8px 10px; border-radius: 6px; line-height: 1.45; border: 1px solid var(--border); }
-  .bubble.user { align-self: flex-end; max-width: 85%; background: color-mix(in srgb, var(--accent) 12%, var(--bg)); border-color: transparent; }
-  .bubble.user img { display: block; max-width: 100%; max-height: 120px; border-radius: 4px; margin-bottom: 4px; }
-  .bubble.assistant { border-left: 3px solid var(--accent); }
-  .bubble.info { color: var(--muted); border-style: dashed; }
-  .bubble.error { border-left: 3px solid var(--danger); }
-  .bubble h3 { margin: 0 0 4px; font-size: 13px; }
-  .bubble p { margin: 0 0 6px; }
-  .bubble p:last-child { margin-bottom: 0; }
-  .suggestion { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--border); }
-  .suggestion:first-of-type { margin-top: 6px; }
-  .suggestion input { margin-top: 2px; }
-  .suggestion .change { font-weight: 600; }
-  .suggestion .why { color: var(--muted); font-size: 12px; display: block; }
-  .choices { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
-  .choices button, button.secondary { color: var(--fg); background: transparent; border: 1px solid var(--border); }
-  .choices button:hover { border-color: var(--accent); }
-  .bubble .apply { margin-top: 6px; width: 100%; }
-
-  /* Zone de saisie */
-  #composer { border-top: 1px solid var(--border); padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 6px; }
-  #composer textarea { width: 100%; box-sizing: border-box; resize: none; min-height: 52px; }
-  #composer .row { display: flex; gap: 6px; align-items: center; }
-  #composer .row .grow { flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #photo-input { display: none; }
-
-  /* Compte */
-  #account { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
-  #account button { padding: 2px 8px; font-size: 11px; }
-  #login { flex: 1; padding: 16px 14px; display: flex; flex-direction: column; gap: 8px; }
-  #login input { box-sizing: border-box; width: 100%; }
-  #login .hint { color: var(--muted); font-size: 12px; margin: 0; }
-  #login .error { color: var(--danger); font-size: 12px; margin: 0; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 13px; line-height: 1.5; display: flex; flex-direction: column; overflow: hidden; }
+  button { font: inherit; color: inherit; }
   .hidden { display: none !important; }
 
-  /* Sections repliées */
-  details { border-top: 1px solid var(--border); padding: 8px 14px; }
-  summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
-  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-  td { padding: 5px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
-  tr:last-child td { border-bottom: 0; }
-  td.value { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 12px; }
-  .note { color: var(--muted); font-size: 11px; display: block; }
-  td.value.changed { color: var(--accent); font-weight: 600; }
-  .actions { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
-  .actions button { width: 100%; }
+  /* En-tête */
+  .top { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); position: relative; flex: none; }
+  .top h1 { margin: 0; font-size: 14px; font-weight: 650; }
+  .credits { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .credits i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .icon-btn { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+  .icon-btn:hover { background: var(--surface); color: var(--fg); }
+  .menu { position: absolute; right: 10px; top: 46px; width: 230px; background: var(--raised); border: 1px solid var(--border); border-radius: 8px; padding: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .3); z-index: 10; }
+  .menu button { display: block; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+  .menu button:hover:not(:disabled) { background: var(--surface); }
+  .menu button:disabled { color: var(--muted); cursor: default; }
+  .menu .who { padding: 6px 10px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
+
+  /* Corps défilant : accueil puis conversation */
+  .body { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 12px; }
+  .hello { margin: 14px 2px 4px; }
+  .hello h2 { margin: 0 0 4px; font-size: 18px; font-weight: 650; }
+  .hello p { margin: 0; color: var(--muted); }
+  .action { display: flex; gap: 12px; align-items: center; width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; text-align: left; }
+  .action:hover { border-color: var(--accent); }
+  .action .ic { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+  .action b { display: block; font-size: 13.5px; font-weight: 600; }
+  .action .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
+  .label { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 10px 2px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 6px 11px; border-radius: 999px; border: 1px solid var(--border); background: transparent; font-size: 12px; cursor: pointer; }
+  .chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .chip:disabled { opacity: .5; cursor: default; }
+
+  .login-card { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+  .login-card p { margin: 0; color: var(--muted); }
+  .login-card .error { color: var(--danger); font-size: 12px; }
+
+  /* Messages */
+  .me { align-self: flex-end; max-width: 86%; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+  .me .text { background: var(--accent-soft); padding: 8px 11px; border-radius: 12px 12px 3px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .thumbs { display: grid; grid-template-columns: repeat(3, 64px); gap: 4px; justify-content: end; }
+  .thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 7px; display: block; }
+  .ai { display: flex; flex-direction: column; gap: 8px; }
+  .ai .who { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  .ai .who i { width: 18px; height: 18px; border-radius: 5px; background: var(--accent); display: grid; place-items: center; color: #fff; font-style: normal; font-size: 11px; font-weight: 700; }
+  .diag { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .diag h3 { margin: 0; font-size: 15px; font-weight: 650; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .ai p { margin: 0; white-space: pre-wrap; }
+  .q { font-weight: 600; }
+  .tip { display: flex; gap: 8px; padding: 9px 10px; border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; white-space: pre-wrap; }
+  .cost { font-size: 11px; color: var(--muted); }
+  .note-line { align-self: center; font-size: 12px; color: var(--muted); text-align: center; padding: 2px 8px; }
+  .note-line.error { color: var(--danger); }
+  .thinking { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .thinking i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+  @media (prefers-reduced-motion: reduce) { .thinking i { animation: none; } }
+
+  /* Fiche de réglages : ancien → nouveau */
+  .sheet { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+  .sheet header { padding: 9px 12px; font-size: 12px; font-weight: 650; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .row { display: grid; grid-template-columns: 18px 1fr; align-items: start; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .row:last-of-type { border-bottom: 0; }
+  .row input { margin: 3px 0 0; accent-color: var(--accent); }
+  .row .name { font-weight: 600; }
+  .delta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 3px 0 2px; font-variant-numeric: tabular-nums; font-size: 14px; }
+  .delta .old { color: var(--muted); text-decoration: line-through; }
+  .delta .arrow { color: var(--muted); }
+  .delta .new { color: var(--accent); font-weight: 700; }
+  .row .why { color: var(--muted); font-size: 12px; }
+  .row.off { opacity: .45; }
+  .sheet footer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); align-items: center; }
+  .sheet .done { color: var(--accent); font-size: 12px; font-weight: 600; flex: 1; }
+  .sheet .link { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 12px; padding: 0; }
+  .sheet .fail { color: var(--danger); font-size: 12px; padding: 0 12px 10px; background: var(--bg); }
+  .btn { height: 34px; padding: 0 14px; border-radius: 8px; font-weight: 600; cursor: pointer; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.ghost { background: transparent; color: var(--fg); border-color: var(--border); }
+  .btn.wide { flex: 1; }
+
+  /* Zone de saisie */
+  .composer { border-top: 1px solid var(--border); padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; flex: none; }
+  .attached { display: flex; gap: 6px; flex-wrap: wrap; }
+  .att { position: relative; width: 46px; height: 46px; }
+  .att img { width: 46px; height: 46px; object-fit: cover; border-radius: 7px; display: block; }
+  .att button { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .7); color: #fff; font-size: 10px; display: grid; place-items: center; cursor: pointer; }
+  .box { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 8px 8px 6px 12px; }
+  .box:focus-within { border-color: var(--accent); }
+  .box textarea { width: 100%; border: 0; background: transparent; color: var(--fg); font: inherit; resize: none; outline: none; min-height: 40px; max-height: 140px; }
+  .box textarea::placeholder { color: var(--muted); }
+  .tools { display: flex; align-items: center; gap: 2px; }
+  .send { margin-left: auto; width: 32px; height: 32px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer; }
+  .send:disabled { opacity: .5; cursor: default; }
+
+  /* Réglages lus (volet) */
+  .drawer { position: absolute; inset: 0; background: var(--bg); z-index: 20; display: flex; flex-direction: column; }
+  .drawer .top button { margin-left: auto; }
+  .drawer .list { flex: 1; overflow-y: auto; padding: 6px 14px 14px; }
+  .drawer table { width: 100%; border-collapse: collapse; }
+  .drawer td { padding: 7px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .drawer td.value { text-align: right; white-space: nowrap; padding-left: 12px; font-variant-numeric: tabular-nums; }
+  .drawer .key { display: block; color: var(--muted); font-size: 11px; }
 </style>
 </head>
 <body>
-  <header>
-    <span class="dot" id="status-dot" title="État de la connexion au slicer"></span>
+  <div class="top">
     <h1>Assistant Plyo</h1>
-    <div id="account" class="hidden">
-      <span id="balance"></span>
-      <button id="btn-logout" class="secondary" type="button">Se déconnecter</button>
+    <span class="credits hidden" id="credits" title="Votre solde de crédits"><i></i><span id="balance">…</span></span>
+    <button class="icon-btn hidden" id="btn-more" type="button" title="Plus d'options" aria-haspopup="menu">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+    </button>
+    <div class="menu hidden" id="menu" role="menu">
+      <button type="button" id="m-new" role="menuitem">Nouvelle conversation</button>
+      <button type="button" id="m-undo" role="menuitem" disabled>Annuler les derniers réglages appliqués</button>
+      <button type="button" id="m-values" role="menuitem">Voir les réglages lus par l'assistant</button>
+      <hr>
+      <div class="who" id="m-email"></div>
+      <button type="button" id="m-logout" role="menuitem">Se déconnecter</button>
     </div>
-  </header>
-
-  <div id="login" class="hidden">
-    <p class="hint">Connectez-vous pour utiliser l'assistant. Pas de mot de passe : vous recevez un code par e-mail.</p>
-    <button id="btn-login" type="button">Se connecter</button>
-    <p class="error" id="login-error"></p>
   </div>
 
-  <div id="thread" class="hidden">
-    <div class="bubble info">Décrivez ce que vous voulez (par exemple « une surface bien lisse ») ou envoyez une photo d'une impression ratée.</div>
+  <div class="body" id="body">
+    <!-- Déconnecté -->
+    <div class="login-card hidden" id="login">
+      <div class="hello"><h2>Bienvenue 👋</h2></div>
+      <p>Connectez-vous pour utiliser l'assistant. Pas de mot de passe : vous recevez un code par e-mail.</p>
+      <button class="btn" id="btn-login" type="button">Se connecter</button>
+      <p class="error" id="login-error"></p>
+    </div>
+
+    <!-- Accueil (conversation vide) -->
+    <div class="hidden" id="home">
+      <div class="hello">
+        <h2>Bonjour 👋</h2>
+        <p>Montrez-moi une impression ratée ou dites-moi ce que vous voulez obtenir. Je propose les réglages, vous choisissez ce qu'on applique.</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 14px;">
+        <button class="action" type="button" data-action="phone">
+          <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18h2"/></svg></span>
+          <span><b>Prendre des photos avec mon téléphone</b><span class="sub">Scannez un QR code, les photos arrivent ici</span></span>
+        </button>
+        <button class="action" type="button" data-action="files">
+          <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg></span>
+          <span><b>Ajouter une photo depuis l'ordinateur</b><span class="sub">JPEG ou PNG, une ou plusieurs</span></span>
+        </button>
+      </div>
+      <p class="label">Ou partez d'un objectif</p>
+      <div class="chips" id="goals">
+        <button class="chip" type="button">Je veux une surface du dessus bien lisse</button>
+        <button class="chip" type="button">Je veux imprimer plus vite</button>
+        <button class="chip" type="button">Je veux une pièce plus solide</button>
+        <button class="chip" type="button">Quels supports pour une figurine ?</button>
+        <button class="chip" type="button">Je veux plus de détails</button>
+      </div>
+    </div>
+
+    <!-- Conversation -->
+    <div class="hidden" id="thread" style="display: flex; flex-direction: column; gap: 14px;"></div>
   </div>
 
-  <div id="composer" class="hidden">
-    <textarea id="note" maxlength="500" placeholder="Votre question ou le problème rencontré…"></textarea>
-    <div class="row">
-      <button id="btn-photo" class="secondary" type="button">📷 Photo</button>
-      <span class="grow" id="photo-name"></span>
-      <button id="btn-send" type="button">Envoyer</button>
+  <div class="composer hidden" id="composer">
+    <div class="attached hidden" id="attached"></div>
+    <div class="box">
+      <textarea id="note" maxlength="500" rows="2" placeholder="Décrivez le problème ou ce que vous voulez obtenir…"></textarea>
+      <div class="tools">
+        <button class="icon-btn" id="btn-files" type="button" title="Ajouter des photos depuis l'ordinateur">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5L12.5 4a4 4 0 0 1 5.7 5.7l-8.5 8.5a2 2 0 0 1-2.8-2.8l8-8"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-phone" type="button" title="Prendre des photos avec mon téléphone">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18h2"/></svg>
+        </button>
+        <button class="send" id="btn-send" type="button" title="Envoyer (⌘ + Entrée)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
     </div>
-    <input id="photo-input" type="file" accept="image/*">
+    <input id="file-input" type="file" accept="image/*" multiple hidden>
   </div>
 
-  <details>
-    <summary>Réglages lus</summary>
-    <table><tbody id="params"></tbody></table>
-  </details>
-
-  <details>
-    <summary>Tests</summary>
-    <div class="actions">
-      <button id="btn-suggest">Appliquer une suggestion factice</button>
-      <button id="btn-refuse" class="secondary">Envoyer une valeur hors plage</button>
-      <button id="btn-undo" class="secondary" disabled>Annuler la dernière modification</button>
-      <button id="btn-network" class="secondary">Tester un appel réseau (https)</button>
-    </div>
-  </details>
+  <div class="drawer hidden" id="drawer">
+    <div class="top"><h1>Réglages lus par l'assistant</h1><button class="btn ghost" id="drawer-close" type="button">Fermer</button></div>
+    <div class="list"><table><tbody id="params"></tbody></table></div>
+  </div>
 
 <script>
 (function () {
   // Service Plyo (prototype local). Plus tard : l'URL du service hébergé.
   var PLYO_API_URL = 'http://localhost:3000';
   var MAX_SIDE = 1600;
+  var MAX_PHOTOS = 6;
   var MAX_HISTORY = 10;
 
-  var thread = document.getElementById('thread');
-  var statusDot = document.getElementById('status-dot');
-  var noteInput = document.getElementById('note');
-  var photoInput = document.getElementById('photo-input');
-  var photoName = document.getElementById('photo-name');
-  var sendButton = document.getElementById('btn-send');
-  var paramsBody = document.getElementById('params');
-  var undoButton = document.getElementById('btn-undo');
+  var $ = function (id) { return document.getElementById(id); };
+  var bodyEl = $('body'), thread = $('thread'), home = $('home'), loginView = $('login'), composer = $('composer');
+  var noteInput = $('note'), sendButton = $('btn-send'), fileInput = $('file-input'), attachedEl = $('attached');
+  var menu = $('menu');
 
-  var lastValues = null;      // dernier message « values » du slicer (réglages, contexte, langue)
+  var session = null;        // { access_token, refresh_token, expires_at, email }, conservée par le slicer
+  var lastValues = null;     // dernier message « values » du slicer (réglages, contexte, langue)
   var previousValues = {};
-  var pendingPhoto = null;    // { media_type, data, preview }
-  var history = [];           // [{ role: 'user' | 'assistant', text }]
+  var attachments = [];      // [{ media_type, data, preview }]
+  var history = [];          // [{ role, text }]
   var busy = false;
-  var session = null;         // { access_token, refresh_token, expires_at, email } conservée par le slicer
+  var loginOffered = false;
+  var pendingSheet = null;   // fiche dont on attend le résultat d'application ou d'annulation
 
   var ERRORS = {
     config_missing: "Le service Plyo n'est pas configuré (clé API manquante).",
@@ -166,56 +241,45 @@
     auth_unavailable: "Le service de connexion est momentanément indisponible. Réessayez dans un instant.",
     internal: "Erreur interne du service Plyo."
   };
+  var CONFIDENCE = { high: 'Confiance élevée', medium: 'Confiance moyenne', low: 'Confiance faible' };
 
   function el(tag, className, text) {
     var e = document.createElement(tag);
     if (className) e.className = className;
-    if (text !== undefined) e.textContent = text;
+    if (text !== undefined && text !== null) e.textContent = text;
     return e;
   }
-
-  function addBubble(kind, build) {
-    var b = el('div', 'bubble ' + kind);
-    if (typeof build === 'string') b.textContent = build; else build(b);
-    thread.appendChild(b);
-    thread.scrollTop = thread.scrollHeight;
-    return b;
-  }
-
-  function showMessage(text, isError) {
-    addBubble(isError ? 'error' : 'info', text);
+  function scrollDown() { bodyEl.scrollTop = bodyEl.scrollHeight; }
+  function noteLine(text, isError) {
+    showConversation();
+    var line = el('div', 'note-line' + (isError ? ' error' : ''), text);
+    thread.appendChild(line);
+    scrollDown();
+    return line;
   }
 
   // window.orca est fourni par OrcaSlicer (pont JS <-> C++). Absent dans un navigateur.
   if (!window.orca) {
-    showMessage('Pont OrcaSlicer absent : page ouverte hors du slicer.', true);
+    loginView.classList.remove('hidden');
+    $('login-error').textContent = 'Pont OrcaSlicer absent : page ouverte hors du slicer.';
     return;
   }
 
-  // ---------- Compte : connexion par code e-mail, solde, session ----------
-  var loginView = document.getElementById('login');
-  var account = document.getElementById('account');
-  var balanceLabel = document.getElementById('balance');
-  var loginError = document.getElementById('login-error');
-  var loginOffered = false;   // la fenêtre de connexion s'ouvre d'elle-même une seule fois par ouverture du panneau
-
-  function showApp(loggedIn) {
+  // ---------- Vues ----------
+  function showLoggedIn(loggedIn) {
     loginView.classList.toggle('hidden', loggedIn);
-    account.classList.toggle('hidden', !loggedIn);
-    thread.classList.toggle('hidden', !loggedIn);
-    document.getElementById('composer').classList.toggle('hidden', !loggedIn);
+    composer.classList.toggle('hidden', !loggedIn);
+    $('credits').classList.toggle('hidden', !loggedIn);
+    $('btn-more').classList.toggle('hidden', !loggedIn);
+    if (!loggedIn) { home.classList.add('hidden'); thread.classList.add('hidden'); menu.classList.add('hidden'); }
+    else if (!thread.children.length) home.classList.remove('hidden');
+    else thread.classList.remove('hidden');
   }
+  function showConversation() { home.classList.add('hidden'); thread.classList.remove('hidden'); }
 
-  function setBalance(balance) {
-    if (typeof balance === 'number') balanceLabel.textContent = 'Crédits : ' + balance.toLocaleString('fr-FR');
-  }
-
-  function postJson(path, body, headers) {
-    return fetch(PLYO_API_URL + path, {
-      method: 'POST',
-      headers: Object.assign({ 'Content-Type': 'application/json' }, headers || {}),
-      body: JSON.stringify(body)
-    });
+  // ---------- Compte : session, solde, connexion ----------
+  function postJson(path, body) {
+    return fetch(PLYO_API_URL + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   }
 
   // Appel authentifié : sur un 401, un seul renouvellement de session puis une nouvelle tentative.
@@ -240,108 +304,173 @@
     });
   }
 
+  function setBalance(balance) {
+    if (typeof balance === 'number') $('balance').textContent = balance.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' crédits';
+  }
+
+  // Vérifie la session (et la renouvelle au besoin) ; met à jour le solde. Résout à true si la session est valide.
   function refreshAccount() {
-    apiFetch('/api/me', { method: 'GET' })
+    return apiFetch('/api/me', { method: 'GET' })
       .then(function (r) {
-        if (r.status === 401) { logout('Votre session a expiré : reconnectez-vous.'); return null; }
-        if (r.status === 503) { balanceLabel.textContent = 'Service indisponible'; return null; }
-        return r.ok ? r.json() : null;
+        if (r.status === 401) { logout('Votre session a expiré : reconnectez-vous.'); return false; }
+        if (r.status === 503) { $('balance').textContent = 'Service indisponible'; return false; }
+        return r.ok ? r.json().then(function (me) { setBalance(me.balance); $('m-email').textContent = me.email; return true; }) : false;
       })
-      .then(function (me) { if (me) setBalance(me.balance); })
-      .catch(function () { balanceLabel.textContent = 'Service injoignable'; });
+      .catch(function () { $('balance').textContent = 'Service injoignable'; return false; });
   }
 
   function logout(message) {
     session = null;
     window.orca.postMessage({ type: 'session_clear' });
-    loginError.textContent = message || '';
-    showApp(false);
+    $('login-error').textContent = message || '';
+    showLoggedIn(false);
   }
 
-  // Fenêtre de connexion native d'Orca (PlyoLoginDialog) ; le slicer renvoie ensuite la session.
   function openLogin() {
-    loginError.textContent = '';
+    $('login-error').textContent = '';
     window.orca.postMessage({ type: 'login' });
   }
-  document.getElementById('btn-login').addEventListener('click', openLogin);
+  $('btn-login').addEventListener('click', openLogin);
 
-  document.getElementById('btn-logout').addEventListener('click', function () { logout(); });
+  // ---------- Menu « ⋯ » ----------
+  $('btn-more').addEventListener('click', function (e) { e.stopPropagation(); menu.classList.toggle('hidden'); });
+  document.addEventListener('click', function (e) { if (!menu.contains(e.target)) menu.classList.add('hidden'); });
+  $('m-new').addEventListener('click', function () {
+    menu.classList.add('hidden');
+    thread.textContent = '';
+    history = [];
+    attachments = [];
+    renderAttachments();
+    noteInput.value = '';
+    thread.classList.add('hidden');
+    home.classList.remove('hidden');
+  });
+  $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
+  $('m-values').addEventListener('click', function () { menu.classList.add('hidden'); $('drawer').classList.remove('hidden'); });
+  $('drawer-close').addEventListener('click', function () { $('drawer').classList.add('hidden'); });
+  $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
 
-  // ---------- Réglages lus ----------
-  function formatValue(p) {
-    if (p.value === null || p.value === undefined) return '—';
-    if (typeof p.value === 'boolean') return p.value ? 'Oui' : 'Non';
-    if (typeof p.value === 'string') return p.value;
-    var n = Math.round(p.value * 1000) / 1000;
-    return n.toLocaleString('fr-FR') + (p.unit ? ' ' + p.unit : '');
+  // ---------- Réglages lus par le slicer ----------
+  function formatValue(value, unit) {
+    if (value === null || value === undefined) return '—';
+    if (typeof value === 'boolean') return value ? 'Oui' : 'Non';
+    if (typeof value === 'string') return value;
+    return (Math.round(value * 1000) / 1000).toLocaleString('fr-FR') + (unit ? ' ' + unit : '');
   }
 
   function renderValues(msg) {
     lastValues = msg;
-    paramsBody.innerHTML = '';
+    var tbody = $('params');
+    tbody.textContent = '';
     msg.params.forEach(function (p) {
       var tr = el('tr');
       var label = el('td', '', p.label);
-      label.appendChild(el('span', 'note', p.key + (p.note ? ' — ' + p.note : '')));
-      var value = el('td', 'value', formatValue(p));
-      if (p.id in previousValues && previousValues[p.id] !== p.value) value.classList.add('changed');
-      previousValues[p.id] = p.value;
+      label.appendChild(el('span', 'key', p.key + (p.note ? ' — ' + p.note : '')));
       tr.appendChild(label);
-      tr.appendChild(value);
-      paramsBody.appendChild(tr);
+      tr.appendChild(el('td', 'value', formatValue(p.value, p.unit)));
+      tbody.appendChild(tr);
+      previousValues[p.id] = p.value;
     });
-    undoButton.disabled = !msg.can_undo;
+    $('m-undo').disabled = !msg.can_undo;
   }
 
-  function labelOf(id) {
-    var p = lastValues && lastValues.params.find(function (x) { return x.id === id; });
-    return p ? p : { label: id, unit: '' };
+  function paramOf(id) {
+    return (lastValues && lastValues.params.find(function (x) { return x.id === id; })) || { label: id, unit: '', value: null };
   }
 
-  // ---------- Photo : réduite à 1600 px, JPEG 85 % ----------
-  document.getElementById('btn-photo').addEventListener('click', function () { photoInput.click(); });
-  photoInput.addEventListener('change', function () {
-    var file = photoInput.files && photoInput.files[0];
-    photoInput.value = '';
-    if (!file) return;
-    var url = URL.createObjectURL(file);
-    var img = new Image();
-    img.onload = function () {
-      var scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
-      var canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.naturalWidth * scale);
-      canvas.height = Math.round(img.naturalHeight * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      pendingPhoto = { media_type: 'image/jpeg', data: dataUrl.split(',')[1], preview: dataUrl };
-      photoName.textContent = file.name;
-      URL.revokeObjectURL(url);
-    };
-    img.onerror = function () {
-      URL.revokeObjectURL(url);
-      showMessage('Ce fichier image ne peut pas être lu. Essayez une photo JPEG ou PNG.', true);
-    };
-    img.src = url;
+  // ---------- Photos : réduites à 1 600 px, JPEG 85 % ----------
+  function downscale(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.naturalWidth * scale);
+        canvas.height = Math.round(img.naturalHeight * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        URL.revokeObjectURL(url);
+        resolve({ media_type: 'image/jpeg', data: dataUrl.split(',')[1], preview: dataUrl });
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('unreadable')); };
+      img.src = url;
+    });
+  }
+
+  function addAttachments(list) {
+    list.forEach(function (a) { if (attachments.length < MAX_PHOTOS) attachments.push(a); });
+    if (attachments.length >= MAX_PHOTOS) noteLine(MAX_PHOTOS + ' photos maximum par demande.');
+    renderAttachments();
+  }
+
+  function renderAttachments() {
+    attachedEl.textContent = '';
+    attachedEl.classList.toggle('hidden', !attachments.length);
+    attachments.forEach(function (a, i) {
+      var box = el('div', 'att');
+      var img = el('img');
+      img.src = a.preview;
+      img.alt = 'Photo ' + (i + 1);
+      var remove = el('button', '', '✕');
+      remove.type = 'button';
+      remove.title = 'Retirer cette photo';
+      remove.addEventListener('click', function () { attachments.splice(i, 1); renderAttachments(); });
+      box.appendChild(img);
+      box.appendChild(remove);
+      attachedEl.appendChild(box);
+    });
+  }
+
+  function pickFiles() { fileInput.click(); }
+  fileInput.addEventListener('change', function () {
+    var files = Array.prototype.slice.call(fileInput.files || []);
+    fileInput.value = '';
+    Promise.all(files.map(function (f) { return downscale(f).catch(function () { return null; }); })).then(function (list) {
+      var ok = list.filter(Boolean);
+      if (ok.length < list.length) noteLine('Une image n’a pas pu être lue (JPEG ou PNG recommandé).', true);
+      addAttachments(ok);
+    });
   });
 
-  // ---------- Envoi d'une demande ----------
-  function send(note) {
-    note = (note || '').trim();
-    if (busy) return;
-    if (!note && !pendingPhoto) {
-      showMessage('Écrivez une demande ou ajoutez une photo.', true);
-      return;
-    }
-    if (!lastValues) {
-      showMessage('Les réglages du slicer ne sont pas encore lus. Réessayez dans un instant.', true);
-      return;
-    }
+  // Fenêtre QR (PhoneDialog) : la session de connexion est vérifiée d'abord, pour transmettre un jeton à jour.
+  function openPhone() {
+    refreshAccount().then(function (valid) { if (valid) window.orca.postMessage({ type: 'phone' }); });
+  }
 
-    var photo = pendingPhoto;
-    addBubble('user', function (b) {
-      if (photo) { var i = el('img'); i.src = photo.preview; b.appendChild(i); }
-      if (note) b.appendChild(el('div', '', note));
-    });
+  function collectPhoneSession(id) {
+    var waiting = noteLine('Réception des photos du téléphone…');
+    apiFetch('/api/phone-sessions/' + encodeURIComponent(id) + '/photos', { method: 'GET' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (data) {
+        waiting.remove();
+        addAttachments(data.images.map(function (img) {
+          return { media_type: img.media_type, data: img.data, preview: 'data:' + img.media_type + ';base64,' + img.data };
+        }));
+        if (data.message) noteInput.value = (noteInput.value ? noteInput.value + '\n' : '') + data.message;
+        if (!thread.children.length) { thread.classList.add('hidden'); home.classList.remove('hidden'); }
+        noteInput.focus();
+      })
+      .catch(function () { waiting.remove(); noteLine('Les photos du téléphone n’ont pas pu être récupérées. Réessayez.', true); });
+  }
+
+  // ---------- Envoi d'une demande ----------
+  function send(text) {
+    var note = (text || '').trim();
+    if (busy) return;
+    if (!note && !attachments.length) { noteInput.focus(); return; }
+    if (!lastValues) { noteLine('Les réglages du slicer ne sont pas encore lus. Réessayez dans un instant.', true); return; }
+
+    var photos = attachments.slice();
+    showConversation();
+    var me = el('div', 'me');
+    if (photos.length) {
+      var grid = el('div', 'thumbs');
+      photos.forEach(function (p) { var i = el('img'); i.src = p.preview; i.alt = ''; grid.appendChild(i); });
+      me.appendChild(grid);
+    }
+    if (note) me.appendChild(el('div', 'text', note));
+    thread.appendChild(me);
 
     var body = {
       locale: lastValues.locale || 'fr',
@@ -349,51 +478,51 @@
       context: lastValues.context,
       history: history.slice(-MAX_HISTORY)
     };
-    if (photo) body.image = { media_type: photo.media_type, data: photo.data };
+    if (photos.length) body.images = photos.map(function (p) { return { media_type: p.media_type, data: p.data }; });
     if (note) body.note = note;
 
-    pendingPhoto = null;
-    photoName.textContent = '';
+    attachments = [];
+    renderAttachments();
     noteInput.value = '';
     busy = true;
     sendButton.disabled = true;
-    var waiting = addBubble('info', 'L’assistant réfléchit…');
+    var thinking = el('div', 'thinking');
+    thinking.appendChild(el('i'));
+    thinking.appendChild(document.createTextNode('L’assistant réfléchit…'));
+    thread.appendChild(thinking);
+    scrollDown();
 
-    apiFetch('/api/diagnose', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    })
+    apiFetch('/api/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (response) {
         return response.json().then(function (data) { return { ok: response.ok, status: response.status, data: data }; });
       })
       .then(function (r) {
-        waiting.remove();
+        thinking.remove();
         if (r.status === 401) {
-          // Session impossible à renouveler : retour à la connexion, sans perdre le texte tapé.
-          logout('Votre session a expiré : reconnectez-vous.');
+          // Session impossible à renouveler : retour à la connexion, sans perdre le texte ni les photos.
+          me.remove();
+          attachments = photos;
+          renderAttachments();
           noteInput.value = note;
+          logout('Votre session a expiré : reconnectez-vous.');
           return;
         }
         if (!r.ok) {
-          showMessage(ERRORS[r.data.error] || ERRORS.internal, true);
+          noteLine(ERRORS[r.data.error] || ERRORS.internal, true);
           if (r.data.error === 'insufficient_credits') setBalance(r.data.balance);
           return;
         }
         if (r.data.credits) setBalance(r.data.credits.balance);
-        history.push({ role: 'user', text: (photo ? '(photo envoyée) ' : '') + note });
+        history.push({ role: 'user', text: (photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note });
         history.push({ role: 'assistant', text: summaryForHistory(r.data) });
         history = history.slice(-MAX_HISTORY);
-        renderAnswer(r.data);
+        renderAnswer(r.data, photos.length);
       })
       .catch(function () {
-        waiting.remove();
-        showMessage('Service Plyo injoignable. Est-il démarré (npm run dev dans plyo-api) ?', true);
+        thinking.remove();
+        noteLine('Service Plyo injoignable. Est-il démarré (npm run dev dans plyo-api) ?', true);
       })
-      .then(function () {
-        busy = false;
-        sendButton.disabled = false;
-      });
+      .then(function () { busy = false; sendButton.disabled = false; scrollDown(); });
   }
 
   // Ce que l'assistant a répondu, pour le renvoyer dans l'historique au tour suivant.
@@ -404,138 +533,160 @@
     return parts.join('\n').slice(0, 2000);
   }
 
-  function describeChange(s) {
-    var p = labelOf(s.id);
-    var unit = p.unit ? ' ' + p.unit : '';
-    if (typeof s.value === 'boolean') return p.label + ' : ' + (s.value ? 'oui' : 'non');
-    if (typeof s.value === 'string') return p.label + ' : ' + s.value;
-    if (s.delta !== null) {
-      var target = typeof p.value === 'number' ? ' (→ ' + formatValue({ value: p.value + s.delta, unit: p.unit }) + ')' : '';
-      return p.label + ' : ' + (s.delta > 0 ? '+' : '') + s.delta.toLocaleString('fr-FR') + unit + target;
-    }
-    return p.label + ' : ' + formatValue({ value: s.value, unit: p.unit });
+  // Valeur avant et après pour la fiche de réglages.
+  function change(s) {
+    var p = paramOf(s.id);
+    var after = s.delta !== null && typeof p.value === 'number' ? p.value + s.delta : s.value;
+    return { label: p.label, before: formatValue(p.value, p.unit), after: formatValue(after, p.unit) };
   }
 
-  function renderAnswer(a) {
-    addBubble('assistant', function (b) {
-      // Pas de titre de défaut pour une question ou une demande hors sujet.
-      var showDefect = a.status !== 'question' && a.status !== 'off_topic';
-      if (showDefect && a.defect && a.defect.name) b.appendChild(el('h3', '', a.defect.name));
-      if (showDefect && a.defect && a.defect.explanation) b.appendChild(el('p', '', a.defect.explanation));
-      b.appendChild(el('p', '', a.message));
-
-      // Questions : chaque choix est un bouton qui répond à la place de l'utilisateur.
-      a.questions.forEach(function (q) {
-        b.appendChild(el('p', '', q.text));
-        var row = el('div', 'choices');
-        q.choices.forEach(function (c) {
-          var btn = el('button', '', c);
-          btn.type = 'button';
-          btn.addEventListener('click', function () { send(q.text + ' → ' + c); });
-          row.appendChild(btn);
-        });
-        b.appendChild(row);
-      });
-
-      // Suggestions : cochées par défaut, appliquées en un seul lot (annulable).
-      if (a.suggestions.length) {
-        var boxes = [];
-        a.suggestions.forEach(function (s) {
-          var line = el('label', 'suggestion');
-          var box = el('input');
-          box.type = 'checkbox';
-          box.checked = true;
-          boxes.push({ box: box, s: s });
-          var text = el('span');
-          text.appendChild(el('span', 'change', describeChange(s)));
-          text.appendChild(el('span', 'why', s.reason));
-          line.appendChild(box);
-          line.appendChild(text);
-          b.appendChild(line);
-        });
-        var apply = el('button', 'apply', 'Appliquer la sélection');
-        apply.type = 'button';
-        apply.addEventListener('click', function () {
-          var changes = boxes.filter(function (x) { return x.box.checked; }).map(function (x) {
-            return x.s.delta !== null ? { id: x.s.id, delta: x.s.delta } : { id: x.s.id, value: x.s.value };
-          });
-          if (!changes.length) { showMessage('Aucune suggestion cochée.', true); return; }
-          window.orca.postMessage({ type: 'apply', changes: changes });
-          apply.disabled = true;
-          boxes.forEach(function (x) { x.box.disabled = true; });
-        });
-        b.appendChild(apply);
-      }
+  function renderSheet(container, suggestions) {
+    var sheet = el('div', 'sheet');
+    sheet.appendChild(el('header', '', 'Réglages proposés'));
+    var rows = suggestions.map(function (s) {
+      var c = change(s);
+      var row = el('label', 'row');
+      var box = el('input');
+      box.type = 'checkbox';
+      box.checked = true;
+      var info = el('div');
+      info.appendChild(el('div', 'name', c.label));
+      var delta = el('div', 'delta');
+      delta.appendChild(el('span', 'old', c.before));
+      delta.appendChild(el('span', 'arrow', '→'));
+      delta.appendChild(el('span', 'new', c.after));
+      info.appendChild(delta);
+      if (s.reason) info.appendChild(el('div', 'why', s.reason));
+      row.appendChild(box);
+      row.appendChild(info);
+      sheet.appendChild(row);
+      box.addEventListener('change', function () { row.classList.toggle('off', !box.checked); updateCount(); });
+      return { box: box, s: s, row: row };
     });
+
+    var footer = el('footer');
+    var apply = el('button', 'btn wide');
+    apply.type = 'button';
+    var ignore = el('button', 'btn ghost', 'Ignorer');
+    ignore.type = 'button';
+    footer.appendChild(apply);
+    footer.appendChild(ignore);
+    sheet.appendChild(footer);
+    var fail = el('div', 'fail hidden');
+    sheet.appendChild(fail);
+
+    function checked() { return rows.filter(function (r) { return r.box.checked; }); }
+    function updateCount() {
+      var n = checked().length;
+      apply.textContent = n ? 'Appliquer ' + n + ' réglage' + (n > 1 ? 's' : '') : 'Aucun réglage coché';
+      apply.disabled = !n;
+    }
+    updateCount();
+
+    function lock(locked) { rows.forEach(function (r) { r.box.disabled = locked; }); apply.disabled = locked; ignore.disabled = locked; }
+
+    apply.addEventListener('click', function () {
+      var changes = checked().map(function (r) { return r.s.delta !== null ? { id: r.s.id, delta: r.s.delta } : { id: r.s.id, value: r.s.value }; });
+      fail.classList.add('hidden');
+      lock(true);
+      pendingSheet = { kind: 'apply', onResult: function (ok, text) {
+        if (!ok) { lock(false); updateCount(); fail.textContent = text; fail.classList.remove('hidden'); return; }
+        rows.forEach(function (r) { if (!r.box.checked) r.row.remove(); r.box.replaceWith(el('span', '', '✓')); });
+        sheet.querySelector('header').textContent = 'Réglages appliqués';
+        footer.textContent = '';
+        var preset = lastValues && lastValues.context ? lastValues.context.process : '';
+        footer.appendChild(el('span', 'done', '✓ Appliqué' + (preset ? ' (préréglage « ' + preset + ' » et filament marqués modifiés)' : '')));
+        var undo = el('button', 'link', 'Annuler');
+        undo.type = 'button';
+        undo.addEventListener('click', function () {
+          pendingSheet = { kind: 'undo', onResult: function (okUndo, msg) {
+            footer.textContent = '';
+            footer.appendChild(el('span', okUndo ? 'done' : 'fail', okUndo ? '↺ Réglages d’avant restaurés' : msg));
+          } };
+          window.orca.postMessage({ type: 'undo' });
+        });
+        footer.appendChild(undo);
+      } };
+      window.orca.postMessage({ type: 'apply', changes: changes });
+    });
+    ignore.addEventListener('click', function () { sheet.remove(); });
+    container.appendChild(sheet);
   }
 
+  function renderAnswer(a, photoCount) {
+    var box = el('div', 'ai');
+    var who = el('div', 'who');
+    who.appendChild(el('i', '', 'P'));
+    who.appendChild(document.createTextNode('Assistant' + (photoCount ? ' · d’après ' + (photoCount > 1 ? 'vos ' + photoCount + ' photos' : 'votre photo') : '')));
+    box.appendChild(who);
+
+    var isDefect = a.status === 'ok' && a.defect && ['user_goal', 'no_defect', 'unknown'].indexOf(a.defect.key) < 0;
+    if (a.status !== 'question' && a.status !== 'off_topic' && a.defect && a.defect.name) {
+      var diag = el('div', 'diag');
+      diag.appendChild(el('h3', '', a.defect.name));
+      if (isDefect && CONFIDENCE[a.confidence]) diag.appendChild(el('span', 'pill', CONFIDENCE[a.confidence]));
+      box.appendChild(diag);
+      if (a.defect.explanation) box.appendChild(el('p', '', a.defect.explanation));
+    }
+
+    if (a.suggestions.length) {
+      renderSheet(box, a.suggestions);
+      if (a.message) {
+        var tip = el('div', 'tip');
+        tip.appendChild(el('span', '', '💡'));
+        tip.appendChild(el('span', '', a.message));
+        box.appendChild(tip);
+      }
+    } else if (a.message) {
+      box.appendChild(el('p', '', a.message));
+    }
+
+    a.questions.forEach(function (q) {
+      box.appendChild(el('p', 'q', q.text));
+      var row = el('div', 'chips');
+      q.choices.forEach(function (c) {
+        var chip = el('button', 'chip', c);
+        chip.type = 'button';
+        chip.addEventListener('click', function () {
+          row.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+          send(q.text + ' → ' + c);
+        });
+        row.appendChild(chip);
+      });
+      box.appendChild(row);
+    });
+
+    if (a.credits && a.credits.charged > 0)
+      box.appendChild(el('span', 'cost', a.credits.charged.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' crédit' + (a.credits.charged >= 2 ? 's' : '')));
+    thread.appendChild(box);
+    scrollDown();
+  }
+
+  // ---------- Actions ----------
   sendButton.addEventListener('click', function () { send(noteInput.value); });
-  noteInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(noteInput.value);
-  });
+  noteInput.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(noteInput.value); });
+  $('btn-files').addEventListener('click', pickFiles);
+  $('btn-phone').addEventListener('click', openPhone);
+  document.querySelector('[data-action="files"]').addEventListener('click', pickFiles);
+  document.querySelector('[data-action="phone"]').addEventListener('click', openPhone);
+  $('goals').querySelectorAll('.chip').forEach(function (chip) { chip.addEventListener('click', function () { send(chip.textContent); }); });
 
   // ---------- Messages du slicer ----------
   window.orca.onMessage(function (msg) {
     if (!msg || !msg.type) return;
-    if (msg.type === 'status') {
-      statusDot.classList.add('on');
-    } else if (msg.type === 'session') {
+    if (msg.type === 'session') {
       session = msg.session;
-      showApp(!!session);
+      showLoggedIn(!!session);
       if (session) refreshAccount();
       else if (!loginOffered) { loginOffered = true; openLogin(); }
     } else if (msg.type === 'values') {
       renderValues(msg);
     } else if (msg.type === 'result') {
-      showMessage(msg.text, !msg.ok);
+      if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text); }
+      else noteLine(msg.text, !msg.ok);
+    } else if (msg.type === 'phone_session_done') {
+      collectPhoneSession(msg.session_id);
     }
-  });
-
-  // ---------- Tests (phase de faisabilité) ----------
-  document.getElementById('btn-suggest').addEventListener('click', function () {
-    window.orca.postMessage({ type: 'apply', changes: [
-      { id: 'nozzle_temp', delta: -5 },
-      { id: 'retraction', delta: 0.2 }
-    ] });
-  });
-  document.getElementById('btn-refuse').addEventListener('click', function () {
-    window.orca.postMessage({ type: 'apply', changes: [{ id: 'nozzle_temp', value: 400 }] });
-  });
-  undoButton.addEventListener('click', function () {
-    window.orca.postMessage({ type: 'undo' });
-  });
-
-  // La page (chargée depuis file://) peut-elle appeler une API https ?
-  // httpbin.org renvoie la requête reçue et autorise CORS ; example.com n'envoie pas d'en-têtes CORS.
-  function networkTest(label, url, options) {
-    var start = Date.now();
-    return fetch(url, options)
-      .then(function (response) {
-        return response.text().then(function (body) {
-          var origin = '';
-          try { origin = JSON.parse(body).headers.Origin || '(aucun)'; } catch (e) {}
-          showMessage(label + ' : HTTP ' + response.status + ' en ' + (Date.now() - start) + ' ms' +
-                      (origin ? ', en-tête Origin envoyé : ' + origin : ''), !response.ok);
-        });
-      })
-      .catch(function (error) {
-        showMessage(label + ' : échec — ' + error.name + ' : ' + error.message, true);
-      });
-  }
-
-  document.getElementById('btn-network').addEventListener('click', function () {
-    showMessage('Page chargée depuis ' + location.protocol + '//… (origine : ' + location.origin + ')');
-    networkTest('GET https avec CORS', 'https://httpbin.org/get?source=plyo')
-      .then(function () {
-        return networkTest('POST JSON avec CORS', 'https://httpbin.org/post', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ test: 'plyo', nozzle_temp: 225 })
-        });
-      })
-      .then(function () {
-        return networkTest('GET https sans CORS', 'https://example.com/');
-      });
   });
 
   window.orca.postMessage({ type: 'ready' });
