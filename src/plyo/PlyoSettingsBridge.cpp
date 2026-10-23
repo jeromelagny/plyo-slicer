@@ -59,6 +59,10 @@ const std::vector<Param> WHITELIST = {
     {"support_style",    "Style de support",            Preset::TYPE_PRINT,    "support_style",              Kind::Enum,  0,   0,   ""},
     {"support_on_build_plate_only", "Supports sur le plateau uniquement", Preset::TYPE_PRINT, "support_on_build_plate_only", Kind::Bool, 0, 1, ""},
     {"support_threshold_angle", "Angle de déclenchement des supports", Preset::TYPE_PRINT, "support_threshold_angle", Kind::Int, 15, 60, "°"},
+    {"wall_loops",            "Nombre de parois",            Preset::TYPE_PRINT, "wall_loops",            Kind::Int,     1, 10,  ""},
+    {"sparse_infill_density", "Taux de remplissage",         Preset::TYPE_PRINT, "sparse_infill_density", Kind::Percent, 5, 100, "%"},
+    {"top_shell_layers",      "Couches pleines (dessus)",    Preset::TYPE_PRINT, "top_shell_layers",      Kind::Int,     2, 10,  ""},
+    {"bottom_shell_layers",   "Couches pleines (dessous)",   Preset::TYPE_PRINT, "bottom_shell_layers",   Kind::Int,     2, 10,  ""},
 };
 
 // Valeurs permises pour les réglages à choix. Les modes de support « manual » (zones peintes) sont exclus,
