@@ -1,4 +1,5 @@
 #include "PlyoAssistant.hpp"
+#include "PlyoCalibration.hpp"
 #include "PlyoLoginDialog.hpp"
 #include "PlyoMakerWorldImport.hpp"
 #include "PlyoMakerWorldWindow.hpp"
@@ -134,6 +135,21 @@ void handle_page_message(const nlohmann::json& data)
             send_result(MakerWorldImport::restore_creator());
         else if (type == "makerworld_mono")
             send_result(MakerWorldImport::use_my_filament_everywhere());
+        else if (type == "calib_start") {
+            // Calibration guidée : lancé seulement par le bouton « Lancer le test » du panneau.
+            nlohmann::json started = Calibration::start_test(data.value("test", std::string()), data.value("pass", 1), data.value("base_value", 0.0));
+            if (started.value("ok", false)) {
+                started["type"] = "calib_started";
+                send(started);
+            } else
+                send_result(started);
+        } else if (type == "calib_save") {
+            send_result(Calibration::save_result(data.value("test", std::string()), data.value("value", 0.0)));
+            send({{"type", "calib_history"}, {"items", Calibration::history_for_current()}});
+        } else if (type == "calib_restore")
+            send_result(Calibration::restore());
+        else if (type == "calib_history")
+            send({{"type", "calib_history"}, {"items", Calibration::history_for_current()}});
         else if (type == "session_clear") {
             Session::clear();
             send({{"type", "session"}, {"session", nullptr}});

@@ -145,6 +145,29 @@ Configs edited_configs()
             bundle().printers.get_edited_preset().config};
 }
 
+// Lissage calibré (calibration guidée) : quand le filament porte ses propres valeurs de lissage, elles remplacent
+// celles du profil d'impression (Fill.cpp) ; le pont lit et modifie alors la clé du filament.
+std::optional<std::string> filament_ironing_key(const Param& p, const DynamicPrintConfig& filament)
+{
+    const std::string id = p.id;
+    if (id != "ironing_flow" && id != "ironing_spacing" && id != "ironing_speed")
+        return std::nullopt;
+    const std::string           key = "filament_" + id;
+    const Slic3r::ConfigOption* opt = filament.option(key);
+    if (opt == nullptr || !opt->is_vector())
+        return std::nullopt;
+    const auto* vec = static_cast<const Slic3r::ConfigOptionVectorBase*>(opt);
+    return vec->size() > 0 && !vec->is_nil(0) ? std::optional<std::string>(key) : std::nullopt;
+}
+
+// Préréglage et clé réellement utilisés pour un paramètre.
+std::pair<Preset::Type, std::string> target(const Param& p, const Configs& configs)
+{
+    if (auto key = filament_ironing_key(p, configs.filament))
+        return {Preset::TYPE_FILAMENT, *key};
+    return {p.preset, resolve_key(p)};
+}
+
 // Valeur textuelle d'un réglage à choix (ex. « no ironing », « tree(auto) »).
 std::string enum_value(const Param& p, const Configs& configs)
 {
@@ -178,8 +201,8 @@ std::optional<double> first_value(const DynamicPrintConfig& config, const std::s
 // Valeur affichée et utilisée pour un delta. Une rétraction filament « nil » hérite de l'imprimante.
 std::optional<double> current_value(const Param& p, const Configs& configs, std::string* note = nullptr)
 {
-    const std::string key   = resolve_key(p);
-    std::optional<double> v = first_value(configs.of(p.preset), key);
+    const auto [type, key]  = target(p, configs);
+    std::optional<double> v = first_value(configs.of(type), key);
     if (!v && key == "filament_retraction_length") {
         v = first_value(configs.printer, "retraction_length");
         if (note)
@@ -197,7 +220,7 @@ nlohmann::json read_params(const Configs& configs)
     for (const Param& p : WHITELIST) {
         std::string           note;
         std::optional<double> v = current_value(p, configs, &note);
-        nlohmann::json        item{{"id", p.id}, {"label", p.label}, {"key", resolve_key(p)}, {"unit", p.unit},
+        nlohmann::json        item{{"id", p.id}, {"label", p.label}, {"key", target(p, configs).second}, {"unit", p.unit},
                                    {"min", p.min}, {"max", p.max}, {"note", note}};
         if (p.kind == Kind::Enum) {
             item["value"] = enum_value(p, configs);
@@ -273,7 +296,7 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
     if (!changes.is_array() || changes.empty())
         return {{"ok", false}, {"text", "Refusé : aucune modification reçue."}};
 
-    struct Planned { const Param* param; std::string key; double value; std::string text; };
+    struct Planned { const Param* param; std::string key; double value; std::string text; Preset::Type type; };
     std::vector<Planned> planned;
 
     // Type de support final (demandé dans ce lot, sinon actuel), pour vérifier la cohérence du style.
@@ -295,7 +318,7 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
             if (std::find(allowed.begin(), allowed.end(), text) == allowed.end())
                 return {{"ok", false},
                         {"text", std::string("Refusé : « ") + text + " » n'est pas un choix autorisé pour « " + param->label + " ». Aucune modification appliquée."}};
-            planned.push_back({param, resolve_key(*param), 0, text});
+            planned.push_back({param, resolve_key(*param), 0, text, param->preset});
             continue;
         }
 
@@ -317,7 +340,8 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
                     {"text", std::string("Refusé : ") + param->label + " à " + format_number(value, param->kind) + " " + param->unit +
                                  " est hors de la plage autorisée (" + range_text(*param) + "). Aucune modification appliquée."}};
 
-        planned.push_back({param, resolve_key(*param), value, to_config_string(value, param->kind)});
+        const auto [type, key] = target(*param, edited_configs());
+        planned.push_back({param, key, value, to_config_string(value, param->kind), type});
     }
 
     // 2. Mémorise les valeurs d'avant (pour l'annulation), puis prépare les nouvelles configs.
@@ -325,7 +349,7 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
     std::map<Preset::Type, DynamicPrintConfig> configs;
     std::string                                 summary;
     for (const Planned& p : planned) {
-        const Preset::Type type = p.param->preset;
+        const Preset::Type type = p.type;
         if (!configs.count(type))
             configs.emplace(type, edited_config(type));
         saved.push_back({type, p.key, edited_config(type).opt_serialize(p.key)});
