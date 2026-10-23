@@ -99,16 +99,18 @@ void handle_page_message(const nlohmann::json& data)
                 send({{"type", "session"}, {"session", Session::load()}});
             }
         } else if (type == "phone") {
-            // Fenêtre du QR code ; une seule à la fois. Le panneau récupère ensuite les photos de la session.
+            // Fenêtre du QR code du lien téléphone (créé par le panneau) ; une seule à la fois.
+            // Au premier envoi du téléphone elle se ferme, et le panneau va chercher l'envoi aussitôt.
             static bool s_phone_open = false;
             const nlohmann::json session = Session::load();
-            if (!s_phone_open && session.is_object()) {
+            const nlohmann::json link    = data.value("link", nlohmann::json());
+            if (!s_phone_open && session.is_object() && link.is_object() && link.contains("id") && link["id"].is_string()) {
                 s_phone_open = true;
-                PhoneDialog dialog(Slic3r::GUI::wxGetApp().mainframe, session["access_token"].get<std::string>());
+                PhoneDialog dialog(Slic3r::GUI::wxGetApp().mainframe, session["access_token"].get<std::string>(), link);
                 const int result = dialog.ShowModal();
                 s_phone_open = false;
-                if (result == wxID_OK && !dialog.session_id().empty())
-                    send({{"type", "phone_session_done"}, {"session_id", dialog.session_id()}});
+                if (result == wxID_OK)
+                    send({{"type", "phone_batch_ready"}});
             }
         } else if (type == "session_clear") {
             Session::clear();

@@ -63,8 +63,7 @@
   </div>
 
   <footer>
-    <span class="note" id="note">Dès que vous appuyez sur « Envoyer » sur le téléphone, les photos et votre message arrivent dans l'assistant. Code valable 10 minutes.</span>
-    <button class="primary hidden" id="btn-renew" type="button">Générer un nouveau code</button>
+    <span class="note" id="note">Un seul scan suffit pour toute la conversation : chaque « Envoyer » sur le téléphone est analysé directement par l'assistant.</span>
     <button class="ghost" id="btn-close" type="button">Fermer</button>
   </footer>
 
@@ -74,28 +73,18 @@
   var PLYO_API_URL = 'http://localhost:3000';
   var POLL_MS = 2000;
 
-  var accessToken = (window.PLYO && window.PLYO.accessToken) || '';
+  // Transmis par Orca : jeton de connexion et lien téléphone de la conversation ({ id, qr_svg }).
+  var plyo = window.PLYO || {};
+  var link = plyo.link || {};
   var qr = document.getElementById('qr');
   var pulse = document.getElementById('pulse');
   var statusLine = document.getElementById('status');
   var slots = document.getElementById('slots');
   var hint = document.getElementById('hint');
-  var renew = document.getElementById('btn-renew');
-  var sessionId = null;
   var timer = null;
 
   function toSlicer(message) {
     if (window.wx && window.wx.postMessage) window.wx.postMessage(JSON.stringify(message));
-  }
-
-  function api(path, method) {
-    return fetch(PLYO_API_URL + path, { method: method || 'GET', headers: { Authorization: 'Bearer ' + accessToken } });
-  }
-
-  function showError(text) {
-    pulse.classList.remove('on');
-    statusLine.textContent = text;
-    statusLine.classList.add('error');
   }
 
   function setPhotos(count) {
@@ -108,63 +97,48 @@
     }
   }
 
-  function expired() {
+  function stop(text, detail) {
     clearInterval(timer);
     pulse.classList.remove('on');
-    statusLine.textContent = 'Ce code a expiré.';
-    hint.textContent = 'Générez un nouveau code pour continuer.';
+    statusLine.textContent = text;
+    hint.textContent = detail;
     qr.style.opacity = '0.25';
-    renew.classList.remove('hidden');
   }
 
   function poll() {
-    api('/api/phone-sessions/' + sessionId)
+    fetch(PLYO_API_URL + '/api/phone-sessions/' + encodeURIComponent(link.id), { headers: { Authorization: 'Bearer ' + plyo.accessToken } })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (s) {
-        if (s.expired) return expired();
+        if (s.expired || s.status === 'closed') return stop('Ce lien a expiré.', 'Fermez cette fenêtre, puis recliquez sur l’icône du téléphone pour un nouveau QR code.');
+        if (s.pending_batches > 0) {
+          clearInterval(timer);
+          statusLine.textContent = 'Photos reçues : l’assistant les analyse…';
+          return toSlicer({ command: 'phone_done' });
+        }
         setPhotos(s.photo_count);
         if (s.status === 'waiting') return;
         pulse.classList.add('on');
         statusLine.textContent = s.photo_count
-          ? 'Téléphone connecté · ' + s.photo_count + ' photo' + (s.photo_count > 1 ? 's' : '') + ' prise' + (s.photo_count > 1 ? 's' : '')
-          : 'Téléphone connecté';
-        if (s.status === 'submitted') {
-          clearInterval(timer);
-          statusLine.textContent = 'Photos reçues : ouverture dans l’assistant…';
-          toSlicer({ command: 'phone_done', session_id: sessionId });
-        }
+          ? 'Téléphone relié · ' + s.photo_count + ' photo' + (s.photo_count > 1 ? 's' : '') + ' prête' + (s.photo_count > 1 ? 's' : '') + ' à envoyer'
+          : 'Téléphone relié';
       })
-      .catch(function () { /* coupure passagère : on réessaie au prochain tour */ });
+      .catch(function (status) {
+        if (status === 401) stop('Votre session a expiré.', 'Fermez cette fenêtre et reconnectez-vous.');
+      });
   }
 
-  function start() {
-    renew.classList.add('hidden');
-    qr.style.opacity = '';
-    statusLine.classList.remove('error');
-    statusLine.textContent = 'En attente du téléphone…';
-    hint.textContent = 'Le téléphone doit être sur le même Wi-Fi que cet ordinateur.';
-    setPhotos(0);
-    api('/api/phone-sessions', 'POST')
-      .then(function (r) {
-        if (r.status === 401) throw new Error('Votre session a expiré : fermez cette fenêtre et reconnectez-vous.');
-        if (!r.ok) throw new Error('Impossible de créer le code. Le service Plyo est-il démarré ?');
-        return r.json();
-      })
-      .then(function (s) {
-        sessionId = s.id;
-        var img = document.createElement('img');
-        img.alt = 'QR code à scanner avec le téléphone';
-        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s.qr_svg);
-        qr.textContent = '';
-        qr.appendChild(img);
-        timer = setInterval(poll, POLL_MS);
-      })
-      .catch(function (e) { showError(e.message || 'Service Plyo injoignable.'); });
+  if (!link.id || !link.qr_svg) {
+    stop('Lien téléphone indisponible.', 'Fermez cette fenêtre et réessayez.');
+  } else {
+    var img = document.createElement('img');
+    img.alt = 'QR code à scanner avec le téléphone';
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(link.qr_svg);
+    qr.textContent = '';
+    qr.appendChild(img);
+    poll();
+    timer = setInterval(poll, POLL_MS);
   }
-
-  renew.addEventListener('click', start);
   document.getElementById('btn-close').addEventListener('click', function () { toSlicer({ command: 'close_page' }); });
-  start();
 })();
 </script>
 </body>

@@ -8,9 +8,10 @@
 
 namespace Plyo {
 
-PhoneDialog::PhoneDialog(wxWindow* parent, std::string access_token)
+PhoneDialog::PhoneDialog(wxWindow* parent, std::string access_token, nlohmann::json link)
     : WebViewHostDialog(parent, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxSYSTEM_MENU | wxCAPTION | wxCLOSE_BOX)
     , m_access_token(std::move(access_token))
+    , m_link(std::move(link))
 {
     if (!create_webview("web/plyo/phone.html", wxString::FromUTF8("Photos depuis le téléphone"), wxSize(500, 470), wxSize(460, 440))) {
         auto* sizer = new wxBoxSizer(wxVERTICAL);
@@ -22,11 +23,13 @@ PhoneDialog::PhoneDialog(wxWindow* parent, std::string access_token)
 
 PhoneDialog::~PhoneDialog() { m_alive->store(false, std::memory_order_release); }
 
-// Jeton de connexion transmis à la page avant son chargement : elle crée la session et suit son état.
+// Jeton de connexion et lien téléphone transmis à la page avant son chargement : elle affiche le QR et suit l'état.
 void PhoneDialog::add_user_scripts()
 {
     if (wxWebView* view = browser()) {
-        const std::string script = "window.PLYO = " + nlohmann::json{{"accessToken", m_access_token}}.dump() + ";";
+        const nlohmann::json plyo{{"accessToken", m_access_token},
+                                  {"link", {{"id", m_link.value("id", std::string())}, {"qr_svg", m_link.value("qr_svg", std::string())}}}};
+        const std::string script = "window.PLYO = " + plyo.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) + ";";
         view->AddUserScript(wxString::FromUTF8(script));
     }
 }
@@ -44,9 +47,8 @@ void PhoneDialog::handle_command(const nlohmann::json& payload)
 {
     if (!payload.is_object())
         return;
-    if (payload.value("command", std::string()) == "phone_done" && payload.contains("session_id") && payload["session_id"].is_string()) {
-        m_session_id = payload["session_id"].get<std::string>();
-        m_closing    = true;
+    if (payload.value("command", std::string()) == "phone_done") {
+        m_closing = true;
         EndModal(wxID_OK);
         return;
     }

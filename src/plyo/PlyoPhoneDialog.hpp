@@ -10,18 +10,17 @@
 
 class wxWindow;
 
-// Fenêtre « Photos depuis le téléphone » : affiche le QR code d'une session créée par plyo-api et suit
-// l'envoi du téléphone (page resources/web/plyo/phone.html). Quand le téléphone a envoyé ses photos,
-// ShowModal() renvoie wxID_OK et session_id() donne la session à récupérer par le panneau.
+// Fenêtre « Photos depuis le téléphone » : affiche le QR code du lien téléphone de la conversation (créé
+// par le panneau via plyo-api) et suit le téléphone (page resources/web/plyo/phone.html). Elle se ferme
+// d'elle-même au premier envoi du téléphone : ShowModal() renvoie alors wxID_OK.
 namespace Plyo {
 
 class PhoneDialog : public Slic3r::GUI::WebViewHostDialog
 {
 public:
-    PhoneDialog(wxWindow* parent, std::string access_token);
+    // `link` : { id, qr_svg } du lien téléphone, transmis tel quel à la page.
+    PhoneDialog(wxWindow* parent, std::string access_token, nlohmann::json link);
     ~PhoneDialog() override;
-
-    const std::string& session_id() const { return m_session_id; }
 
 private:
     void add_user_scripts() override;
@@ -29,7 +28,7 @@ private:
     void handle_command(const nlohmann::json& payload);
 
     std::string                        m_access_token;
-    std::string                        m_session_id;
+    nlohmann::json                     m_link;
     std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
     bool                               m_closing{false};
 };

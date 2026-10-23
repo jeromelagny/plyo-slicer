@@ -30,9 +30,13 @@
   /* En-tête */
   .top { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); position: relative; flex: none; }
   .top h1 { margin: 0; font-size: 14px; font-weight: 650; }
+  #phone-linked { margin-left: auto; }
+  #phone-linked:not(.hidden) + .credits { margin-left: 0; }
   .credits { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .credits i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-  .icon-btn { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+  .icon-btn { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+  .icon-btn svg, .send svg { display: block; }
+  .linked { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); background: transparent; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
   .icon-btn:hover { background: var(--surface); color: var(--fg); }
   .menu { position: absolute; right: 10px; top: 46px; width: 230px; background: var(--raised); border: 1px solid var(--border); border-radius: 8px; padding: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .3); z-index: 10; }
   .menu button { display: block; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
@@ -116,7 +120,7 @@
   .box textarea { width: 100%; border: 0; background: transparent; color: var(--fg); font: inherit; resize: none; outline: none; min-height: 40px; max-height: 140px; }
   .box textarea::placeholder { color: var(--muted); }
   .tools { display: flex; align-items: center; gap: 2px; }
-  .send { margin-left: auto; width: 32px; height: 32px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer; }
+  .send { margin-left: auto; width: 32px; height: 32px; padding: 0; border-radius: 8px; border: 0; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer; }
   .send:disabled { opacity: .5; cursor: default; }
 
   /* Réglages lus (volet) */
@@ -132,6 +136,7 @@
 <body>
   <div class="top">
     <h1>Assistant Plyo</h1>
+    <button class="linked hidden" id="phone-linked" type="button" title="Téléphone relié à cette conversation : cliquez pour revoir le QR code">📱 Relié</button>
     <span class="credits hidden" id="credits" title="Votre solde de crédits"><i></i><span id="balance">…</span></span>
     <button class="icon-btn hidden" id="btn-more" type="button" title="Plus d'options" aria-haspopup="menu">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
@@ -197,7 +202,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18h2"/></svg>
         </button>
         <button class="send" id="btn-send" type="button" title="Envoyer (⌘ + Entrée)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12.5 5.5L19 12l-6.5 6.5"/></svg>
         </button>
       </div>
     </div>
@@ -230,6 +235,9 @@
   var busy = false;
   var loginOffered = false;
   var pendingSheet = null;   // fiche dont on attend le résultat d'application ou d'annulation
+  var phoneLink = null;      // lien téléphone de la conversation : { id, qr_svg }
+  var phoneTimer = null;
+  var PHONE_POLL_MS = 3000;
 
   var ERRORS = {
     config_missing: "Le service Plyo n'est pas configuré (clé API manquante).",
@@ -320,6 +328,7 @@
   }
 
   function logout(message) {
+    unlinkPhone(true);
     session = null;
     window.orca.postMessage({ type: 'session_clear' });
     $('login-error').textContent = message || '';
@@ -337,6 +346,7 @@
   document.addEventListener('click', function (e) { if (!menu.contains(e.target)) menu.classList.add('hidden'); });
   $('m-new').addEventListener('click', function () {
     menu.classList.add('hidden');
+    unlinkPhone(true);
     thread.textContent = '';
     history = [];
     attachments = [];
@@ -433,35 +443,73 @@
     });
   });
 
-  // Fenêtre QR (PhoneDialog) : la session de connexion est vérifiée d'abord, pour transmettre un jeton à jour.
+  // ---------- Lien téléphone (un par conversation) ----------
+  // Le panneau crée le lien et garde son QR ; la fenêtre QR (PhoneDialog) l'affiche. Chaque « Envoyer »
+  // du téléphone crée un envoi, que le panneau récupère et envoie aussitôt à l'assistant.
   function openPhone() {
-    refreshAccount().then(function (valid) { if (valid) window.orca.postMessage({ type: 'phone' }); });
+    refreshAccount().then(function (valid) {
+      if (!valid) return;
+      var ready = phoneLink ? Promise.resolve(phoneLink) : apiFetch('/api/phone-sessions', { method: 'POST' })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+        .then(function (created) {
+          phoneLink = { id: created.id, qr_svg: created.qr_svg };
+          $('phone-linked').classList.remove('hidden');
+          phoneTimer = setInterval(pollPhone, PHONE_POLL_MS);
+          return phoneLink;
+        });
+      ready
+        .then(function (link) { window.orca.postMessage({ type: 'phone', link: link }); })
+        .catch(function () { noteLine('Le QR code n’a pas pu être créé. Le service Plyo est-il démarré ?', true); });
+    });
   }
 
-  function collectPhoneSession(id) {
-    var waiting = noteLine('Réception des photos du téléphone…');
-    apiFetch('/api/phone-sessions/' + encodeURIComponent(id) + '/photos', { method: 'GET' })
-      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-      .then(function (data) {
-        waiting.remove();
-        addAttachments(data.images.map(function (img) {
-          return { media_type: img.media_type, data: img.data, preview: 'data:' + img.media_type + ';base64,' + img.data };
-        }));
-        if (data.message) noteInput.value = (noteInput.value ? noteInput.value + '\n' : '') + data.message;
-        if (!thread.children.length) { thread.classList.add('hidden'); home.classList.remove('hidden'); }
-        noteInput.focus();
+  // Coupe le lien (nouvelle conversation, déconnexion, lien expiré). `close` : prévenir le serveur.
+  function unlinkPhone(close) {
+    if (!phoneLink) return;
+    if (close && session) apiFetch('/api/phone-sessions/' + encodeURIComponent(phoneLink.id), { method: 'DELETE' }).catch(function () {});
+    clearInterval(phoneTimer);
+    phoneLink = null;
+    $('phone-linked').classList.add('hidden');
+  }
+
+  function pollPhone() {
+    if (!phoneLink || busy || !session) return;
+    var id = phoneLink.id;
+    apiFetch('/api/phone-sessions/' + encodeURIComponent(id), { method: 'GET' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (s) {
+        if (s.expired || s.status === 'closed') {
+          unlinkPhone(false);
+          noteLine('Le lien avec le téléphone a expiré. Cliquez sur 📱 pour en créer un nouveau.');
+          return;
+        }
+        if (s.pending_batches > 0 && !busy) return collectBatch(id);
       })
-      .catch(function () { waiting.remove(); noteLine('Les photos du téléphone n’ont pas pu être récupérées. Réessayez.', true); });
+      .catch(function (status) { if (status === 404) unlinkPhone(false); });
+  }
+
+  function collectBatch(id) {
+    return apiFetch('/api/phone-sessions/' + encodeURIComponent(id) + '/photos', { method: 'GET' })
+      .then(function (r) { return r.status === 200 ? r.json() : null; })
+      .then(function (batch) {
+        if (!batch || !batch.images.length) return;
+        var photos = batch.images.map(function (img) {
+          return { media_type: img.media_type, data: img.data, preview: 'data:' + img.media_type + ';base64,' + img.data };
+        });
+        send(batch.message, photos, true);
+      })
+      .catch(function () { noteLine('Les photos du téléphone n’ont pas pu être récupérées.', true); });
   }
 
   // ---------- Envoi d'une demande ----------
-  function send(text) {
+  // `photosFromPhone` : envoi venu du téléphone (photos fournies, zone de saisie laissée intacte).
+  function send(text, photosFromPhone, fromPhone) {
     var note = (text || '').trim();
     if (busy) return;
-    if (!note && !attachments.length) { noteInput.focus(); return; }
+    if (!note && !attachments.length && !photosFromPhone) { noteInput.focus(); return; }
     if (!lastValues) { noteLine('Les réglages du slicer ne sont pas encore lus. Réessayez dans un instant.', true); return; }
 
-    var photos = attachments.slice();
+    var photos = photosFromPhone || attachments.slice();
     showConversation();
     var me = el('div', 'me');
     if (photos.length) {
@@ -470,6 +518,7 @@
       me.appendChild(grid);
     }
     if (note) me.appendChild(el('div', 'text', note));
+    if (fromPhone) me.appendChild(el('div', 'cost', '📱 Envoyé depuis le téléphone'));
     thread.appendChild(me);
 
     var body = {
@@ -481,9 +530,11 @@
     if (photos.length) body.images = photos.map(function (p) { return { media_type: p.media_type, data: p.data }; });
     if (note) body.note = note;
 
-    attachments = [];
-    renderAttachments();
-    noteInput.value = '';
+    if (!photosFromPhone) {
+      attachments = [];
+      renderAttachments();
+      noteInput.value = '';
+    }
     busy = true;
     sendButton.disabled = true;
     var thinking = el('div', 'thinking');
@@ -501,9 +552,11 @@
         if (r.status === 401) {
           // Session impossible à renouveler : retour à la connexion, sans perdre le texte ni les photos.
           me.remove();
-          attachments = photos;
-          renderAttachments();
-          noteInput.value = note;
+          if (!photosFromPhone) {
+            attachments = photos;
+            renderAttachments();
+            noteInput.value = note;
+          }
           logout('Votre session a expiré : reconnectez-vous.');
           return;
         }
@@ -667,6 +720,7 @@
   noteInput.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(noteInput.value); });
   $('btn-files').addEventListener('click', pickFiles);
   $('btn-phone').addEventListener('click', openPhone);
+  $('phone-linked').addEventListener('click', openPhone);
   document.querySelector('[data-action="files"]').addEventListener('click', pickFiles);
   document.querySelector('[data-action="phone"]').addEventListener('click', openPhone);
   $('goals').querySelectorAll('.chip').forEach(function (chip) { chip.addEventListener('click', function () { send(chip.textContent); }); });
@@ -684,8 +738,8 @@
     } else if (msg.type === 'result') {
       if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text); }
       else noteLine(msg.text, !msg.ok);
-    } else if (msg.type === 'phone_session_done') {
-      collectPhoneSession(msg.session_id);
+    } else if (msg.type === 'phone_batch_ready') {
+      pollPhone(); // la fenêtre QR s'est fermée sur un envoi : on le traite sans attendre le prochain tour
     }
   });
 
