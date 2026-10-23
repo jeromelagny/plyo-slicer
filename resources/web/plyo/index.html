@@ -91,6 +91,7 @@
       <button id="btn-suggest">Appliquer une suggestion factice</button>
       <button id="btn-refuse" class="secondary">Envoyer une valeur hors plage</button>
       <button id="btn-undo" class="secondary" disabled>Annuler la dernière modification</button>
+      <button id="btn-network" class="secondary">Tester un appel réseau (https)</button>
     </div>
   </section>
 
@@ -172,6 +173,39 @@
   });
   undoButton.addEventListener('click', function () {
     window.orca.postMessage({ type: 'undo' });
+  });
+
+  // Test de faisabilité : la page (chargée depuis file://) peut-elle appeler une API https ?
+  // httpbin.org renvoie la requête reçue et autorise CORS ; example.com n'envoie pas d'en-têtes CORS.
+  function networkTest(label, url, options) {
+    var start = Date.now();
+    return fetch(url, options)
+      .then(function (response) {
+        return response.text().then(function (body) {
+          var origin = '';
+          try { origin = JSON.parse(body).headers.Origin || '(aucun)'; } catch (e) {}
+          showMessage(label + ' : HTTP ' + response.status + ' en ' + (Date.now() - start) + ' ms' +
+                      (origin ? ', en-tête Origin envoyé : ' + origin : ''), !response.ok);
+        });
+      })
+      .catch(function (error) {
+        showMessage(label + ' : échec — ' + error.name + ' : ' + error.message, true);
+      });
+  }
+
+  document.getElementById('btn-network').addEventListener('click', function () {
+    showMessage('Page chargée depuis ' + location.protocol + '//… (origine : ' + location.origin + ')');
+    networkTest('GET https avec CORS', 'https://httpbin.org/get?source=plyo')
+      .then(function () {
+        return networkTest('POST JSON avec CORS', 'https://httpbin.org/post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ test: 'plyo', nozzle_temp: 225 })
+        });
+      })
+      .then(function () {
+        return networkTest('GET https sans CORS', 'https://example.com/');
+      });
   });
 
   window.orca.postMessage({ type: 'ready' });
