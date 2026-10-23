@@ -310,8 +310,10 @@
 
   function renderAnswer(a) {
     addBubble('assistant', function (b) {
-      if (a.defect && a.defect.name && a.status !== 'question') b.appendChild(el('h3', '', a.defect.name));
-      if (a.defect && a.defect.explanation && a.status !== 'question') b.appendChild(el('p', '', a.defect.explanation));
+      // Pas de titre de défaut pour une question ou une demande hors sujet.
+      var showDefect = a.status !== 'question' && a.status !== 'off_topic';
+      if (showDefect && a.defect && a.defect.name) b.appendChild(el('h3', '', a.defect.name));
+      if (showDefect && a.defect && a.defect.explanation) b.appendChild(el('p', '', a.defect.explanation));
       b.appendChild(el('p', '', a.message));
 
       // Questions : chaque choix est un bouton qui répond à la place de l'utilisateur.
