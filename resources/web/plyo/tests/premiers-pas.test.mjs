@@ -62,3 +62,20 @@ test('le parcours avance tout seul quand l’étape est faite', () => {
   assert.equal(nextTourStep('presets', { objects: 3, sliced: true }), 'presets');
   assert.equal(nextTourStep('print', { objects: 3, sliced: true }), 'print');
 });
+
+const { isModelFile, modelAddedText } = require('../premiers-pas.js');
+
+test('reconnaît un modèle 3D à son extension', () => {
+  for (const name of ['benchy.stl', 'Support.STL', 'piece.3mf', 'a.obj', 'b.step', 'c.stp', 'd.amf']) assert.equal(isModelFile(name), true, name);
+  for (const name of ['photo.jpg', 'notes.txt', 'stl', '', 'piece.stl.zip']) assert.equal(isModelFile(name), false, name);
+});
+
+test('message après la pose d’un modèle', () => {
+  const fits = modelAddedText({ name: 'support-casque.stl', size_mm: [82, 40, 115], bed_mm: [256, 256, 256], fits: true });
+  assert.match(fits, /support-casque\.stl/);
+  assert.match(fits, /82 × 40 × 115 mm/);
+  assert.doesNotMatch(fits, /dépasse/);
+  const big = modelAddedText({ name: 'tour.stl', size_mm: [300, 40, 120], bed_mm: [256, 256, 256], fits: false });
+  assert.match(big, /dépasse/);
+  assert.match(big, /256 × 256 × 256 mm/);
+});

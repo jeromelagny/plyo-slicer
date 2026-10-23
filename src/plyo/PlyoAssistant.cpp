@@ -5,6 +5,7 @@
 #include "PlyoLoginDialog.hpp"
 #include "PlyoMakerWorldImport.hpp"
 #include "PlyoMakerWorldWindow.hpp"
+#include "PlyoModelImport.hpp"
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
@@ -178,7 +179,12 @@ void handle_page_message(const nlohmann::json& data)
             send(signals);
         } else if (type == "tour_add_benchy")
             send_result(FirstSteps::add_benchy());
-        else if (type == "show_me") {
+        else if (type == "model_add") {
+            // Modèle 3D joint dans le panneau (trombone ou glisser-déposer).
+            nlohmann::json added = ModelImport::add(data.value("name", std::string()), data.value("data", std::string()));
+            added["type"]        = "model_added";
+            send(added);
+        } else if (type == "show_me") {
             const std::string target = data.value("target", std::string());
             send({{"type", "show_me"}, {"target", target}, {"ok", Highlight::show(target).value("ok", false)}});
         } else if (type == "explain") {

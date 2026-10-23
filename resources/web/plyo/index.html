@@ -206,6 +206,10 @@
           <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg></span>
           <span><b>Ajouter une photo depuis l'ordinateur</b><span class="sub">JPEG ou PNG, une ou plusieurs</span></span>
         </button>
+        <button class="action" type="button" data-action="model">
+          <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg></span>
+          <span><b>Ajouter un modèle 3D</b><span class="sub">STL, 3MF, OBJ ou STEP : je le pose sur le plateau (ou glisse-le ici)</span></span>
+        </button>
       </div>
       <p class="label">Ou pars d’un objectif</p>
       <div class="chips" id="goals">
@@ -227,7 +231,7 @@
     <div class="box">
       <textarea id="note" maxlength="500" rows="2" placeholder="Décris le problème ou ce que tu veux obtenir…"></textarea>
       <div class="tools">
-        <button class="icon-btn" id="btn-files" type="button" title="Ajouter des photos depuis l'ordinateur">
+        <button class="icon-btn" id="btn-files" type="button" title="Joindre des photos ou un modèle 3D (STL, 3MF…)">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5L12.5 4a4 4 0 0 1 5.7 5.7l-8.5 8.5a2 2 0 0 1-2.8-2.8l8-8"/></svg>
         </button>
         <button class="icon-btn" id="btn-phone" type="button" title="Prendre des photos avec mon téléphone">
@@ -238,7 +242,7 @@
         </button>
       </div>
     </div>
-    <input id="file-input" type="file" accept="image/*" multiple hidden>
+    <input id="file-input" type="file" accept="image/*,.stl,.3mf,.obj,.step,.stp,.amf" multiple hidden>
   </div>
 
   <div class="drawer hidden" id="drawer">
@@ -496,12 +500,69 @@
   fileInput.addEventListener('change', function () {
     var files = Array.prototype.slice.call(fileInput.files || []);
     fileInput.value = '';
+    addFiles(files);
+  });
+
+  // Photos → pièces jointes de la demande ; modèles 3D → posés sur le plateau par Plyo (gratuit).
+  var MAX_MODEL_BYTES = 50 * 1024 * 1024;
+  function addFiles(all) {
+    var models = all.filter(function (f) { return window.PlyoFirstSteps.isModelFile(f.name); });
+    var files = all.filter(function (f) { return !window.PlyoFirstSteps.isModelFile(f.name); });
+    models.forEach(sendModel);
+    if (!files.length) return;
     Promise.all(files.map(function (f) { return downscale(f).catch(function () { return null; }); })).then(function (list) {
       var ok = list.filter(Boolean);
       if (ok.length < list.length) noteLine('Une image n’a pas pu être lue (JPEG ou PNG recommandé).', true);
       addAttachments(ok);
     });
+  }
+
+  function sendModel(file) {
+    if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd (50 Mo au plus).', true); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var data = String(reader.result || '');
+      window.orca.postMessage({ type: 'model_add', name: file.name, data: data.slice(data.indexOf(',') + 1) });
+    };
+    reader.onerror = function () { noteLine('« ' + file.name + ' » n’a pas pu être lu.', true); };
+    noteLine('Je pose « ' + file.name + ' » sur le plateau…');
+    reader.readAsDataURL(file);
+  }
+
+  // Glisser-déposer sur le panneau : mêmes règles que le trombone.
+  document.addEventListener('dragover', function (e) { e.preventDefault(); });
+  document.addEventListener('drop', function (e) {
+    e.preventDefault();
+    var files = Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []);
+    if (files.length) addFiles(files);
   });
+
+  // Modèle posé : ce qu'il est, s'il tient sur le plateau, et une offre de conseils (IA, sur clic seulement).
+  function onModelAdded(msg) {
+    if (!msg.ok) { noteLine(msg.text, true); return; }
+    showConversation();
+    var box = el('div', 'ai');
+    var who = el('div', 'who');
+    who.appendChild(el('i', '', 'P'));
+    who.appendChild(document.createTextNode('Assistant'));
+    box.appendChild(who);
+    box.appendChild(el('p', '', '✓ ' + window.PlyoFirstSteps.modelAddedText(msg)));
+    var dims = msg.size_mm.join(' × ') + ' mm';
+    var ask = el('button', 'btn ghost', 'Conseille-moi des réglages pour cette pièce (≈ 1 crédit)');
+    ask.type = 'button';
+    ask.style.alignSelf = 'flex-start';
+    ask.style.height = 'auto';
+    ask.style.minHeight = '34px';
+    ask.style.whiteSpace = 'normal';
+    ask.addEventListener('click', function () {
+      ask.disabled = true;
+      send('Je viens de poser « ' + msg.name + ' » sur le plateau (' + dims + '). Quels réglages me conseilles-tu pour l’imprimer ? ' +
+        'Si tu as besoin de savoir à quoi sert la pièce, demande-le-moi d’abord.');
+    });
+    box.appendChild(ask);
+    thread.appendChild(box);
+    scrollDown();
+  }
 
   // ---------- Lien téléphone (un par conversation) ----------
   // Le panneau crée le lien et garde son QR ; la fenêtre QR (PhoneDialog) l'affiche. Chaque « Envoyer »
@@ -1416,6 +1477,7 @@
   $('btn-phone').addEventListener('click', openPhone);
   $('phone-linked').addEventListener('click', openPhone);
   document.querySelector('[data-action="files"]').addEventListener('click', pickFiles);
+  document.querySelector('[data-action="model"]').addEventListener('click', pickFiles);
   document.querySelector('[data-action="phone"]').addEventListener('click', openPhone);
   $('goals').querySelectorAll('.chip').forEach(function (chip) { chip.addEventListener('click', function () { send(chip.textContent); }); });
 
@@ -1446,6 +1508,8 @@
       noteLine('Modèle reçu de MakerWorld : Orca le télécharge et l’ouvre.');
     } else if (msg.type === 'phone_batch_ready') {
       pollPhone(); // la fenêtre QR s'est fermée sur un envoi : on le traite sans attendre le prochain tour
+    } else if (msg.type === 'model_added') {
+      onModelAdded(msg);
     } else if (msg.type === 'firststeps') {
       onFirstSteps(msg.state || {});
     } else if (msg.type === 'tour_signals') {

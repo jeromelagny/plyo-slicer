@@ -59,7 +59,21 @@
     return step;
   }
 
-  var api = { matchSettingQuestion: matchSettingQuestion, judgeValue: judgeValue, TOUR_STEPS: TOUR_STEPS, nextTourStep: nextTourStep };
+  // Modèle 3D joint dans le panneau (le reste, photos comprises, suit le chemin des images).
+  function isModelFile(name) { return /\.(stl|3mf|obj|step|stp|amf)$/i.test(String(name || '')); }
+
+  function dims(v) { return v.map(function (n) { return Math.round(n); }).join(' × ') + ' mm'; }
+
+  // Phrase affichée une fois le modèle posé sur le plateau.
+  function modelAddedText(m) {
+    var text = '« ' + m.name + ' » est sur le plateau (' + dims(m.size_mm) + ').';
+    if (!m.fits)
+      text += ' Attention : il dépasse de ton plateau (' + dims(m.bed_mm) + '). Réduis-le avec l’outil Échelle, ou coupe-le en morceaux avec l’outil Couper.';
+    return text;
+  }
+
+  var api = { matchSettingQuestion: matchSettingQuestion, judgeValue: judgeValue, TOUR_STEPS: TOUR_STEPS, nextTourStep: nextTourStep,
+    isModelFile: isModelFile, modelAddedText: modelAddedText };
   root.PlyoFirstSteps = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -246,11 +246,15 @@ nlohmann::json option_value(const Slic3r::DynamicPrintConfig& config, const std:
 
 void on_startup()
 {
+    // Appelé dans le constructeur de MainFrame : wxGetApp().mainframe n'est affecté qu'après, d'où le report.
     // Une fois par fenêtre principale (Orca la recrée au changement de langue).
-    if (s_watched_frame == wxGetApp().mainframe || !wxGetApp().is_editor())
-        return;
-    s_watched_frame = wxGetApp().mainframe;
-    new StartupWatcher(!load_state().value("seen", false)); // s'arrête seul ; vit autant que l'application
+    wxGetApp().CallAfter([] {
+        const wxWindow* frame = wxGetApp().mainframe;
+        if (frame == nullptr || frame == s_watched_frame || !wxGetApp().is_editor())
+            return;
+        s_watched_frame = frame;
+        new StartupWatcher(!load_state().value("seen", false)); // s'arrête seul ; vit autant que l'application
+    });
 }
 
 nlohmann::json state() { return load_state(); }
