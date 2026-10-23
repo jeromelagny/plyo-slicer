@@ -539,6 +539,7 @@
   // Nom d'origine d'un préréglage de projet (« Bambu Lab A1 0.4 nozzle(fichier.3mf) » → « Bambu Lab A1 0.4 nozzle »).
   function baseName(name) { return (name || '').replace(/\([^()]*\.3mf\)$/i, '').trim(); }
   function inRange(p, v) {
+    if (typeof v === 'string') return !p.values || p.values.indexOf(v) >= 0; // ex. supports peints « tree(manual) »
     if (typeof v !== 'number') return true;
     return (typeof p.min !== 'number' || v >= p.min - 1e-9) && (typeof p.max !== 'number' || v <= p.max + 1e-9);
   }
@@ -605,7 +606,9 @@
       var c = findParam(creator.params, id), m = findParam(mine.params, id);
       if (!c || c.value === null || (m && sameValue(m.value, c.value))) return;
       if (!inRange(c, c.value)) {
-        infoRow(c.label || id, null, formatValue(c.value, c.unit) + ' : non reportée', 'Hors des limites de Plyo (' + formatValue(c.min, c.unit) + ' – ' + formatValue(c.max, c.unit) + ').');
+        infoRow(c.label || id, null, formatValue(c.value, c.unit) + ' : non reportée', typeof c.value === 'string'
+          ? 'Choix que Plyo ne sait pas appliquer : ton réglage est gardé.'
+          : 'Hors des limites de Plyo (' + formatValue(c.min, c.unit) + ' – ' + formatValue(c.max, c.unit) + ').');
         return;
       }
       setRow(id, m ? m.value : null, c.value, 'Choix du créateur.', c);

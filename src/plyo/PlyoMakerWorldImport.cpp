@@ -59,10 +59,19 @@ std::optional<std::string> download_info(const std::string& open_url)
     return Slic3r::GUI::FileGet::escape_url(open_url.substr(results.length()));
 }
 
+// Abandonne les modifications non enregistrées des trois préréglages : sans cela, Tab::select_preset ouvre la
+// fenêtre « modifications non enregistrées » (transférer / enregistrer) même avec force_select (Tab.cpp:7363).
+// Les réglages du créateur restent capturés dans s_creator pour Annuler.
+void discard_unsaved_changes()
+{
+    bundle().printers.discard_current_changes();
+    bundle().prints.discard_current_changes();
+    bundle().filaments.discard_current_changes();
+}
+
 bool select(Preset::Type type, const std::string& name)
 {
     Slic3r::GUI::Tab* tab = Slic3r::GUI::wxGetApp().get_tab(type);
-    // force_select : pas de fenêtre « modifications non enregistrées » ; les réglages du créateur restent capturés.
     return tab != nullptr && tab->select_preset(name, false, "", true);
 }
 
@@ -99,8 +108,11 @@ nlohmann::json import_link(const std::string& open_url)
     if (!info)
         return nullptr;
 
-    s_mine                       = current_selection();
-    const Selection before       = s_mine;
+    const Selection before = current_selection();
+    // Si l'on est encore sur les réglages d'un import précédent, « mon profil » reste celui noté avant cet import.
+    const bool      still_on_previous_creator = s_creator && before.printer == s_creator->names.printer &&
+                                           before.print == s_creator->names.print && before.filaments == s_creator->names.filaments;
+    const Selection mine = still_on_previous_creator ? s_mine : before;
     const bool      dirty_before = bundle().printers.current_is_dirty() || bundle().prints.current_is_dirty() || bundle().filaments.current_is_dirty();
 
     Slic3r::GUI::Plater* plater = Slic3r::GUI::wxGetApp().plater();
@@ -116,6 +128,7 @@ nlohmann::json import_link(const std::string& open_url)
         return nullptr;
     }
 
+    s_mine    = mine;
     s_creator = CreatorCapture{after, bundle().printers.get_edited_preset().config, bundle().prints.get_edited_preset().config,
                                bundle().filaments.get_edited_preset().config};
     SettingsBridge::clear_undo();
@@ -146,13 +159,20 @@ nlohmann::json apply(bool keep_creator_filaments, const nlohmann::json& changes)
         return {{"ok", false}, {"text", "Refusé : ton profil d'avant l'import n'existe plus. Rien n'a été changé."}};
 
     const std::vector<std::string> creator_filaments = bundle().filament_presets;
+    discard_unsaved_changes();
     if (!select(Preset::TYPE_PRINTER, s_mine.printer) || !select(Preset::TYPE_PRINT, s_mine.print))
         return {{"ok", false}, {"text", "Refusé : impossible de sélectionner ton imprimante ou ton profil d'impression."}};
     // Modèle multicolore : emplacements du créateur conservés ; sinon, le filament de l'utilisateur.
     set_filament_slots(keep_creator_filaments ? creator_filaments : std::vector<std::string>{s_mine.filaments.front()});
 
-    if (changes.is_array() && !changes.empty())
-        return SettingsBridge::apply_changes(changes);
+    if (changes.is_array() && !changes.empty()) {
+        nlohmann::json result = SettingsBridge::apply_changes(changes);
+        if (!result.value("ok", false)) {
+            restore_creator();
+            result["text"] = result.value("text", std::string()) + " Les réglages du créateur ont été remis.";
+        }
+        return result;
+    }
     return {{"ok", true}, {"text", "Appliqué : ton imprimante et ton profil sont de retour."}};
 }
 
@@ -160,6 +180,7 @@ nlohmann::json restore_creator()
 {
     if (!s_creator)
         return {{"ok", false}, {"text", "Rien à annuler."}};
+    discard_unsaved_changes();
     select(Preset::TYPE_PRINTER, s_creator->names.printer);
     select(Preset::TYPE_PRINT, s_creator->names.print);
     set_filament_slots(s_creator->names.filaments);
@@ -176,6 +197,7 @@ nlohmann::json use_my_filament_everywhere()
 {
     if (!s_creator || s_mine.filaments.empty() || find(bundle().filaments, s_mine.filaments.front()) == nullptr)
         return {{"ok", false}, {"text", "Refusé : ton filament d'avant l'import est introuvable."}};
+    bundle().filaments.discard_current_changes();
     set_filament_slots(std::vector<std::string>(bundle().filament_presets.size(), s_mine.filaments.front()));
     return {{"ok", true}, {"text", "Appliqué : ton filament dans tous les emplacements."}};
 }

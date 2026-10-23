@@ -199,8 +199,11 @@ nlohmann::json read_params(const Configs& configs)
         std::optional<double> v = current_value(p, configs, &note);
         nlohmann::json        item{{"id", p.id}, {"label", p.label}, {"key", resolve_key(p)}, {"unit", p.unit},
                                    {"min", p.min}, {"max", p.max}, {"note", note}};
-        if (p.kind == Kind::Enum)
+        if (p.kind == Kind::Enum) {
             item["value"] = enum_value(p, configs);
+            // Choix acceptés par apply_changes (le style de support dépend du type de support).
+            item["values"] = allowed_values(p.id, enum_value(*find_param("support_type"), configs));
+        }
         else if (!v)
             item["value"] = nullptr;
         else if (p.kind == Kind::Bool)
