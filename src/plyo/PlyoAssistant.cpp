@@ -1,10 +1,12 @@
 #include "PlyoAssistant.hpp"
+#include "PlyoLoginDialog.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/DockPanel.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/Plater.hpp"
 
 #include <boost/filesystem/path.hpp>
@@ -84,7 +86,12 @@ void handle_page_message(const nlohmann::json& data)
             send({{"type", "session"}, {"session", Session::load()}});
         else if (type == "session_save")
             send({{"type", "session_saved"}, {"ok", Session::save(data.contains("session") ? data["session"] : nlohmann::json())}});
-        else if (type == "session_clear") {
+        else if (type == "login") {
+            // Fenêtre de connexion modale centrée sur Orca ; le panneau reçoit ensuite la session (ou null).
+            LoginDialog dialog(Slic3r::GUI::wxGetApp().mainframe);
+            dialog.ShowModal();
+            send({{"type", "session"}, {"session", Session::load()}});
+        } else if (type == "session_clear") {
             Session::clear();
             send({{"type", "session"}, {"session", nullptr}});
         }

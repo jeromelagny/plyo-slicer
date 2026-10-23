@@ -66,6 +66,15 @@
   #composer .row .grow { flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #photo-input { display: none; }
 
+  /* Compte */
+  #account { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  #account button { padding: 2px 8px; font-size: 11px; }
+  #login { flex: 1; padding: 16px 14px; display: flex; flex-direction: column; gap: 8px; }
+  #login input { box-sizing: border-box; width: 100%; }
+  #login .hint { color: var(--muted); font-size: 12px; margin: 0; }
+  #login .error { color: var(--danger); font-size: 12px; margin: 0; }
+  .hidden { display: none !important; }
+
   /* Sections repliées */
   details { border-top: 1px solid var(--border); padding: 8px 14px; }
   summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
@@ -83,13 +92,23 @@
   <header>
     <span class="dot" id="status-dot" title="État de la connexion au slicer"></span>
     <h1>Assistant Plyo</h1>
+    <div id="account" class="hidden">
+      <span id="balance"></span>
+      <button id="btn-logout" class="secondary" type="button">Se déconnecter</button>
+    </div>
   </header>
 
-  <div id="thread">
+  <div id="login" class="hidden">
+    <p class="hint">Connectez-vous pour utiliser l'assistant. Pas de mot de passe : vous recevez un code par e-mail.</p>
+    <button id="btn-login" type="button">Se connecter</button>
+    <p class="error" id="login-error"></p>
+  </div>
+
+  <div id="thread" class="hidden">
     <div class="bubble info">Décrivez ce que vous voulez (par exemple « une surface bien lisse ») ou envoyez une photo d'une impression ratée.</div>
   </div>
 
-  <div id="composer">
+  <div id="composer" class="hidden">
     <textarea id="note" maxlength="500" placeholder="Votre question ou le problème rencontré…"></textarea>
     <div class="row">
       <button id="btn-photo" class="secondary" type="button">📷 Photo</button>
@@ -135,6 +154,7 @@
   var pendingPhoto = null;    // { media_type, data, preview }
   var history = [];           // [{ role: 'user' | 'assistant', text }]
   var busy = false;
+  var session = null;         // { access_token, refresh_token, expires_at, email } conservée par le slicer
 
   var ERRORS = {
     config_missing: "Le service Plyo n'est pas configuré (clé API manquante).",
@@ -142,6 +162,7 @@
     incomplete_answer: "La réponse de l'assistant est incomplète. Réessayez.",
     upstream_error: "Le service d'IA est momentanément indisponible. Réessayez dans un instant.",
     invalid_request: "La demande n'a pas pu être envoyée (photo trop lourde ou format non pris en charge ?).",
+    insufficient_credits: "Crédits épuisés : rechargez votre compte pour continuer à utiliser l'assistant.",
     internal: "Erreur interne du service Plyo."
   };
 
@@ -169,6 +190,77 @@
     showMessage('Pont OrcaSlicer absent : page ouverte hors du slicer.', true);
     return;
   }
+
+  // ---------- Compte : connexion par code e-mail, solde, session ----------
+  var loginView = document.getElementById('login');
+  var account = document.getElementById('account');
+  var balanceLabel = document.getElementById('balance');
+  var loginError = document.getElementById('login-error');
+  var loginOffered = false;   // la fenêtre de connexion s'ouvre d'elle-même une seule fois par ouverture du panneau
+
+  function showApp(loggedIn) {
+    loginView.classList.toggle('hidden', loggedIn);
+    account.classList.toggle('hidden', !loggedIn);
+    thread.classList.toggle('hidden', !loggedIn);
+    document.getElementById('composer').classList.toggle('hidden', !loggedIn);
+  }
+
+  function setBalance(balance) {
+    if (typeof balance === 'number') balanceLabel.textContent = 'Crédits : ' + balance.toLocaleString('fr-FR');
+  }
+
+  function postJson(path, body, headers) {
+    return fetch(PLYO_API_URL + path, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, headers || {}),
+      body: JSON.stringify(body)
+    });
+  }
+
+  // Appel authentifié : sur un 401, un seul renouvellement de session puis une nouvelle tentative.
+  function apiFetch(path, init) {
+    function attempt() {
+      var headers = Object.assign({}, init.headers || {}, { Authorization: 'Bearer ' + (session ? session.access_token : '') });
+      return fetch(PLYO_API_URL + path, Object.assign({}, init, { headers: headers }));
+    }
+    return attempt().then(function (response) {
+      if (response.status !== 401 || !session) return response;
+      return postJson('/api/auth/refresh', { refresh_token: session.refresh_token }).then(function (r) {
+        if (!r.ok) return response;
+        return r.json().then(function (fresh) {
+          session = fresh;
+          window.orca.postMessage({ type: 'session_save', session: fresh });
+          return attempt();
+        });
+      });
+    });
+  }
+
+  function refreshAccount() {
+    apiFetch('/api/me', { method: 'GET' })
+      .then(function (r) {
+        if (r.status === 401) { logout('Votre session a expiré : reconnectez-vous.'); return null; }
+        return r.ok ? r.json() : null;
+      })
+      .then(function (me) { if (me) setBalance(me.balance); })
+      .catch(function () { balanceLabel.textContent = 'Service injoignable'; });
+  }
+
+  function logout(message) {
+    session = null;
+    window.orca.postMessage({ type: 'session_clear' });
+    loginError.textContent = message || '';
+    showApp(false);
+  }
+
+  // Fenêtre de connexion native d'Orca (PlyoLoginDialog) ; le slicer renvoie ensuite la session.
+  function openLogin() {
+    loginError.textContent = '';
+    window.orca.postMessage({ type: 'login' });
+  }
+  document.getElementById('btn-login').addEventListener('click', openLogin);
+
+  document.getElementById('btn-logout').addEventListener('click', function () { logout(); });
 
   // ---------- Réglages lus ----------
   function formatValue(p) {
@@ -262,17 +354,28 @@
     sendButton.disabled = true;
     var waiting = addBubble('info', 'L’assistant réfléchit…');
 
-    fetch(PLYO_API_URL + '/api/diagnose', {
+    apiFetch('/api/diagnose', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     })
       .then(function (response) {
-        return response.json().then(function (data) { return { ok: response.ok, data: data }; });
+        return response.json().then(function (data) { return { ok: response.ok, status: response.status, data: data }; });
       })
       .then(function (r) {
         waiting.remove();
-        if (!r.ok) { showMessage(ERRORS[r.data.error] || ERRORS.internal, true); return; }
+        if (r.status === 401) {
+          // Session impossible à renouveler : retour à la connexion, sans perdre le texte tapé.
+          logout('Votre session a expiré : reconnectez-vous.');
+          noteInput.value = note;
+          return;
+        }
+        if (!r.ok) {
+          showMessage(ERRORS[r.data.error] || ERRORS.internal, true);
+          if (r.data.error === 'insufficient_credits') setBalance(r.data.balance);
+          return;
+        }
+        if (r.data.credits) setBalance(r.data.credits.balance);
         history.push({ role: 'user', text: (photo ? '(photo envoyée) ' : '') + note });
         history.push({ role: 'assistant', text: summaryForHistory(r.data) });
         history = history.slice(-MAX_HISTORY);
@@ -371,6 +474,11 @@
     if (!msg || !msg.type) return;
     if (msg.type === 'status') {
       statusDot.classList.add('on');
+    } else if (msg.type === 'session') {
+      session = msg.session;
+      showApp(!!session);
+      if (session) refreshAccount();
+      else if (!loginOffered) { loginOffered = true; openLogin(); }
     } else if (msg.type === 'values') {
       renderValues(msg);
     } else if (msg.type === 'result') {
@@ -426,6 +534,7 @@
   });
 
   window.orca.postMessage({ type: 'ready' });
+  window.orca.postMessage({ type: 'session_load' });
 })();
 </script>
 </body>
