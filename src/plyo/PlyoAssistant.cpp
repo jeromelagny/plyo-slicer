@@ -1,5 +1,6 @@
 #include "PlyoAssistant.hpp"
 #include "PlyoLoginDialog.hpp"
+#include "PlyoPhoneDialog.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
 
@@ -96,6 +97,18 @@ void handle_page_message(const nlohmann::json& data)
                 dialog.ShowModal();
                 s_login_open = false;
                 send({{"type", "session"}, {"session", Session::load()}});
+            }
+        } else if (type == "phone") {
+            // Fenêtre du QR code ; une seule à la fois. Le panneau récupère ensuite les photos de la session.
+            static bool s_phone_open = false;
+            const nlohmann::json session = Session::load();
+            if (!s_phone_open && session.is_object()) {
+                s_phone_open = true;
+                PhoneDialog dialog(Slic3r::GUI::wxGetApp().mainframe, session["access_token"].get<std::string>());
+                const int result = dialog.ShowModal();
+                s_phone_open = false;
+                if (result == wxID_OK && !dialog.session_id().empty())
+                    send({{"type", "phone_session_done"}, {"session_id", dialog.session_id()}});
             }
         } else if (type == "session_clear") {
             Session::clear();

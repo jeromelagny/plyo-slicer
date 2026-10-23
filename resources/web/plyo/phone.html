@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photos depuis le téléphone</title>
+<style>
+  /* Variables --orca-* injectées par OrcaSlicer (thème clair ou sombre) ; valeurs de repli pour un navigateur. */
+  :root {
+    --bg: var(--orca-bg, #ffffff);
+    --fg: var(--orca-fg, #262e30);
+    --muted: var(--orca-muted, #6b6b6b);
+    --border: var(--orca-border, #dbdbdb);
+    --accent: var(--orca-accent, #009688);
+    --font: var(--orca-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    --danger: #e14747;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 14px; line-height: 1.5; display: flex; flex-direction: column; }
+  main { flex: 1; padding: 24px 28px 10px; display: grid; grid-template-columns: 172px 1fr; gap: 22px; align-content: start; }
+  .qr { width: 172px; height: 172px; border-radius: 12px; background: #fff; padding: 8px; display: grid; place-items: center; }
+  .qr img { width: 100%; height: 100%; image-rendering: pixelated; }
+  .qr .wait { color: #888; font-size: 12px; }
+  h1 { margin: 2px 0 8px; font-size: 18px; font-weight: 600; line-height: 1.25; }
+  ol { margin: 0; padding-left: 20px; }
+  ol li { margin-bottom: 4px; }
+  .live { margin: 4px 28px 0; padding: 14px; border-radius: 12px; border: 1px dashed var(--border); background: color-mix(in srgb, var(--fg) 4%, var(--bg)); }
+  .status { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 13.5px; }
+  .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .pulse.on { background: var(--accent); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); } 70% { box-shadow: 0 0 0 9px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  @media (prefers-reduced-motion: reduce) { .pulse.on { animation: none; } }
+  .slots { display: flex; gap: 6px; margin-top: 10px; }
+  .slot { width: 40px; height: 40px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 22%, var(--bg)); display: grid; place-items: center; color: var(--accent); font-size: 18px; }
+  .hint { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
+  .error { color: var(--danger); }
+  footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 28px 22px; }
+  footer .note { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  button { height: 38px; padding: 0 18px; border-radius: 8px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .primary { color: var(--orca-accent-fg, #fff); background: var(--accent); border: 1px solid var(--accent); }
+  .ghost { color: var(--fg); background: transparent; border: 1px solid var(--border); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <main>
+    <div class="qr" id="qr"><span class="wait">Génération…</span></div>
+    <div>
+      <h1>Prenez vos photos avec le téléphone</h1>
+      <ol>
+        <li>Ouvrez l'appareil photo du téléphone</li>
+        <li>Visez le QR code et ouvrez le lien</li>
+        <li>Photographiez la pièce, sous plusieurs angles</li>
+      </ol>
+    </div>
+  </main>
+
+  <div class="live">
+    <div class="status"><span class="pulse" id="pulse"></span><span id="status">En attente du téléphone…</span></div>
+    <div class="slots" id="slots"></div>
+    <p class="hint" id="hint">Le téléphone doit être sur le même Wi-Fi que cet ordinateur.</p>
+  </div>
+
+  <footer>
+    <span class="note" id="note">Dès que vous appuyez sur « Envoyer » sur le téléphone, les photos et votre message arrivent dans l'assistant. Code valable 10 minutes.</span>
+    <button class="primary hidden" id="btn-renew" type="button">Générer un nouveau code</button>
+    <button class="ghost" id="btn-close" type="button">Fermer</button>
+  </footer>
+
+<script>
+(function () {
+  // Service Plyo (prototype local) — même valeur que dans resources/web/plyo/index.html.
+  var PLYO_API_URL = 'http://localhost:3000';
+  var POLL_MS = 2000;
+
+  var accessToken = (window.PLYO && window.PLYO.accessToken) || '';
+  var qr = document.getElementById('qr');
+  var pulse = document.getElementById('pulse');
+  var statusLine = document.getElementById('status');
+  var slots = document.getElementById('slots');
+  var hint = document.getElementById('hint');
+  var renew = document.getElementById('btn-renew');
+  var sessionId = null;
+  var timer = null;
+
+  function toSlicer(message) {
+    if (window.wx && window.wx.postMessage) window.wx.postMessage(JSON.stringify(message));
+  }
+
+  function api(path, method) {
+    return fetch(PLYO_API_URL + path, { method: method || 'GET', headers: { Authorization: 'Bearer ' + accessToken } });
+  }
+
+  function showError(text) {
+    pulse.classList.remove('on');
+    statusLine.textContent = text;
+    statusLine.classList.add('error');
+  }
+
+  function setPhotos(count) {
+    slots.textContent = '';
+    for (var i = 0; i < count; i++) {
+      var slot = document.createElement('div');
+      slot.className = 'slot';
+      slot.textContent = '📷';
+      slots.appendChild(slot);
+    }
+  }
+
+  function expired() {
+    clearInterval(timer);
+    pulse.classList.remove('on');
+    statusLine.textContent = 'Ce code a expiré.';
+    hint.textContent = 'Générez un nouveau code pour continuer.';
+    qr.style.opacity = '0.25';
+    renew.classList.remove('hidden');
+  }
+
+  function poll() {
+    api('/api/phone-sessions/' + sessionId)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (s) {
+        if (s.expired) return expired();
+        setPhotos(s.photo_count);
+        if (s.status === 'waiting') return;
+        pulse.classList.add('on');
+        statusLine.textContent = s.photo_count
+          ? 'Téléphone connecté · ' + s.photo_count + ' photo' + (s.photo_count > 1 ? 's' : '') + ' prise' + (s.photo_count > 1 ? 's' : '')
+          : 'Téléphone connecté';
+        if (s.status === 'submitted') {
+          clearInterval(timer);
+          statusLine.textContent = 'Photos reçues : ouverture dans l’assistant…';
+          toSlicer({ command: 'phone_done', session_id: sessionId });
+        }
+      })
+      .catch(function () { /* coupure passagère : on réessaie au prochain tour */ });
+  }
+
+  function start() {
+    renew.classList.add('hidden');
+    qr.style.opacity = '';
+    statusLine.classList.remove('error');
+    statusLine.textContent = 'En attente du téléphone…';
+    hint.textContent = 'Le téléphone doit être sur le même Wi-Fi que cet ordinateur.';
+    setPhotos(0);
+    api('/api/phone-sessions', 'POST')
+      .then(function (r) {
+        if (r.status === 401) throw new Error('Votre session a expiré : fermez cette fenêtre et reconnectez-vous.');
+        if (!r.ok) throw new Error('Impossible de créer le code. Le service Plyo est-il démarré ?');
+        return r.json();
+      })
+      .then(function (s) {
+        sessionId = s.id;
+        var img = document.createElement('img');
+        img.alt = 'QR code à scanner avec le téléphone';
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s.qr_svg);
+        qr.textContent = '';
+        qr.appendChild(img);
+        timer = setInterval(poll, POLL_MS);
+      })
+      .catch(function (e) { showError(e.message || 'Service Plyo injoignable.'); });
+  }
+
+  renew.addEventListener('click', start);
+  document.getElementById('btn-close').addEventListener('click', function () { toSlicer({ command: 'close_page' }); });
+  start();
+})();
+</script>
+</body>
+</html>
