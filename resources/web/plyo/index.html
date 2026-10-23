@@ -57,7 +57,15 @@
   td { padding: 5px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
   tr:last-child td { border-bottom: 0; }
   td.value { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 12px; }
-  td.key { color: var(--muted); font-size: 11px; display: block; }
+  .note { color: var(--muted); font-size: 11px; display: block; }
+  td.value.changed { color: var(--accent); font-weight: 600; }
+  .actions { display: flex; flex-direction: column; gap: 6px; }
+  .actions button { width: 100%; }
+  button.secondary {
+    color: var(--fg);
+    background: transparent;
+    border: 1px solid var(--border);
+  }
 </style>
 </head>
 <body>
@@ -75,6 +83,15 @@
     <h2>Paramètres lus</h2>
     <table><tbody id="params"></tbody></table>
     <p class="empty" id="params-empty">Aucun paramètre lu pour l'instant.</p>
+  </section>
+
+  <section>
+    <h2>Tests</h2>
+    <div class="actions">
+      <button id="btn-suggest">Appliquer une suggestion factice</button>
+      <button id="btn-refuse" class="secondary">Envoyer une valeur hors plage</button>
+      <button id="btn-undo" class="secondary" disabled>Annuler la dernière modification</button>
+    </div>
   </section>
 
 <script>
@@ -96,12 +113,65 @@
     return;
   }
 
+  var paramsBody = document.getElementById('params');
+  var paramsEmpty = document.getElementById('params-empty');
+  var undoButton = document.getElementById('btn-undo');
+  var previousValues = {};
+
+  function formatValue(p) {
+    if (p.value === null || p.value === undefined) return '—';
+    if (typeof p.value === 'boolean') return p.value ? 'Oui' : 'Non';
+    var n = Math.round(p.value * 1000) / 1000;
+    return n.toLocaleString('fr-FR') + (p.unit ? ' ' + p.unit : '');
+  }
+
+  function renderValues(msg) {
+    paramsBody.innerHTML = '';
+    paramsEmpty.style.display = msg.params.length ? 'none' : '';
+    msg.params.forEach(function (p) {
+      var tr = document.createElement('tr');
+      var label = document.createElement('td');
+      label.textContent = p.label;
+      var key = document.createElement('span');
+      key.className = 'note';
+      key.textContent = p.key + (p.note ? ' — ' + p.note : '');
+      label.appendChild(key);
+      var value = document.createElement('td');
+      value.className = 'value';
+      value.textContent = formatValue(p);
+      if (p.id in previousValues && previousValues[p.id] !== p.value) value.classList.add('changed');
+      previousValues[p.id] = p.value;
+      tr.appendChild(label);
+      tr.appendChild(value);
+      paramsBody.appendChild(tr);
+    });
+    undoButton.disabled = !msg.can_undo;
+  }
+
   window.orca.onMessage(function (msg) {
     if (!msg || !msg.type) return;
     if (msg.type === 'status') {
       statusDot.classList.add('on');
       showMessage(msg.text);
+    } else if (msg.type === 'values') {
+      renderValues(msg);
+    } else if (msg.type === 'result') {
+      showMessage(msg.text, !msg.ok);
     }
+  });
+
+  // Réponses factices de « l'IA », au format que le futur service web enverra.
+  document.getElementById('btn-suggest').addEventListener('click', function () {
+    window.orca.postMessage({ type: 'apply', changes: [
+      { id: 'nozzle_temp', delta: -5 },
+      { id: 'retraction', delta: 0.2 }
+    ] });
+  });
+  document.getElementById('btn-refuse').addEventListener('click', function () {
+    window.orca.postMessage({ type: 'apply', changes: [{ id: 'nozzle_temp', value: 400 }] });
+  });
+  undoButton.addEventListener('click', function () {
+    window.orca.postMessage({ type: 'undo' });
   });
 
   window.orca.postMessage({ type: 'ready' });

@@ -13,4 +13,8 @@ void toggle_assistant(Slic3r::GUI::Plater* plater);
 
 bool is_assistant_shown();
 
+// Appelé par MainFrame::on_config_changed() à chaque changement de configuration
+// (saisie manuelle, changement de préréglage, modification par Plyo).
+void on_config_changed();
+
 } // namespace Plyo

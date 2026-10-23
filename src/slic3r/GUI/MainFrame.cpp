@@ -4393,6 +4393,7 @@ void MainFrame::on_config_changed(DynamicPrintConfig* config) const
 {
     if (m_plater)
         m_plater->on_config_change(*config); // propagate config change events to the plater
+    Plyo::on_config_changed(); // PLYO: rafraîchit les valeurs affichées dans le panneau Assistant Plyo
 }
 
 void MainFrame::set_print_button_to_default(PrintSelectType select_type)
