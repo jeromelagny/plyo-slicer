@@ -6,6 +6,7 @@
 #include <wx/frame.h>
 #include <wx/timer.h>
 
+class wxPanel;
 class wxStaticText;
 
 class wxWebView;
@@ -35,6 +36,7 @@ private:
     void update_guide(const std::string& url);
 
     wxWebView*                              m_browser = nullptr;
+    wxPanel*                                m_banner  = nullptr;
     wxStaticText*                           m_guide   = nullptr;
     wxStaticText*                           m_pill    = nullptr;
     wxTimer                                 m_url_timer;

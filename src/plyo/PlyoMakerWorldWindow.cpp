@@ -9,6 +9,7 @@
 #include <regex>
 
 #include <wx/button.h>
+#include <wx/panel.h>
 #include <wx/sizer.h>
 #include <wx/timer.h>
 #include <wx/stattext.h>
@@ -46,17 +47,29 @@ MakerWorldWindow::MakerWorldWindow(wxWindow* parent, const std::string& url, std
     auto* back    = new wxButton(this, wxID_ANY, wxString::FromUTF8("← Retour"));
     auto* model   = new wxButton(this, wxID_ANY, wxString::FromUTF8("Page du modèle"));
     bar->Add(back, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(6));
-    bar->Add(model, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(16));
+    bar->Add(model, 0, wxALIGN_CENTER_VERTICAL);
+    sizer->Add(bar, 0, wxALL, FromDIP(8));
 
-    // Guide d'import, hors de la page (on ne modifie pas le site) : étapes et repère du bouton à cliquer.
-    m_guide = new wxStaticText(this, wxID_ANY, wxEmptyString);
-    m_pill  = new wxStaticText(this, wxID_ANY, wxString::FromUTF8("  Ouvrir dans Bambu Studio  "));
+    // Guide d'import, hors de la page (on ne modifie pas le site) : bandeau pleine largeur, bien visible,
+    // avec les étapes et le repère du bouton à cliquer.
+    m_banner             = new wxPanel(this);
+    const wxColour teal  = wxColour(0, 150, 136); // couleur d'accent de Plyo
+    m_banner->SetBackgroundColour(teal);
+    auto* banner_sizer   = new wxBoxSizer(wxHORIZONTAL);
+    m_guide              = new wxStaticText(m_banner, wxID_ANY, wxEmptyString);
+    m_guide->SetForegroundColour(*wxWHITE);
+    m_guide->SetBackgroundColour(teal);
+    m_guide->SetFont(m_guide->GetFont().Bold().Scaled(1.3f));
+    m_pill = new wxStaticText(m_banner, wxID_ANY, wxString::FromUTF8("  Ouvrir dans Bambu Studio  "));
     m_pill->SetBackgroundColour(wxColour(0, 174, 66)); // vert proche du bouton du site, dessiné par nous
     m_pill->SetForegroundColour(*wxWHITE);
-    m_pill->SetFont(m_pill->GetFont().Bold());
-    bar->Add(m_guide, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, FromDIP(6));
-    bar->Add(m_pill, 0, wxALIGN_CENTER_VERTICAL);
-    sizer->Add(bar, 0, wxALL, FromDIP(8));
+    m_pill->SetFont(m_pill->GetFont().Bold().Scaled(1.3f));
+    banner_sizer->Add(m_guide, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, FromDIP(10));
+    banner_sizer->Add(m_pill, 0, wxALIGN_CENTER_VERTICAL);
+    m_banner->SetSizer(banner_sizer);
+    sizer->Add(m_banner, 0, wxEXPAND);
+    banner_sizer->Insert(0, FromDIP(16), 0); // marge gauche
+    m_banner->SetMinSize(wxSize(-1, FromDIP(52)));
 
     // Créée vide, pour que la première page soit déjà demandée avec la signature d'un navigateur ordinaire.
     m_browser = ::WebView::CreateWebView(this, wxEmptyString);
@@ -91,11 +104,13 @@ void MakerWorldWindow::update_guide(const std::string& url)
     if (m_captured || m_guide == nullptr)
         return;
     const bool on_model = loggable(url).find("/models/") != std::string::npos;
-    const wxString text = wxString::FromUTF8(on_model ? "① Choisis un profil d'impression   ② Clique sur" : "Ouvre la page d'un modèle pour l'importer dans Plyo.");
+    const wxString text = wxString::FromUTF8(on_model ? "① Choisis un profil d'impression sous le modèle     ② Clique sur"
+                                                      : "Ouvre la page d'un modèle pour l'importer dans Plyo.");
     if (m_guide->GetLabel() == text)
         return;
     m_guide->SetLabel(text);
     m_pill->Show(on_model);
+    m_banner->Layout();
     Layout();
 }
 
@@ -110,6 +125,7 @@ bool MakerWorldWindow::capture(const std::string& url)
     if (m_guide != nullptr) {
         m_guide->SetLabel(wxString::FromUTF8("Modèle reçu, ouverture dans Plyo…"));
         m_pill->Hide();
+        m_banner->Layout();
         Layout();
     }
     BOOST_LOG_TRIVIAL(info) << "Plyo: lien MakerWorld capté (" << url.substr(0, url.find(':')) << ")";
