@@ -1,5 +1,6 @@
 #include "PlyoAssistant.hpp"
 #include "PlyoLoginDialog.hpp"
+#include "PlyoMakerWorldImport.hpp"
 #include "PlyoMakerWorldWindow.hpp"
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoSession.hpp"
@@ -114,17 +115,26 @@ void handle_page_message(const nlohmann::json& data)
                     send({{"type", "phone_batch_ready"}});
             }
         } else if (type == "makerworld") {
-            // PROTOTYPE : page MakerWorld dans une fenêtre Plyo ; le lien « Ouvrir dans … » est confié à Orca.
+            // Page MakerWorld dans une fenêtre Plyo ; le lien « Ouvrir dans … » est importé par Orca.
             const std::string url = data.value("url", std::string());
             if (MakerWorldWindow::is_makerworld_url(url)) {
                 auto* window = new MakerWorldWindow(Slic3r::GUI::wxGetApp().mainframe, url, [](const std::string& open_url) {
                     send({{"type", "makerworld_opened"}});
-                    Slic3r::GUI::wxGetApp().start_download(open_url);
+                    // Import synchrone, puis fiche « créateur → toi » si le projet a apporté ses réglages.
+                    const nlohmann::json imported = MakerWorldImport::import_link(open_url);
+                    if (!imported.is_null())
+                        send(imported);
                 });
                 window->Show();
             } else
                 send_result({{"ok", false}, {"text", "Adresse MakerWorld non reconnue."}});
-        } else if (type == "session_clear") {
+        } else if (type == "makerworld_apply")
+            send_result(MakerWorldImport::apply(data.value("keep_filaments", false), data.contains("changes") ? data["changes"] : nlohmann::json()));
+        else if (type == "makerworld_undo")
+            send_result(MakerWorldImport::restore_creator());
+        else if (type == "makerworld_mono")
+            send_result(MakerWorldImport::use_my_filament_everywhere());
+        else if (type == "session_clear") {
             Session::clear();
             send({{"type", "session"}, {"session", nullptr}});
         }
