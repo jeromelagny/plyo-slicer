@@ -100,6 +100,7 @@
   .delta .new { color: var(--accent); font-weight: 700; }
   .row .why { color: var(--muted); font-size: 12px; }
   .row.off { opacity: .45; }
+  .row.best { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .sheet footer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); align-items: center; }
   .sheet .done { color: var(--accent); font-size: 12px; font-weight: 600; flex: 1; }
   .sheet .link { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 12px; padding: 0; }
@@ -519,6 +520,8 @@
   }
 
   function drainPhoneQueue() {
+    // Une carte de calibration qui attend sa photo la reçoit à la place d'une nouvelle demande.
+    if (calibCard && calibCard.awaiting && phoneQueue.length) { calibCard.receivePhotos(phoneQueue.shift().photos); return; }
     if (busy || !lastValues || !phoneQueue.length) return;
     var next = phoneQueue.shift();
     send(next.message, next.photos, true);
@@ -723,6 +726,199 @@
       });
   }
 
+  // ---------- Calibration guidée par photo ----------
+  var CALIB = {
+    temperature: { name: 'Tour de température', shows: 'la température où ton filament fait le moins de fils et soude bien ses couches', duration: '≈ 45 min' },
+    flow: { name: 'Test de débit', shows: 'la quantité de plastique juste : ni trous, ni bourrelets sur le dessus', duration: '≈ 20 min par passe' },
+    retraction: { name: 'Tour de rétraction', shows: 'la rétraction la plus courte qui supprime les fils', duration: '≈ 40 min' },
+    pressure_advance: { name: 'Test de pressure advance', shows: 'le réglage qui rend les angles nets, sans bourrelet', duration: '≈ 10 min' },
+    ironing: { name: 'Plaque de lissage', shows: 'le débit et l’espacement qui donnent le dessus le plus lisse', duration: '≈ 15 min' }
+  };
+  var calibHistory = [];   // calibrations déjà faites pour ce filament sur cette imprimante (slicer)
+  var calibCard = null;    // carte du test en cours
+
+  function calibrationOffer(offer) {
+    var info = CALIB[offer.test];
+    var box = el('div', 'tip');
+    box.appendChild(el('span', '', '🎯'));
+    var body = el('div');
+    body.appendChild(el('div', 'name', info.name + ' (' + info.duration + ')'));
+    body.appendChild(el('div', '', offer.reason || ('Ce test montre ' + info.shows + '.')));
+    var start = el('button', 'btn', 'Lancer le test');
+    start.type = 'button';
+    start.style.marginTop = '8px';
+    start.addEventListener('click', function () {
+      start.disabled = true;
+      pendingSheet = { kind: 'calib', onResult: function (ok, t) { if (!ok) { start.disabled = false; noteLine(t, true); } } };
+      window.orca.postMessage({ type: 'calib_start', test: offer.test, pass: 1 });
+    });
+    body.appendChild(start);
+    box.appendChild(body);
+    return box;
+  }
+
+  function onCalibStarted(msg) {
+    pendingSheet = null;
+    if (calibCard) calibCard.box.remove();
+    showConversation();
+    var info = CALIB[msg.test];
+    var box = el('div', 'ai');
+    var who = el('div', 'who');
+    who.appendChild(el('i', '', 'P'));
+    who.appendChild(document.createTextNode('Assistant · ' + info.name + (msg.test === 'flow' ? ' — passe ' + msg.pass + ' sur 2' : '')));
+    box.appendChild(who);
+    box.appendChild(el('p', '', 'Le test est sur le plateau. Ce qu’il va montrer : ' + info.shows + '. ' + msg.instructions));
+    box.appendChild(el('p', 'why', 'Ta pièce et tes réglages sont gardés : « Remettre ma pièce » les ramène à tout moment.'));
+
+    var sheet = el('div', 'sheet');
+    sheet.appendChild(el('header', '', 'Paliers du test'));
+    var choice = null;
+    var rows = msg.sections.map(function (s) {
+      var row = el('label', 'row');
+      var radio = el('input');
+      radio.type = 'radio';
+      radio.name = 'calib-' + Date.now();
+      var info2 = el('div');
+      info2.appendChild(el('div', 'name', s.label));
+      row.appendChild(radio);
+      row.appendChild(info2);
+      radio.addEventListener('change', function () { choice = s; updateActions(); });
+      sheet.appendChild(row);
+      return { radio: radio, row: row, s: s };
+    });
+    var status = el('div', 'why');
+    status.style.padding = '8px 12px';
+    status.textContent = 'Une fois le test imprimé, envoie-moi une photo.';
+    sheet.appendChild(status);
+    var footer = el('footer');
+    var photoBtn = el('button', 'btn', 'Ajouter la photo');
+    photoBtn.type = 'button';
+    var phoneBtn = el('button', 'btn ghost', '📱 Téléphone');
+    phoneBtn.type = 'button';
+    var action = el('button', 'btn hidden', '');
+    action.type = 'button';
+    var back = el('button', 'link', 'Remettre ma pièce');
+    back.type = 'button';
+    footer.appendChild(photoBtn);
+    footer.appendChild(phoneBtn);
+    footer.appendChild(action);
+    footer.appendChild(back);
+    sheet.appendChild(footer);
+    box.appendChild(sheet);
+    thread.appendChild(box);
+    scrollDown();
+
+    var card = { box: box, awaiting: true, test: msg.test, pass: msg.pass };
+    calibCard = card;
+
+    function updateActions() {
+      if (!choice) return;
+      action.classList.remove('hidden');
+      action.disabled = false;
+      action.textContent = msg.test === 'flow' && msg.pass === 1 ? 'Lancer la passe fine' : 'Enregistrer pour ce filament sur cette imprimante';
+    }
+
+    function analyze(photos) {
+      card.awaiting = false;
+      status.textContent = 'L’assistant regarde ta photo…';
+      scrollDown();
+      var body = {
+        locale: (lastValues && lastValues.locale) || 'fr',
+        test: msg.test,
+        pass: msg.test === 'flow' ? msg.pass : undefined,
+        images: photos.map(function (p) { return { media_type: p.media_type, data: p.data }; }),
+        sections: msg.sections,
+        filament: lastValues && lastValues.context ? lastValues.context.filament : undefined,
+        printer: lastValues && lastValues.context ? lastValues.context.printer : undefined
+      };
+      if (!session) { status.textContent = 'Connecte-toi pour que l’assistant lise la photo, ou choisis toi-même le meilleur palier.'; card.awaiting = true; return; }
+      apiFetch('/api/calibration/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+        .then(function (r) {
+          if (calibCard !== card) return;
+          if (!r.ok) {
+            if (r.data.error === 'insufficient_credits') setBalance(r.data.balance);
+            status.textContent = (ERRORS[r.data.error] || ERRORS.internal) + ' Tu peux aussi choisir toi-même le meilleur palier.';
+            card.awaiting = true;
+            return;
+          }
+          if (r.data.credits) setBalance(r.data.credits.balance);
+          if (r.data.status !== 'ok') {
+            status.textContent = '📷 ' + r.data.retake_advice;
+            card.awaiting = true;
+            return;
+          }
+          var win = rows.find(function (x) { return x.s.index === r.data.winner_index; });
+          win.radio.checked = true;
+          win.row.classList.add('best');
+          choice = win.s;
+          status.textContent = '';
+          status.appendChild(el('strong', '', 'Meilleur palier : ' + win.s.label + (CONFIDENCE[r.data.confidence] ? ' · ' + CONFIDENCE[r.data.confidence] : '') + '. '));
+          status.appendChild(document.createTextNode(r.data.explanation + ' Tu as la pièce en main : choisis-en un autre si tu n’es pas d’accord.'));
+          updateActions();
+          scrollDown();
+        })
+        .catch(function () { if (calibCard === card) { status.textContent = 'Service Plyo injoignable. Choisis toi-même le meilleur palier.'; card.awaiting = true; } });
+    }
+    card.receivePhotos = analyze;
+
+    photoBtn.addEventListener('click', function () {
+      var input = el('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.multiple = true;
+      input.addEventListener('change', function () {
+        var files = Array.prototype.slice.call(input.files || []).slice(0, MAX_PHOTOS);
+        Promise.all(files.map(function (f) { return downscale(f).catch(function () { return null; }); })).then(function (list) {
+          var ok = list.filter(Boolean);
+          if (ok.length) analyze(ok);
+          else noteLine('Cette image ne peut pas être lue (JPEG ou PNG recommandé).', true);
+        });
+      });
+      input.click();
+    });
+    phoneBtn.addEventListener('click', function () { card.awaiting = true; openPhone(); });
+
+    action.addEventListener('click', function () {
+      action.disabled = true;
+      if (msg.test === 'flow' && msg.pass === 1) {
+        window.orca.postMessage({ type: 'calib_start', test: 'flow', pass: 2, base_value: choice.value });
+        return;
+      }
+      pendingSheet = { kind: 'calib_save', onResult: function (ok, t) {
+        if (!ok) { action.disabled = false; status.textContent = t; return; }
+        footer.textContent = '';
+        footer.appendChild(el('span', 'done', '✓ ' + t));
+        var restore = el('button', 'btn', 'Remettre ma pièce');
+        restore.type = 'button';
+        restore.addEventListener('click', function () { restoreCalibration(restore); });
+        footer.appendChild(restore);
+        if (msg.test === 'ironing') {
+          var on = el('button', 'btn ghost', 'Activer le lissage');
+          on.type = 'button';
+          on.addEventListener('click', function () {
+            on.disabled = true;
+            pendingSheet = { kind: 'apply', onResult: function (okOn, tt) { on.replaceWith(el('span', okOn ? 'done' : 'fail', okOn ? '✓ Lissage activé' : tt)); } };
+            window.orca.postMessage({ type: 'apply', changes: [{ id: 'ironing_type', value: 'top' }] });
+          });
+          footer.appendChild(on);
+        }
+      } };
+      window.orca.postMessage({ type: 'calib_save', test: msg.test, value: choice.value });
+    });
+    back.addEventListener('click', function () { restoreCalibration(back); });
+  }
+
+  function restoreCalibration(button) {
+    button.disabled = true;
+    pendingSheet = { kind: 'calib_restore', onResult: function (ok, t) {
+      if (calibCard) { calibCard.awaiting = false; calibCard.box.querySelectorAll('button').forEach(function (b) { b.disabled = true; }); }
+      calibCard = null;
+      noteLine(t, !ok);
+    } };
+    window.orca.postMessage({ type: 'calib_restore' });
+  }
+
   // ---------- Envoi d'une demande ----------
   // `photosFromPhone` : envoi venu du téléphone (photos fournies, zone de saisie laissée intacte).
   function send(text, photosFromPhone, fromPhone) {
@@ -758,6 +954,7 @@
     };
     if (photos.length) body.images = photos.map(function (p) { return { media_type: p.media_type, data: p.data }; });
     if (note) body.note = note;
+    if (calibHistory.length) body.calibrations = calibHistory;
 
     if (!photosFromPhone) {
       attachments = [];
@@ -923,6 +1120,8 @@
       box.appendChild(el('p', '', a.message));
     }
 
+    if (a.calibration_offer && CALIB[a.calibration_offer.test]) box.appendChild(calibrationOffer(a.calibration_offer));
+
     a.questions.forEach(function (q) {
       box.appendChild(el('p', 'q', q.text));
       var row = el('div', 'chips');
@@ -964,10 +1163,15 @@
       else if (!loginOffered) { loginOffered = true; openLogin(); }
     } else if (msg.type === 'values') {
       renderValues(msg);
+      window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
       drainPhoneQueue();
     } else if (msg.type === 'result') {
       if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text); }
       else noteLine(msg.text, !msg.ok);
+    } else if (msg.type === 'calib_started') {
+      onCalibStarted(msg);
+    } else if (msg.type === 'calib_history') {
+      calibHistory = Array.isArray(msg.items) ? msg.items : [];
     } else if (msg.type === 'makerworld_imported') {
       onMakerWorldImported(msg);
     } else if (msg.type === 'makerworld_opened') {
