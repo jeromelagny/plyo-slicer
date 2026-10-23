@@ -163,6 +163,7 @@
     upstream_error: "Le service d'IA est momentanément indisponible. Réessayez dans un instant.",
     invalid_request: "La demande n'a pas pu être envoyée (photo trop lourde ou format non pris en charge ?).",
     insufficient_credits: "Crédits épuisés : rechargez votre compte pour continuer à utiliser l'assistant.",
+    auth_unavailable: "Le service de connexion est momentanément indisponible. Réessayez dans un instant.",
     internal: "Erreur interne du service Plyo."
   };
 
@@ -218,6 +219,8 @@
   }
 
   // Appel authentifié : sur un 401, un seul renouvellement de session puis une nouvelle tentative.
+  // Seul un refus du renouvellement (401) renvoie le 401 d'origine, qui déconnecte ; une panne (503)
+  // renvoie la réponse du renouvellement, et la session est gardée.
   function apiFetch(path, init) {
     function attempt() {
       var headers = Object.assign({}, init.headers || {}, { Authorization: 'Bearer ' + (session ? session.access_token : '') });
@@ -226,7 +229,8 @@
     return attempt().then(function (response) {
       if (response.status !== 401 || !session) return response;
       return postJson('/api/auth/refresh', { refresh_token: session.refresh_token }).then(function (r) {
-        if (!r.ok) return response;
+        if (r.status === 401) return response;
+        if (!r.ok) return r;
         return r.json().then(function (fresh) {
           session = fresh;
           window.orca.postMessage({ type: 'session_save', session: fresh });
@@ -240,6 +244,7 @@
     apiFetch('/api/me', { method: 'GET' })
       .then(function (r) {
         if (r.status === 401) { logout('Votre session a expiré : reconnectez-vous.'); return null; }
+        if (r.status === 503) { balanceLabel.textContent = 'Service indisponible'; return null; }
         return r.ok ? r.json() : null;
       })
       .then(function (me) { if (me) setBalance(me.balance); })

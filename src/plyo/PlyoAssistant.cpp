@@ -88,9 +88,15 @@ void handle_page_message(const nlohmann::json& data)
             send({{"type", "session_saved"}, {"ok", Session::save(data.contains("session") ? data["session"] : nlohmann::json())}});
         else if (type == "login") {
             // Fenêtre de connexion modale centrée sur Orca ; le panneau reçoit ensuite la session (ou null).
-            LoginDialog dialog(Slic3r::GUI::wxGetApp().mainframe);
-            dialog.ShowModal();
-            send({{"type", "session"}, {"session", Session::load()}});
+            // Une seule fenêtre à la fois : un double-clic ne doit pas en ouvrir une seconde imbriquée.
+            static bool s_login_open = false;
+            if (!s_login_open) {
+                s_login_open = true;
+                LoginDialog dialog(Slic3r::GUI::wxGetApp().mainframe);
+                dialog.ShowModal();
+                s_login_open = false;
+                send({{"type", "session"}, {"session", Session::load()}});
+            }
         } else if (type == "session_clear") {
             Session::clear();
             send({{"type", "session"}, {"session", nullptr}});
