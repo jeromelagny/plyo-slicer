@@ -6,7 +6,8 @@
 <title>Assistant Plyo</title>
 <style>
   /* Panneau Assistant Plyo — maquette validée : plyo-api/docs/design/assistant-v2-maquette.html.
-     Variables --orca-* injectées par OrcaSlicer (thème clair ou sombre) ; valeurs de repli pour un navigateur. */
+     Variables --orca-* injectées par OrcaSlicer (thème clair ou sombre) ; valeurs de repli pour un navigateur.
+     Charte des textes : docs/plyo/CHARTE-TON.md (tutoiement, phrases courtes, action suivante). */
   :root {
     --bg: var(--orca-bg, #ffffff);
     --fg: var(--orca-fg, #262e30);
@@ -19,27 +20,60 @@
     --raised: color-mix(in srgb, var(--fg) 9%, var(--bg));
     --accent-soft: color-mix(in srgb, var(--accent) 15%, var(--bg));
     --danger: #e14747;
+    --warn: #d18a00;
+    --danger-soft: color-mix(in srgb, var(--danger) 10%, var(--bg));
+    --warn-soft: color-mix(in srgb, var(--warn) 12%, var(--bg));
     --radius: 10px;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 13px; line-height: 1.5; display: flex; flex-direction: column; overflow: hidden; }
   button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .hidden { display: none !important; }
+  .ic { display: inline-block; flex: none; vertical-align: -3px; }
+
+  /* Composants communs : boutons, liens, alertes, puces */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 14px; border-radius: 8px; font-weight: 600; line-height: 1.25; text-align: center; cursor: pointer; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); }
+  .btn:hover:not(:disabled) { filter: brightness(1.06); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.ghost { background: transparent; color: var(--fg); border-color: var(--border); }
+  .btn.ghost:hover:not(:disabled) { border-color: var(--accent); filter: none; }
+  .btn.sm { min-height: 30px; padding: 5px 11px; font-size: 12.5px; }
+  .btn.wide { flex: 1; }
+  .link { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 12px; padding: 0; }
+  .link:hover { color: var(--fg); }
+  .row-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .alert { display: flex; gap: 9px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); }
+  .alert > .ic { margin-top: 1px; color: var(--muted); }
+  .alert .alert-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
+  .alert p { margin: 0; }
+  .alert.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); background: var(--warn-soft); }
+  .alert.warn > .ic { color: var(--warn); }
+  .alert.error { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: var(--danger-soft); }
+  .alert.error > .ic { color: var(--danger); }
+  .alert.tip > .ic { color: var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 6px 11px; border-radius: 999px; border: 1px solid var(--border); background: transparent; font-size: 12px; cursor: pointer; text-align: left; }
+  .chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .chip:disabled { opacity: .55; cursor: default; }
 
   /* En-tête */
   .top { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); position: relative; flex: none; }
   .top h1 { margin: 0; font-size: 14px; font-weight: 650; }
-  #phone-linked { margin-left: auto; }
-  #phone-linked:not(.hidden) + .credits { margin-left: 0; }
-  .credits { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .top .push { margin-left: auto; }
+  .credits { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; }
   .credits i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .credits.low i { background: var(--warn); }
+  .credits.empty { border-color: var(--danger); color: var(--danger); }
+  .credits.empty i { background: var(--danger); }
   .icon-btn { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
-  .icon-btn svg, .send svg { display: block; }
-  .linked { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); background: transparent; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
   .icon-btn:hover { background: var(--surface); color: var(--fg); }
-  .menu { position: absolute; right: 10px; top: 46px; width: 230px; background: var(--raised); border: 1px solid var(--border); border-radius: 8px; padding: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .3); z-index: 10; }
-  .menu button { display: block; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+  .linked { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); background: transparent; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .menu { position: absolute; right: 10px; top: 46px; width: 240px; background: var(--raised); border: 1px solid var(--border); border-radius: 8px; padding: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, .3); z-index: 10; }
+  .menu button { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+  .menu button .ic { color: var(--muted); }
   .menu button:hover:not(:disabled) { background: var(--surface); }
   .menu button:disabled { color: var(--muted); cursor: default; }
   .menu .who { padding: 6px 10px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -50,42 +84,49 @@
   .hello { margin: 14px 2px 4px; }
   .hello h2 { margin: 0 0 4px; font-size: 18px; font-weight: 650; }
   .hello p { margin: 0; color: var(--muted); }
+  .home-more { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .home-mini { display: none; color: var(--muted); margin: 4px 2px 0; }
+  body.touring .home-more { display: none; }
+  body.touring .home-mini { display: block; }
+  body.touring .hello { display: none; }
   .action { display: flex; gap: 12px; align-items: center; width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; text-align: left; }
   .action:hover { border-color: var(--accent); }
-  .action .ic { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+  .action .badge { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
   .action b { display: block; font-size: 13.5px; font-weight: 600; }
   .action .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
   .label { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 10px 2px 0; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { padding: 6px 11px; border-radius: 999px; border: 1px solid var(--border); background: transparent; font-size: 12px; cursor: pointer; }
-  .chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-  .chip:disabled { opacity: .5; cursor: default; }
-
-  .login-card { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
-  .login-card p { margin: 0; color: var(--muted); }
-  .login-card .error { color: var(--danger); font-size: 12px; }
 
   /* Messages */
+  .thread { display: flex; flex-direction: column; gap: 14px; }
   .me { align-self: flex-end; max-width: 86%; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
   .me .text { background: var(--accent-soft); padding: 8px 11px; border-radius: 12px 12px 3px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .me .from { font-size: 11px; color: var(--muted); display: inline-flex; gap: 4px; align-items: center; }
   .thumbs { display: grid; grid-template-columns: repeat(3, 64px); gap: 4px; justify-content: end; }
   .thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 7px; display: block; }
   .ai { display: flex; flex-direction: column; gap: 8px; }
   .ai .who { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
-  .ai .who i { width: 18px; height: 18px; border-radius: 5px; background: var(--accent); display: grid; place-items: center; color: #fff; font-style: normal; font-size: 11px; font-weight: 700; }
+  .ai .who i { width: 18px; height: 18px; border-radius: 5px; background: var(--accent); display: grid; place-items: center; color: var(--accent-fg); font-style: normal; font-size: 11px; font-weight: 700; }
   .diag { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .diag h3 { margin: 0; font-size: 15px; font-weight: 650; }
   .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; white-space: nowrap; }
-  .ai p { margin: 0; white-space: pre-wrap; }
-  .q { font-weight: 600; }
-  .tip { display: flex; gap: 8px; padding: 9px 10px; border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; white-space: pre-wrap; }
-  .cost { font-size: 11px; color: var(--muted); }
-  .note-line { align-self: center; font-size: 12px; color: var(--muted); text-align: center; padding: 2px 8px; }
-  .note-line.error { color: var(--danger); }
-  .thinking { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .ai p, .ai h3 { margin: 0; }
+  .rich { display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
+  .rich p { margin: 0; }
+  .rich ul, .rich ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; }
+  .rich .ui { font-weight: 600; padding: 0 5px; border-radius: 4px; background: var(--raised); white-space: nowrap; }
+  .caret::after { content: "▍"; color: var(--accent); animation: blink 1s infinite; }
+  .questions { display: flex; flex-direction: column; gap: 8px; }
+  .q { font-weight: 600; margin: 0; }
+  .ai-foot { display: flex; gap: 12px; align-items: center; font-size: 11px; color: var(--muted); }
+  .note-line { align-self: center; font-size: 12px; color: var(--muted); text-align: center; padding: 2px 8px; display: inline-flex; gap: 5px; align-items: center; }
+  .note-line.ok { color: var(--accent); }
+  .note-line.start { align-self: flex-start; text-align: left; }
+  .thinking { color: var(--muted); font-size: 12px; display: flex; gap: 8px; align-items: center; }
   .thinking i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.2s infinite; }
   @keyframes blink { 50% { opacity: .2; } }
-  @media (prefers-reduced-motion: reduce) { .thinking i { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .thinking i, .caret::after { animation: none; } }
+  .feedback { display: flex; flex-direction: column; gap: 6px; }
+  .feedback textarea { width: 100%; min-height: 54px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; padding: 6px 8px; resize: vertical; }
 
   /* Fiche de réglages : ancien → nouveau */
   .sheet { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
@@ -93,7 +134,12 @@
   .row { display: grid; grid-template-columns: 18px 1fr; align-items: start; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
   .row:last-of-type { border-bottom: 0; }
   .row input { margin: 3px 0 0; accent-color: var(--accent); }
+  .row .mark { color: var(--accent); display: grid; place-items: center; height: 20px; }
   .row .name { font-weight: 600; }
+  .setting-name { border: 0; background: none; padding: 0; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; text-align: left; }
+  .setting-name .ic { color: var(--muted); }
+  .setting-name:hover { color: var(--accent); }
+  .setting-name:hover .ic { color: var(--accent); }
   .delta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 3px 0 2px; font-variant-numeric: tabular-nums; font-size: 14px; }
   .delta .old { color: var(--muted); text-decoration: line-through; }
   .delta .arrow { color: var(--muted); }
@@ -101,175 +147,174 @@
   .row .why { color: var(--muted); font-size: 12px; }
   .row.off { opacity: .45; }
   .row.best { background: color-mix(in srgb, var(--accent) 12%, transparent); }
-  /* Bas de carte empilé (panneau étroit) : action principale pleine largeur, puis deux boutons côte à côte. */
-  .sheet footer.stack { flex-wrap: wrap; }
-  .sheet footer.stack .btn { flex: 1 1 calc(50% - 4px); height: auto; min-height: 34px; padding: 7px 10px; line-height: 1.25; white-space: normal; }
-  .sheet footer.stack .btn.full { flex-basis: 100%; order: -1; }
-  .sheet footer.stack .btn.wide { flex-basis: 100%; }
-  .sheet footer.stack .link { flex-basis: 100%; text-align: center; padding: 4px 0 0; }
-  .sheet footer.stack .done { flex-basis: 100%; }
-  .sheet footer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); align-items: center; }
-  .sheet .done { color: var(--accent); font-size: 12px; font-weight: 600; flex: 1; }
-  .sheet .link { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 12px; padding: 0; }
-  .sheet .fail { color: var(--danger); font-size: 12px; padding: 0 12px 10px; background: var(--bg); }
-  .btn { height: 34px; padding: 0 14px; border-radius: 8px; font-weight: 600; cursor: pointer; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); }
-  .btn:disabled { opacity: .5; cursor: default; }
-  .btn.ghost { background: transparent; color: var(--fg); border-color: var(--border); }
-  .btn.wide { flex: 1; }
+  .row.static { cursor: default; }
+  .sheet .status { padding: 8px 12px; color: var(--muted); font-size: 12px; }
+  .sheet footer { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); align-items: center; }
+  .sheet footer .btn { flex: 1 1 calc(50% - 4px); }
+  .sheet footer .btn.full { flex-basis: 100%; order: -1; }
+  .sheet footer .link { flex-basis: 100%; text-align: center; padding-top: 2px; }
+  .sheet footer.inline .btn { flex: 0 1 auto; }
+  .sheet footer.inline .btn.wide { flex: 1; }
+  .sheet footer.inline .link { flex-basis: auto; }
+  .done { color: var(--accent); font-size: 12px; font-weight: 600; flex: 1; display: inline-flex; gap: 5px; align-items: center; }
+  .fail { color: var(--danger); font-size: 12px; padding: 0 12px 10px; background: var(--bg); }
 
   /* Zone de saisie */
   .composer { border-top: 1px solid var(--border); padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; flex: none; }
   .attached { display: flex; gap: 6px; flex-wrap: wrap; }
   .att { position: relative; width: 46px; height: 46px; }
   .att img { width: 46px; height: 46px; object-fit: cover; border-radius: 7px; display: block; }
-  .att button { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .7); color: #fff; font-size: 10px; display: grid; place-items: center; cursor: pointer; }
+  .att button { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .7); color: #fff; display: grid; place-items: center; cursor: pointer; padding: 0; }
   .box { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 8px 8px 6px 12px; }
   .box:focus-within { border-color: var(--accent); }
   .box textarea { width: 100%; border: 0; background: transparent; color: var(--fg); font: inherit; resize: none; outline: none; min-height: 40px; max-height: 140px; }
   .box textarea::placeholder { color: var(--muted); }
   .tools { display: flex; align-items: center; gap: 2px; }
-  .send { margin-left: auto; width: 32px; height: 32px; padding: 0; border-radius: 8px; border: 0; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer; }
+  .tools .hint { margin-left: auto; margin-right: 6px; font-size: 11px; color: var(--muted); }
+  .send { width: 32px; height: 32px; padding: 0; border-radius: 8px; border: 0; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; cursor: pointer; }
   .send:disabled { opacity: .5; cursor: default; }
 
   /* Premiers pas : carte du parcours, puce « Tu regardes », fiche d'un réglage */
-  .tour { border: 1px solid var(--accent); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); padding: 11px 12px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .tour { border: 1px solid var(--accent); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); padding: 11px 12px; display: flex; flex-direction: column; gap: 8px; }
   .tour .step { font-size: 11px; font-weight: 650; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
   .tour h3 { margin: 0; font-size: 15px; font-weight: 650; }
   .tour p { margin: 0; }
-  .tour .where { color: var(--muted); font-size: 12px; }
-  .tour .acts { display: flex; flex-wrap: wrap; gap: 6px; }
-  .tour .acts .btn { height: auto; min-height: 30px; padding: 5px 11px; white-space: normal; }
+  .tour .where { color: var(--muted); font-size: 12px; display: flex; gap: 6px; }
+  .tour .where:empty { display: none; }
   .tour .bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .tour .link { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 12px; padding: 0; }
   .focus-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-size: 12px; align-self: flex-start; max-width: 100%; }
   .focus-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .focus-chip button { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; padding: 0; white-space: nowrap; }
-  .focus-chip .x { color: var(--muted); font-weight: 400; }
+  .focus-chip .go { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; padding: 0; white-space: nowrap; }
+  .focus-chip .x { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0; display: grid; place-items: center; }
   .fiche h4 { margin: 4px 0 0; font-size: 12px; color: var(--muted); font-weight: 650; }
   .fiche .value { font-variant-numeric: tabular-nums; }
-  .why-link { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 12px; padding: 0; text-decoration: underline; }
-  .login-inline { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
-  .login-inline p { margin: 0; }
 
-  /* Réglages lus (volet) */
+  /* Volets : réglages lus, conversations, crédits, aide */
   .drawer { position: absolute; inset: 0; background: var(--bg); z-index: 20; display: flex; flex-direction: column; }
-  .drawer .top button { margin-left: auto; }
-  .drawer .list { flex: 1; overflow-y: auto; padding: 6px 14px 14px; }
+  .drawer .list { flex: 1; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 12px; }
   .drawer table { width: 100%; border-collapse: collapse; }
   .drawer td { padding: 7px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
   .drawer td.value { text-align: right; white-space: nowrap; padding-left: 12px; font-variant-numeric: tabular-nums; }
   .drawer .key { display: block; color: var(--muted); font-size: 11px; }
+  .drawer h3 { margin: 6px 0 0; font-size: 13px; }
+  .drawer p { margin: 0; }
+  .drawer .muted { color: var(--muted); }
+  .conv-list { display: flex; flex-direction: column; gap: 8px; }
+  .conv-item { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; }
+  .conv-item.current { border-color: var(--accent); }
+  .conv-item button.open { flex: 1; border: 0; background: none; text-align: left; cursor: pointer; padding: 0; min-width: 0; }
+  .conv-item .t { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv-item .d { display: block; color: var(--muted); font-size: 11px; }
+  .balance { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .moves td { font-size: 12px; }
 </style>
 </head>
 <body>
   <div class="top">
     <h1>Assistant Plyo</h1>
-    <button class="linked hidden" id="phone-linked" type="button" title="Téléphone relié à cette conversation : cliquez pour revoir le QR code">📱 Relié</button>
-    <span class="credits hidden" id="credits" title="Votre solde de crédits"><i></i><span id="balance">…</span></span>
-    <button class="icon-btn hidden" id="btn-more" type="button" title="Plus d'options" aria-haspopup="menu">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
-    </button>
+    <button class="linked hidden push" id="phone-linked" type="button" title="Téléphone relié à cette conversation : clique pour revoir le QR code"></button>
+    <button class="credits hidden push" id="credits" type="button" title="Tes crédits : clique pour le détail"><i></i><span id="balance">…</span></button>
+    <button class="icon-btn" id="btn-more" type="button" title="Plus d'options" aria-haspopup="menu" aria-label="Plus d'options"></button>
     <div class="menu hidden" id="menu" role="menu">
       <button type="button" id="m-new" role="menuitem">Nouvelle conversation</button>
+      <button type="button" id="m-convs" role="menuitem">Mes conversations</button>
+      <button type="button" id="m-credits" role="menuitem">Mes crédits</button>
+      <hr>
       <button type="button" id="m-undo" role="menuitem" disabled>Annuler les derniers réglages appliqués</button>
       <button type="button" id="m-values" role="menuitem">Voir les réglages lus par l'assistant</button>
       <button type="button" id="m-tour" role="menuitem">Refaire la visite « Ma première impression »</button>
+      <button type="button" id="m-help" role="menuitem">Aide</button>
       <hr id="m-account-sep">
       <div class="who" id="m-email"></div>
-      <button type="button" id="m-logout" role="menuitem">Se déconnecter</button>
+      <button type="button" id="m-logout" role="menuitem">Me déconnecter</button>
     </div>
   </div>
 
   <div class="body" id="body">
     <!-- Premiers pas : étape du parcours en cours -->
     <div id="tour-slot"></div>
-    <!-- Déconnecté -->
-    <div class="login-card hidden" id="login">
-      <div class="hello"><h2>Bienvenue 👋</h2></div>
-      <p>Connectez-vous pour utiliser l'assistant. Pas de mot de passe : vous recevez un code par e-mail.</p>
-      <button class="btn" id="btn-login" type="button">Se connecter</button>
-      <p class="error" id="login-error"></p>
-    </div>
 
     <!-- Accueil (conversation vide) -->
     <div class="hidden" id="home">
       <div class="hello">
         <h2>Bonjour 👋</h2>
-        <p>Montre-moi une impression ratée ou dis-moi ce que tu veux obtenir. Je propose les réglages, tu choisis ce qu’on applique.</p>
+        <p id="hello-text">Montre-moi une impression ratée ou dis-moi ce que tu veux obtenir. Je propose les réglages, tu choisis ce qu’on applique.</p>
       </div>
-      <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 14px;">
+      <p class="home-mini">Une question pendant la visite ? Écris-la en bas, je réponds.</p>
+      <div class="home-more">
         <button class="action" type="button" data-action="phone">
-          <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18h2"/></svg></span>
+          <span class="badge" data-icon="phone"></span>
           <span><b>Prendre des photos avec mon téléphone</b><span class="sub">Scanne un QR code, les photos arrivent ici</span></span>
         </button>
         <button class="action" type="button" data-action="files">
-          <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg></span>
+          <span class="badge" data-icon="camera"></span>
           <span><b>Ajouter une photo depuis l'ordinateur</b><span class="sub">JPEG ou PNG, une ou plusieurs</span></span>
         </button>
         <button class="action" type="button" data-action="model">
-          <span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg></span>
+          <span class="badge" data-icon="cube"></span>
           <span><b>Ajouter un modèle 3D</b><span class="sub">STL, 3MF, OBJ ou STEP : je le pose sur le plateau (ou glisse-le ici)</span></span>
         </button>
-      </div>
-      <p class="label">Ou pars d’un objectif</p>
-      <div class="chips" id="goals">
-        <button class="chip" type="button">Je veux une surface du dessus bien lisse</button>
-        <button class="chip" type="button">Je veux imprimer plus vite</button>
-        <button class="chip" type="button">Je veux une pièce plus solide</button>
-        <button class="chip" type="button">Quels supports pour une figurine ?</button>
-        <button class="chip" type="button">Je veux plus de détails</button>
+        <p class="label">Ou pars d’un objectif</p>
+        <div class="chips" id="goals">
+          <button class="chip" type="button">Je veux une surface du dessus bien lisse</button>
+          <button class="chip" type="button">Je veux imprimer plus vite</button>
+          <button class="chip" type="button">Je veux une pièce plus solide</button>
+          <button class="chip" type="button">Quels supports pour une figurine ?</button>
+          <button class="chip" type="button">Je veux plus de détails</button>
+        </div>
       </div>
     </div>
 
     <!-- Conversation -->
-    <div class="hidden" id="thread" style="display: flex; flex-direction: column; gap: 14px;"></div>
+    <div class="thread hidden" id="thread"></div>
   </div>
 
-  <div class="composer hidden" id="composer">
-    <div class="focus-chip hidden" id="focus-chip"><span>🔎 Tu regardes :</span><b id="focus-label"></b><button type="button" id="focus-explain">Explique-moi</button><button type="button" class="x" id="focus-close" title="Masquer">×</button></div>
+  <div class="composer" id="composer">
+    <div class="focus-chip hidden" id="focus-chip"><span data-icon="search"></span><span>Tu regardes :</span><b id="focus-label"></b><button type="button" class="go" id="focus-explain">Explique-moi</button><button type="button" class="x" id="focus-close" title="Masquer" aria-label="Masquer"></button></div>
     <div class="attached hidden" id="attached"></div>
     <div class="box">
-      <textarea id="note" maxlength="500" rows="2" placeholder="Décris le problème ou ce que tu veux obtenir…"></textarea>
+      <textarea id="note" maxlength="500" rows="2" placeholder="Décris le problème ou pose ta question…" aria-label="Ta demande"></textarea>
       <div class="tools">
-        <button class="icon-btn" id="btn-files" type="button" title="Joindre des photos ou un modèle 3D (STL, 3MF…)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5L12.5 4a4 4 0 0 1 5.7 5.7l-8.5 8.5a2 2 0 0 1-2.8-2.8l8-8"/></svg>
-        </button>
-        <button class="icon-btn" id="btn-phone" type="button" title="Prendre des photos avec mon téléphone">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18h2"/></svg>
-        </button>
-        <button class="send" id="btn-send" type="button" title="Envoyer (⌘ + Entrée)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12.5 5.5L19 12l-6.5 6.5"/></svg>
-        </button>
+        <button class="icon-btn" id="btn-files" type="button" title="Joindre des photos ou un modèle 3D (STL, 3MF…)" aria-label="Joindre un fichier"></button>
+        <button class="icon-btn" id="btn-phone" type="button" title="Prendre des photos avec mon téléphone" aria-label="Photos avec le téléphone"></button>
+        <span class="hint">Entrée pour envoyer</span>
+        <button class="send" id="btn-send" type="button" title="Envoyer (Entrée) · Maj + Entrée pour aller à la ligne" aria-label="Envoyer"></button>
       </div>
     </div>
     <input id="file-input" type="file" accept="image/*,.stl,.3mf,.obj,.step,.stp,.amf" multiple hidden>
   </div>
 
   <div class="drawer hidden" id="drawer">
-    <div class="top"><h1>Réglages lus par l'assistant</h1><button class="btn ghost" id="drawer-close" type="button">Fermer</button></div>
-    <div class="list"><table><tbody id="params"></tbody></table></div>
+    <div class="top"><h1 id="drawer-title"></h1><button class="btn ghost sm push" id="drawer-close" type="button">Fermer</button></div>
+    <div class="list" id="drawer-body"></div>
   </div>
 
 <!--plyo-include:fiches.js-->
 <!--plyo-include:premiers-pas.js-->
+<!--plyo-include:rich-text.js-->
+<!--plyo-include:assistant-logic.js-->
 <script>
 (function () {
   // Service Plyo (prototype local). Plus tard : l'URL du service hébergé.
   var PLYO_API_URL = 'http://localhost:3000';
   var MAX_SIDE = 1600;
+  var THUMB_SIDE = 160;
   var MAX_PHOTOS = 6;
   var MAX_HISTORY = 10;
+  var ANSWER_TIMEOUT_MS = 90000;
+  // Coût habituel d'une demande à l'IA (une réponse coûte de 0,5 à 1,5 crédit selon sa longueur et les photos).
+  var COST_HINT = '≈ 1 crédit';
 
   var $ = function (id) { return document.getElementById(id); };
-  var bodyEl = $('body'), thread = $('thread'), home = $('home'), loginView = $('login'), composer = $('composer');
+  var Logic = window.PlyoLogic, FS = window.PlyoFirstSteps;
+  var bodyEl = $('body'), thread = $('thread'), home = $('home');
   var noteInput = $('note'), sendButton = $('btn-send'), fileInput = $('file-input'), attachedEl = $('attached');
   var menu = $('menu');
 
   var session = null;        // { access_token, refresh_token, expires_at, email }, conservée par le slicer
   var lastValues = null;     // dernier message « values » du slicer (réglages, contexte, langue)
-  var previousValues = {};
+  var lastBalance = null;
   var attachments = [];      // [{ media_type, data, preview }]
-  var history = [];          // [{ role, text }]
   var busy = false;
   var pendingSheet = null;   // fiche dont on attend le résultat d'application ou d'annulation
   var phoneLink = null;      // lien téléphone de la conversation : { id, qr_svg }
@@ -279,17 +324,47 @@
   var phoneQueue = [];       // envois du téléphone récupérés, en attente que l'assistant soit libre
   var PHONE_POLL_MS = 3000;
 
-  var ERRORS = {
-    config_missing: "Le service Plyo n'est pas configuré (clé API manquante).",
-    assistant_unavailable: "L'assistant n'a pas pu répondre à cette demande. Essayez de la reformuler.",
-    incomplete_answer: "La réponse de l'assistant est incomplète. Réessayez.",
-    upstream_error: "Le service d'IA est momentanément indisponible. Réessayez dans un instant.",
-    invalid_request: "La demande n'a pas pu être envoyée (photo trop lourde ou format non pris en charge ?).",
-    insufficient_credits: "Crédits épuisés : rechargez votre compte pour continuer à utiliser l'assistant.",
-    auth_unavailable: "Le service de connexion est momentanément indisponible. Réessayez dans un instant.",
-    internal: "Erreur interne du service Plyo."
+  // ---------- Icônes (dessinées, mêmes traits partout) ----------
+  var ICONS = {
+    phone: '<rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18h2"/>',
+    camera: '<rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/>',
+    cube: '<path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/>',
+    clip: '<path d="M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5L12.5 4a4 4 0 0 1 5.7 5.7l-8.5 8.5a2 2 0 0 1-2.8-2.8l8-8"/>',
+    send: '<path d="M5 12h14M12.5 5.5L19 12l-6.5 6.5"/>',
+    more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+    bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+    target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+    pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+    folder: '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/>',
+    palette: '<path d="M12 3a9 9 0 0 0 0 18c1 0 1.5-.7 1.5-1.5 0-1.2-1-1.5-1-2.5s.8-1.5 1.8-1.5H17a4 4 0 0 0 4-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/>',
+    check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    undo: '<path d="M9 7H4V2"/><path d="M4.5 7A8 8 0 1 1 4 14"/>',
+    alert: '<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.5"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17.5v.5"/>',
+    flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+    x: '<path d="M6 6l12 12M18 6L6 18"/>',
+    eye: '<path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    wand: '<path d="M4 20L15 9M14 4v3M19 9h-3M18 5l-2 2M10 4l.5 1.5M20 14l-1.5-.5"/>',
+    stop: '<rect x="7" y="7" width="10" height="10" rx="1.5"/>'
   };
-  var CONFIDENCE = { high: 'Confiance élevée', medium: 'Confiance moyenne', low: 'Confiance faible' };
+  function icon(name, size) {
+    var span = document.createElement('span');
+    span.className = 'ic';
+    span.setAttribute('aria-hidden', 'true');
+    var s = size || 16;
+    span.innerHTML = '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICONS[name] + '</svg>';
+    return span;
+  }
+  document.querySelectorAll('[data-icon]').forEach(function (e) { e.appendChild(icon(e.getAttribute('data-icon'), e.classList.contains('badge') ? 20 : 14)); });
+  $('btn-more').appendChild(icon('more', 18));
+  $('btn-files').appendChild(icon('clip', 18));
+  $('btn-phone').appendChild(icon('phone', 18));
+  $('btn-send').appendChild(icon('send', 16));
+  $('focus-close').appendChild(icon('x', 12));
+  $('phone-linked').appendChild(icon('phone', 12));
+  $('phone-linked').appendChild(document.createTextNode('Relié'));
 
   function el(tag, className, text) {
     var e = document.createElement(tag);
@@ -297,10 +372,60 @@
     if (text !== undefined && text !== null) e.textContent = text;
     return e;
   }
+  function button(label, onClick, className, iconName) {
+    var b = el('button', className || 'btn');
+    b.type = 'button';
+    if (iconName) b.appendChild(icon(iconName, 14));
+    b.appendChild(document.createTextNode(label));
+    if (onClick) b.addEventListener('click', onClick);
+    return b;
+  }
   function scrollDown() { bodyEl.scrollTop = bodyEl.scrollHeight; }
-  function noteLine(text, isError) {
+  function whoLine(suffix) {
+    var who = el('div', 'who');
+    who.appendChild(el('i', '', 'P'));
+    who.appendChild(document.createTextNode('Assistant' + (suffix ? ' · ' + suffix : '')));
+    return who;
+  }
+  function alertBox(kind, text, iconName) {
+    var box = el('div', 'alert ' + kind);
+    box.appendChild(icon(iconName || (kind === 'error' ? 'alert' : kind === 'warn' ? 'alert' : kind === 'tip' ? 'bulb' : 'info'), 16));
+    var body = el('div', 'alert-body');
+    if (text) body.appendChild(rich(text));
+    box.appendChild(body);
+    box.body = body;
+    return box;
+  }
+
+  // Texte enrichi de l'IA (paragraphes, listes, gras, libellés d'Orca), toujours construit en texte, jamais en HTML.
+  function rich(text, className) {
+    var wrap = el('div', 'rich' + (className ? ' ' + className : ''));
+    function fill(parent, parts) {
+      parts.forEach(function (part) {
+        if (part.t === 'bold') parent.appendChild(el('strong', '', part.v));
+        else if (part.t === 'ui') parent.appendChild(el('span', 'ui', part.v));
+        else parent.appendChild(document.createTextNode(part.v));
+      });
+    }
+    window.PlyoRichText.parseRich(text).forEach(function (block) {
+      if (block.type === 'p') {
+        var p = el('p');
+        block.lines.forEach(function (line, i) { if (i) p.appendChild(el('br')); fill(p, line); });
+        wrap.appendChild(p);
+      } else {
+        var list = el(block.type);
+        block.items.forEach(function (item) { var li = el('li'); fill(li, item); list.appendChild(li); });
+        wrap.appendChild(list);
+      }
+    });
+    return wrap;
+  }
+
+  function noteLine(text, tone, iconName) {
     showConversation();
-    var line = el('div', 'note-line' + (isError ? ' error' : ''), text);
+    var line = el('div', 'note-line' + (tone ? ' ' + tone : ''));
+    if (iconName) line.appendChild(icon(iconName, 13));
+    line.appendChild(document.createTextNode(text));
     thread.appendChild(line);
     scrollDown();
     return line;
@@ -308,8 +433,8 @@
 
   // window.orca est fourni par OrcaSlicer (pont JS <-> C++). Absent dans un navigateur.
   if (!window.orca) {
-    loginView.classList.remove('hidden');
-    $('login-error').textContent = 'Pont OrcaSlicer absent : page ouverte hors du slicer.';
+    home.classList.remove('hidden');
+    $('hello-text').textContent = 'Ouvre ce panneau depuis Plyo Slicer : il a besoin du slicer pour fonctionner.';
     return;
   }
 
@@ -317,15 +442,66 @@
   // Sans compte, tout reste visible (accueil, parcours, fiches) : la connexion n'est demandée qu'au moment
   // d'un appel à l'IA (requireLogin).
   function showLoggedIn(loggedIn) {
-    loginView.classList.add('hidden');
-    composer.classList.remove('hidden');
     $('credits').classList.toggle('hidden', !loggedIn);
-    $('btn-more').classList.remove('hidden');
-    ['m-email', 'm-logout', 'm-account-sep'].forEach(function (id) { $(id).classList.toggle('hidden', !loggedIn); });
+    ['m-email', 'm-logout', 'm-account-sep', 'm-credits'].forEach(function (id) { $(id).classList.toggle('hidden', !loggedIn); });
     if (!thread.children.length) { home.classList.remove('hidden'); thread.classList.add('hidden'); }
     else thread.classList.remove('hidden');
   }
   function showConversation() { home.classList.add('hidden'); thread.classList.remove('hidden'); }
+
+  // ---------- Conversations : gardées sur l'ordinateur par le slicer, rouvertes au lancement ----------
+  var conv = null;           // { id, title, updated, entries: [...], history: [...] }
+  var saveTimer = null;
+  function newId() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6); }
+  function startConversation() {
+    conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [] };
+  }
+  function scheduleSave() {
+    if (!conv || !conv.entries.length) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      conv.updated = new Date().toISOString();
+      window.orca.postMessage({ type: 'conv_save', id: conv.id, conversation: { title: conv.title, updated: conv.updated, entries: conv.entries, history: conv.history } });
+    }, 400);
+  }
+  function record(entry) {
+    if (!conv) startConversation();
+    conv.entries.push(entry);
+    scheduleSave();
+    return entry;
+  }
+  function clearThread() {
+    thread.textContent = '';
+    thread.classList.add('hidden');
+    home.classList.remove('hidden');
+  }
+  function newConversation() {
+    unlinkPhone(true);
+    clearThread();
+    attachments = [];
+    renderAttachments();
+    noteInput.value = '';
+    startConversation();
+  }
+  function openConversation(id) { window.orca.postMessage({ type: 'conv_load', id: id }); }
+  // Une conversation rouverte est en lecture : ses fiches de réglages ne s'appliquent plus (les réglages ont pu changer).
+  function restoreConversation(id, c) {
+    if (!c || !Array.isArray(c.entries)) return;
+    unlinkPhone(true);
+    clearThread();
+    conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [] };
+    if (!conv.entries.length) return;
+    showConversation();
+    conv.entries.forEach(function (entry) { try { renderEntry(entry, true); } catch (e) { /* élément abîmé : ignoré */ } });
+    scrollDown();
+  }
+  function renderEntry(entry, archived) {
+    if (entry.kind === 'me') return renderMe(entry);
+    if (entry.kind === 'answer') return renderAnswer(entry, archived);
+    if (entry.kind === 'fiche') return renderFiche(entry.msg, archived);
+    if (entry.kind === 'model') return renderModel(entry, archived);
+    if (entry.kind === 'note') return noteLine(entry.text, entry.tone, entry.icon);
+  }
 
   // ---------- Compte : session, solde, connexion ----------
   function postJson(path, body) {
@@ -355,18 +531,23 @@
   }
 
   function setBalance(balance) {
-    if (typeof balance === 'number') $('balance').textContent = balance.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' crédits';
+    if (typeof balance !== 'number') return;
+    lastBalance = balance;
+    $('balance').textContent = balance.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' crédits';
+    var state = Logic.creditState(balance);
+    $('credits').classList.toggle('low', state === 'low');
+    $('credits').classList.toggle('empty', state === 'empty');
   }
 
   // Vérifie la session (et la renouvelle au besoin) ; met à jour le solde. Résout à true si la session est valide.
   function refreshAccount() {
     return apiFetch('/api/me', { method: 'GET' })
       .then(function (r) {
-        if (r.status === 401) { logout('Votre session a expiré : reconnectez-vous.'); return false; }
-        if (r.status === 503) { $('balance').textContent = 'Service indisponible'; return false; }
+        if (r.status === 401) { logout('Ta session a expiré : reconnecte-toi pour continuer.'); return false; }
+        if (r.status === 503) { $('balance').textContent = 'Indisponible'; return false; }
         return r.ok ? r.json().then(function (me) { setBalance(me.balance); $('m-email').textContent = me.email; return true; }) : false;
       })
-      .catch(function () { $('balance').textContent = 'Service injoignable'; return false; });
+      .catch(function () { $('balance').textContent = 'Hors ligne'; return false; });
   }
 
   function logout(message) {
@@ -374,50 +555,156 @@
     session = null;
     window.orca.postMessage({ type: 'session_clear' });
     showLoggedIn(false);
-    if (message) noteLine(message, true);
+    if (message) noteLine(message, '', 'info');
   }
 
-  function openLogin() {
-    $('login-error').textContent = '';
-    window.orca.postMessage({ type: 'login' });
-  }
-  $('btn-login').addEventListener('click', openLogin);
+  function openLogin() { window.orca.postMessage({ type: 'login' }); }
 
-  // Une action qui appelle l'IA sans compte : on dit pourquoi, on ouvre la connexion, puis on rejoue l'action.
+  // Une action qui appelle l'IA sans compte : on dit pourquoi, et la connexion s'ouvre au clic ; l'action repart ensuite.
   var afterLogin = null;
   function requireLogin(reason, retry) {
     if (session) return false;
     afterLogin = retry || null;
     showConversation();
-    var card = el('div', 'login-inline');
-    card.appendChild(el('p', '', reason + ' Pour ça, connecte-toi : pas de mot de passe, un code arrive par e-mail.'));
-    var go = el('button', 'btn', 'Se connecter');
-    go.type = 'button';
-    go.addEventListener('click', openLogin);
-    card.appendChild(go);
+    var card = alertBox('info', reason + ' Pour ça, connecte-toi : pas de mot de passe, tu reçois un code par e-mail.', 'info');
+    card.body.appendChild(button('Me connecter', openLogin, 'btn sm'));
     thread.appendChild(card);
     scrollDown();
-    openLogin();
     return true;
+  }
+
+  // ---------- Volets ----------
+  function openDrawer(title, fill) {
+    menu.classList.add('hidden');
+    $('drawer-title').textContent = title;
+    var body = $('drawer-body');
+    body.textContent = '';
+    fill(body);
+    $('drawer').classList.remove('hidden');
+  }
+  function closeDrawer() { $('drawer').classList.add('hidden'); }
+  $('drawer-close').addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeDrawer(); menu.classList.add('hidden'); } });
+
+  function openValues() {
+    openDrawer('Réglages lus par l’assistant', function (body) {
+      body.appendChild(el('p', 'muted', 'Ce que l’assistant voit de ton profil quand tu lui écris. Il ne peut proposer de changer que ces réglages-là.'));
+      var table = el('table'), tbody = el('tbody');
+      ((lastValues && lastValues.params) || []).forEach(function (p) {
+        var tr = el('tr');
+        var label = el('td', '', p.label);
+        label.appendChild(el('span', 'key', p.key + (p.note ? ' — ' + p.note : '')));
+        tr.appendChild(label);
+        tr.appendChild(el('td', 'value', formatValue(p.value, p.unit)));
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      body.appendChild(table);
+    });
+  }
+
+  function openConversations() {
+    openDrawer('Mes conversations', function (body) {
+      body.appendChild(el('p', 'muted', 'Tes 30 dernières conversations restent sur cet ordinateur.'));
+      var list = el('div', 'conv-list');
+      body.appendChild(list);
+      list.appendChild(el('p', 'muted', 'Chargement…'));
+      convListTarget = list;
+      window.orca.postMessage({ type: 'conv_list' });
+    });
+  }
+  var convListTarget = null;
+  function fillConversations(items) {
+    if (!convListTarget || $('drawer').classList.contains('hidden')) return;
+    var list = convListTarget;
+    list.textContent = '';
+    if (!items.length) { list.appendChild(el('p', 'muted', 'Pas encore de conversation.')); return; }
+    items.forEach(function (it) {
+      var row = el('div', 'conv-item' + (conv && conv.id === it.id ? ' current' : ''));
+      var open = el('button', 'open');
+      open.type = 'button';
+      open.appendChild(el('span', 't', it.title || 'Conversation'));
+      var d = it.updated ? new Date(it.updated) : null;
+      open.appendChild(el('span', 'd', d && !isNaN(d) ? d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''));
+      open.addEventListener('click', function () { closeDrawer(); openConversation(it.id); });
+      var del = el('button', 'icon-btn');
+      del.type = 'button';
+      del.title = 'Supprimer cette conversation';
+      del.setAttribute('aria-label', 'Supprimer « ' + (it.title || 'Conversation') + ' »');
+      del.appendChild(icon('x', 14));
+      del.addEventListener('click', function () {
+        if (conv && conv.id === it.id) newConversation();
+        window.orca.postMessage({ type: 'conv_delete', id: it.id });
+      });
+      row.appendChild(open);
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+
+  function openCredits() {
+    if (requireLogin('Tes crédits sont liés à ton compte.', openCredits)) return;
+    openDrawer('Mes crédits', function (body) {
+      var balance = el('div', 'balance', lastBalance === null ? '…' : lastBalance.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' crédits');
+      body.appendChild(balance);
+      body.appendChild(rich('Un crédit paie le calcul de l’IA. Une question coûte en général **0,5 à 1,5 crédit** : un peu plus avec des photos, rien quand la demande sort de l’impression 3D.'));
+      body.appendChild(rich('Toujours gratuit : l’accueil, la visite guidée, les explications des réglages (« Explique-moi »), « Montre-moi » et la pose d’un modèle sur le plateau.'));
+      var recharge = alertBox('info', 'La recharge en ligne arrive bientôt. En attendant, écris à l’équipe Plyo si tu es à court de crédits.', 'info');
+      body.appendChild(recharge);
+      body.appendChild(el('h3', '', 'Derniers mouvements'));
+      var table = el('table', 'moves'), tbody = el('tbody');
+      table.appendChild(tbody);
+      body.appendChild(table);
+      var loading = el('p', 'muted', 'Chargement…');
+      body.appendChild(loading);
+      apiFetch('/api/me/credits', { method: 'GET' })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+        .then(function (data) {
+          var moves = Array.isArray(data.history) ? data.history : [];
+          loading.remove();
+          if (typeof data.balance === 'number') {
+            setBalance(data.balance);
+            balance.textContent = data.balance.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' crédits';
+          }
+          var KIND = { usage: 'Question à l’assistant', signup_grant: 'Crédits offerts', adjustment: 'Ajustement' };
+          if (!moves.length) body.appendChild(el('p', 'muted', 'Aucun mouvement pour l’instant.'));
+          moves.forEach(function (m) {
+            var tr = el('tr');
+            var d = new Date(m.date);
+            tr.appendChild(el('td', '', (KIND[m.kind] || m.kind) + ' · ' + (isNaN(d) ? '' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))));
+            tr.appendChild(el('td', 'value', (m.credits > 0 ? '+' : '') + m.credits.toLocaleString('fr-FR', { maximumFractionDigits: 2 })));
+            tbody.appendChild(tr);
+          });
+        })
+        .catch(function () {
+          loading.textContent = 'Le détail n’a pas pu être chargé. Vérifie ta connexion, puis rouvre ce volet.';
+          if (!loading.parentNode) body.appendChild(loading);
+        });
+    });
+  }
+
+  function openHelp() {
+    openDrawer('Aide', function (body) {
+      [
+        ['Ce que je sais faire', '- Regarder la photo d’une impression ratée et te dire ce qui cloche\n- Proposer des réglages : tu choisis ce qu’on applique, et tout s’annule d’un clic\n- Répondre à tes questions d’impression 3D, avec tes mots\n- Te montrer où se trouve un bouton ou un réglage dans le slicer\n- Orienter, ranger, réduire ou découper tes pièces quand tu me le demandes\n- Te guider pour calibrer ton filament, photo à l’appui'],
+        ['Gratuit, sans compte', 'La visite guidée, les explications des réglages (« Explique-moi » ou « c’est quoi la rétraction ? »), « Montre-moi » et la pose d’un modèle sur le plateau.'],
+        ['Avec ton compte', 'Les réponses de l’IA et la lecture des photos utilisent des crédits (en général 0,5 à 1,5 par question). Ton solde est en haut à droite.'],
+        ['Astuces', '- **Entrée** envoie, **Maj + Entrée** va à la ligne\n- Clique dans un réglage du slicer : je te propose de l’expliquer\n- Glisse une photo ou un fichier STL directement dans ce panneau'],
+        ['Tes données', 'Tes conversations restent sur cet ordinateur. Tes photos servent seulement à répondre à ta demande. Une réponse te semble fausse ? Clique sur « Signaler » sous la réponse : ça nous aide à corriger l’assistant.']
+      ].forEach(function (s) { body.appendChild(el('h3', '', s[0])); body.appendChild(rich(s[1])); });
+    });
   }
 
   // ---------- Menu « ⋯ » ----------
   $('btn-more').addEventListener('click', function (e) { e.stopPropagation(); menu.classList.toggle('hidden'); });
   document.addEventListener('click', function (e) { if (!menu.contains(e.target)) menu.classList.add('hidden'); });
-  $('m-new').addEventListener('click', function () {
-    menu.classList.add('hidden');
-    unlinkPhone(true);
-    thread.textContent = '';
-    history = [];
-    attachments = [];
-    renderAttachments();
-    noteInput.value = '';
-    thread.classList.add('hidden');
-    home.classList.remove('hidden');
-  });
+  $('m-new').addEventListener('click', function () { menu.classList.add('hidden'); newConversation(); });
+  $('m-convs').addEventListener('click', openConversations);
+  $('m-credits').addEventListener('click', openCredits);
+  $('credits').addEventListener('click', openCredits);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
-  $('m-values').addEventListener('click', function () { menu.classList.add('hidden'); $('drawer').classList.remove('hidden'); });
-  $('drawer-close').addEventListener('click', function () { $('drawer').classList.add('hidden'); });
+  $('m-values').addEventListener('click', openValues);
+  $('m-help').addEventListener('click', openHelp);
   $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
   $('m-tour').addEventListener('click', function () {
     menu.classList.add('hidden');
@@ -434,17 +721,6 @@
 
   function renderValues(msg) {
     lastValues = msg;
-    var tbody = $('params');
-    tbody.textContent = '';
-    msg.params.forEach(function (p) {
-      var tr = el('tr');
-      var label = el('td', '', p.label);
-      label.appendChild(el('span', 'key', p.key + (p.note ? ' — ' + p.note : '')));
-      tr.appendChild(label);
-      tr.appendChild(el('td', 'value', formatValue(p.value, p.unit)));
-      tbody.appendChild(tr);
-      previousValues[p.id] = p.value;
-    });
     $('m-undo').disabled = !msg.can_undo;
   }
 
@@ -452,29 +728,33 @@
     return (lastValues && lastValues.params.find(function (x) { return x.id === id; })) || { label: id, unit: '', value: null };
   }
 
-  // ---------- Photos : réduites à 1 600 px, JPEG 85 % ----------
-  function downscale(file) {
+  // ---------- Photos : réduites à 1 600 px, JPEG 85 % (vignette de 160 px gardée dans la conversation) ----------
+  function scaled(src, side, quality) {
     return new Promise(function (resolve, reject) {
-      var url = URL.createObjectURL(file);
       var img = new Image();
       img.onload = function () {
-        var scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+        var scale = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
         var canvas = document.createElement('canvas');
         canvas.width = Math.round(img.naturalWidth * scale);
         canvas.height = Math.round(img.naturalHeight * scale);
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        URL.revokeObjectURL(url);
-        resolve({ media_type: 'image/jpeg', data: dataUrl.split(',')[1], preview: dataUrl });
+        resolve(canvas.toDataURL('image/jpeg', quality));
       };
-      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('unreadable')); };
-      img.src = url;
+      img.onerror = function () { reject(new Error('unreadable')); };
+      img.src = src;
     });
+  }
+  function downscale(file) {
+    var url = URL.createObjectURL(file);
+    return scaled(url, MAX_SIDE, 0.85).then(function (dataUrl) {
+      URL.revokeObjectURL(url);
+      return { media_type: 'image/jpeg', data: dataUrl.split(',')[1], preview: dataUrl };
+    }, function (e) { URL.revokeObjectURL(url); throw e; });
   }
 
   function addAttachments(list) {
     list.forEach(function (a) { if (attachments.length < MAX_PHOTOS) attachments.push(a); });
-    if (attachments.length >= MAX_PHOTOS) noteLine(MAX_PHOTOS + ' photos maximum par demande.');
+    if (attachments.length >= MAX_PHOTOS) noteLine(MAX_PHOTOS + ' photos au plus par demande.', '', 'info');
     renderAttachments();
   }
 
@@ -486,9 +766,11 @@
       var img = el('img');
       img.src = a.preview;
       img.alt = 'Photo ' + (i + 1);
-      var remove = el('button', '', '✕');
+      var remove = el('button');
       remove.type = 'button';
       remove.title = 'Retirer cette photo';
+      remove.setAttribute('aria-label', 'Retirer la photo ' + (i + 1));
+      remove.appendChild(icon('x', 10));
       remove.addEventListener('click', function () { attachments.splice(i, 1); renderAttachments(); });
       box.appendChild(img);
       box.appendChild(remove);
@@ -506,26 +788,27 @@
   // Photos → pièces jointes de la demande ; modèles 3D → posés sur le plateau par Plyo (gratuit).
   var MAX_MODEL_BYTES = 50 * 1024 * 1024;
   function addFiles(all) {
-    var models = all.filter(function (f) { return window.PlyoFirstSteps.isModelFile(f.name); });
-    var files = all.filter(function (f) { return !window.PlyoFirstSteps.isModelFile(f.name); });
+    var models = all.filter(function (f) { return FS.isModelFile(f.name); });
+    var files = all.filter(function (f) { return !FS.isModelFile(f.name); });
     models.forEach(sendModel);
     if (!files.length) return;
     Promise.all(files.map(function (f) { return downscale(f).catch(function () { return null; }); })).then(function (list) {
       var ok = list.filter(Boolean);
-      if (ok.length < list.length) noteLine('Une image n’a pas pu être lue (JPEG ou PNG recommandé).', true);
+      if (ok.length < list.length) noteLine('Une image n’a pas pu être lue : prends plutôt du JPEG ou du PNG.', 'error', 'alert');
       addAttachments(ok);
+      noteInput.focus();
     });
   }
 
   function sendModel(file) {
-    if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd (50 Mo au plus).', true); return; }
+    if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd : 50 Mo au plus.', 'error', 'alert'); return; }
     var reader = new FileReader();
     reader.onload = function () {
       var data = String(reader.result || '');
       window.orca.postMessage({ type: 'model_add', name: file.name, data: data.slice(data.indexOf(',') + 1) });
     };
-    reader.onerror = function () { noteLine('« ' + file.name + ' » n’a pas pu être lu.', true); };
-    noteLine('Je pose « ' + file.name + ' » sur le plateau…');
+    reader.onerror = function () { noteLine('« ' + file.name + ' » n’a pas pu être lu.', 'error', 'alert'); };
+    noteLine('Je pose « ' + file.name + ' » sur le plateau…', '', 'cube');
     reader.readAsDataURL(file);
   }
 
@@ -537,29 +820,93 @@
     if (files.length) addFiles(files);
   });
 
-  // Modèle posé : ce qu'il est, s'il tient sur le plateau, et une offre de conseils (IA, sur clic seulement).
+  // ---------- Actions sur le plateau et « Montre-moi » ----------
+  var plateWaiters = {};     // kind → rappel du résultat
+  function plateAction(kind, after) {
+    plateWaiters[kind] = after || null;
+    window.orca.postMessage({ type: 'plate_action', kind: kind });
+  }
+  function onPlateAction(msg) {
+    var after = plateWaiters[msg.kind];
+    delete plateWaiters[msg.kind];
+    var line = noteLine(msg.text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
+    if (msg.ok && ['orient', 'arrange', 'scale_to_fit'].indexOf(msg.kind) >= 0) {
+      var undo = button('Annuler', function () { undo.disabled = true; plateAction('undo'); }, 'link');
+      line.appendChild(undo);
+    }
+    if (msg.kind !== 'undo') record({ kind: 'note', text: msg.text, tone: msg.ok ? 'ok' : 'error', icon: msg.ok ? 'check' : 'alert' });
+    if (after) after(msg.ok);
+  }
+  function showMe(target) { window.orca.postMessage({ type: 'show_me', target: target }); }
+  function showSetting(key) { window.orca.postMessage({ type: 'show_setting', key: key }); }
+  function onShowSetting(msg) {
+    if (!msg.ok) noteLine('Je n’ai pas trouvé ce réglage dans le slicer.', 'error', 'alert');
+    else if (msg.hidden) noteLine('J’ai ouvert la bonne page. Si tu ne vois pas le réglage, active le bouton « Avancé » en haut des réglages.', '', 'info');
+  }
+
+  // Boutons d'action proposés par l'IA. Dans une conversation rouverte, seules les actions sans effet restent.
+  var PLATE_KINDS = ['orient', 'arrange', 'scale_to_fit', 'slice'];
+  function renderActions(actions, archived) {
+    var list = (actions || []).filter(function (a) { return !(archived && PLATE_KINDS.indexOf(a.kind) >= 0); });
+    if (!list.length) return null;
+    var row = el('div', 'row-acts');
+    list.forEach(function (a) {
+      var iconName = a.kind === 'show' || a.kind === 'show_setting' ? 'eye' : 'wand';
+      var b = button(a.label, function () {
+        if (a.kind === 'show') showMe(a.target);
+        else if (a.kind === 'show_setting') showSetting(a.target);
+        else { b.disabled = true; plateAction(a.kind, function (ok) { if (!ok) b.disabled = false; }); }
+      }, 'btn ghost sm', iconName);
+      row.appendChild(b);
+    });
+    return row;
+  }
+
+  // ---------- Modèle 3D joint : posé sur le plateau, conseils sur clic seulement ----------
   function onModelAdded(msg) {
-    if (!msg.ok) { noteLine(msg.text, true); return; }
+    if (!msg.ok) { noteLine(msg.text, 'error', 'alert'); return; }
+    renderModel(record({ kind: 'model', msg: msg, reduced: false }), false);
+  }
+  function renderModel(entry, archived) {
+    var msg = entry.msg;
     showConversation();
     var box = el('div', 'ai');
-    var who = el('div', 'who');
-    who.appendChild(el('i', '', 'P'));
-    who.appendChild(document.createTextNode('Assistant'));
-    box.appendChild(who);
-    box.appendChild(el('p', '', '✓ ' + window.PlyoFirstSteps.modelAddedText(msg)));
+    box.appendChild(whoLine());
+    var said = FS.modelAddedText(msg);
     var dims = msg.size_mm.join(' × ') + ' mm';
-    var ask = el('button', 'btn ghost', 'Conseille-moi des réglages pour cette pièce (≈ 1 crédit)');
-    ask.type = 'button';
-    ask.style.alignSelf = 'flex-start';
-    ask.style.height = 'auto';
-    ask.style.minHeight = '34px';
-    ask.style.whiteSpace = 'normal';
-    ask.addEventListener('click', function () {
-      ask.disabled = true;
-      send('Je viens de poser « ' + msg.name + ' » sur le plateau (' + dims + '). Quels réglages me conseilles-tu pour l’imprimer ? ' +
-        'Si tu as besoin de savoir à quoi sert la pièce, demande-le-moi d’abord.');
-    });
-    box.appendChild(ask);
+    function adviceButton() {
+      var ask = button('Conseille-moi des réglages pour cette pièce (' + COST_HINT + ')', function () {
+        ask.disabled = true;
+        send('Je viens de poser « ' + msg.name + ' » sur le plateau (' + dims + '). Quels réglages me conseilles-tu pour l’imprimer ? ' +
+          'Si tu as besoin de savoir à quoi sert la pièce, demande-le-moi d’abord.');
+      }, 'btn ghost sm');
+      return ask;
+    }
+    if (!said.warn) {
+      var ok = el('div', 'note-line ok start');
+      ok.appendChild(icon('check', 13));
+      ok.appendChild(document.createTextNode(said.text));
+      box.appendChild(ok);
+      if (!archived) box.appendChild(el('div', 'row-acts')).appendChild(adviceButton());
+    } else {
+      var warn = alertBox('warn', said.text, 'alert');
+      if (!archived && !entry.reduced) {
+        var acts = el('div', 'row-acts');
+        var reduce = button('Réduire pour qu’il tienne', function () {
+          reduce.disabled = true;
+          plateAction('scale_to_fit', function (done) {
+            if (!done) { reduce.disabled = false; return; }
+            entry.reduced = true;
+            scheduleSave();
+            acts.textContent = '';
+            acts.appendChild(adviceButton());
+          });
+        }, 'btn sm', 'wand');
+        acts.appendChild(reduce);
+        warn.body.appendChild(acts);
+      }
+      box.appendChild(warn);
+    }
     thread.appendChild(box);
     scrollDown();
   }
@@ -586,7 +933,7 @@
       var ready = phoneLink ? Promise.resolve(phoneLink) : phoneCreating;
       ready
         .then(function (link) { window.orca.postMessage({ type: 'phone', link: link }); })
-        .catch(function () { noteLine('Le QR code n’a pas pu être créé. Le service Plyo est-il démarré ?', true); });
+        .catch(function () { showError('network', openPhone); });
     });
   }
 
@@ -608,7 +955,7 @@
       .then(function (s) {
         if (s.expired || s.status === 'closed') {
           unlinkPhone(false);
-          noteLine('Le lien avec le téléphone a expiré. Cliquez sur 📱 pour en créer un nouveau.');
+          noteLine('Le lien avec le téléphone a expiré. Clique sur l’icône du téléphone pour en créer un nouveau.', '', 'phone');
           return;
         }
         if (s.pending_batches > 0) return collectBatch(id);
@@ -624,7 +971,7 @@
       .then(function (r) { return r.status === 200 ? r.json() : null; })
       .then(function (batch) {
         if (!batch) return;
-        if (!batch.images.length) { noteLine('Les photos du téléphone n’ont pas pu être récupérées.', true); return; }
+        if (!batch.images.length) { noteLine('Les photos du téléphone n’ont pas pu être récupérées. Renvoie-les depuis le téléphone.', 'error', 'alert'); return; }
         phoneQueue.push({
           message: batch.message,
           photos: batch.images.map(function (img) {
@@ -633,7 +980,7 @@
         });
         drainPhoneQueue();
       })
-      .catch(function () { noteLine('Les photos du téléphone n’ont pas pu être récupérées.', true); })
+      .catch(function () { noteLine('Les photos du téléphone n’ont pas pu être récupérées. Renvoie-les depuis le téléphone.', 'error', 'alert'); })
       .then(function () { phoneCollecting = false; });
   }
 
@@ -642,7 +989,7 @@
     if (calibCard && calibCard.awaiting && phoneQueue.length) { calibCard.receivePhotos(phoneQueue.shift().photos); return; }
     if (busy || !lastValues || !phoneQueue.length) return;
     var next = phoneQueue.shift();
-    send(next.message, next.photos, true);
+    send(next.message, { photos: next.photos, fromPhone: true });
   }
 
   // ---------- Import MakerWorld : fiche « créateur → toi » ----------
@@ -672,17 +1019,15 @@
     var multi = creator.filament_count > 1;
     var box = el('div', 'ai');
     mwSheet = box;
-    var who = el('div', 'who');
-    who.appendChild(el('i', '', 'P'));
-    who.appendChild(document.createTextNode('Assistant · modèle MakerWorld'));
-    box.appendChild(who);
+    box.appendChild(whoLine('modèle MakerWorld'));
     box.appendChild(el('p', '', 'Ce modèle a été réglé pour « ' + baseName(creator.context.printer) + ' ». Je te remets ton imprimante en gardant les choix du créateur.'));
+    record({ kind: 'note', text: 'Modèle MakerWorld importé (réglé pour « ' + baseName(creator.context.printer) + ' »).', tone: '', icon: 'cube' });
 
     var sheet = el('div', 'sheet');
     sheet.appendChild(el('header', '', 'Créateur → toi'));
     function infoRow(name, before, after, why) {
-      var row = el('div', 'row');
-      row.appendChild(el('span', '', '•'));
+      var row = el('div', 'row static');
+      row.appendChild(el('span', 'mark', '•'));
       var info = el('div');
       info.appendChild(el('div', 'name', name));
       var delta = el('div', 'delta');
@@ -727,25 +1072,21 @@
       var c = findParam(creator.params, id), m = findParam(mine.params, id);
       if (!c || c.value === null || (m && sameValue(m.value, c.value))) return;
       if (!inRange(c, c.value)) {
-        infoRow(c.label || id, null, formatValue(c.value, c.unit) + ' : non reportée', typeof c.value === 'string'
-          ? 'Choix que Plyo ne sait pas appliquer : ton réglage est gardé.'
+        infoRow(c.label || id, null, formatValue(c.value, c.unit) + ' : non reporté', typeof c.value === 'string'
+          ? 'Un choix que Plyo ne sait pas appliquer : ton réglage est gardé.'
           : 'Hors des limites de Plyo (' + formatValue(c.min, c.unit) + ' – ' + formatValue(c.max, c.unit) + ').');
         return;
       }
       setRow(id, m ? m.value : null, c.value, 'Choix du créateur.', c);
     });
 
-    var status = el('div', 'why');
-    status.style.padding = '8px 12px';
-    status.textContent = 'L’assistant vérifie ce qu’il faut adapter à ta machine…';
+    var status = el('div', 'status', 'L’assistant vérifie ce qu’il faut adapter à ta machine…');
     sheet.appendChild(status);
 
-    var footer = el('footer');
-    var apply = el('button', 'btn wide', 'Appliquer');
-    apply.type = 'button';
+    var footer = el('footer', 'inline');
+    var apply = button('Appliquer', null, 'btn wide');
     apply.disabled = true;
-    var ignore = el('button', 'btn ghost', 'Ignorer');
-    ignore.type = 'button';
+    var ignore = button('Ignorer', null, 'btn ghost');
     footer.appendChild(apply);
     footer.appendChild(ignore);
     sheet.appendChild(footer);
@@ -753,24 +1094,19 @@
     sheet.appendChild(fail);
     box.appendChild(sheet);
 
-    var advice = el('div', 'tip hidden');
+    var advice = el('div', 'hidden');
     box.appendChild(advice);
     function showAdvice(text) {
       if (!multi || mine.can_multicolor) return;
       advice.textContent = '';
-      advice.appendChild(el('span', '', '🎨'));
-      var body = el('div');
-      body.appendChild(el('div', '', text || MONO_ADVICE));
-      var mono = el('button', 'btn ghost', 'Tout dans mon filament');
-      mono.type = 'button';
-      mono.style.marginTop = '8px';
-      mono.addEventListener('click', function () {
+      var tip = alertBox('tip', text || MONO_ADVICE, 'palette');
+      var mono = button('Tout dans mon filament', function () {
         mono.disabled = true;
-        pendingSheet = { kind: 'mono', onResult: function (ok, t) { mono.replaceWith(el('div', ok ? 'why' : 'fail', ok ? '✓ Ton filament est dans tous les emplacements.' : t)); } };
+        pendingSheet = { kind: 'mono', onResult: function (ok, t) { mono.replaceWith(el('div', ok ? 'done' : 'fail', ok ? 'Ton filament est dans tous les emplacements.' : t)); } };
         window.orca.postMessage({ type: 'makerworld_mono' });
-      });
-      body.appendChild(mono);
-      advice.appendChild(body);
+      }, 'btn ghost sm');
+      tip.body.appendChild(mono);
+      advice.appendChild(tip);
       advice.classList.remove('hidden');
     }
     thread.appendChild(box);
@@ -790,19 +1126,17 @@
       fail.classList.add('hidden');
       pendingSheet = { kind: 'apply', onResult: function (ok, text) {
         if (!ok) { apply.disabled = false; ignore.disabled = false; fail.textContent = text; fail.classList.remove('hidden'); return; }
-        Object.keys(rows).forEach(function (id) { if (!rows[id].check.checked) rows[id].row.remove(); else rows[id].check.replaceWith(el('span', '', '✓')); });
+        Object.keys(rows).forEach(function (id) { if (!rows[id].check.checked) rows[id].row.remove(); else rows[id].check.replaceWith(markCell()); });
         sheet.querySelector('header').textContent = 'Appliqué sur ton imprimante';
         footer.textContent = '';
-        footer.appendChild(el('span', 'done', '✓ Appliqué'));
-        var undo = el('button', 'link', 'Annuler');
-        undo.type = 'button';
-        undo.addEventListener('click', function () {
+        footer.appendChild(doneLabel('Appliqué'));
+        var undo = button('Annuler', function () {
           pendingSheet = { kind: 'undo', onResult: function (okUndo, t) {
             footer.textContent = '';
-            footer.appendChild(el('span', okUndo ? 'done' : 'fail', okUndo ? '↺ Réglages du créateur restaurés' : t));
+            footer.appendChild(okUndo ? doneLabel('Réglages du créateur remis', 'undo') : el('span', 'fail', t));
           } };
           window.orca.postMessage({ type: 'makerworld_undo' });
-        });
+        }, 'link');
         footer.appendChild(undo);
       } };
       window.orca.postMessage({ type: 'makerworld_apply', keep_filaments: multi, changes: changes });
@@ -823,7 +1157,7 @@
           if (r.data.error === 'insufficient_credits') setBalance(r.data.balance);
           showAdvice('');
           ready(r.data.error === 'insufficient_credits'
-            ? 'Crédits insuffisants : les choix du créateur sont reportés, sans adaptation par l’assistant.'
+            ? 'Plus assez de crédits : les choix du créateur sont reportés, sans adaptation par l’assistant.'
             : 'L’assistant n’a pas pu adapter les réglages : les choix du créateur sont reportés tels quels.');
           return;
         }
@@ -840,38 +1174,35 @@
       .catch(function () {
         if (mwSheet !== box) return;
         showAdvice('');
-        ready('Service Plyo injoignable : les choix du créateur sont reportés tels quels.');
+        ready('Le service Plyo ne répond pas : les choix du créateur sont reportés tels quels.');
       });
   }
 
+  function markCell() { var m = el('span', 'mark'); m.appendChild(icon('check', 14)); return m; }
+  function doneLabel(text, iconName) { var d = el('span', 'done'); d.appendChild(icon(iconName || 'check', 13)); d.appendChild(document.createTextNode(text)); return d; }
+
   // ---------- Calibration guidée par photo ----------
   var CALIB = {
-    temperature: { name: 'Tour de température', shows: 'la température où ton filament fait le moins de fils et soude bien ses couches', duration: '≈ 45 min' },
-    flow: { name: 'Test de débit', shows: 'la quantité de plastique juste : ni trous, ni bourrelets sur le dessus', duration: '≈ 20 min par passe' },
-    retraction: { name: 'Tour de rétraction', shows: 'la rétraction la plus courte qui supprime les fils', duration: '≈ 40 min' },
-    pressure_advance: { name: 'Test de pressure advance', shows: 'le réglage qui rend les angles nets, sans bourrelet', duration: '≈ 10 min' },
-    ironing: { name: 'Plaque de lissage', shows: 'le débit et l’espacement qui donnent le dessus le plus lisse', duration: '≈ 15 min' }
+    temperature: { name: 'Tour de température', shows: 'la température où ton filament fait le moins de fils et soude bien ses couches', duration: '≈ 45 min', parts: 'Les étages de ta tour, du bas vers le haut' },
+    flow: { name: 'Test de débit', shows: 'la quantité de plastique juste : ni trous, ni bourrelets sur le dessus', duration: '≈ 20 min par passe', parts: 'Les carrés du test' },
+    retraction: { name: 'Tour de rétraction', shows: 'la rétraction la plus courte qui supprime les fils', duration: '≈ 40 min', parts: 'Les bandes de ta tour, du bas vers le haut' },
+    pressure_advance: { name: 'Test de pressure advance', shows: 'le réglage qui rend les angles nets, sans bourrelet', duration: '≈ 10 min', parts: 'Les lignes du motif' },
+    ironing: { name: 'Plaque de lissage', shows: 'le débit et l’espacement qui donnent le dessus le plus lisse', duration: '≈ 15 min', parts: 'Les carrés de la plaque' }
   };
   var calibHistory = [];   // calibrations déjà faites pour ce filament sur cette imprimante (slicer)
   var calibCard = null;    // carte du test en cours
 
   function calibrationOffer(offer) {
     var info = CALIB[offer.test];
-    var box = el('div', 'tip');
-    box.appendChild(el('span', '', '🎯'));
-    var body = el('div');
-    body.appendChild(el('div', 'name', info.name + ' (' + info.duration + ')'));
-    body.appendChild(el('div', '', offer.reason || ('Ce test montre ' + info.shows + '.')));
-    var start = el('button', 'btn', 'Lancer le test');
-    start.type = 'button';
-    start.style.marginTop = '8px';
-    start.addEventListener('click', function () {
+    var box = alertBox('tip', null, 'target');
+    box.body.appendChild(el('div', 'name', info.name + ' (' + info.duration + ')'));
+    box.body.appendChild(el('div', '', offer.reason || ('Ce test montre ' + info.shows + '.')));
+    var start = button('Lancer le test', function () {
       start.disabled = true;
-      pendingSheet = { kind: 'calib', onResult: function (ok, t) { if (!ok) { start.disabled = false; noteLine(t, true); } } };
+      pendingSheet = { kind: 'calib', onResult: function (ok, t) { if (!ok) { start.disabled = false; noteLine(t, 'error', 'alert'); } } };
       window.orca.postMessage({ type: 'calib_start', test: offer.test, pass: 1 });
-    });
-    body.appendChild(start);
-    box.appendChild(body);
+    }, 'btn sm');
+    box.body.appendChild(el('div', 'row-acts')).appendChild(start);
     return box;
   }
 
@@ -880,16 +1211,14 @@
     if (calibCard) calibCard.box.remove();
     showConversation();
     var info = CALIB[msg.test];
+    record({ kind: 'note', text: info.name + ' posé sur le plateau.', tone: '', icon: 'target' });
     var box = el('div', 'ai');
-    var who = el('div', 'who');
-    who.appendChild(el('i', '', 'P'));
-    who.appendChild(document.createTextNode('Assistant · ' + info.name + (msg.test === 'flow' ? ' — passe ' + msg.pass + ' sur 2' : '')));
-    box.appendChild(who);
+    box.appendChild(whoLine(info.name + (msg.test === 'flow' ? ' — passe ' + msg.pass + ' sur 2' : '')));
     box.appendChild(el('p', '', 'Le test est sur le plateau. Ce qu’il va montrer : ' + info.shows + '. ' + msg.instructions));
     box.appendChild(el('p', 'why', 'Ta pièce et tes réglages sont gardés : « Remettre ma pièce » les ramène à tout moment.'));
 
     var sheet = el('div', 'sheet');
-    sheet.appendChild(el('header', '', 'Paliers du test'));
+    sheet.appendChild(el('header', '', info.parts));
     var choice = null;
     var group = 'calib-' + Date.now();
     var rows = msg.sections.map(function (s) {
@@ -905,19 +1234,13 @@
       sheet.appendChild(row);
       return { radio: radio, row: row, s: s };
     });
-    var status = el('div', 'why');
-    status.style.padding = '8px 12px';
-    status.textContent = 'Une fois le test imprimé, envoie-moi une photo.';
+    var status = el('div', 'status', 'Une fois le test imprimé, envoie-moi une photo.');
     sheet.appendChild(status);
-    var footer = el('footer', 'stack');
-    var photoBtn = el('button', 'btn', 'Ajouter la photo');
-    photoBtn.type = 'button';
-    var phoneBtn = el('button', 'btn ghost', '📱 Téléphone');
-    phoneBtn.type = 'button';
-    var action = el('button', 'btn full hidden', '');
-    action.type = 'button';
-    var back = el('button', 'link', 'Remettre ma pièce');
-    back.type = 'button';
+    var footer = el('footer');
+    var photoBtn = button('Ajouter la photo', null, 'btn', 'camera');
+    var phoneBtn = button('Téléphone', null, 'btn ghost', 'phone');
+    var action = button('', null, 'btn full hidden');
+    var back = button('Remettre ma pièce', null, 'link');
     footer.appendChild(photoBtn);
     footer.appendChild(phoneBtn);
     footer.appendChild(action);
@@ -956,9 +1279,9 @@
         printer: lastValues && lastValues.context ? lastValues.context.printer : undefined
       };
       if (!session) {
-        status.textContent = 'Connecte-toi pour que l’assistant lise la photo, ou choisis toi-même le meilleur palier.';
+        status.textContent = 'Connecte-toi pour que l’assistant lise la photo, ou choisis toi-même le meilleur.';
         card.awaiting = true; card.analyzing = false; setPhotoButtons(true);
-        requireLogin('Pour lire la photo de ton test, je l’envoie à l’IA (1 crédit environ).', function () { analyze(photos); });
+        requireLogin('Pour lire la photo de ton test, je l’envoie à l’IA (' + COST_HINT + ').', function () { analyze(photos); });
         return;
       }
       apiFetch('/api/calibration/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -969,13 +1292,13 @@
           if (calibCard !== card) return;
           if (!r.ok) {
             if (r.data.error === 'insufficient_credits') setBalance(r.data.balance);
-            status.textContent = (ERRORS[r.data.error] || ERRORS.internal) + ' Tu peux aussi choisir toi-même le meilleur palier.';
+            status.textContent = Logic.errorView(r.data.error).text + ' Tu peux aussi choisir toi-même le meilleur.';
             card.awaiting = true;
             return;
           }
           if (r.data.credits) setBalance(r.data.credits.balance);
           if (r.data.status !== 'ok') {
-            status.textContent = '📷 ' + r.data.retake_advice;
+            status.textContent = r.data.retake_advice;
             card.awaiting = true;
             return;
           }
@@ -984,12 +1307,12 @@
           win.row.classList.add('best');
           choice = win.s;
           status.textContent = '';
-          status.appendChild(el('strong', '', 'Meilleur palier : ' + win.s.label + (CONFIDENCE[r.data.confidence] ? ' · ' + CONFIDENCE[r.data.confidence] : '') + '. '));
+          status.appendChild(el('strong', '', 'Le meilleur : ' + win.s.label + (CONFIDENCE[r.data.confidence] ? ' · ' + CONFIDENCE[r.data.confidence] : '') + '. '));
           status.appendChild(document.createTextNode(r.data.explanation + ' Tu as la pièce en main : choisis-en un autre si tu n’es pas d’accord.'));
           updateActions();
           scrollDown();
         })
-        .catch(function () { card.analyzing = false; setPhotoButtons(true); if (calibCard === card) { status.textContent = 'Service Plyo injoignable. Choisis toi-même le meilleur palier.'; card.awaiting = true; } });
+        .catch(function () { card.analyzing = false; setPhotoButtons(true); if (calibCard === card) { status.textContent = Logic.errorView('network').text + ' Tu peux aussi choisir toi-même le meilleur.'; card.awaiting = true; } });
     }
     card.receivePhotos = analyze;
 
@@ -1003,7 +1326,7 @@
         Promise.all(files.map(function (f) { return downscale(f).catch(function () { return null; }); })).then(function (list) {
           var ok = list.filter(Boolean);
           if (ok.length) analyze(ok);
-          else noteLine('Cette image ne peut pas être lue (JPEG ou PNG recommandé).', true);
+          else noteLine('Cette image ne peut pas être lue : prends plutôt du JPEG ou du PNG.', 'error', 'alert');
         });
       });
       input.click();
@@ -1019,21 +1342,19 @@
       }
       pendingSheet = { kind: 'calib_save', onResult: function (ok, t) {
         if (!ok) { action.disabled = false; status.textContent = t; return; }
+        record({ kind: 'note', text: info.name + ' : ' + t, tone: 'ok', icon: 'check' });
         footer.textContent = '';
-        footer.appendChild(el('span', 'done', '✓ ' + t));
-        var restore = el('button', 'btn wide', 'Remettre ma pièce');
-        restore.type = 'button';
+        footer.appendChild(doneLabel(t));
         var restored = false;
-        restore.addEventListener('click', function () { restoreCalibration(restore, function (okR) { restored = okR; }); });
+        var restore = button('Remettre ma pièce', function () { restoreCalibration(restore, function (okR) { restored = okR; }); }, 'btn');
         footer.appendChild(restore);
         if (msg.test === 'ironing') {
           // Le lissage s'active sur le profil de ta pièce : la remettre d'abord, sinon la remise l'effacerait.
-          var on = el('button', 'btn ghost', 'Remettre ma pièce et activer le lissage');
-          on.type = 'button';
+          var on = button('Remettre ma pièce et activer le lissage', null, 'btn ghost');
           on.dataset.keep = '1';
           var activate = function () {
-            pendingSheet = { kind: 'apply', onResult: function (okOn, tt) { on.replaceWith(el('span', okOn ? 'done' : 'fail', okOn ? '✓ Lissage activé' : tt)); } };
-            window.orca.postMessage({ type: 'apply', changes: [{ id: 'ironing_type', value: 'top' }] });
+            pendingSheet = { kind: 'apply', onResult: function (okOn, tt) { on.replaceWith(okOn ? doneLabel('Lissage activé') : el('span', 'fail', tt)); } };
+            window.orca.postMessage({ type: 'apply', changes: [{ id: 'ironing_type', value: 'top' }], why: 'Plaque de lissage' });
           };
           on.addEventListener('click', function () {
             on.disabled = true;
@@ -1048,20 +1369,19 @@
     back.addEventListener('click', function () { restoreCalibration(back); });
   }
 
-  function restoreCalibration(button, after) {
-    button.disabled = true;
+  function restoreCalibration(btn, after) {
+    btn.disabled = true;
     pendingSheet = { kind: 'calib_restore', onResult: function (ok, t) {
-      if (!ok) { button.disabled = false; noteLine(t, true); if (after) after(false); return; }
+      if (!ok) { btn.disabled = false; noteLine(t, 'error', 'alert'); if (after) after(false); return; }
       if (calibCard) { calibCard.awaiting = false; calibCard.box.querySelectorAll('button:not([data-keep])').forEach(function (b) { b.disabled = true; }); }
       calibCard = null;
-      noteLine(t, false);
+      noteLine(t, 'ok', 'check');
       if (after) after(true);
     } };
     window.orca.postMessage({ type: 'calib_restore' });
   }
 
   // ---------- Premiers pas : parcours « Ma première impression », « Tu regardes », fiches ----------
-  var FS = window.PlyoFirstSteps;
   var fsState = {};
   var tourCard = null;     // { box, where } de l'étape affichée
   var tourTimer = null;
@@ -1087,73 +1407,61 @@
   }
   function setTourStep(step) { window.orca.postMessage({ type: 'firststeps_set', patch: { tour_step: step } }); }
 
-  function tourButton(label, onClick, ghost) {
-    var b = el('button', 'btn' + (ghost ? ' ghost' : ''), label);
-    b.type = 'button';
-    b.addEventListener('click', onClick);
-    return b;
-  }
-  function showMe(target) { window.orca.postMessage({ type: 'show_me', target: target }); }
-
   function renderTour() {
     var slot = $('tour-slot');
     slot.textContent = '';
     tourCard = null;
     var step = fsState.level === 'beginner' ? fsState.tour_step : null;
-    if (!step || FS.TOUR_STEPS.indexOf(step) < 0) { stopTourTimer(); return; }
+    var active = !!step && FS.TOUR_STEPS.indexOf(step) >= 0;
+    document.body.classList.toggle('touring', active);
+    if (!active) { stopTourTimer(); return; }
     var n = FS.TOUR_STEPS.indexOf(step) + 1;
     var box = el('div', 'tour');
     box.appendChild(el('div', 'step', 'Ma première impression · étape ' + n + ' sur ' + FS.TOUR_STEPS.length));
-    var acts = el('div', 'acts');
+    var acts = el('div', 'row-acts');
     var where = el('div', 'where');
     function next() { setTourStep(FS.TOUR_STEPS[n] || null); }
+    function tell(iconName, text) { where.textContent = ''; where.appendChild(icon(iconName, 14)); where.appendChild(document.createTextNode(text)); }
     if (step === 'model') {
       box.appendChild(el('h3', '', 'Le modèle à imprimer'));
       box.appendChild(el('p', '', 'On commence par un petit bateau : c’est le test classique, rapide, et parfait pour une première fois.'));
-      acts.appendChild(tourButton('Ajouter le bateau', function () { window.orca.postMessage({ type: 'tour_add_benchy' }); }));
-      acts.appendChild(tourButton('J’ai déjà mon modèle', function () {
-        where.textContent = '📂 Glisse ton fichier (STL ou 3MF) sur le plateau, ou passe par Fichier › Importer. Je passe à la suite dès qu’il est posé.';
+      acts.appendChild(button('Ajouter le bateau', function () { window.orca.postMessage({ type: 'tour_add_benchy' }); }, 'btn sm'));
+      acts.appendChild(button('J’ai déjà mon modèle', function () {
+        tell('folder', 'Glisse ton fichier (STL ou 3MF) sur le plateau ou dans ce panneau, ou passe par Fichier › Importer. Je passe à la suite dès qu’il est posé.');
         showMe('plate');
-      }, true));
+      }, 'btn ghost sm'));
     } else if (step === 'presets') {
       box.appendChild(el('h3', '', 'Ton imprimante et ton filament'));
       box.appendChild(el('p', '', 'Vérifie juste que c’est bien ta machine et la bobine que tu vas utiliser. Si c’est bon, tu n’as rien d’autre à régler : le profil s’occupe du reste.'));
-      acts.appendChild(tourButton('Montre-moi l’imprimante', function () { showMe('printer'); }, true));
-      acts.appendChild(tourButton('Montre-moi le filament', function () { showMe('filament'); }, true));
-      acts.appendChild(tourButton('C’est bon, suivant', next));
+      acts.appendChild(button('Montre-moi l’imprimante', function () { showMe('printer'); }, 'btn ghost sm', 'eye'));
+      acts.appendChild(button('Montre-moi le filament', function () { showMe('filament'); }, 'btn ghost sm', 'eye'));
+      acts.appendChild(button('C’est bon, suivant', next, 'btn sm'));
     } else if (step === 'slice') {
       box.appendChild(el('h3', '', 'Découper'));
       box.appendChild(el('p', '', '« Découper », c’est transformer ton modèle en trajets pour la buse, couche par couche. Clique sur « Découper la plaque » : je te dirai combien de temps ça prendra.'));
-      acts.appendChild(tourButton('Montre-moi', function () { showMe('slice'); }));
+      acts.appendChild(button('Montre-moi', function () { showMe('slice'); }, 'btn ghost sm', 'eye'));
+      acts.appendChild(button('Découpe pour moi', function () { plateAction('slice'); }, 'btn sm', 'wand'));
     } else if (step === 'print') {
       box.appendChild(el('h3', '', 'Imprimer'));
       var summary = printSummary();
-      if (summary) box.appendChild(el('p', '', '✓ ' + summary));
+      if (summary) { var s = el('p', 'done'); s.appendChild(icon('check', 13)); s.appendChild(document.createTextNode(summary)); box.appendChild(s); }
       box.appendChild(el('p', '', 'Si ton imprimante est reliée, « Imprimer la plaque » l’envoie directement. Sinon, ouvre la petite flèche de ce bouton, choisis « Exporter le fichier G-code », puis copie le fichier sur la clé USB ou la carte SD de ton imprimante.'));
-      acts.appendChild(tourButton('Montre-moi', function () { showMe('print'); }, true));
-      acts.appendChild(tourButton('C’est lancé, suivant', next));
+      acts.appendChild(button('Montre-moi', function () { showMe('print'); }, 'btn ghost sm', 'eye'));
+      acts.appendChild(button('C’est lancé, suivant', next, 'btn sm'));
     } else if (step === 'after') {
       box.appendChild(el('h3', '', 'Après l’impression'));
-      box.appendChild(el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer. (Lire une photo utilise environ 1 crédit.)'));
-      acts.appendChild(tourButton('📱 Téléphone', openPhone));
-      acts.appendChild(tourButton('Ajouter une photo', pickFiles, true));
+      box.appendChild(el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer. (Lire une photo coûte ' + COST_HINT + '.)'));
+      acts.appendChild(button('Téléphone', openPhone, 'btn sm', 'phone'));
+      acts.appendChild(button('Ajouter une photo', pickFiles, 'btn ghost sm', 'camera'));
     }
     box.appendChild(acts);
     box.appendChild(where);
     var bottom = el('div', 'bottom');
-    var skip = el('button', 'link', step === 'after' ? 'Terminer la visite' : 'Passer la visite');
-    skip.type = 'button';
-    skip.addEventListener('click', function () { setTourStep(null); });
-    bottom.appendChild(skip);
-    if (step === 'model' || step === 'slice') {
-      var skipStep = el('button', 'link', 'Passer cette étape');
-      skipStep.type = 'button';
-      skipStep.addEventListener('click', next);
-      bottom.appendChild(skipStep);
-    }
+    bottom.appendChild(button(step === 'after' ? 'Terminer la visite' : 'Passer la visite', function () { setTourStep(null); }, 'link'));
+    if (step === 'model' || step === 'slice') bottom.appendChild(button('Passer cette étape', next, 'link'));
     box.appendChild(bottom);
     slot.appendChild(box);
-    tourCard = { box: box, where: where };
+    tourCard = { box: box, where: where, tell: tell };
     startTourTimer();
   }
 
@@ -1179,23 +1487,20 @@
     fsState = state;
     renderTour();
     if (first && state.level === 'expert' && !state.greeted) {
-      var hello = home.querySelector('.hello p');
-      if (hello) hello.textContent = 'Je suis là si tu as besoin : pose ta question en bas, ou clique dans un réglage d’Orca pour que je te l’explique.';
+      $('hello-text').textContent = 'Je suis là si tu as besoin : pose ta question en bas, ou clique dans un réglage du slicer pour que je te l’explique.';
       window.orca.postMessage({ type: 'firststeps_set', patch: { greeted: true } });
     }
   }
 
   function explain(key) { window.orca.postMessage({ type: 'explain', key: key }); }
 
-  // Fiche d'un réglage : texte livré dans Plyo (fiches.js), sinon l'aide d'Orca ; valeur actuelle jugée hors ligne.
-  function renderFiche(msg) {
+  // Fiche d'un réglage : texte livré dans Plyo (fiches.js), sinon l'aide du slicer ; valeur actuelle jugée hors ligne.
+  function onExplain(msg) { renderFiche(record({ kind: 'fiche', msg: msg }).msg, false); }
+  function renderFiche(msg, archived) {
     var fiche = window.PLYO_FICHES[msg.key];
     showConversation();
     var box = el('div', 'ai fiche');
-    var who = el('div', 'who');
-    who.appendChild(el('i', '', 'P'));
-    who.appendChild(document.createTextNode('Assistant · explication gratuite'));
-    box.appendChild(who);
+    box.appendChild(whoLine('explication gratuite'));
     var label = fiche ? fiche.label : msg.label;
     box.appendChild(el('h3', '', label));
     function part(title, text) { if (text) { box.appendChild(el('h4', '', title)); box.appendChild(el('p', '', text)); } }
@@ -1211,14 +1516,13 @@
       var shown = typeof msg.value === 'number' ? String(msg.value).replace('.', ',') : msg.value;
       var judged = FS.judgeValue({ value: msg.value, min: msg.min === null ? undefined : msg.min, max: msg.max === null ? undefined : msg.max,
         systemValue: typeof msg.system_value === 'number' ? msg.system_value : undefined });
-      box.appendChild(el('h4', '', 'Chez toi'));
-      box.appendChild(el('p', 'value', 'Valeur actuelle : ' + shown + (msg.unit ? ' ' + msg.unit : '') + '. ' + judged.text));
+      box.appendChild(el('h4', '', archived ? 'Chez toi, ce jour-là' : 'Chez toi'));
+      box.appendChild(el('p', 'value', 'Valeur : ' + shown + (msg.unit ? ' ' + msg.unit : '') + '. ' + judged.text));
     }
-    var ask = el('button', 'btn ghost', 'Et dans mon cas, je mets combien ? (≈ 1 crédit)');
-    ask.type = 'button';
-    ask.style.alignSelf = 'flex-start';
-    ask.addEventListener('click', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); });
-    box.appendChild(ask);
+    var acts = el('div', 'row-acts');
+    acts.appendChild(button('Montre-moi où il est', function () { showSetting(msg.key); }, 'btn ghost sm', 'eye'));
+    if (!archived) acts.appendChild(button('Et dans mon cas, je mets combien ? (' + COST_HINT + ')', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }, 'btn ghost sm'));
+    box.appendChild(acts);
     thread.appendChild(box);
     scrollDown();
   }
@@ -1226,102 +1530,204 @@
   $('focus-explain').addEventListener('click', function () { if (focusKey) explain(focusKey); });
   $('focus-close').addEventListener('click', function () { $('focus-chip').classList.add('hidden'); });
 
-
   // ---------- Envoi d'une demande ----------
-  // `photosFromPhone` : envoi venu du téléphone (photos fournies, zone de saisie laissée intacte).
-  function send(text, photosFromPhone, fromPhone) {
+  var CONFIDENCE = { high: 'Confiance élevée', medium: 'Confiance moyenne', low: 'Confiance faible' };
+
+  function renderMe(entry) {
+    showConversation();
+    var me = el('div', 'me');
+    if (entry.thumbs && entry.thumbs.length) {
+      var grid = el('div', 'thumbs');
+      entry.thumbs.forEach(function (src) { var i = el('img'); i.src = src; i.alt = ''; grid.appendChild(i); });
+      me.appendChild(grid);
+    }
+    if (entry.text) me.appendChild(el('div', 'text', entry.text));
+    if (entry.fromPhone) { var f = el('span', 'from'); f.appendChild(icon('phone', 11)); f.appendChild(document.createTextNode('Envoyé depuis le téléphone')); me.appendChild(f); }
+    thread.appendChild(me);
+    scrollDown();
+    return me;
+  }
+
+  // Ta demande dans le fil (vignettes gardées dans la conversation) ; le titre vient de la première demande.
+  function addMe(text, photos, fromPhone) {
+    var entry = record({ kind: 'me', text: text, thumbs: [], fromPhone: !!fromPhone });
+    if (!conv.title) conv.title = Logic.conversationTitle(text, photos.length, new Date().toISOString());
+    renderMe({ text: text, fromPhone: fromPhone, thumbs: photos.map(function (p) { return p.preview; }) });
+    // La conversation garde des vignettes de 160 px, pas les photos entières.
+    Promise.all(photos.map(function (p) { return scaled(p.preview, THUMB_SIDE, 0.7).catch(function () { return null; }); })).then(function (thumbs) {
+      entry.thumbs = thumbs.filter(Boolean);
+      scheduleSave();
+    });
+    return entry;
+  }
+
+  // `opts` : { photos (du téléphone), fromPhone, shown (la demande est déjà dans le fil) }.
+  function send(text, opts) {
+    opts = opts || {};
     var note = (text || '').trim();
     // Une adresse MakerWorld ouvre la page dans une fenêtre Plyo (la page n'est jamais lue par Plyo ni par l'IA).
-    if (!photosFromPhone && /^https:\/\/(www\.)?makerworld\.com\/\S*$/i.test(note)) {
+    if (!opts.photos && /^https:\/\/(www\.)?makerworld\.com\/\S*$/i.test(note)) {
       window.orca.postMessage({ type: 'makerworld', url: note });
       noteInput.value = '';
-      noteLine('Page MakerWorld ouverte : connectez-vous si besoin, puis cliquez sur « Ouvrir dans Bambu Studio » sous le profil voulu.');
+      noteLine('Page MakerWorld ouverte : connecte-toi si besoin, puis clique sur « Ouvrir dans Bambu Studio » sous le profil voulu.', '', 'info');
       return;
     }
     if (busy) return;
-    if (!note && !attachments.length && !photosFromPhone) { noteInput.focus(); return; }
-    if (!lastValues) { noteLine('Les réglages du slicer ne sont pas encore lus. Réessayez dans un instant.', true); return; }
+    var photos = opts.photos || attachments.slice();
+    if (!note && !photos.length) { noteInput.focus(); return; }
+    if (!lastValues) { noteLine('Je lis encore les réglages du slicer : réessaie dans une seconde.', '', 'info'); return; }
     // « C'est quoi la rétraction ? » : la fiche du réglage répond, gratuitement et sans compte.
-    var ficheKey = !photosFromPhone && !attachments.length ? window.PlyoFirstSteps.matchSettingQuestion(note, window.PLYO_FICHES) : null;
+    var ficheKey = !opts.photos && !photos.length ? FS.matchSettingQuestion(note, window.PLYO_FICHES) : null;
     if (ficheKey) {
-      showConversation();
-      var asked = el('div', 'me');
-      asked.appendChild(el('div', 'text', note));
-      thread.appendChild(asked);
+      if (!opts.shown) addMe(note, [], false);
       noteInput.value = '';
       explain(ficheKey);
       return;
     }
-    if (requireLogin('Pour te répondre, je dois envoyer ta demande à l’IA (1 crédit environ).', function () { send(text, photosFromPhone, fromPhone); })) return;
+    if (!opts.photos) { attachments = []; renderAttachments(); noteInput.value = ''; }
+    if (!opts.shown) addMe(note, photos, opts.fromPhone);
+    var again = { photos: photos, fromPhone: opts.fromPhone, shown: true };
+    if (requireLogin('Pour te répondre, j’envoie ta demande à l’IA (' + COST_HINT + ').', function () { send(note, again); })) return;
+    ask(note, photos);
+  }
 
-    var photos = photosFromPhone || attachments.slice();
-    showConversation();
-    var me = el('div', 'me');
-    if (photos.length) {
-      var grid = el('div', 'thumbs');
-      photos.forEach(function (p) { var i = el('img'); i.src = p.preview; i.alt = ''; grid.appendChild(i); });
-      me.appendChild(grid);
-    }
-    if (note) me.appendChild(el('div', 'text', note));
-    if (fromPhone) me.appendChild(el('div', 'cost', '📱 Envoyé depuis le téléphone'));
-    thread.appendChild(me);
+  // Juste avant l'appel : ce qui est sur le plateau et ce qui a déjà été appliqué sur cette machine.
+  var contextWaiter = null;
+  function aiContext() {
+    return new Promise(function (resolve) {
+      var timer = setTimeout(function () { contextWaiter = null; resolve(null); }, 1500);
+      contextWaiter = function (msg) { clearTimeout(timer); contextWaiter = null; resolve(msg); };
+      window.orca.postMessage({ type: 'ai_context' });
+    });
+  }
 
-    var body = {
-      locale: lastValues.locale || 'fr',
-      settings: { params: lastValues.params.map(function (p) { return { id: p.id, value: p.value, unit: p.unit }; }) },
-      context: lastValues.context,
-      history: history.slice(-MAX_HISTORY)
-    };
-    if (photos.length) body.images = photos.map(function (p) { return { media_type: p.media_type, data: p.data }; });
-    if (note) body.note = note;
-    if (calibHistory.length) body.calibrations = calibHistory;
-
-    if (!photosFromPhone) {
-      attachments = [];
-      renderAttachments();
-      noteInput.value = '';
-    }
+  function ask(note, photos) {
     busy = true;
     sendButton.disabled = true;
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort('timeout'); }, ANSWER_TIMEOUT_MS);
     var thinking = el('div', 'thinking');
     thinking.appendChild(el('i'));
-    thinking.appendChild(document.createTextNode('L’assistant réfléchit…'));
+    thinking.appendChild(document.createTextNode(photos.length ? 'Je regarde ta photo…' : 'Je réfléchis…'));
+    thinking.appendChild(button('Annuler', function () { controller.abort('cancel'); }, 'link'));
     thread.appendChild(thinking);
     scrollDown();
+    var live = null;           // réponse en cours d'écriture
+    function finish() {
+      clearTimeout(timer);
+      thinking.remove();
+      if (live) live.box.remove();
+      busy = false;
+      sendButton.disabled = false;
+      scrollDown();
+      drainPhoneQueue();
+    }
+    function fail(code) {
+      finish();
+      if (code === 'cancel') { noteLine('Demande annulée.', '', 'info'); return; }
+      if (code === 'unauthorized') { logout(); requireLogin('Ta session a expiré.', function () { send(note, { photos: photos, shown: true }); }); return; }
+      showError(code, function () { ask(note, photos); });
+    }
 
-    apiFetch('/api/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      .then(function (response) {
-        return response.json().then(function (data) { return { ok: response.ok, status: response.status, data: data }; });
-      })
-      .then(function (r) {
-        thinking.remove();
-        if (r.status === 401) {
-          // Session impossible à renouveler : retour à la connexion, sans perdre le texte ni les photos.
-          me.remove();
-          if (!photosFromPhone) {
-            attachments = photos;
-            renderAttachments();
-            noteInput.value = note;
-          }
-          logout('Votre session a expiré : reconnectez-vous.');
-          return;
-        }
-        if (!r.ok) {
-          noteLine(ERRORS[r.data.error] || ERRORS.internal, true);
-          if (r.data.error === 'insufficient_credits') setBalance(r.data.balance);
-          return;
-        }
-        if (r.data.credits) setBalance(r.data.credits.balance);
-        history.push({ role: 'user', text: (photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note });
-        history.push({ role: 'assistant', text: summaryForHistory(r.data) });
-        history = history.slice(-MAX_HISTORY);
-        renderAnswer(r.data, photos.length);
-      })
-      .catch(function () {
-        thinking.remove();
-        noteLine('Service Plyo injoignable. Est-il démarré (npm run dev dans plyo-api) ?', true);
-      })
-      .then(function () { busy = false; sendButton.disabled = false; scrollDown(); drainPhoneQueue(); });
+    aiContext().then(function (ctx) {
+      var body = {
+        locale: lastValues.locale || 'fr',
+        settings: { params: lastValues.params.map(function (p) { return { id: p.id, value: p.value, unit: p.unit }; }) },
+        context: lastValues.context,
+        history: conv.history.slice(-MAX_HISTORY)
+      };
+      if (photos.length) body.images = photos.map(function (p) { return { media_type: p.media_type, data: p.data }; });
+      if (note) body.note = note;
+      if (calibHistory.length) body.calibrations = calibHistory;
+      if (ctx && ctx.plate) body.plate = ctx.plate;
+      if (ctx && ctx.memory && ctx.memory.length) body.memory = ctx.memory;
+      return apiFetch('/api/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify(body), signal: controller.signal });
+    }).then(function (response) {
+      if (response.status === 401) return { error: 'unauthorized' };
+      var type = response.headers.get('Content-Type') || '';
+      if (type.indexOf('ndjson') < 0 || !response.body)
+        return response.json().then(function (data) { return response.ok ? { final: data } : { error: data.error, balance: data.balance }; });
+      // Réponse en flux : les textes s'affichent au fur et à mesure, puis la réponse complète remplace le brouillon.
+      var reader = response.body.getReader(), decoder = new TextDecoder(), nd = Logic.ndjsonReader(), out = {};
+      function handle(events) {
+        events.forEach(function (ev) {
+          if (ev.type === 'partial') { if (!live) { thinking.classList.add('hidden'); live = liveAnswer(); } live.update(ev); }
+          else if (ev.type === 'final') out.final = ev;
+          else if (ev.type === 'error') out.error = ev.error;
+        });
+      }
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) { handle(nd.end()); return out.final || out.error ? out : { error: 'incomplete_answer' }; }
+          handle(nd.push(decoder.decode(r.value, { stream: true })));
+          return pump();
+        });
+      }
+      return pump();
+    }).then(function (r) {
+      if (r.error) {
+        if (r.error === 'insufficient_credits') setBalance(r.balance);
+        fail(r.error);
+        return;
+      }
+      finish();
+      var a = r.final;
+      if (a.credits) setBalance(a.credits.balance);
+      conv.history.push({ role: 'user', text: (photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note });
+      conv.history.push({ role: 'assistant', text: summaryForHistory(a) });
+      conv.history = conv.history.slice(-MAX_HISTORY);
+      var entry = record({ kind: 'answer', data: a, photoCount: photos.length, question: note, date: new Date().toISOString(), applied: false });
+      renderAnswer(entry, false);
+    }).catch(function () {
+      fail(controller.signal.aborted ? (controller.signal.reason === 'cancel' ? 'cancel' : 'timeout') : 'network');
+    });
+  }
+
+  // Erreur : ce qui s'est passé et l'action suivante. La demande est gardée pour « Réessayer ».
+  function showError(code, retry) {
+    showConversation();
+    var view = Logic.errorView(code);
+    var box = alertBox('error', view.text, 'alert');
+    var acts = el('div', 'row-acts');
+    if (view.action === 'credits') acts.appendChild(button('Voir mes crédits', openCredits, 'btn sm'));
+    else if (view.action === 'login') acts.appendChild(button('Me reconnecter', openLogin, 'btn sm'));
+    else if (retry) acts.appendChild(button('Réessayer', function () { box.remove(); retry(); }, 'btn sm'));
+    box.body.appendChild(acts);
+    thread.appendChild(box);
+    scrollDown();
+  }
+
+  // Brouillon de la réponse pendant que l'IA l'écrit.
+  function liveAnswer() {
+    var box = el('div', 'ai');
+    box.appendChild(whoLine());
+    var title = el('h3');
+    var diag = el('div', 'diag');
+    diag.appendChild(title);
+    var explanation = el('div');
+    var message = el('div');
+    box.appendChild(diag);
+    box.appendChild(explanation);
+    box.appendChild(message);
+    thread.appendChild(box);
+    // Le curseur suit la fin du texte en cours d'écriture.
+    function set(target, text, caret) {
+      target.textContent = '';
+      if (!text) return;
+      var r = rich(text);
+      var last = r.lastElementChild;
+      if (caret && last) (last.tagName === 'P' ? last : last.lastElementChild || last).classList.add('caret');
+      target.appendChild(r);
+    }
+    return {
+      box: box,
+      update: function (p) {
+        title.textContent = p.name || '';
+        set(explanation, p.explanation, !p.message);
+        set(message, p.message, !!p.message);
+        scrollDown();
+      }
+    };
   }
 
   // Ce que l'assistant a répondu, pour le renvoyer dans l'historique au tour suivant.
@@ -1336,45 +1742,61 @@
   function change(s) {
     var p = paramOf(s.id);
     var after = s.delta !== null && typeof p.value === 'number' ? p.value + s.delta : s.value;
-    return { label: p.label, before: formatValue(p.value, p.unit), after: formatValue(after, p.unit) };
+    return { label: p.label, key: p.key, before: formatValue(p.value, p.unit), after: formatValue(after, p.unit) };
   }
 
-  function renderSheet(container, suggestions) {
+  // Nom du réglage : un clic l'explique (fiche gratuite) quand Plyo en a une.
+  function settingName(label, key) {
+    if (!key || !window.PLYO_FICHES[key]) return el('div', 'name', label);
+    var b = el('button', 'setting-name');
+    b.type = 'button';
+    b.title = 'C’est quoi ce réglage ?';
+    b.appendChild(document.createTextNode(label));
+    b.appendChild(icon('help', 13));
+    b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); explain(key); });
+    return b;
+  }
+
+  // Une conversation rouverte montre ses fiches en lecture : appliquer un écart calculé sur d'anciennes valeurs serait faux.
+  function renderSheet(container, entry, archived) {
+    var suggestions = entry.data.suggestions;
     var sheet = el('div', 'sheet');
-    sheet.appendChild(el('header', '', 'Réglages proposés'));
+    var day = entry.date ? new Date(entry.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) : '';
+    sheet.appendChild(el('header', '', archived ? (entry.applied ? 'Réglages appliqués le ' + day : 'Réglages proposés le ' + day) : 'Réglages proposés'));
     var rows = suggestions.map(function (s) {
-      var c = change(s);
-      var row = el('label', 'row');
-      var box = el('input');
-      box.type = 'checkbox';
-      box.checked = true;
+      var c = archived && entry.changes && entry.changes[s.id] ? entry.changes[s.id] : change(s);
+      var row = el(archived ? 'div' : 'label', 'row' + (archived ? ' static' : ''));
+      var box = null;
+      if (archived) row.appendChild(entry.applied ? markCell() : el('span', 'mark', '•'));
+      else { box = el('input'); box.type = 'checkbox'; box.checked = true; row.appendChild(box); }
       var info = el('div');
-      info.appendChild(el('div', 'name', c.label));
+      info.appendChild(settingName(c.label, c.key));
       var delta = el('div', 'delta');
       delta.appendChild(el('span', 'old', c.before));
       delta.appendChild(el('span', 'arrow', '→'));
       delta.appendChild(el('span', 'new', c.after));
       info.appendChild(delta);
       if (s.reason) info.appendChild(el('div', 'why', s.reason));
-      var key = paramOf(s.id).key;
-      if (key && window.PLYO_FICHES[key]) {
-        var why = el('button', 'why-link', 'Pourquoi ? C’est quoi ce réglage ?');
-        why.type = 'button';
-        why.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); explain(key); });
-        info.appendChild(why);
-      }
-      row.appendChild(box);
       row.appendChild(info);
       sheet.appendChild(row);
-      box.addEventListener('change', function () { row.classList.toggle('off', !box.checked); updateCount(); });
-      return { box: box, s: s, row: row };
+      if (box) box.addEventListener('change', function () { row.classList.toggle('off', !box.checked); updateCount(); });
+      return { box: box, s: s, row: row, c: c };
     });
+    if (!archived) {
+      // Libellés et valeurs gardés tels qu'affichés : une conversation rouverte ne dépend pas des réglages du moment.
+      entry.changes = {};
+      rows.forEach(function (r) { entry.changes[r.s.id] = r.c; });
+      scheduleSave();
+    }
+    if (archived) {
+      if (!entry.applied) sheet.appendChild(el('div', 'status', 'Pour les appliquer aujourd’hui, redemande-moi : tes réglages ont pu changer depuis.'));
+      container.appendChild(sheet);
+      return;
+    }
 
-    var footer = el('footer');
-    var apply = el('button', 'btn wide');
-    apply.type = 'button';
-    var ignore = el('button', 'btn ghost', 'Ignorer');
-    ignore.type = 'button';
+    var footer = el('footer', 'inline');
+    var apply = button('', null, 'btn wide');
+    var ignore = button('Ignorer', null, 'btn ghost');
     footer.appendChild(apply);
     footer.appendChild(ignore);
     sheet.appendChild(footer);
@@ -1392,87 +1814,147 @@
     function lock(locked) { rows.forEach(function (r) { r.box.disabled = locked; }); apply.disabled = locked; ignore.disabled = locked; }
 
     apply.addEventListener('click', function () {
-      var changes = checked().map(function (r) { return r.s.delta !== null ? { id: r.s.id, delta: r.s.delta } : { id: r.s.id, value: r.s.value }; });
+      var picked = checked();
+      var changes = picked.map(function (r) { return r.s.delta !== null ? { id: r.s.id, delta: r.s.delta } : { id: r.s.id, value: r.s.value }; });
       fail.classList.add('hidden');
       lock(true);
       pendingSheet = { kind: 'apply', onResult: function (ok, text) {
         if (!ok) { lock(false); updateCount(); fail.textContent = text; fail.classList.remove('hidden'); return; }
-        rows.forEach(function (r) { if (!r.box.checked) r.row.remove(); r.box.replaceWith(el('span', '', '✓')); });
+        // La conversation garde ce qui a été appliqué, valeurs comprises, pour la relire plus tard.
+        entry.applied = true;
+        entry.data.suggestions = picked.map(function (r) { return r.s; });
+        scheduleSave();
+        rows.forEach(function (r) { if (!r.box.checked) r.row.remove(); else r.box.replaceWith(markCell()); });
         sheet.querySelector('header').textContent = 'Réglages appliqués';
         footer.textContent = '';
         var preset = lastValues && lastValues.context ? lastValues.context.process : '';
-        footer.appendChild(el('span', 'done', '✓ Appliqué' + (preset ? ' (préréglage « ' + preset + ' » et filament marqués modifiés)' : '')));
-        var undo = el('button', 'link', 'Annuler');
-        undo.type = 'button';
-        undo.addEventListener('click', function () {
+        footer.appendChild(doneLabel('Appliqué' + (preset ? ' : préréglage « ' + preset + ' » marqué modifié, à enregistrer si tu veux le garder' : '')));
+        footer.appendChild(button('Annuler', function () {
           pendingSheet = { kind: 'undo', onResult: function (okUndo, msg) {
             footer.textContent = '';
-            footer.appendChild(el('span', okUndo ? 'done' : 'fail', okUndo ? '↺ Réglages d’avant restaurés' : msg));
+            if (okUndo) { entry.applied = false; scheduleSave(); }
+            footer.appendChild(okUndo ? doneLabel('Réglages d’avant remis', 'undo') : el('span', 'fail', msg));
           } };
           window.orca.postMessage({ type: 'undo' });
-        });
-        footer.appendChild(undo);
+        }, 'link'));
       } };
-      window.orca.postMessage({ type: 'apply', changes: changes });
+      window.orca.postMessage({ type: 'apply', changes: changes, why: (entry.data.defect && entry.data.defect.name) || '' });
     });
     ignore.addEventListener('click', function () { sheet.remove(); });
     container.appendChild(sheet);
   }
 
-  function renderAnswer(a, photoCount) {
-    var box = el('div', 'ai');
-    var who = el('div', 'who');
-    who.appendChild(el('i', '', 'P'));
-    who.appendChild(document.createTextNode('Assistant' + (photoCount ? ' · d’après ' + (photoCount > 1 ? 'vos ' + photoCount + ' photos' : 'votre photo') : '')));
-    box.appendChild(who);
+  // Questions de l'IA : une réponse par question, puis un seul envoi.
+  function renderQuestions(container, entry, archived) {
+    var qs = entry.data.questions;
+    var picks = entry.answers || {};
+    var wrap = el('div', 'questions');
+    var sendBtn = button('Envoyer mes réponses', null, 'btn sm');
+    qs.forEach(function (q, i) {
+      wrap.appendChild(el('p', 'q', q.text));
+      var row = el('div', 'chips');
+      q.choices.forEach(function (c) {
+        var chip = el('button', 'chip' + (picks[i] === c ? ' on' : ''), c);
+        chip.type = 'button';
+        chip.disabled = archived || !!entry.answered;
+        chip.addEventListener('click', function () {
+          picks[i] = c;
+          row.querySelectorAll('.chip').forEach(function (b) { b.classList.toggle('on', b === chip); });
+          sendBtn.disabled = !Logic.allAnswered(qs, picks);
+        });
+        row.appendChild(chip);
+      });
+      wrap.appendChild(row);
+    });
+    if (!archived && !entry.answered) {
+      sendBtn.disabled = !Logic.allAnswered(qs, picks);
+      sendBtn.addEventListener('click', function () {
+        entry.answered = true;
+        entry.answers = picks;
+        scheduleSave();
+        wrap.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+        send(Logic.combineAnswers(qs, picks));
+      });
+      wrap.appendChild(el('div', 'row-acts')).appendChild(sendBtn);
+    }
+    container.appendChild(wrap);
+  }
 
-    var isDefect = a.status === 'ok' && a.defect && ['user_goal', 'no_defect', 'unknown'].indexOf(a.defect.key) < 0;
+  // « Signaler » : la réponse semble fausse ou inutile. Gratuit ; sert à corriger l'assistant.
+  function feedbackLink(entry) {
+    var link = button('Signaler', null, 'link');
+    link.addEventListener('click', function () {
+      var form = el('div', 'feedback');
+      var input = el('textarea');
+      input.maxLength = 1000;
+      input.placeholder = 'Qu’est-ce qui ne va pas dans cette réponse ? (facultatif)';
+      input.setAttribute('aria-label', 'Ce qui ne va pas');
+      var acts = el('div', 'row-acts');
+      var go = button('Envoyer le signalement', function () {
+        go.disabled = true;
+        var a = entry.data;
+        apiFetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          verdict: 'bad', comment: input.value.trim() || undefined, question: (entry.question || '').slice(0, 2000), locale: (lastValues && lastValues.locale) || 'fr',
+          answer: { status: a.status, defect: a.defect, message: a.message, suggestions: a.suggestions, actions: a.actions || [] },
+          context: lastValues && lastValues.context ? { printer: lastValues.context.printer, filament: lastValues.context.filament } : undefined
+        }) })
+          .then(function (r) { return r.ok ? null : Promise.reject(); })
+          .then(function () { form.replaceWith(doneLabel('Merci, c’est noté : on s’en sert pour corriger l’assistant.')); entry.flagged = true; scheduleSave(); })
+          .catch(function () { go.disabled = false; go.textContent = 'Réessayer l’envoi'; });
+      }, 'btn sm');
+      acts.appendChild(go);
+      acts.appendChild(button('Laisser tomber', function () { form.replaceWith(link); }, 'link'));
+      form.appendChild(input);
+      form.appendChild(acts);
+      link.parentNode.parentNode.insertBefore(form, link.parentNode.nextSibling);
+      link.remove();
+      input.focus();
+    });
+    return link;
+  }
+
+  function renderAnswer(entry, archived) {
+    var a = entry.data;
+    showConversation();
+    var box = el('div', 'ai');
+    box.appendChild(whoLine(entry.photoCount ? 'd’après ' + (entry.photoCount > 1 ? 'tes ' + entry.photoCount + ' photos' : 'ta photo') : ''));
+
+    var isDefect = a.status === 'ok' && a.defect && ['user_goal', 'no_defect', 'unknown', 'general_question'].indexOf(a.defect.key) < 0;
     if (a.status !== 'question' && a.status !== 'off_topic' && a.defect && a.defect.name) {
       var diag = el('div', 'diag');
       diag.appendChild(el('h3', '', a.defect.name));
       if (isDefect && CONFIDENCE[a.confidence]) diag.appendChild(el('span', 'pill', CONFIDENCE[a.confidence]));
       box.appendChild(diag);
-      if (a.defect.explanation) box.appendChild(el('p', '', a.defect.explanation));
+      if (a.defect.explanation) box.appendChild(rich(a.defect.explanation));
     }
 
     if (a.suggestions.length) {
-      renderSheet(box, a.suggestions);
-      if (a.message) {
-        var tip = el('div', 'tip');
-        tip.appendChild(el('span', '', '💡'));
-        tip.appendChild(el('span', '', a.message));
-        box.appendChild(tip);
-      }
+      renderSheet(box, entry, archived);
+      if (a.message) { var tip = alertBox('tip', a.message, 'bulb'); box.appendChild(tip); }
     } else if (a.message) {
-      box.appendChild(el('p', '', a.message));
+      box.appendChild(rich(a.message));
     }
 
-    if (a.calibration_offer && CALIB[a.calibration_offer.test]) box.appendChild(calibrationOffer(a.calibration_offer));
+    var actions = renderActions(a.actions, archived);
+    if (actions) box.appendChild(actions);
+    if (!archived && a.calibration_offer && CALIB[a.calibration_offer.test]) box.appendChild(calibrationOffer(a.calibration_offer));
+    if (a.questions && a.questions.length) renderQuestions(box, entry, archived);
 
-    a.questions.forEach(function (q) {
-      box.appendChild(el('p', 'q', q.text));
-      var row = el('div', 'chips');
-      q.choices.forEach(function (c) {
-        var chip = el('button', 'chip', c);
-        chip.type = 'button';
-        chip.addEventListener('click', function () {
-          row.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
-          send(q.text + ' → ' + c);
-        });
-        row.appendChild(chip);
-      });
-      box.appendChild(row);
-    });
-
+    var foot = el('div', 'ai-foot');
     if (a.credits && a.credits.charged > 0)
-      box.appendChild(el('span', 'cost', a.credits.charged.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' crédit' + (a.credits.charged >= 2 ? 's' : '')));
+      foot.appendChild(el('span', '', a.credits.charged.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' crédit' + (a.credits.charged >= 2 ? 's' : '')));
+    if (session && a.status !== 'off_topic' && !entry.flagged) foot.appendChild(feedbackLink(entry));
+    if (foot.children.length) box.appendChild(foot);
     thread.appendChild(box);
     scrollDown();
   }
 
   // ---------- Actions ----------
   sendButton.addEventListener('click', function () { send(noteInput.value); });
-  noteInput.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(noteInput.value); });
+  // Entrée envoie, Maj + Entrée va à la ligne (pas pendant la saisie d'un caractère composé).
+  noteInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(noteInput.value); }
+  });
   $('btn-files').addEventListener('click', pickFiles);
   $('btn-phone').addEventListener('click', openPhone);
   $('phone-linked').addEventListener('click', openPhone);
@@ -1482,6 +1964,7 @@
   $('goals').querySelectorAll('.chip').forEach(function (chip) { chip.addEventListener('click', function () { send(chip.textContent); }); });
 
   // ---------- Messages du slicer ----------
+  var restored = false;
   window.orca.onMessage(function (msg) {
     if (!msg || !msg.type) return;
     if (msg.type === 'session') {
@@ -1497,7 +1980,7 @@
       drainPhoneQueue();
     } else if (msg.type === 'result') {
       if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text); }
-      else noteLine(msg.text, !msg.ok);
+      else noteLine(msg.text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
     } else if (msg.type === 'calib_started') {
       onCalibStarted(msg);
     } else if (msg.type === 'calib_history') {
@@ -1505,7 +1988,7 @@
     } else if (msg.type === 'makerworld_imported') {
       onMakerWorldImported(msg);
     } else if (msg.type === 'makerworld_opened') {
-      noteLine('Modèle reçu de MakerWorld : Orca le télécharge et l’ouvre.');
+      noteLine('Modèle reçu de MakerWorld : le slicer le télécharge et l’ouvre.', '', 'cube');
     } else if (msg.type === 'phone_batch_ready') {
       pollPhone(); // la fenêtre QR s'est fermée sur un envoi : on le traite sans attendre le prochain tour
     } else if (msg.type === 'model_added') {
@@ -1515,20 +1998,36 @@
     } else if (msg.type === 'tour_signals') {
       onTourSignals(msg);
     } else if (msg.type === 'show_me') {
-      if (!msg.ok && tourCard && WHERE[msg.target]) tourCard.where.textContent = '📍 ' + WHERE[msg.target];
-      else if (!msg.ok && WHERE[msg.target]) noteLine('📍 ' + WHERE[msg.target]);
+      if (!msg.ok && tourCard && WHERE[msg.target]) tourCard.tell('pin', WHERE[msg.target]);
+      else if (!msg.ok && WHERE[msg.target]) noteLine(WHERE[msg.target], '', 'pin');
+    } else if (msg.type === 'show_setting') {
+      onShowSetting(msg);
     } else if (msg.type === 'explain') {
-      renderFiche(msg);
+      onExplain(msg);
     } else if (msg.type === 'focus_setting') {
       $('focus-label').textContent = msg.label;
       focusKey = msg.key;
       $('focus-chip').classList.remove('hidden');
+    } else if (msg.type === 'ai_context') {
+      if (contextWaiter) contextWaiter(msg);
+    } else if (msg.type === 'plate_action') {
+      onPlateAction(msg);
+    } else if (msg.type === 'conv_list') {
+      // Au lancement : la dernière conversation est rouverte ; ensuite, la liste remplit le volet.
+      if (!restored) { restored = true; if (msg.items && msg.items.length && !(conv && conv.entries.length)) openConversation(msg.items[0].id); }
+      else fillConversations(msg.items || []);
+    } else if (msg.type === 'conv_loaded') {
+      if (msg.conversation) restoreConversation(msg.id, msg.conversation);
+      else noteLine('Cette conversation n’a pas pu être ouverte.', 'error', 'alert');
     }
   });
 
+  startConversation();
+  showLoggedIn(false);
   window.orca.postMessage({ type: 'ready' });
   window.orca.postMessage({ type: 'session_load' });
   window.orca.postMessage({ type: 'firststeps_state' });
+  window.orca.postMessage({ type: 'conv_list' });
 })();
 </script>
 </body>

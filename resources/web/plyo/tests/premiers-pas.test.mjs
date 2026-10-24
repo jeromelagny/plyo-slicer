@@ -72,10 +72,12 @@ test('reconnaît un modèle 3D à son extension', () => {
 
 test('message après la pose d’un modèle', () => {
   const fits = modelAddedText({ name: 'support-casque.stl', size_mm: [82, 40, 115], bed_mm: [256, 256, 256], fits: true });
-  assert.match(fits, /support-casque\.stl/);
-  assert.match(fits, /82 × 40 × 115 mm/);
-  assert.doesNotMatch(fits, /dépasse/);
+  assert.equal(fits.warn, false);
+  assert.match(fits.text, /support-casque\.stl/);
+  assert.match(fits.text, /82 × 40 × 115 mm/);
   const big = modelAddedText({ name: 'tour.stl', size_mm: [300, 40, 120], bed_mm: [256, 256, 256], fits: false });
-  assert.match(big, /dépasse/);
-  assert.match(big, /256 × 256 × 256 mm/);
+  assert.equal(big.warn, true);
+  assert.match(big.text, /trop grand/);
+  assert.match(big.text, /256 × 256 × 256 mm/);
+  assert.doesNotMatch(big.text, /est sur le plateau \(/);
 });

@@ -1,9 +1,8 @@
 #include "PlyoModelImport.hpp"
+#include "PlyoPlateActions.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Model.hpp"
-#include "libslic3r/PresetBundle.hpp"
-#include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
@@ -83,23 +82,9 @@ nlohmann::json add(const std::string& name, const std::string& base64)
         if (idx < plater->model().objects.size())
             box.merge(plater->model().objects[idx]->instance_bounding_box(0));
 
-    // Plateau : zone imprimable (contour) et hauteur maximale de l'imprimante.
-    const Slic3r::DynamicPrintConfig& printer = wxGetApp().preset_bundle->printers.get_edited_preset().config;
-    Slic3r::Vec3d bed(0, 0, 0);
-    if (const auto* area = printer.option<Slic3r::ConfigOptionPoints>("printable_area"); area != nullptr && !area->values.empty()) {
-        Slic3r::BoundingBoxf b;
-        for (const Slic3r::Vec2d& p : area->values)
-            b.merge(p);
-        bed.x() = b.size().x();
-        bed.y() = b.size().y();
-    }
-    if (const auto* h = printer.option<Slic3r::ConfigOptionFloat>("printable_height"))
-        bed.z() = h->value;
-
+    const Slic3r::Vec3d bed  = PlateActions::bed_size();
     const Slic3r::Vec3d size = box.defined ? box.size() : Slic3r::Vec3d(0, 0, 0);
-    // Tient sur le plateau, au besoin tourné d'un quart de tour.
-    const auto flat = [&](double a, double b) { return a <= bed.x() + 1e-6 && b <= bed.y() + 1e-6; };
-    const bool fits = bed.x() <= 0 || ((flat(size.x(), size.y()) || flat(size.y(), size.x())) && (bed.z() <= 0 || size.z() <= bed.z() + 1e-6));
+    const bool          fits = PlateActions::fits(size, bed);
     BOOST_LOG_TRIVIAL(info) << "Plyo: modèle joint posé sur le plateau : " << path.string();
     return {{"ok", true}, {"name", fs::path(name).filename().string()}, {"count", added.size()},
             {"size_mm", size_of(size)}, {"bed_mm", size_of(bed)}, {"fits", fits}};

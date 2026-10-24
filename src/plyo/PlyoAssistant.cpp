@@ -1,12 +1,15 @@
 #include "PlyoAssistant.hpp"
 #include "PlyoCalibration.hpp"
+#include "PlyoConversations.hpp"
 #include "PlyoFirstSteps.hpp"
 #include "PlyoHighlight.hpp"
 #include "PlyoLoginDialog.hpp"
 #include "PlyoMakerWorldImport.hpp"
 #include "PlyoMakerWorldWindow.hpp"
+#include "PlyoMemory.hpp"
 #include "PlyoModelImport.hpp"
 #include "PlyoPhoneDialog.hpp"
+#include "PlyoPlateActions.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
 
@@ -61,7 +64,7 @@ std::string load_page()
     std::string page = read_resource("index.html");
     if (page.empty())
         return "<h3>Assistant Plyo</h3><p>Page introuvable : resources/web/plyo/index.html</p>";
-    for (const char* name : {"fiches.js", "premiers-pas.js"}) {
+    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js"}) {
         const std::string marker = std::string("<!--plyo-include:") + name + "-->";
         if (const size_t at = page.find(marker); at != std::string::npos)
             page.replace(at, marker.size(), "<script>\n" + read_resource(name) + "\n</script>");
@@ -100,10 +103,47 @@ void handle_page_message(const nlohmann::json& data)
             send_values();
         } else if (type == "get_values")
             send_values();
-        else if (type == "apply")
-            send_result(SettingsBridge::apply_changes(data.contains("changes") ? data["changes"] : nlohmann::json()));
-        else if (type == "undo")
-            send_result(SettingsBridge::undo_last());
+        else if (type == "apply") {
+            // Chaque application réussie est notée dans la mémoire de la machine (imprimante + filament).
+            const nlohmann::json before = SettingsBridge::read_values();
+            const nlohmann::json result = SettingsBridge::apply_changes(data.contains("changes") ? data["changes"] : nlohmann::json());
+            if (result.value("ok", false))
+                Memory::note_applied(before, SettingsBridge::read_values(), data.value("why", std::string()));
+            send_result(result);
+        } else if (type == "undo") {
+            const nlohmann::json result = SettingsBridge::undo_last();
+            if (result.value("ok", false))
+                Memory::forget_last();
+            send_result(result);
+        } else if (type == "ai_context")
+            // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
+            send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()}});
+        else if (type == "plate_action") {
+            nlohmann::json done = PlateActions::run(data.value("kind", std::string()));
+            done["type"]        = "plate_action";
+            done["kind"]        = data.value("kind", std::string());
+            send(done);
+        } else if (type == "show_setting") {
+            const std::string key = data.value("key", std::string());
+            Highlight::show_setting(key, [key](const nlohmann::json& shown) {
+                nlohmann::json message = shown;
+                message["type"]        = "show_setting";
+                message["key"]         = key;
+                send(message);
+            });
+        } else if (type == "conv_list")
+            send({{"type", "conv_list"}, {"items", Conversations::list()}});
+        else if (type == "conv_load") {
+            const std::string id = data.value("id", std::string());
+            send({{"type", "conv_loaded"}, {"id", id}, {"conversation", Conversations::load(id)}});
+        } else if (type == "conv_save") {
+            // Enregistrement silencieux : le panneau n'attend pas de réponse, un échec est seulement journalisé.
+            if (!Conversations::save(data.value("id", std::string()), data.value("conversation", nlohmann::json())))
+                BOOST_LOG_TRIVIAL(warning) << "Plyo: conversation non enregistrée";
+        } else if (type == "conv_delete") {
+            Conversations::remove(data.value("id", std::string()));
+            send({{"type", "conv_list"}, {"items", Conversations::list()}});
+        }
         else if (type == "session_load")
             send({{"type", "session"}, {"session", Session::load()}});
         else if (type == "session_save")

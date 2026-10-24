@@ -81,18 +81,18 @@
       </div>
       <h1>Connexion à Plyo</h1>
     </div>
-    <p class="lead">Connectez-vous pour utiliser l'assistant. Pas de mot de passe : vous recevez un code par e-mail.</p>
+    <p class="lead">Connecte-toi pour utiliser l’assistant. Pas de mot de passe : tu reçois un code par e-mail.</p>
 
     <div id="step-email" class="field">
       <label for="email">Adresse e-mail</label>
-      <input id="email" type="email" placeholder="votre@email.fr" autocomplete="email">
+      <input id="email" type="email" placeholder="ton@email.fr" autocomplete="email">
     </div>
 
     <div id="step-code" class="field hidden">
       <p class="hint" id="code-hint"></p>
       <label for="code">Code à 6 chiffres</label>
       <input id="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
-      <button class="link" id="btn-change" type="button">Changer d'adresse ou renvoyer le code</button>
+      <button class="link" id="btn-change" type="button">Changer d’adresse ou renvoyer le code</button>
     </div>
 
     <p class="error" id="error"></p>
@@ -145,7 +145,7 @@
     var strong = document.createElement('strong');
     strong.textContent = email;
     hint.appendChild(strong);
-    hint.appendChild(document.createTextNode('. Il expire dans une heure.'));
+    hint.appendChild(document.createTextNode('. Il reste valable une heure. Pense à regarder dans tes indésirables.'));
     mainButton.textContent = 'Se connecter';
     codeInput.focus();
   }
@@ -158,13 +158,13 @@
       .then(function (r) {
         setBusy(false, 'Recevoir le code');
         if (r.status === 204) showCodeStep(email);
-        else if (r.status === 429) errorLine.textContent = 'Trop de demandes : réessayez dans une minute.';
-        else if (r.status === 400) errorLine.textContent = 'Adresse e-mail invalide.';
-        else errorLine.textContent = "L'envoi du code a échoué. Réessayez.";
+        else if (r.status === 429) errorLine.textContent = 'Trop de demandes d’un coup : réessaie dans une minute.';
+        else if (r.status === 400) errorLine.textContent = 'Cette adresse e-mail ne semble pas complète. Vérifie-la.';
+        else errorLine.textContent = 'Le code n’a pas pu partir. Réessaie dans un instant.';
       })
       .catch(function () {
         setBusy(false, 'Recevoir le code');
-        errorLine.textContent = 'Service Plyo injoignable.';
+        errorLine.textContent = 'Je n’arrive pas à joindre le service Plyo. Vérifie ta connexion à Internet, puis réessaie.';
       });
   }
 
@@ -175,7 +175,7 @@
       .then(function (r) {
         if (r.ok) return r.json();
         setBusy(false, 'Se connecter');
-        errorLine.textContent = r.status === 401 ? 'Code incorrect ou expiré.' : 'Le code doit comporter 6 chiffres.';
+        errorLine.textContent = r.status === 401 ? 'Ce code ne marche pas : il est peut-être faux ou expiré. Vérifie-le, ou demande-en un nouveau.' : 'Le code fait 6 chiffres.';
         return null;
       })
       .then(function (session) {
@@ -183,7 +183,7 @@
       })
       .catch(function () {
         setBusy(false, 'Se connecter');
-        errorLine.textContent = 'Service Plyo injoignable.';
+        errorLine.textContent = 'Je n’arrive pas à joindre le service Plyo. Vérifie ta connexion à Internet, puis réessaie.';
       });
   }
 

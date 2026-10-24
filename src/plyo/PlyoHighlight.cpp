@@ -1,11 +1,16 @@
 #include "PlyoHighlight.hpp"
 
 #include "libslic3r/Preset.hpp"
+#include "libslic3r/PresetBundle.hpp"
+#include "slic3r/GUI/Field.hpp"
 #include "slic3r/GUI/GLCanvas3D.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/I18N.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
+#include "slic3r/GUI/ParamsPanel.hpp"
+#include "slic3r/GUI/ParamsDialog.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/GUI/Tab.hpp"
 #include "slic3r/GUI/PresetComboBoxes.hpp"
 #include "slic3r/GUI/Widgets/SideButton.hpp"
 
@@ -106,9 +111,9 @@ private:
 
 Frame* s_frame = nullptr; // jamais détruit à la fermeture d'Orca (minuterie wx après l'application)
 
-} // namespace
 
-nlohmann::json show(const std::string& target)
+// Un seul cadre à la fois : le précédent disparaît.
+bool frame_window(wxWindow* window)
 {
     if (s_frame != nullptr) {
         s_frame->Stop();
@@ -116,14 +121,61 @@ nlohmann::json show(const std::string& target)
         delete s_frame;
         s_frame = nullptr;
     }
-    wxWindow* window = find_target(target);
-    if (window == nullptr)
-        return {{"ok", false}};
+    if (window == nullptr || !window->IsShownOnScreen())
+        return false;
     const wxRect rect = window->GetScreenRect();
     if (rect.IsEmpty())
-        return {{"ok", false}};
+        return false;
     s_frame = new Frame(rect);
-    return {{"ok", true}};
+    return true;
+}
+
+// Onglet qui porte le réglage : traitement, filament ou imprimante (le premier dont le préréglage a la clé).
+bool type_of(const std::string& key, Slic3r::Preset::Type& type)
+{
+    Slic3r::PresetBundle* bundle = wxGetApp().preset_bundle;
+    if (bundle->prints.get_edited_preset().config.has(key))
+        type = Slic3r::Preset::TYPE_PRINT;
+    else if (bundle->filaments.get_edited_preset().config.has(key))
+        type = Slic3r::Preset::TYPE_FILAMENT;
+    else if (bundle->printers.get_edited_preset().config.has(key))
+        type = Slic3r::Preset::TYPE_PRINTER;
+    else
+        return false;
+    return true;
+}
+
+} // namespace
+
+nlohmann::json show(const std::string& target) { return {{"ok", frame_window(find_target(target))}}; }
+
+void show_setting(const std::string& key, std::function<void(const nlohmann::json&)> done)
+{
+    Slic3r::Preset::Type type;
+    Slic3r::GUI::Plater* plater = wxGetApp().plater();
+    Slic3r::GUI::Tab*    tab    = plater != nullptr && type_of(key, type) ? wxGetApp().get_tab(type) : nullptr;
+    if (tab == nullptr) {
+        done({{"ok", false}, {"hidden", false}});
+        return;
+    }
+    // Comme le crayon d'Orca : le traitement est dans la colonne de gauche, filament et imprimante dans leur fenêtre.
+    if (tab->GetParent() == wxGetApp().params_panel())
+        wxGetApp().mainframe->select_tab(TAB_ID_PREPARE);
+    else {
+        wxGetApp().params_dialog()->Popup();
+        tab->OnActivate();
+    }
+    plater->sidebar().jump_to_option(key, type, L"");
+    // La page vient d'être affichée : on encadre le champ une fois la mise en page faite.
+    wxGetApp().CallAfter([key, type, done]() {
+        Slic3r::GUI::Tab* t     = wxGetApp().get_tab(type);
+        Slic3r::GUI::Field* field = t != nullptr ? t->get_field(key) : nullptr;
+        const int first_extruder = 0; // une variable : le littéral 0 serait aussi un pointeur (surcharge ambiguë)
+        if (field == nullptr && t != nullptr)
+            field = t->get_field(key, first_extruder); // réglage par extrudeur (ex. température de buse)
+        const bool framed = field != nullptr && frame_window(field->getWindow());
+        done({{"ok", true}, {"hidden", !framed}});
+    });
 }
 
 }} // namespace Plyo::Highlight

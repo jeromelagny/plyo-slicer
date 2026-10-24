@@ -25,6 +25,14 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoHighlight.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoModelImport.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoModelImport.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoStore.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoStore.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoConversations.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoConversations.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoMemory.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoMemory.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPlateActions.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPlateActions.hpp
 )
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_LIST_DIR} PREFIX plyo FILES ${PLYO_SOURCES})

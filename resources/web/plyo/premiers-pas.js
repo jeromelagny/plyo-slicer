@@ -64,12 +64,11 @@
 
   function dims(v) { return v.map(function (n) { return Math.round(n); }).join(' × ') + ' mm'; }
 
-  // Phrase affichée une fois le modèle posé sur le plateau.
+  // Message affiché une fois le modèle posé : { text, warn } (warn : il ne tient pas sur le plateau).
   function modelAddedText(m) {
-    var text = '« ' + m.name + ' » est sur le plateau (' + dims(m.size_mm) + ').';
-    if (!m.fits)
-      text += ' Attention : il dépasse de ton plateau (' + dims(m.bed_mm) + '). Réduis-le avec l’outil Échelle, ou coupe-le en morceaux avec l’outil Couper.';
-    return text;
+    if (m.fits) return { warn: false, text: '« ' + m.name + ' » est sur le plateau (' + dims(m.size_mm) + ').' };
+    return { warn: true, text: '« ' + m.name + ' » est trop grand pour ton plateau : il mesure ' + dims(m.size_mm) +
+      ', et ton imprimante peut imprimer jusqu’à ' + dims(m.bed_mm) + '. Je peux le réduire pour qu’il tienne, ou tu peux le couper en morceaux avec l’outil `Couper`.' };
   }
 
   var api = { matchSettingQuestion: matchSettingQuestion, judgeValue: judgeValue, TOUR_STEPS: TOUR_STEPS, nextTourStep: nextTourStep,

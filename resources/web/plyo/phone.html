@@ -47,11 +47,11 @@
   <main>
     <div class="qr" id="qr"><span class="wait">Génération…</span></div>
     <div>
-      <h1>Prenez vos photos avec le téléphone</h1>
+      <h1>Prends tes photos avec ton téléphone</h1>
       <ol>
-        <li>Ouvrez l'appareil photo du téléphone</li>
-        <li>Visez le QR code et ouvrez le lien</li>
-        <li>Photographiez la pièce, sous plusieurs angles</li>
+        <li>Ouvre l’appareil photo de ton téléphone</li>
+        <li>Vise le QR code et ouvre le lien</li>
+        <li>Photographie la pièce sous plusieurs angles</li>
       </ol>
     </div>
   </main>
@@ -63,7 +63,7 @@
   </div>
 
   <footer>
-    <span class="note" id="note">Un seul scan suffit pour toute la conversation : chaque « Envoyer » sur le téléphone est analysé directement par l'assistant.</span>
+    <span class="note" id="note">Un seul scan suffit pour toute la conversation : chaque « Envoyer » sur le téléphone arrive directement à l’assistant.</span>
     <button class="ghost" id="btn-close" type="button">Fermer</button>
   </footer>
 
@@ -110,7 +110,7 @@
     fetch(PLYO_API_URL + '/api/phone-sessions/' + encodeURIComponent(link.id), { headers: { Authorization: 'Bearer ' + plyo.accessToken } })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (s) {
-        if (s.expired || s.status === 'closed') return stop('Ce lien a expiré.', 'Fermez cette fenêtre, puis recliquez sur l’icône du téléphone pour un nouveau QR code.');
+        if (s.expired || s.status === 'closed') return stop('Ce lien a expiré.', 'Ferme cette fenêtre, puis reclique sur l’icône du téléphone pour avoir un nouveau QR code.');
         if (receivedAtOpen === null) receivedAtOpen = s.batches_received - s.pending_batches;
         // Le panneau peut avoir déjà récupéré l'envoi : on se fie au compteur, pas à la file d'attente.
         if (s.batches_received > receivedAtOpen) {
@@ -126,12 +126,12 @@
           : 'Téléphone relié';
       })
       .catch(function (status) {
-        if (status === 401) stop('Votre session a expiré.', 'Fermez cette fenêtre et reconnectez-vous.');
+        if (status === 401) stop('Ta session a expiré.', 'Ferme cette fenêtre et reconnecte-toi.');
       });
   }
 
   if (!link.id || !link.qr_svg) {
-    stop('Lien téléphone indisponible.', 'Fermez cette fenêtre et réessayez.');
+    stop('Le lien avec le téléphone n’est pas disponible.', 'Ferme cette fenêtre et réessaie.');
   } else {
     var img = document.createElement('img');
     img.alt = 'QR code à scanner avec le téléphone';
