@@ -105,6 +105,7 @@
   .thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 7px; display: block; }
   .ai { display: flex; flex-direction: column; gap: 8px; }
   .ai .who { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  .ai .who .link { margin-left: auto; display: inline-flex; gap: 3px; align-items: center; }
   .ai .who i { width: 18px; height: 18px; border-radius: 5px; background: var(--accent); display: grid; place-items: center; color: var(--accent-fg); font-style: normal; font-size: 11px; font-weight: 700; }
   .diag { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .diag h3 { margin: 0; font-size: 15px; font-weight: 650; }
@@ -301,7 +302,8 @@
   var THUMB_SIDE = 160;
   var MAX_PHOTOS = 6;
   var MAX_HISTORY = 10;
-  var ANSWER_TIMEOUT_MS = 90000;
+  var IDLE_TIMEOUT_MS = 60000;    // rien reçu depuis une minute : la demande est abandonnée
+  var ANSWER_MAX_MS = 240000;     // plafond d'une réponse, même si elle arrive encore
   // Coût habituel d'une demande à l'IA (une réponse coûte de 0,5 à 1,5 crédit selon sa longueur et les photos).
   var COST_HINT = '≈ 1 crédit';
 
@@ -317,6 +319,7 @@
   var attachments = [];      // [{ media_type, data, preview }]
   var busy = false;
   var pendingSheet = null;   // fiche dont on attend le résultat d'application ou d'annulation
+  var undoneListeners = {};  // identifiant d'un lot appliqué → fiche à prévenir s'il est annulé (même depuis le menu)
   var phoneLink = null;      // lien téléphone de la conversation : { id, qr_svg }
   var phoneTimer = null;
   var phoneCreating = null;  // création du lien en cours (évite deux liens sur un double clic)
@@ -456,19 +459,35 @@
   function startConversation() {
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [] };
   }
-  function scheduleSave() {
-    if (!conv || !conv.entries.length) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
-      conv.updated = new Date().toISOString();
-      window.orca.postMessage({ type: 'conv_save', id: conv.id, conversation: { title: conv.title, updated: conv.updated, entries: conv.entries, history: conv.history } });
-    }, 400);
+  function saveNow(c) {
+    if (!c || !c.entries.length) return;
+    c.updated = new Date().toISOString();
+    window.orca.postMessage({ type: 'conv_save', id: c.id, conversation: { title: c.title, updated: c.updated, entries: c.entries, history: c.history } });
   }
-  function record(entry) {
+  var saveTarget = null;
+  function scheduleSave(c) {
+    var target = c || conv;
+    if (!target || !target.entries.length) return;
+    // Un enregistrement en attente pour une autre conversation part tout de suite.
+    if (saveTarget && saveTarget !== target) { clearTimeout(saveTimer); saveNow(saveTarget); }
+    saveTarget = target;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { saveTarget = null; saveNow(target); }, 400);
+  }
+  function flushSave() { if (saveTarget) { clearTimeout(saveTimer); saveNow(saveTarget); saveTarget = null; } }
+  // `c` : la conversation visée (celle de la demande en cours), par défaut celle affichée.
+  function record(entry, c) {
     if (!conv) startConversation();
-    conv.entries.push(entry);
-    scheduleSave();
+    var target = c || conv;
+    target.entries.push(entry);
+    scheduleSave(target);
     return entry;
+  }
+  // Pendant une réponse, on ne change pas de conversation (elle arriverait dans la mauvaise).
+  function blockedWhileBusy() {
+    if (!busy) return false;
+    noteLine('Attends la fin de la réponse (ou annule-la) avant de changer de conversation.', '', 'info');
+    return true;
   }
   function clearThread() {
     thread.textContent = '';
@@ -476,6 +495,8 @@
     home.classList.remove('hidden');
   }
   function newConversation() {
+    if (blockedWhileBusy()) return;
+    flushSave();
     unlinkPhone(true);
     clearThread();
     attachments = [];
@@ -483,10 +504,14 @@
     noteInput.value = '';
     startConversation();
   }
-  function openConversation(id) { window.orca.postMessage({ type: 'conv_load', id: id }); }
+  function openConversation(id) {
+    if (blockedWhileBusy()) return;
+    flushSave();
+    window.orca.postMessage({ type: 'conv_load', id: id });
+  }
   // Une conversation rouverte est en lecture : ses fiches de réglages ne s'appliquent plus (les réglages ont pu changer).
   function restoreConversation(id, c) {
-    if (!c || !Array.isArray(c.entries)) return;
+    if (!c || !Array.isArray(c.entries) || busy) return;
     unlinkPhone(true);
     clearThread();
     conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [] };
@@ -821,17 +846,25 @@
   });
 
   // ---------- Actions sur le plateau et « Montre-moi » ----------
-  var plateWaiters = {};     // kind → rappel du résultat
-  function plateAction(kind, after) {
-    plateWaiters[kind] = after || null;
-    window.orca.postMessage({ type: 'plate_action', kind: kind });
+  var plateWaiters = {};     // identifiant de la demande → rappel du résultat
+  var plateRequest = 0;
+  var plateUndoLinks = [];   // un seul « Annuler » actif : celui de la dernière action
+  function plateAction(kind, after, extra) {
+    var id = ++plateRequest;
+    plateWaiters[id] = after || null;
+    window.orca.postMessage(Object.assign({ type: 'plate_action', kind: kind, request: id }, extra || {}));
   }
   function onPlateAction(msg) {
-    var after = plateWaiters[msg.kind];
-    delete plateWaiters[msg.kind];
+    var after = plateWaiters[msg.request];
+    delete plateWaiters[msg.request];
     var line = noteLine(msg.text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
-    if (msg.ok && ['orient', 'arrange', 'scale_to_fit'].indexOf(msg.kind) >= 0) {
-      var undo = button('Annuler', function () { undo.disabled = true; plateAction('undo'); }, 'link');
+    if (msg.ok && msg.kind !== 'undo') plateUndoLinks.forEach(function (b) { b.remove(); });
+    if (msg.ok && msg.undo_token !== undefined) {
+      var undo = button('Annuler', function () {
+        undo.disabled = true;
+        plateAction('undo', function (ok) { if (ok) undo.remove(); else undo.disabled = false; }, { undo_token: msg.undo_token });
+      }, 'link');
+      plateUndoLinks = [undo];
       line.appendChild(undo);
     }
     if (msg.kind !== 'undo') record({ kind: 'note', text: msg.text, tone: msg.ok ? 'ok' : 'error', icon: msg.ok ? 'check' : 'alert' });
@@ -1346,6 +1379,7 @@
         footer.textContent = '';
         footer.appendChild(doneLabel(t));
         var restored = false;
+  var saveFailedShown = false;
         var restore = button('Remettre ma pièce', function () { restoreCalibration(restore, function (okR) { restored = okR; }); }, 'btn');
         footer.appendChild(restore);
         if (msg.test === 'ironing') {
@@ -1602,10 +1636,15 @@
   }
 
   function ask(note, photos) {
+    if (busy) return;          // une seule demande à la fois (un ancien « Réessayer » ne relance rien en parallèle)
     busy = true;
     sendButton.disabled = true;
+    var target = conv;         // la réponse va dans la conversation de la question, quoi qu'il arrive
     var controller = new AbortController();
-    var timer = setTimeout(function () { controller.abort('timeout'); }, ANSWER_TIMEOUT_MS);
+    var idle = null;
+    function touch() { clearTimeout(idle); idle = setTimeout(function () { controller.abort('timeout'); }, IDLE_TIMEOUT_MS); }
+    touch();
+    var cap = setTimeout(function () { controller.abort('timeout'); }, ANSWER_MAX_MS);
     var thinking = el('div', 'thinking');
     thinking.appendChild(el('i'));
     thinking.appendChild(document.createTextNode(photos.length ? 'Je regarde ta photo…' : 'Je réfléchis…'));
@@ -1613,8 +1652,10 @@
     thread.appendChild(thinking);
     scrollDown();
     var live = null;           // réponse en cours d'écriture
+    var out = {};              // événements du flux : final ou error
     function finish() {
-      clearTimeout(timer);
+      clearTimeout(idle);
+      clearTimeout(cap);
       thinking.remove();
       if (live) live.box.remove();
       busy = false;
@@ -1648,16 +1689,17 @@
       if (type.indexOf('ndjson') < 0 || !response.body)
         return response.json().then(function (data) { return response.ok ? { final: data } : { error: data.error, balance: data.balance }; });
       // Réponse en flux : les textes s'affichent au fur et à mesure, puis la réponse complète remplace le brouillon.
-      var reader = response.body.getReader(), decoder = new TextDecoder(), nd = Logic.ndjsonReader(), out = {};
+      var reader = response.body.getReader(), decoder = new TextDecoder(), nd = Logic.ndjsonReader();
       function handle(events) {
         events.forEach(function (ev) {
-          if (ev.type === 'partial') { if (!live) { thinking.classList.add('hidden'); live = liveAnswer(); } live.update(ev); }
+          if (ev.type === 'partial') { if (!live) { thinking.classList.add('hidden'); live = liveAnswer(function () { controller.abort('cancel'); }); } live.update(ev); }
           else if (ev.type === 'final') out.final = ev;
           else if (ev.type === 'error') out.error = ev.error;
         });
       }
       function pump() {
         return reader.read().then(function (r) {
+          touch();
           if (r.done) { handle(nd.end()); return out.final || out.error ? out : { error: 'incomplete_answer' }; }
           handle(nd.push(decoder.decode(r.value, { stream: true })));
           return pump();
@@ -1670,17 +1712,25 @@
         fail(r.error);
         return;
       }
-      finish();
-      var a = r.final;
-      if (a.credits) setBalance(a.credits.balance);
-      conv.history.push({ role: 'user', text: (photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note });
-      conv.history.push({ role: 'assistant', text: summaryForHistory(a) });
-      conv.history = conv.history.slice(-MAX_HISTORY);
-      var entry = record({ kind: 'answer', data: a, photoCount: photos.length, question: note, date: new Date().toISOString(), applied: false });
-      renderAnswer(entry, false);
+      done(r.final);
     }).catch(function () {
+      // Réponse complète déjà reçue (coupure juste après) : on la garde, elle est payée.
+      if (out.final) { done(out.final); return; }
       fail(controller.signal.aborted ? (controller.signal.reason === 'cancel' ? 'cancel' : 'timeout') : 'network');
     });
+
+    function done(a) {
+      finish();
+      if (a.credits) setBalance(a.credits.balance);
+      target.history.push({ role: 'user', text: (photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note });
+      target.history.push({ role: 'assistant', text: summaryForHistory(a) });
+      target.history = target.history.slice(-MAX_HISTORY);
+      var entry = record({ kind: 'answer', data: a, photoCount: photos.length, question: note, date: new Date().toISOString(), applied: false }, target);
+      // Un souci d'affichage n'est pas une erreur réseau : la réponse est gardée, rien n'est redemandé.
+      if (target !== conv) return;
+      try { renderAnswer(entry, false); }
+      catch (e) { noteLine('La réponse est arrivée mais n’a pas pu s’afficher. Rouvre la conversation depuis « Mes conversations ».', 'error', 'alert'); }
+    }
   }
 
   // Erreur : ce qui s'est passé et l'action suivante. La demande est gardée pour « Réessayer ».
@@ -1697,10 +1747,12 @@
     scrollDown();
   }
 
-  // Brouillon de la réponse pendant que l'IA l'écrit.
-  function liveAnswer() {
+  // Brouillon de la réponse pendant que l'IA l'écrit ; « Arrêter » reste à portée de main.
+  function liveAnswer(onStop) {
     var box = el('div', 'ai');
-    box.appendChild(whoLine());
+    var who = whoLine();
+    who.appendChild(button('Arrêter', onStop, 'link', 'stop'));
+    box.appendChild(who);
     var title = el('h3');
     var diag = el('div', 'diag');
     diag.appendChild(title);
@@ -1818,8 +1870,9 @@
       var changes = picked.map(function (r) { return r.s.delta !== null ? { id: r.s.id, delta: r.s.delta } : { id: r.s.id, value: r.s.value }; });
       fail.classList.add('hidden');
       lock(true);
-      pendingSheet = { kind: 'apply', onResult: function (ok, text) {
+      pendingSheet = { kind: 'apply', onResult: function (ok, text, result) {
         if (!ok) { lock(false); updateCount(); fail.textContent = text; fail.classList.remove('hidden'); return; }
+        var undoId = result && result.undo_id;
         // La conversation garde ce qui a été appliqué, valeurs comprises, pour la relire plus tard.
         entry.applied = true;
         entry.data.suggestions = picked.map(function (r) { return r.s; });
@@ -1829,14 +1882,24 @@
         footer.textContent = '';
         var preset = lastValues && lastValues.context ? lastValues.context.process : '';
         footer.appendChild(doneLabel('Appliqué' + (preset ? ' : préréglage « ' + preset + ' » marqué modifié, à enregistrer si tu veux le garder' : '')));
-        footer.appendChild(button('Annuler', function () {
+        function showUndone() {
+          entry.applied = false;
+          scheduleSave();
+          footer.textContent = '';
+          footer.appendChild(doneLabel('Réglages d’avant remis', 'undo'));
+        }
+        if (undoId) undoneListeners[undoId] = showUndone;
+        var undoBtn = button('Annuler', function () {
+          undoBtn.disabled = true;
           pendingSheet = { kind: 'undo', onResult: function (okUndo, msg) {
-            footer.textContent = '';
-            if (okUndo) { entry.applied = false; scheduleSave(); }
-            footer.appendChild(okUndo ? doneLabel('Réglages d’avant remis', 'undo') : el('span', 'fail', msg));
+            if (okUndo) return; // la fiche est prévenue par undoneListeners
+            undoBtn.disabled = false;
+            fail.textContent = msg;
+            fail.classList.remove('hidden');
           } };
-          window.orca.postMessage({ type: 'undo' });
-        }, 'link'));
+          window.orca.postMessage({ type: 'undo', undo_id: undoId || 0 });
+        }, 'link');
+        footer.appendChild(undoBtn);
       } };
       window.orca.postMessage({ type: 'apply', changes: changes, why: (entry.data.defect && entry.data.defect.name) || '' });
     });
@@ -1953,7 +2016,7 @@
   sendButton.addEventListener('click', function () { send(noteInput.value); });
   // Entrée envoie, Maj + Entrée va à la ligne (pas pendant la saisie d'un caractère composé).
   noteInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(noteInput.value); }
+    if (Logic.isSendKey(e)) { e.preventDefault(); send(noteInput.value); }
   });
   $('btn-files').addEventListener('click', pickFiles);
   $('btn-phone').addEventListener('click', openPhone);
@@ -1979,7 +2042,8 @@
       window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
       drainPhoneQueue();
     } else if (msg.type === 'result') {
-      if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text); }
+      if (msg.undone_id && undoneListeners[msg.undone_id]) { undoneListeners[msg.undone_id](); delete undoneListeners[msg.undone_id]; }
+      if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text, msg); }
       else noteLine(msg.text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
     } else if (msg.type === 'calib_started') {
       onCalibStarted(msg);
@@ -2016,6 +2080,8 @@
       // Au lancement : la dernière conversation est rouverte ; ensuite, la liste remplit le volet.
       if (!restored) { restored = true; if (msg.items && msg.items.length && !(conv && conv.entries.length)) openConversation(msg.items[0].id); }
       else fillConversations(msg.items || []);
+    } else if (msg.type === 'conv_save_failed') {
+      if (!saveFailedShown) { saveFailedShown = true; noteLine('Cette conversation est devenue trop longue pour être gardée : commence-en une nouvelle depuis le menu « ⋯ ».', 'error', 'alert'); }
     } else if (msg.type === 'conv_loaded') {
       if (msg.conversation) restoreConversation(msg.id, msg.conversation);
       else noteLine('Cette conversation n’a pas pu être ouverte.', 'error', 'alert');

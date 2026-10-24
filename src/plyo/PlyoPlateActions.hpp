@@ -16,7 +16,10 @@ Slic3r::Vec3d  bed_size();
 bool           fits(const Slic3r::Vec3d& size, const Slic3r::Vec3d& bed);
 // {objects: [{name, size_mm}], bed_mm, sliced, time_s, weight_g} pour la plaque en cours.
 nlohmann::json context();
-// `kind` : orient | arrange | scale_to_fit | slice | undo. Renvoie {ok, text}.
+// `kind` : orient | arrange | scale_to_fit | slice. Renvoie {ok, text} et, pour une action annulable, `undo_token`
+// (l'instantané d'annulation d'Orca pris juste avant l'action).
 nlohmann::json run(const std::string& kind);
+// Annule l'action `undo_token`, seulement si rien n'a changé sur le plateau depuis et qu'aucune tâche ne tourne.
+nlohmann::json undo(long long undo_token);
 
 }} // namespace Plyo::PlateActions

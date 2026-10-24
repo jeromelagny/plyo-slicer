@@ -9,6 +9,8 @@
 // atomique, lisible par l'utilisateur seul (mode 600).
 namespace Plyo { namespace Store {
 
+constexpr unsigned long long MAX_READ_BYTES = 8ULL * 1024 * 1024;
+
 boost::filesystem::path dir(const std::string& sub = std::string());
 nlohmann::json          read(const boost::filesystem::path& path);
 bool                    write(const boost::filesystem::path& path, const nlohmann::json& value);

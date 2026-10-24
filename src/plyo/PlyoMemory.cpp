@@ -5,7 +5,6 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 
 #include <cmath>
-#include <vector>
 
 namespace Plyo { namespace Memory {
 
@@ -32,25 +31,25 @@ bool same(const nlohmann::json& a, const nlohmann::json& b)
     return a == b;
 }
 
-// Machines des applications de cette session, dans l'ordre : chaque annulation retire l'entrée de la dernière,
-// même si les préréglages ont changé entre-temps (même pile que les annulations de SettingsBridge).
-std::vector<std::string> s_applied_keys;
+// Date de la dernière entrée d'une machine ("" si la liste est abîmée).
+std::string last_date(const nlohmann::json& list)
+{
+    return list.is_array() && !list.empty() && list[0].is_object() ? list[0].value("date", std::string()) : std::string();
+}
 
 } // namespace
 
-void note_applied(const nlohmann::json& before, const nlohmann::json& after, const std::string& why)
+std::string note_applied(const nlohmann::json& before, const nlohmann::json& after, const std::string& why)
 {
     nlohmann::json changes = nlohmann::json::array();
     for (const nlohmann::json& p : after.value("params", nlohmann::json::array()))
         for (const nlohmann::json& q : before.value("params", nlohmann::json::array()))
             if (q.value("id", std::string()) == p.value("id", std::string()) && !same(q["value"], p["value"]))
                 changes.push_back({{"id", p["id"]}, {"before", q["value"]}, {"after", p["value"]}});
-    if (changes.empty()) {
-        s_applied_keys.emplace_back(); // garde la pile alignée sur les annulations
-        return;
-    }
-    const std::string key = machine_key(after);
-    nlohmann::json    all = load_all();
+    if (changes.empty())
+        return std::string();
+    const std::string key  = machine_key(after);
+    nlohmann::json    all  = load_all();
     nlohmann::json&   list = all[key];
     if (!list.is_array())
         list = nlohmann::json::array();
@@ -58,40 +57,38 @@ void note_applied(const nlohmann::json& before, const nlohmann::json& after, con
     list.insert(list.begin(), {{"date", date}, {"changes", changes}, {"why", why.substr(0, 200)}});
     if (list.size() > MAX_PER_MACHINE)
         list.erase(list.begin() + MAX_PER_MACHINE, list.end());
-    // Trop de machines : on garde les plus récemment utilisées (la date de leur dernière entrée).
+    // Trop de machines : on retire la moins récemment utilisée (jamais celle qu'on vient de noter).
     while (all.size() > MAX_MACHINES) {
-        auto oldest = all.begin();
+        auto oldest = all.end();
         for (auto it = all.begin(); it != all.end(); ++it)
-            if (it.value()[0].value("date", std::string()) < oldest.value()[0].value("date", std::string()))
+            if (it.key() != key && (oldest == all.end() || last_date(it.value()) < last_date(oldest.value())))
                 oldest = it;
+        if (oldest == all.end())
+            break;
         all.erase(oldest);
     }
-    s_applied_keys.push_back(key);
     Store::write(file(), all);
+    return key;
 }
 
-void forget_last()
+void forget(const std::string& machine_key)
 {
-    if (s_applied_keys.empty())
-        return;
-    const std::string key = s_applied_keys.back();
-    s_applied_keys.pop_back();
-    if (key.empty())
+    if (machine_key.empty())
         return;
     nlohmann::json all = load_all();
-    if (!all.contains(key) || !all[key].is_array() || all[key].empty())
+    if (!all.contains(machine_key) || !all[machine_key].is_array() || all[machine_key].empty())
         return;
-    all[key].erase(all[key].begin());
-    if (all[key].empty())
-        all.erase(key);
+    all[machine_key].erase(all[machine_key].begin());
+    if (all[machine_key].empty())
+        all.erase(machine_key);
     Store::write(file(), all);
 }
 
 nlohmann::json for_current()
 {
-    const nlohmann::json all  = load_all();
-    const std::string    key  = machine_key(SettingsBridge::read_values());
-    const auto           it   = all.find(key);
+    const nlohmann::json all = load_all();
+    const std::string    key = machine_key(SettingsBridge::read_values());
+    const auto           it  = all.find(key);
     return it != all.end() && it->is_array() ? *it : nlohmann::json::array();
 }
 

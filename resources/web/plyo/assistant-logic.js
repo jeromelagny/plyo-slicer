@@ -20,8 +20,22 @@
   function allAnswered(questions, picks) {
     return questions.every(function (_, i) { return typeof picks[i] === 'string' && picks[i] !== ''; });
   }
+  // Le service accepte 500 caractères : chaque question est raccourcie d'autant qu'il faut, les réponses restent entières.
+  var NOTE_MAX = 500;
   function combineAnswers(questions, picks) {
-    return questions.map(function (q, i) { return q.text + ' → ' + picks[i]; }).join('\n');
+    var answers = questions.map(function (_, i) { return ' → ' + picks[i]; });
+    var room = NOTE_MAX - (questions.length - 1) - answers.reduce(function (n, a) { return n + a.length; }, 0);
+    var each = Math.max(10, Math.floor(room / Math.max(1, questions.length)));
+    return questions.map(function (q, i) {
+      var t = q.text.length > each ? q.text.slice(0, each - 1) + '…' : q.text;
+      return t + answers[i];
+    }).join('\n').slice(0, NOTE_MAX);
+  }
+
+  // Entrée envoie ; Maj + Entrée va à la ligne ; rien pendant une saisie composée (japonais, chinois…), où le
+  // navigateur peut annoncer la touche avec le code 229 même après la fin de la composition.
+  function isSendKey(e) {
+    return e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229;
   }
 
   function creditState(balance) {
@@ -63,7 +77,7 @@
   }
 
   var api = { conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
-    creditState: creditState, errorView: errorView, ndjsonReader: ndjsonReader };
+    creditState: creditState, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -54,3 +54,20 @@ test('le dernier morceau sans retour à la ligne est lu à la fin', () => {
   assert.deepEqual(reader.push('{"type":"final"}'), []);
   assert.deepEqual(reader.end(), [{ type: 'final' }]);
 });
+
+test('réponses groupées : jamais plus de 500 caractères (limite du service)', () => {
+  const qs = [{ text: 'q'.repeat(300) }, { text: 'r'.repeat(300) }, { text: 's'.repeat(300) }];
+  const text = L.combineAnswers(qs, { 0: 'a', 1: 'b', 2: 'c' });
+  assert.ok(text.length <= 500, String(text.length));
+  assert.match(text, /→ a/);
+  assert.match(text, /→ b/);
+  assert.match(text, /→ c/);
+});
+
+test('Entrée envoie, sauf avec Maj ou pendant une saisie composée', () => {
+  assert.equal(L.isSendKey({ key: 'Enter', shiftKey: false, isComposing: false, keyCode: 13 }), true);
+  assert.equal(L.isSendKey({ key: 'Enter', shiftKey: true, isComposing: false, keyCode: 13 }), false);
+  assert.equal(L.isSendKey({ key: 'Enter', shiftKey: false, isComposing: true, keyCode: 13 }), false);
+  assert.equal(L.isSendKey({ key: 'Enter', shiftKey: false, isComposing: false, keyCode: 229 }), false);
+  assert.equal(L.isSendKey({ key: 'a', shiftKey: false, isComposing: false, keyCode: 65 }), false);
+});

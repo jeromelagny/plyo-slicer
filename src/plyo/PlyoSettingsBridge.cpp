@@ -86,7 +86,16 @@ struct SavedValue
     std::string  key;
     std::string  serialized;
 };
-std::vector<std::vector<SavedValue>> s_undo_stack;
+// Un lot appliqué : son identifiant (rendu au panneau), les valeurs d'avant, et l'entrée de la mémoire de la
+// machine qu'il a créée (vide sinon), retirée s'il est annulé.
+struct UndoEntry
+{
+    int                     id;
+    std::vector<SavedValue> saved;
+    std::string             memory_key;
+};
+std::vector<UndoEntry> s_undo_stack;
+int                    s_next_undo_id = 1;
 
 Slic3r::PresetBundle& bundle() { return *Slic3r::GUI::wxGetApp().preset_bundle; }
 
@@ -362,25 +371,39 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
 
     // 3. Écriture.
     load_into_tabs(configs);
-    s_undo_stack.push_back(std::move(saved));
+    const int id = s_next_undo_id++;
+    s_undo_stack.push_back({id, std::move(saved), std::string()});
     BOOST_LOG_TRIVIAL(info) << "Plyo: modifications appliquées : " << summary;
-    return {{"ok", true}, {"text", "Appliqué : " + summary + "."}};
+    return {{"ok", true}, {"text", "Appliqué : " + summary + "."}, {"undo_id", id}};
 }
 
-nlohmann::json undo_last()
+void set_memory_key(int undo_id, const std::string& key)
+{
+    for (UndoEntry& e : s_undo_stack)
+        if (e.id == undo_id)
+            e.memory_key = key;
+}
+
+nlohmann::json undo_last(int expected_id)
 {
     if (s_undo_stack.empty())
-        return {{"ok", false}, {"text", "Rien à annuler."}};
+        return {{"ok", false}, {"text", "Ce changement ne peut plus être annulé ici (un import ou une calibration est passé depuis). Remets la valeur à la main si besoin."}};
+    if (expected_id > 0 && s_undo_stack.back().id != expected_id) {
+        const bool known = std::any_of(s_undo_stack.begin(), s_undo_stack.end(), [&](const UndoEntry& e) { return e.id == expected_id; });
+        return {{"ok", false}, {"text", known ? "Un changement plus récent a été appliqué depuis : annule-le d'abord."
+                                              : "Ce changement ne peut plus être annulé ici (un import ou une calibration est passé depuis). Remets la valeur à la main si besoin."}};
+    }
 
     std::map<Preset::Type, DynamicPrintConfig> configs;
-    for (const SavedValue& v : s_undo_stack.back()) {
+    for (const SavedValue& v : s_undo_stack.back().saved) {
         if (!configs.count(v.preset))
             configs.emplace(v.preset, edited_config(v.preset));
         configs[v.preset].set_deserialize_strict(v.key, v.serialized);
     }
+    const UndoEntry undone = s_undo_stack.back();
     s_undo_stack.pop_back();
     load_into_tabs(configs);
-    return {{"ok", true}, {"text", "Annulé : valeurs d'avant restaurées."}};
+    return {{"ok", true}, {"text", "Annulé : valeurs d'avant remises."}, {"undone_id", undone.id}, {"memory_key", undone.memory_key}};
 }
 
 nlohmann::json whitelist_range(const std::string& key)

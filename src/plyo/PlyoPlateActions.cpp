@@ -11,6 +11,7 @@
 #include "slic3r/GUI/Jobs/Worker.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/Utils/UndoRedo.hpp"
 
 #include <wx/event.h>
 
@@ -76,10 +77,6 @@ nlohmann::json run(const std::string& kind)
     Slic3r::GUI::Plater* plater = wxGetApp().plater();
     if (plater == nullptr)
         return {{"ok", false}, {"text", "Le plateau n'est pas disponible."}};
-    if (kind == "undo") {
-        plater->undo();
-        return {{"ok", true}, {"text", "C'est annulé."}};
-    }
     if (plater->model().objects.empty())
         return {{"ok", false}, {"text", "Le plateau est vide : ajoute d'abord un modèle."}};
     // Orienter et organiser tournent en tâche de fond : une seule à la fois, comme dans Orca.
@@ -87,30 +84,49 @@ nlohmann::json run(const std::string& kind)
         return {{"ok", false}, {"text", "Orca est déjà occupé sur le plateau. Réessaie dans un instant."}};
     if (auto* frame = wxGetApp().mainframe)
         frame->select_tab(TAB_ID_PREPARE);
+    // Une action annulable prend un instantané d'Orca ; s'il n'y en a pas de nouveau, rien n'a été fait.
+    const auto snapshot = [&]() { return static_cast<long long>(plater->undo_redo_stack_main().active_snapshot_time()); };
+    const auto done     = [&](long long before, const char* text, const char* nothing) -> nlohmann::json {
+        const long long after = snapshot();
+        if (after == before)
+            return {{"ok", false}, {"text", nothing}};
+        return {{"ok", true}, {"text", text}, {"undo_token", after}};
+    };
     if (kind == "orient") {
         plater->select_all();
+        const long long before = snapshot();
         plater->orient();
-        return {{"ok", true}, {"text", "J'oriente tes pièces au mieux."}};
+        return done(before, "J'oriente tes pièces au mieux.", "Je n'ai pas pu lancer l'orientation. Réessaie dans un instant.");
     }
     if (kind == "arrange") {
+        const long long before = snapshot();
         plater->arrange();
-        return {{"ok", true}, {"text", "Je range les pièces sur le plateau."}};
+        return done(before, "Je range les pièces sur le plateau.", "Je n'ai pas pu ranger le plateau. Réessaie dans un instant.");
     }
     if (kind == "scale_to_fit") {
-        bool too_big = false;
-        for (const Slic3r::ModelObject* object : plater->model().objects)
-            too_big = too_big || !fits(object_size(*object), bed_size());
-        if (!too_big)
-            return {{"ok", false}, {"text", "Tout tient déjà sur le plateau : rien à réduire."}};
         plater->select_all();
+        const long long before = snapshot();
         plater->scale_selection_to_fit_print_volume();
-        return {{"ok", true}, {"text", "J'ai réduit les pièces pour qu'elles tiennent sur le plateau."}};
+        return done(before, "J'ai réduit les pièces de cette plaque pour qu'elles tiennent.", "Les pièces de cette plaque tiennent déjà : rien à réduire.");
     }
     if (kind == "slice") {
         wxPostEvent(plater, Slic3r::GUI::SimpleEvent(Slic3r::GUI::EVT_GLTOOLBAR_SLICE_PLATE));
         return {{"ok", true}, {"text", "Je découpe la plaque : le temps d'impression s'affichera dans l'aperçu."}};
     }
     return {{"ok", false}, {"text", "Action inconnue."}};
+}
+
+nlohmann::json undo(long long undo_token)
+{
+    Slic3r::GUI::Plater* plater = wxGetApp().plater();
+    if (plater == nullptr)
+        return {{"ok", false}, {"text", "Le plateau n'est pas disponible."}};
+    if (!plater->get_ui_job_worker().is_idle())
+        return {{"ok", false}, {"text", "Attends la fin de l'opération en cours, puis réessaie."}};
+    if (static_cast<long long>(plater->undo_redo_stack_main().active_snapshot_time()) != undo_token)
+        return {{"ok", false}, {"text", "Le plateau a changé depuis : utilise « Annuler » du slicer (Cmd/Ctrl + Z) pour revenir en arrière pas à pas."}};
+    plater->undo();
+    return {{"ok", true}, {"text", "C'est annulé."}};
 }
 
 }} // namespace Plyo::PlateActions

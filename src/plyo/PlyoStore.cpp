@@ -19,6 +19,11 @@ fs::path dir(const std::string& sub)
 
 nlohmann::json read(const fs::path& path)
 {
+    // Un fichier démesuré (abîmé ou modifié à la main) n'est pas lu : il serait analysé en entier à chaque fois.
+    boost::system::error_code ec;
+    const auto                size = fs::file_size(path, ec);
+    if (ec || size > MAX_READ_BYTES)
+        return nullptr;
     std::ifstream in(path.string(), std::ios::binary);
     if (!in)
         return nullptr;

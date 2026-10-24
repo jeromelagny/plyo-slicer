@@ -24,11 +24,15 @@ void clear_undo();
 
 // changes : [{"id": "...", "value": x} ou {"id": "...", "delta": x}, ...]
 // Tout ou rien : si un seul changement est invalide, rien n'est appliqué.
-// Renvoie {"ok": bool, "text": "message pour l'utilisateur"}.
+// Renvoie {"ok": bool, "text": "message pour l'utilisateur", "undo_id": identifiant du lot si ok}.
 nlohmann::json apply_changes(const nlohmann::json& changes);
 
-// Annule le dernier lot de changements appliqué par Plyo.
-nlohmann::json undo_last();
+// Rattache au lot `undo_id` l'entrée de la mémoire de la machine qu'il a créée.
+void set_memory_key(int undo_id, const std::string& key);
+
+// Annule le dernier lot appliqué par Plyo. `expected_id` > 0 : seulement si c'est bien ce lot (sinon refus clair).
+// Renvoie {ok, text, undone_id, memory_key}.
+nlohmann::json undo_last(int expected_id = 0);
 
 // Plage Plyo d'une clé de configuration de la liste blanche : {min, max, unit}, ou null hors liste blanche.
 nlohmann::json whitelist_range(const std::string& key);

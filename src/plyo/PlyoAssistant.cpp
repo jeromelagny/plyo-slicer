@@ -108,20 +108,24 @@ void handle_page_message(const nlohmann::json& data)
             const nlohmann::json before = SettingsBridge::read_values();
             const nlohmann::json result = SettingsBridge::apply_changes(data.contains("changes") ? data["changes"] : nlohmann::json());
             if (result.value("ok", false))
-                Memory::note_applied(before, SettingsBridge::read_values(), data.value("why", std::string()));
+                SettingsBridge::set_memory_key(result.value("undo_id", 0),
+                                               Memory::note_applied(before, SettingsBridge::read_values(), data.value("why", std::string())));
             send_result(result);
         } else if (type == "undo") {
-            const nlohmann::json result = SettingsBridge::undo_last();
+            // `undo_id` : l'annulation d'une fiche précise ; sans, le dernier lot (menu « ⋯ »).
+            const nlohmann::json result = SettingsBridge::undo_last(data.value("undo_id", 0));
             if (result.value("ok", false))
-                Memory::forget_last();
+                Memory::forget(result.value("memory_key", std::string()));
             send_result(result);
         } else if (type == "ai_context")
             // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
             send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()}});
         else if (type == "plate_action") {
-            nlohmann::json done = PlateActions::run(data.value("kind", std::string()));
-            done["type"]        = "plate_action";
-            done["kind"]        = data.value("kind", std::string());
+            const std::string kind = data.value("kind", std::string());
+            nlohmann::json    done = kind == "undo" ? PlateActions::undo(data.value("undo_token", -1LL)) : PlateActions::run(kind);
+            done["type"]           = "plate_action";
+            done["kind"]           = kind;
+            done["request"]        = data.value("request", 0); // pour retrouver le bouton qui a demandé l'action
             send(done);
         } else if (type == "show_setting") {
             const std::string key = data.value("key", std::string());
@@ -138,8 +142,10 @@ void handle_page_message(const nlohmann::json& data)
             send({{"type", "conv_loaded"}, {"id", id}, {"conversation", Conversations::load(id)}});
         } else if (type == "conv_save") {
             // Enregistrement silencieux : le panneau n'attend pas de réponse, un échec est seulement journalisé.
-            if (!Conversations::save(data.value("id", std::string()), data.value("conversation", nlohmann::json())))
+            if (!Conversations::save(data.value("id", std::string()), data.value("conversation", nlohmann::json()))) {
                 BOOST_LOG_TRIVIAL(warning) << "Plyo: conversation non enregistrée";
+                send({{"type", "conv_save_failed"}, {"id", data.value("id", std::string())}});
+            }
         } else if (type == "conv_delete") {
             Conversations::remove(data.value("id", std::string()));
             send({{"type", "conv_list"}, {"items", Conversations::list()}});
