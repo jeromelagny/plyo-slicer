@@ -315,10 +315,11 @@
   var IDLE_TIMEOUT_MS = 60000;    // rien reçu depuis une minute : la demande est abandonnée
   var ANSWER_MAX_MS = 240000;     // plafond d'une réponse, même si elle arrive encore
   // Offres affichées dans « Mon utilisation » ; le paiement n'est pas encore branché (boutons « Bientôt »).
+  // Annuel = 2 mois offerts (10 fois le prix mensuel, arrondi).
   var PLANS = [
-    { id: 'gratuit', name: 'Gratuit', price: '0 €', text: 'Pour découvrir l’assistant.' },
-    { id: 'plus', name: 'Plyo+', price: '9,99 € / mois', text: 'Pour imprimer souvent : une jauge bien plus grande. 89 € par an.' },
-    { id: 'pro', name: 'Pro', price: '24,99 € / mois', text: 'Plusieurs imprimantes, ateliers et petites entreprises. 229 € par an.' }
+    { id: 'gratuit', name: 'Gratuit', month: '0 €', year: '0 €', text: 'Pour découvrir l’assistant.' },
+    { id: 'plus', name: 'Plyo+', month: '9,99 € / mois', year: '99 € / an', perMonth: 'Soit 8,25 € par mois.', text: 'Pour imprimer souvent : une jauge bien plus grande.' },
+    { id: 'pro', name: 'Pro', month: '24,99 € / mois', year: '249 € / an', perMonth: 'Soit 20,75 € par mois.', text: 'Plusieurs imprimantes, ateliers et petites entreprises.' }
   ];
   var NOTICE_KEY = 'plyo.gaugeNotice';
 
@@ -726,6 +727,20 @@
       body.appendChild(rich('Chaque demande à l’IA remplit un peu ta jauge : un peu plus avec des photos, rien quand la demande sort de l’impression 3D. Une réponse commencée va toujours jusqu’au bout.'));
       body.appendChild(rich('Toujours gratuit : l’accueil, la visite guidée, les explications des réglages (« Explique-moi »), « Montre-moi » et la pose d’un modèle sur le plateau.'));
       body.appendChild(el('h3', '', 'Les formules'));
+      // Mensuel par défaut : un débutant essaie sans s'engager ; l'annuel est à un clic.
+      var yearly = false;
+      var period = el('div', 'chips');
+      var monthChip = button('Mensuel', function () { pick(false); }, 'chip on');
+      var yearChip = button('Annuel · 2 mois offerts', function () { pick(true); }, 'chip');
+      period.appendChild(monthChip);
+      period.appendChild(yearChip);
+      body.appendChild(period);
+      function pick(y) {
+        yearly = y;
+        monthChip.classList.toggle('on', !y);
+        yearChip.classList.toggle('on', y);
+        show(lastGauge);
+      }
       var plans = el('div', 'plans');
       body.appendChild(plans);
       function show(g) {
@@ -740,9 +755,9 @@
           var card = el('div', 'plan' + (p.id === g.plan ? ' current' : ''));
           var head = el('div', 'head');
           head.appendChild(el('span', '', p.name + (p.id === g.plan ? ' · ta formule' : '')));
-          head.appendChild(el('span', 'price', p.price));
+          head.appendChild(el('span', 'price', yearly ? p.year : p.month));
           card.appendChild(head);
-          card.appendChild(el('p', 'muted', p.text));
+          card.appendChild(el('p', 'muted', p.text + (yearly && p.perMonth ? ' ' + p.perMonth : '')));
           if (p.id !== 'gratuit' && p.id !== g.plan) {
             var acts = el('div', 'row-acts');
             var soon = button('Bientôt disponible', null, 'btn sm');
