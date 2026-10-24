@@ -1,5 +1,5 @@
 // Logique pure du panneau de l'assistant (sans DOM) : titres des conversations, réponses groupées,
-// état des crédits, erreurs et lecture du flux de réponse.
+// jauge du mois, erreurs et lecture du flux de réponse.
 // Chargée par index.html (window.PlyoLogic) et testée par node (tests/assistant-logic.test.mjs).
 (function (root) {
   function shortDate(iso) {
@@ -38,16 +38,37 @@
     return e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229;
   }
 
-  function creditState(balance) {
-    if (typeof balance !== 'number') return 'ok';
-    if (balance < 1) return 'empty';
-    if (balance < 5) return 'low';
-    return 'ok';
+  // Jauge d'utilisation du mois : un pourcentage, jamais de tokens ni de crédits par message.
+  var PLAN_NAMES = { gratuit: 'Gratuit', plus: 'Plyo+', pro: 'Pro' };
+  var MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  function resetText(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return '';
+    var day = d.getUTCDate();
+    return 'le ' + (day === 1 ? '1er' : day) + ' ' + MONTHS[d.getUTCMonth()];
+  }
+  function gaugeView(g) {
+    if (!g || typeof g.used_pct !== 'number') return null;
+    var pct = Math.max(0, Math.min(100, Math.round(g.used_pct)));
+    return {
+      pct: pct,
+      label: pct + ' %',
+      state: ['ok', 'low', 'empty'].indexOf(g.state) >= 0 ? g.state : 'ok',
+      plan: PLAN_NAMES[g.plan] || 'Gratuit',
+      resets: resetText(g.resets_at)
+    };
+  }
+  // Message doux à afficher (« low » vers 80 %, « empty » jauge pleine), une seule fois par mois et par état.
+  function noticeKey(kind, g) { return kind + ':' + g.resets_at; }
+  function gaugeNotice(g, lastShown) {
+    var v = gaugeView(g);
+    if (!v || v.state === 'ok') return null;
+    return lastShown === noticeKey(v.state, g) ? null : v.state;
   }
 
   // Ce que voit l'utilisateur pour chaque erreur, et l'action proposée (retry, credits, login).
   var ERRORS = {
-    insufficient_credits: { text: 'Tu n’as plus assez de crédits pour une nouvelle demande.', action: 'credits' },
+    insufficient_credits: { text: 'Ta jauge du mois est pleine : je ne peux pas lancer de nouvelle demande pour l’instant.', action: 'credits' },
     unauthorized: { text: 'Ta session a expiré : reconnecte-toi, ta demande est gardée.', action: 'login' },
     network: { text: 'Je n’arrive pas à joindre le service Plyo. Vérifie ta connexion à Internet, puis réessaie.', action: 'retry' },
     timeout: { text: 'La réponse prend trop de temps. Réessaie : ta demande est gardée.', action: 'retry' },
@@ -77,7 +98,7 @@
   }
 
   var api = { conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
-    creditState: creditState, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
+    gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

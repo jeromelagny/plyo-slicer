@@ -21,11 +21,23 @@ test('réponses aux questions de l’IA envoyées ensemble', () => {
   assert.equal(L.combineAnswers(qs, { 0: 'Support mural', 1: 'Non' }), 'À quoi va servir la pièce ? → Support mural\nElle sera dehors ? → Non');
 });
 
-test('état des crédits', () => {
-  assert.equal(L.creditState(48.7), 'ok');
-  assert.equal(L.creditState(4.9), 'low');
-  assert.equal(L.creditState(0.4), 'empty');
-  assert.equal(L.creditState(null), 'ok');
+test('jauge du mois : texte court, état et date de renouvellement', () => {
+  const g = { plan: 'gratuit', used_pct: 35, resets_at: '2026-11-01T00:00:00.000Z', reserve: 0, state: 'ok' };
+  assert.deepEqual(L.gaugeView(g), { pct: 35, label: '35 %', state: 'ok', plan: 'Gratuit', resets: 'le 1er novembre' });
+  assert.equal(L.gaugeView({ ...g, used_pct: 84, state: 'low', plan: 'plus' }).plan, 'Plyo+');
+  assert.equal(L.gaugeView({ ...g, resets_at: '2027-01-01T00:00:00.000Z' }).resets, 'le 1er janvier');
+  assert.equal(L.gaugeView(null), null);
+  assert.equal(L.gaugeView({ ...g, used_pct: 140 }).pct, 100);
+  assert.equal(L.gaugeView({ ...g, state: 'bizarre' }).state, 'ok');
+});
+
+test('alerte douce de la jauge : une fois par mois, à partir de 80 %', () => {
+  const g = { used_pct: 82, resets_at: '2026-11-01T00:00:00.000Z', state: 'low' };
+  assert.equal(L.gaugeNotice(g, null), 'low');
+  assert.equal(L.gaugeNotice(g, 'low:2026-11-01T00:00:00.000Z'), null);
+  assert.equal(L.gaugeNotice({ ...g, used_pct: 40, state: 'ok' }, null), null);
+  assert.equal(L.gaugeNotice({ ...g, used_pct: 100, state: 'empty' }, 'low:2026-11-01T00:00:00.000Z'), 'empty');
+  assert.equal(L.noticeKey('low', g), 'low:2026-11-01T00:00:00.000Z');
 });
 
 test('erreurs : message clair et action suivante', () => {
@@ -37,7 +49,7 @@ test('erreurs : message clair et action suivante', () => {
   assert.equal(L.errorView('quelque_chose').action, 'retry');
   for (const code of ['config_missing', 'assistant_unavailable', 'incomplete_answer', 'upstream_error', 'invalid_request', 'insufficient_credits', 'auth_unavailable', 'internal', 'network', 'timeout', 'unauthorized']) {
     const text = L.errorView(code).text;
-    assert.ok(text && !/npm|plyo-api|vous|votre|Réessayez/.test(text), code + ' : ' + text);
+    assert.ok(text && !/npm|plyo-api|vous|votre|Réessayez|crédit|token/.test(text), code + ' : ' + text);
   }
 });
 

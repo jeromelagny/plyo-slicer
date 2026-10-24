@@ -63,11 +63,14 @@
   .top { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); position: relative; flex: none; }
   .top h1 { margin: 0; font-size: 14px; font-weight: 650; }
   .top .push { margin-left: auto; }
-  .credits { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; }
-  .credits i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-  .credits.low i { background: var(--warn); }
-  .credits.empty { border-color: var(--danger); color: var(--danger); }
-  .credits.empty i { background: var(--danger); }
+  /* Jauge d'utilisation du mois : un pourcentage, jamais de crédits par message */
+  .gauge { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; }
+  .bar { position: relative; display: block; width: 42px; height: 6px; border-radius: 999px; background: var(--raised); overflow: hidden; }
+  .bar i { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: inherit; background: var(--accent); transition: width .3s ease; }
+  .low .bar i { background: var(--warn); }
+  .empty .bar i { background: var(--danger); }
+  .gauge.empty { border-color: var(--danger); color: var(--danger); }
+  @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
   .icon-btn { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
   .icon-btn:hover { background: var(--surface); color: var(--fg); }
   .linked { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); background: transparent; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
@@ -190,7 +193,7 @@
   .fiche h4 { margin: 4px 0 0; font-size: 12px; color: var(--muted); font-weight: 650; }
   .fiche .value { font-variant-numeric: tabular-nums; }
 
-  /* Volets : réglages lus, conversations, crédits, aide */
+  /* Volets : réglages lus, conversations, utilisation, aide */
   .drawer { position: absolute; inset: 0; background: var(--bg); z-index: 20; display: flex; flex-direction: column; }
   .drawer .list { flex: 1; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 12px; }
   .drawer table { width: 100%; border-collapse: collapse; }
@@ -206,20 +209,27 @@
   .conv-item button.open { flex: 1; border: 0; background: none; text-align: left; cursor: pointer; padding: 0; min-width: 0; }
   .conv-item .t { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conv-item .d { display: block; color: var(--muted); font-size: 11px; }
-  .balance { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .moves td { font-size: 12px; }
+  .gauge-big { display: flex; flex-direction: column; gap: 8px; }
+  .gauge-big .bar { width: 100%; height: 10px; }
+  .gauge-big .pct { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .plans { display: flex; flex-direction: column; gap: 8px; }
+  .plan { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
+  .plan.current { border-color: var(--accent); background: var(--accent-soft); }
+  .plan .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 650; }
+  .plan .price { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .plan .row-acts { margin-top: 4px; }
 </style>
 </head>
 <body>
   <div class="top">
     <h1>Assistant Plyo</h1>
     <button class="linked hidden push" id="phone-linked" type="button" title="Téléphone relié à cette conversation : clique pour revoir le QR code"></button>
-    <button class="credits hidden push" id="credits" type="button" title="Tes crédits : clique pour le détail"><i></i><span id="balance">…</span></button>
+    <button class="gauge hidden push" id="gauge" type="button" title="Ton utilisation ce mois-ci : clique pour le détail"><span class="bar"><i id="gauge-fill"></i></span><span id="gauge-label">…</span></button>
     <button class="icon-btn" id="btn-more" type="button" title="Plus d'options" aria-haspopup="menu" aria-label="Plus d'options"></button>
     <div class="menu hidden" id="menu" role="menu">
       <button type="button" id="m-new" role="menuitem">Nouvelle conversation</button>
       <button type="button" id="m-convs" role="menuitem">Mes conversations</button>
-      <button type="button" id="m-credits" role="menuitem">Mes crédits</button>
+      <button type="button" id="m-usage" role="menuitem">Mon utilisation</button>
       <hr>
       <button type="button" id="m-undo" role="menuitem" disabled>Annuler les derniers réglages appliqués</button>
       <button type="button" id="m-values" role="menuitem">Voir les réglages lus par l'assistant</button>
@@ -304,8 +314,13 @@
   var MAX_HISTORY = 10;
   var IDLE_TIMEOUT_MS = 60000;    // rien reçu depuis une minute : la demande est abandonnée
   var ANSWER_MAX_MS = 240000;     // plafond d'une réponse, même si elle arrive encore
-  // Coût habituel d'une demande à l'IA (une réponse coûte de 0,5 à 1,5 crédit selon sa longueur et les photos).
-  var COST_HINT = '≈ 1 crédit';
+  // Offres affichées dans « Mon utilisation » ; le paiement n'est pas encore branché (boutons « Bientôt »).
+  var PLANS = [
+    { id: 'gratuit', name: 'Gratuit', price: '0 €', text: 'Pour découvrir l’assistant.' },
+    { id: 'plus', name: 'Plyo+', price: '9,99 € / mois', text: 'Pour imprimer souvent : une jauge bien plus grande. 89 € par an.' },
+    { id: 'pro', name: 'Pro', price: '24,99 € / mois', text: 'Plusieurs imprimantes, ateliers et petites entreprises. 229 € par an.' }
+  ];
+  var NOTICE_KEY = 'plyo.gaugeNotice';
 
   var $ = function (id) { return document.getElementById(id); };
   var Logic = window.PlyoLogic, FS = window.PlyoFirstSteps;
@@ -315,7 +330,7 @@
 
   var session = null;        // { access_token, refresh_token, expires_at, email }, conservée par le slicer
   var lastValues = null;     // dernier message « values » du slicer (réglages, contexte, langue)
-  var lastBalance = null;
+  var lastGauge = null;      // dernière jauge reçue du service ({ plan, used_pct, resets_at, reserve, state })
   var attachments = [];      // [{ media_type, data, preview }]
   var busy = false;
   var pendingSheet = null;   // fiche dont on attend le résultat d'application ou d'annulation
@@ -445,8 +460,8 @@
   // Sans compte, tout reste visible (accueil, parcours, fiches) : la connexion n'est demandée qu'au moment
   // d'un appel à l'IA (requireLogin).
   function showLoggedIn(loggedIn) {
-    $('credits').classList.toggle('hidden', !loggedIn);
-    ['m-email', 'm-logout', 'm-account-sep', 'm-credits'].forEach(function (id) { $(id).classList.toggle('hidden', !loggedIn); });
+    $('gauge').classList.toggle('hidden', !loggedIn);
+    ['m-email', 'm-logout', 'm-account-sep', 'm-usage'].forEach(function (id) { $(id).classList.toggle('hidden', !loggedIn); });
     if (!thread.children.length) { home.classList.remove('hidden'); thread.classList.add('hidden'); }
     else thread.classList.remove('hidden');
   }
@@ -555,13 +570,40 @@
     });
   }
 
-  function setBalance(balance) {
-    if (typeof balance !== 'number') return;
-    lastBalance = balance;
-    $('balance').textContent = balance.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' crédits';
-    var state = Logic.creditState(balance);
-    $('credits').classList.toggle('low', state === 'low');
-    $('credits').classList.toggle('empty', state === 'empty');
+  function paintGauge(root, fill, v) {
+    fill.style.width = v.pct + '%';
+    root.classList.toggle('low', v.state === 'low');
+    root.classList.toggle('empty', v.state === 'empty');
+  }
+
+  // quiet : l'erreur « jauge pleine » vient d'être affichée, le message doux ferait doublon.
+  function setGauge(g, quiet) {
+    var v = Logic.gaugeView(g);
+    if (!v) return;
+    lastGauge = g;
+    $('gauge-label').textContent = v.label;
+    $('gauge').title = 'Utilisé ce mois-ci : ' + v.label + '. Se recharge ' + v.resets + '. Clique pour le détail.';
+    paintGauge($('gauge'), $('gauge-fill'), v);
+    // Après la réponse qui a rempli la jauge, pas avant : la réponse s'affiche dans la même tâche.
+    if (quiet) { try { localStorage.setItem(NOTICE_KEY, Logic.noticeKey(v.state, g)); } catch (e) { /* stockage indisponible */ } return; }
+    setTimeout(function () { gaugeNotice(g, v); }, 0);
+  }
+
+  // Message doux vers 80 %, puis quand la jauge est pleine : une seule fois par mois (mémorisé sur cet ordinateur).
+  function gaugeNotice(g, v) {
+    var last = null;
+    try { last = localStorage.getItem(NOTICE_KEY); } catch (e) { /* stockage indisponible : le message peut revenir */ }
+    var kind = Logic.gaugeNotice(g, last);
+    if (!kind || !thread.children.length) return;
+    try { localStorage.setItem(NOTICE_KEY, Logic.noticeKey(kind, g)); } catch (e) { /* idem */ }
+    var box = kind === 'low'
+      ? alertBox('warn', 'Tu as utilisé **' + v.label + '** de ta jauge ce mois-ci. Elle se recharge ' + v.resets + '.')
+      : alertBox('warn', 'Ta jauge du mois est pleine. Elle se recharge ' + v.resets + '.');
+    var acts = el('div', 'row-acts');
+    acts.appendChild(button('Voir mon utilisation', openUsage, 'btn ghost sm'));
+    box.body.appendChild(acts);
+    thread.appendChild(box);
+    scrollDown();
   }
 
   // Vérifie la session (et la renouvelle au besoin) ; met à jour le solde. Résout à true si la session est valide.
@@ -569,10 +611,10 @@
     return apiFetch('/api/me', { method: 'GET' })
       .then(function (r) {
         if (r.status === 401) { logout('Ta session a expiré : reconnecte-toi pour continuer.'); return false; }
-        if (r.status === 503) { $('balance').textContent = 'Indisponible'; return false; }
-        return r.ok ? r.json().then(function (me) { setBalance(me.balance); $('m-email').textContent = me.email; return true; }) : false;
+        if (r.status === 503) { $('gauge-label').textContent = 'Indisponible'; return false; }
+        return r.ok ? r.json().then(function (me) { setGauge(me.gauge); $('m-email').textContent = me.email; return true; }) : false;
       })
-      .catch(function () { $('balance').textContent = 'Hors ligne'; return false; });
+      .catch(function () { $('gauge-label').textContent = 'Hors ligne'; return false; });
   }
 
   function logout(message) {
@@ -667,40 +709,68 @@
     });
   }
 
-  function openCredits() {
-    if (requireLogin('Tes crédits sont liés à ton compte.', openCredits)) return;
-    openDrawer('Mes crédits', function (body) {
-      var balance = el('div', 'balance', lastBalance === null ? '…' : lastBalance.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' crédits');
-      body.appendChild(balance);
-      body.appendChild(rich('Un crédit paie le calcul de l’IA. Une question coûte en général **0,5 à 1,5 crédit** : un peu plus avec des photos, rien quand la demande sort de l’impression 3D.'));
+  function openUsage() {
+    if (requireLogin('Ta jauge est liée à ton compte.', openUsage)) return;
+    openDrawer('Mon utilisation', function (body) {
+      var big = el('div', 'gauge-big');
+      var pct = el('div', 'pct', '…');
+      var bar = el('span', 'bar'), fill = el('i');
+      bar.appendChild(fill);
+      var when = el('p', 'muted', '');
+      big.appendChild(pct);
+      big.appendChild(bar);
+      big.appendChild(when);
+      body.appendChild(big);
+      var reserve = el('p', 'muted hidden', 'Tu as aussi une réserve : elle prend le relais quand ta jauge est pleine.');
+      body.appendChild(reserve);
+      body.appendChild(rich('Chaque demande à l’IA remplit un peu ta jauge : un peu plus avec des photos, rien quand la demande sort de l’impression 3D. Une réponse commencée va toujours jusqu’au bout.'));
       body.appendChild(rich('Toujours gratuit : l’accueil, la visite guidée, les explications des réglages (« Explique-moi »), « Montre-moi » et la pose d’un modèle sur le plateau.'));
-      var recharge = alertBox('info', 'La recharge en ligne arrive bientôt. En attendant, écris à l’équipe Plyo si tu es à court de crédits.', 'info');
-      body.appendChild(recharge);
-      body.appendChild(el('h3', '', 'Derniers mouvements'));
-      var table = el('table', 'moves'), tbody = el('tbody');
-      table.appendChild(tbody);
-      body.appendChild(table);
-      var loading = el('p', 'muted', 'Chargement…');
-      body.appendChild(loading);
+      body.appendChild(el('h3', '', 'Les formules'));
+      var plans = el('div', 'plans');
+      body.appendChild(plans);
+      function show(g) {
+        var v = Logic.gaugeView(g);
+        if (!v) return;
+        pct.textContent = v.label + ' utilisés ce mois-ci';
+        when.textContent = 'Formule ' + v.plan + ' · se recharge ' + v.resets;
+        paintGauge(big, fill, v);
+        reserve.classList.toggle('hidden', !(g.reserve > 0));
+        plans.textContent = '';
+        PLANS.forEach(function (p) {
+          var card = el('div', 'plan' + (p.id === g.plan ? ' current' : ''));
+          var head = el('div', 'head');
+          head.appendChild(el('span', '', p.name + (p.id === g.plan ? ' · ta formule' : '')));
+          head.appendChild(el('span', 'price', p.price));
+          card.appendChild(head);
+          card.appendChild(el('p', 'muted', p.text));
+          if (p.id !== 'gratuit' && p.id !== g.plan) {
+            var acts = el('div', 'row-acts');
+            var soon = button('Bientôt disponible', null, 'btn sm');
+            soon.disabled = true;
+            acts.appendChild(soon);
+            card.appendChild(acts);
+          }
+          plans.appendChild(card);
+        });
+        var refill = el('div', 'plan');
+        var head = el('div', 'head');
+        head.appendChild(el('span', '', 'Recharge, sans abonnement'));
+        head.appendChild(el('span', 'price', '4,99 €'));
+        refill.appendChild(head);
+        refill.appendChild(el('p', 'muted', 'De quoi continuer quand ta jauge est pleine, sans attendre le mois suivant.'));
+        var acts = el('div', 'row-acts');
+        var soon = button('Bientôt disponible', null, 'btn ghost sm');
+        soon.disabled = true;
+        acts.appendChild(soon);
+        refill.appendChild(acts);
+        plans.appendChild(refill);
+      }
+      show(lastGauge);
+      var loading = el('p', 'muted', lastGauge ? '' : 'Chargement…');
+      if (!lastGauge) body.appendChild(loading);
       apiFetch('/api/me/credits', { method: 'GET' })
         .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
-        .then(function (data) {
-          var moves = Array.isArray(data.history) ? data.history : [];
-          loading.remove();
-          if (typeof data.balance === 'number') {
-            setBalance(data.balance);
-            balance.textContent = data.balance.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' crédits';
-          }
-          var KIND = { usage: 'Question à l’assistant', signup_grant: 'Crédits offerts', adjustment: 'Ajustement' };
-          if (!moves.length) body.appendChild(el('p', 'muted', 'Aucun mouvement pour l’instant.'));
-          moves.forEach(function (m) {
-            var tr = el('tr');
-            var d = new Date(m.date);
-            tr.appendChild(el('td', '', (KIND[m.kind] || m.kind) + ' · ' + (isNaN(d) ? '' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))));
-            tr.appendChild(el('td', 'value', (m.credits > 0 ? '+' : '') + m.credits.toLocaleString('fr-FR', { maximumFractionDigits: 2 })));
-            tbody.appendChild(tr);
-          });
-        })
+        .then(function (data) { loading.remove(); setGauge(data.gauge); show(data.gauge); })
         .catch(function () {
           loading.textContent = 'Le détail n’a pas pu être chargé. Vérifie ta connexion, puis rouvre ce volet.';
           if (!loading.parentNode) body.appendChild(loading);
@@ -713,7 +783,7 @@
       [
         ['Ce que je sais faire', '- Regarder la photo d’une impression ratée et te dire ce qui cloche\n- Proposer des réglages : tu choisis ce qu’on applique, et tout s’annule d’un clic\n- Répondre à tes questions d’impression 3D, avec tes mots\n- Te montrer où se trouve un bouton ou un réglage dans le slicer\n- Orienter, ranger, réduire ou découper tes pièces quand tu me le demandes\n- Te guider pour calibrer ton filament, photo à l’appui'],
         ['Gratuit, sans compte', 'La visite guidée, les explications des réglages (« Explique-moi » ou « c’est quoi la rétraction ? »), « Montre-moi » et la pose d’un modèle sur le plateau.'],
-        ['Avec ton compte', 'Les réponses de l’IA et la lecture des photos utilisent des crédits (en général 0,5 à 1,5 par question). Ton solde est en haut à droite.'],
+        ['Avec ton compte', 'Les réponses de l’IA et la lecture des photos remplissent ta jauge du mois, en haut à droite. Elle se recharge chaque mois.'],
         ['Astuces', '- **Entrée** envoie, **Maj + Entrée** va à la ligne\n- Clique dans un réglage du slicer : je te propose de l’expliquer\n- Glisse une photo ou un fichier STL directement dans ce panneau'],
         ['Tes données', 'Tes conversations restent sur cet ordinateur. Tes photos servent seulement à répondre à ta demande. Une réponse te semble fausse ? Clique sur « Signaler » sous la réponse : ça nous aide à corriger l’assistant.']
       ].forEach(function (s) { body.appendChild(el('h3', '', s[0])); body.appendChild(rich(s[1])); });
@@ -725,8 +795,8 @@
   document.addEventListener('click', function (e) { if (!menu.contains(e.target)) menu.classList.add('hidden'); });
   $('m-new').addEventListener('click', function () { menu.classList.add('hidden'); newConversation(); });
   $('m-convs').addEventListener('click', openConversations);
-  $('m-credits').addEventListener('click', openCredits);
-  $('credits').addEventListener('click', openCredits);
+  $('m-usage').addEventListener('click', openUsage);
+  $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
   $('m-values').addEventListener('click', openValues);
   $('m-help').addEventListener('click', openHelp);
@@ -908,7 +978,7 @@
     var said = FS.modelAddedText(msg);
     var dims = msg.size_mm.join(' × ') + ' mm';
     function adviceButton() {
-      var ask = button('Conseille-moi des réglages pour cette pièce (' + COST_HINT + ')', function () {
+      var ask = button('Conseille-moi des réglages pour cette pièce', function () {
         ask.disabled = true;
         send('Je viens de poser « ' + msg.name + ' » sur le plateau (' + dims + '). Quels réglages me conseilles-tu pour l’imprimer ? ' +
           'Si tu as besoin de savoir à quoi sert la pièce, demande-le-moi d’abord.');
@@ -1187,14 +1257,14 @@
       .then(function (r) {
         if (mwSheet !== box) return; // un autre import a remplacé cette fiche
         if (!r.ok) {
-          if (r.data.error === 'insufficient_credits') setBalance(r.data.balance);
+          if (r.data.error === 'insufficient_credits') setGauge(r.data.gauge, true);
           showAdvice('');
           ready(r.data.error === 'insufficient_credits'
-            ? 'Plus assez de crédits : les choix du créateur sont reportés, sans adaptation par l’assistant.'
+            ? 'Ta jauge du mois est pleine : les choix du créateur sont reportés, sans adaptation par l’assistant.'
             : 'L’assistant n’a pas pu adapter les réglages : les choix du créateur sont reportés tels quels.');
           return;
         }
-        if (r.data.credits) setBalance(r.data.credits.balance);
+        if (r.data.credits) setGauge(r.data.credits.gauge);
         r.data.suggestions.forEach(function (s) {
           var c = findParam(creator.params, s.id), m = findParam(mine.params, s.id);
           var carried = CARRIED_PARAM_IDS.indexOf(s.id) >= 0;
@@ -1314,7 +1384,7 @@
       if (!session) {
         status.textContent = 'Connecte-toi pour que l’assistant lise la photo, ou choisis toi-même le meilleur.';
         card.awaiting = true; card.analyzing = false; setPhotoButtons(true);
-        requireLogin('Pour lire la photo de ton test, je l’envoie à l’IA (' + COST_HINT + ').', function () { analyze(photos); });
+        requireLogin('Pour lire la photo de ton test, je l’envoie à l’IA.', function () { analyze(photos); });
         return;
       }
       apiFetch('/api/calibration/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -1324,12 +1394,12 @@
           setPhotoButtons(true);
           if (calibCard !== card) return;
           if (!r.ok) {
-            if (r.data.error === 'insufficient_credits') setBalance(r.data.balance);
+            if (r.data.error === 'insufficient_credits') setGauge(r.data.gauge, true);
             status.textContent = Logic.errorView(r.data.error).text + ' Tu peux aussi choisir toi-même le meilleur.';
             card.awaiting = true;
             return;
           }
-          if (r.data.credits) setBalance(r.data.credits.balance);
+          if (r.data.credits) setGauge(r.data.credits.gauge);
           if (r.data.status !== 'ok') {
             status.textContent = r.data.retake_advice;
             card.awaiting = true;
@@ -1484,7 +1554,7 @@
       acts.appendChild(button('C’est lancé, suivant', next, 'btn sm'));
     } else if (step === 'after') {
       box.appendChild(el('h3', '', 'Après l’impression'));
-      box.appendChild(el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer. (Lire une photo coûte ' + COST_HINT + '.)'));
+      box.appendChild(el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer.'));
       acts.appendChild(button('Téléphone', openPhone, 'btn sm', 'phone'));
       acts.appendChild(button('Ajouter une photo', pickFiles, 'btn ghost sm', 'camera'));
     }
@@ -1555,7 +1625,7 @@
     }
     var acts = el('div', 'row-acts');
     acts.appendChild(button('Montre-moi où il est', function () { showSetting(msg.key); }, 'btn ghost sm', 'eye'));
-    if (!archived) acts.appendChild(button('Et dans mon cas, je mets combien ? (' + COST_HINT + ')', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }, 'btn ghost sm'));
+    if (!archived) acts.appendChild(button('Et dans mon cas, je mets combien ?', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }, 'btn ghost sm'));
     box.appendChild(acts);
     thread.appendChild(box);
     scrollDown();
@@ -1621,7 +1691,7 @@
     if (!opts.photos) { attachments = []; renderAttachments(); noteInput.value = ''; }
     if (!opts.shown) addMe(note, photos, opts.fromPhone);
     var again = { photos: photos, fromPhone: opts.fromPhone, shown: true };
-    if (requireLogin('Pour te répondre, j’envoie ta demande à l’IA (' + COST_HINT + ').', function () { send(note, again); })) return;
+    if (requireLogin('Pour te répondre, j’envoie ta demande à l’IA.', function () { send(note, again); })) return;
     ask(note, photos);
   }
 
@@ -1687,7 +1757,7 @@
       if (response.status === 401) return { error: 'unauthorized' };
       var type = response.headers.get('Content-Type') || '';
       if (type.indexOf('ndjson') < 0 || !response.body)
-        return response.json().then(function (data) { return response.ok ? { final: data } : { error: data.error, balance: data.balance }; });
+        return response.json().then(function (data) { return response.ok ? { final: data } : { error: data.error, gauge: data.gauge }; });
       // Réponse en flux : les textes s'affichent au fur et à mesure, puis la réponse complète remplace le brouillon.
       var reader = response.body.getReader(), decoder = new TextDecoder(), nd = Logic.ndjsonReader();
       function handle(events) {
@@ -1708,7 +1778,7 @@
       return pump();
     }).then(function (r) {
       if (r.error) {
-        if (r.error === 'insufficient_credits') setBalance(r.balance);
+        if (r.error === 'insufficient_credits') setGauge(r.gauge, true);
         fail(r.error);
         return;
       }
@@ -1721,7 +1791,7 @@
 
     function done(a) {
       finish();
-      if (a.credits) setBalance(a.credits.balance);
+      if (a.credits) setGauge(a.credits.gauge);
       target.history.push({ role: 'user', text: (photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note });
       target.history.push({ role: 'assistant', text: summaryForHistory(a) });
       target.history = target.history.slice(-MAX_HISTORY);
@@ -1737,9 +1807,10 @@
   function showError(code, retry) {
     showConversation();
     var view = Logic.errorView(code);
-    var box = alertBox('error', view.text, 'alert');
+    var g = code === 'insufficient_credits' ? Logic.gaugeView(lastGauge) : null;
+    var box = alertBox('error', view.text + (g && g.resets ? ' Elle se recharge ' + g.resets + '.' : ''), 'alert');
     var acts = el('div', 'row-acts');
-    if (view.action === 'credits') acts.appendChild(button('Voir mes crédits', openCredits, 'btn sm'));
+    if (view.action === 'credits') acts.appendChild(button('Voir mon utilisation', openUsage, 'btn sm'));
     else if (view.action === 'login') acts.appendChild(button('Me reconnecter', openLogin, 'btn sm'));
     else if (retry) acts.appendChild(button('Réessayer', function () { box.remove(); retry(); }, 'btn sm'));
     box.body.appendChild(acts);
@@ -2004,8 +2075,6 @@
     if (a.questions && a.questions.length) renderQuestions(box, entry, archived);
 
     var foot = el('div', 'ai-foot');
-    if (a.credits && a.credits.charged > 0)
-      foot.appendChild(el('span', '', a.credits.charged.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' crédit' + (a.credits.charged >= 2 ? 's' : '')));
     if (session && a.status !== 'off_topic' && !entry.flagged) foot.appendChild(feedbackLink(entry));
     if (foot.children.length) box.appendChild(foot);
     thread.appendChild(box);
