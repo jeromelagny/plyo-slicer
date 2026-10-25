@@ -33,6 +33,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoMemory.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPlateActions.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPlateActions.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPreflight.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPreflight.hpp
 )
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_LIST_DIR} PREFIX plyo FILES ${PLYO_SOURCES})

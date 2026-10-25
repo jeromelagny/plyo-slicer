@@ -10,6 +10,7 @@
 #include "PlyoModelImport.hpp"
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoPlateActions.hpp"
+#include "PlyoPreflight.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
 
@@ -64,7 +65,7 @@ std::string load_page()
     std::string page = read_resource("index.html");
     if (page.empty())
         return "<h3>Assistant Plyo</h3><p>Page introuvable : resources/web/plyo/index.html</p>";
-    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js"}) {
+    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js"}) {
         const std::string marker = std::string("<!--plyo-include:") + name + "-->";
         if (const size_t at = page.find(marker); at != std::string::npos)
             page.replace(at, marker.size(), "<script>\n" + read_resource(name) + "\n</script>");
@@ -120,6 +121,9 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "ai_context")
             // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
             send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()}});
+        else if (type == "preflight")
+            // Après un découpage (ou sur demande) : mesures du plateau pour la vérification avant impression.
+            send({{"type", "preflight"}, {"data", Preflight::measure()}});
         else if (type == "plate_action") {
             const std::string kind = data.value("kind", std::string());
             nlohmann::json    done = kind == "undo" ? PlateActions::undo(data.value("undo_token", -1LL)) : PlateActions::run(kind);

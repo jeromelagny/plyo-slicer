@@ -49,6 +49,7 @@ const std::vector<Param> WHITELIST = {
     {"layer_height",     "Hauteur de couche",           Preset::TYPE_PRINT,    "layer_height",               Kind::Float, 0.05, 0.35, "mm"},
     {"outer_wall_speed", "Vitesse des parois externes", Preset::TYPE_PRINT,    "outer_wall_speed",           Kind::Float, 10,  300, "mm/s"},
     {"retraction",       "Longueur de rétraction",      Preset::TYPE_FILAMENT, "filament_retraction_length", Kind::Float, 0,   8,   "mm"},
+    {"brim_type",        "Type de bordure",             Preset::TYPE_PRINT,    "brim_type",                  Kind::Enum,  0,   0,   ""},
     {"brim_width",       "Largeur de bordure",          Preset::TYPE_PRINT,    "brim_width",                 Kind::Float, 0,   20,  "mm"},
     {"support",          "Supports activés",            Preset::TYPE_PRINT,    "enable_support",             Kind::Bool,  0,   1,   ""},
     {"ironing_type",     "Lissage",                     Preset::TYPE_PRINT,    "ironing_type",               Kind::Enum,  0,   0,   ""},
@@ -69,6 +70,8 @@ const std::vector<Param> WHITELIST = {
 // et le style doit correspondre au type : les styles arborescents n'existent que pour tree(auto).
 std::vector<std::string> allowed_values(const std::string& id, const std::string& support_type)
 {
+    if (id == "brim_type")
+        return {"auto_brim", "outer_only", "no_brim"};
     if (id == "ironing_type")
         return {"no ironing", "top", "topmost", "solid"};
     if (id == "support_type")

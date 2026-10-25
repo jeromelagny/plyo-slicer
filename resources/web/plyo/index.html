@@ -179,6 +179,13 @@
   .send:disabled { opacity: .5; cursor: default; }
 
   /* Premiers pas : carte du parcours, puce « Tu regardes », fiche d'un réglage */
+  .preflight { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: var(--radius); background: var(--warn-soft); padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; margin-bottom: 10px; }
+  .preflight header { display: flex; align-items: center; gap: 7px; font-weight: 650; }
+  .preflight header .ic { color: var(--warn); }
+  .preflight header .link { margin-left: auto; }
+  .preflight .risk { display: flex; flex-direction: column; gap: 6px; }
+  .preflight .risk p { margin: 0; line-height: 1.4; }
+  .preflight .fixes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .tour { border: 1px solid var(--accent); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); padding: 11px 12px; display: flex; flex-direction: column; gap: 8px; }
   .tour .step { font-size: 11px; font-weight: 650; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
   .tour h3 { margin: 0; font-size: 15px; font-weight: 650; }
@@ -231,6 +238,7 @@
       <button type="button" id="m-convs" role="menuitem">Mes conversations</button>
       <button type="button" id="m-usage" role="menuitem">Mon utilisation</button>
       <hr>
+      <button type="button" id="m-check" role="menuitem">Vérifier ma plaque avant d’imprimer</button>
       <button type="button" id="m-undo" role="menuitem" disabled>Annuler les derniers réglages appliqués</button>
       <button type="button" id="m-values" role="menuitem">Voir les réglages lus par l'assistant</button>
       <button type="button" id="m-tour" role="menuitem">Refaire la visite « Ma première impression »</button>
@@ -244,6 +252,7 @@
   <div class="body" id="body">
     <!-- Premiers pas : étape du parcours en cours -->
     <div id="tour-slot"></div>
+    <div id="preflight-slot"></div>
 
     <!-- Accueil (conversation vide) -->
     <div class="hidden" id="home">
@@ -304,6 +313,7 @@
 <!--plyo-include:premiers-pas.js-->
 <!--plyo-include:rich-text.js-->
 <!--plyo-include:assistant-logic.js-->
+<!--plyo-include:preflight.js-->
 <script>
 (function () {
   // Service Plyo (prototype local). Plus tard : l'URL du service hébergé.
@@ -811,6 +821,7 @@
   $('m-new').addEventListener('click', function () { menu.classList.add('hidden'); newConversation(); });
   $('m-convs').addEventListener('click', openConversations);
   $('m-usage').addEventListener('click', openUsage);
+  $('m-check').addEventListener('click', function () { menu.classList.add('hidden'); checkPlate(); });
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
   $('m-values').addEventListener('click', openValues);
@@ -1591,7 +1602,78 @@
   }
   function stopTourTimer() { if (tourTimer) { clearInterval(tourTimer); tourTimer = null; } }
 
+  // ---------- Vérification avant impression ----------
+  // Après chaque nouveau découpage, le slicer mesure le plateau ; preflight.js en déduit les risques. Une carte
+  // n'apparaît que s'il y en a. Rien n'est envoyé à l'IA, sauf si l'utilisateur clique « En parler à l'assistant ».
+  var lastSliced = null;      // état du découpage au dernier signal (null : pas encore reçu)
+  var preflightManual = false;
+  var dismissedRisks = {};    // risques ignorés pendant cette session
+  setInterval(function () { if (!tourTimer) window.orca.postMessage({ type: 'tour_signals' }); }, 2500);
+  function watchSlice(signals) {
+    if (lastSliced === false && signals.sliced) window.orca.postMessage({ type: 'preflight' });
+    lastSliced = !!signals.sliced;
+  }
+  function checkPlate() {
+    preflightManual = true;
+    window.orca.postMessage({ type: 'preflight' });
+  }
+  function onPreflight(data) {
+    var manual = preflightManual;
+    preflightManual = false;
+    var risks = window.PlyoPreflight.preflightRisks(data).filter(function (r) { return manual || !dismissedRisks[window.PlyoPreflight.riskKey(r)]; });
+    renderPreflight(risks);
+    if (!manual || risks.length) return;
+    if (!data || !data.objects || !data.objects.length) noteLine('Le plateau est vide : ajoute une pièce, puis vérifie-la.', '', 'info');
+    else if (!data.sliced) noteLine('Rien à signaler pour l’instant. Découpe la plaque pour que je vérifie aussi les parties dans le vide.', 'ok', 'check');
+    else noteLine('Rien à signaler : ta plaque est prête à imprimer.', 'ok', 'check');
+  }
+  function renderPreflight(risks) {
+    var slot = $('preflight-slot');
+    slot.textContent = '';
+    if (!risks.length) return;
+    var box = el('div', 'preflight');
+    box.setAttribute('role', 'status');
+    var head = el('header');
+    head.appendChild(icon('alert', 15));
+    head.appendChild(document.createTextNode('Avant d’imprimer'));
+    head.appendChild(button('Ignorer', function () {
+      risks.forEach(function (r) { dismissedRisks[window.PlyoPreflight.riskKey(r)] = true; });
+      slot.textContent = '';
+    }, 'link'));
+    box.appendChild(head);
+    var left = risks.length;
+    function solved(row) {
+      row.remove();
+      if (--left === 0) slot.textContent = '';
+    }
+    risks.forEach(function (r) {
+      var row = el('div', 'risk');
+      row.appendChild(el('p', '', r.text));
+      var fixes = el('div', 'fixes');
+      r.fixes.forEach(function (f, i) {
+        var b = button(f.label, function () {
+          b.disabled = true;
+          if (f.action) return plateAction(f.action, function (ok) { if (ok) solved(row); else b.disabled = false; });
+          pendingSheet = { kind: 'apply', onResult: function (ok, text) {
+            noteLine(ok ? text + ' Découpe à nouveau la plaque pour en tenir compte.' : text, ok ? 'ok' : 'error', ok ? 'check' : 'alert');
+            if (ok) solved(row); else b.disabled = false;
+          } };
+          window.orca.postMessage({ type: 'apply', changes: f.changes, why: 'Vérification avant impression' });
+        }, i === 0 ? 'btn sm' : 'btn sm ghost');
+        fixes.appendChild(b);
+      });
+      row.appendChild(fixes);
+      box.appendChild(row);
+    });
+    box.appendChild(button('En parler à l’assistant', function () {
+      slot.textContent = '';
+      send('Avant d’imprimer, Plyo me signale : ' + risks.map(function (r) { return r.text; }).join(' ') + ' Que me conseilles-tu ?');
+    }, 'link'));
+    slot.appendChild(box);
+  }
+
   function onTourSignals(signals) {
+    watchSlice(signals);
     var hadSummary = !!printSummary();
     tourSignals = signals;
     var step = fsState.level === 'beginner' ? fsState.tour_step : null;
@@ -2158,6 +2240,8 @@
       $('focus-chip').classList.remove('hidden');
     } else if (msg.type === 'ai_context') {
       if (contextWaiter) contextWaiter(msg);
+    } else if (msg.type === 'preflight') {
+      onPreflight(msg.data);
     } else if (msg.type === 'plate_action') {
       onPlateAction(msg);
     } else if (msg.type === 'conv_list') {
