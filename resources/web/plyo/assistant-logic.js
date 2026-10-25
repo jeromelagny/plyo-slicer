@@ -125,7 +125,34 @@
     return { defect: item.defect || 'unknown', changes: item.changes, printer: parts[0] || '', filament: parts[1] || '', outcome: outcome };
   }
 
-  var api = { outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  // Journal des pièces : une fiche par pièce (ou groupe de pièces de la plaque), la plus récente d'abord.
+  function journalGroups(events) {
+    var groups = {};
+    (events || []).forEach(function (e) {
+      var part = (e.parts || []).join(' + ') || 'Pièce sans nom';
+      (groups[part] = groups[part] || { part: part, updated: '', events: [] }).events.push(e);
+    });
+    return Object.keys(groups).map(function (k) {
+      var g = groups[k];
+      g.events.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+      g.updated = g.events[0].at;
+      return g;
+    }).sort(function (a, b) { return a.updated < b.updated ? 1 : -1; });
+  }
+
+  function journalOutcome(e) {
+    if (!e.changes || !e.changes.length) return 'Aucun réglage appliqué';
+    return e.outcome === 'ok' ? 'A marché' : e.outcome === 'bad' ? 'N’a pas réglé le problème' : 'Résultat pas encore donné';
+  }
+
+  // Réglages à réappliquer (valeurs d'après), seulement pour l'imprimante et le filament où ils ont été trouvés,
+  // et jamais s'ils n'ont pas réglé le problème.
+  function reapplyChanges(e, context) {
+    if (!e.changes || !e.changes.length || e.outcome === 'bad' || !context || context.printer !== e.printer || context.filament !== e.filament) return null;
+    return e.changes.map(function (c) { return { id: c.id, value: c.after }; });
+  }
+
+  var api = { journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

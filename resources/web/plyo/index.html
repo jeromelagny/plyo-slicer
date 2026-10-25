@@ -179,6 +179,18 @@
   .send:disabled { opacity: .5; cursor: default; }
 
   /* Premiers pas : carte du parcours, puce « Tu regardes », fiche d'un réglage */
+  .journal-part { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 11px; display: flex; flex-direction: column; gap: 8px; }
+  .journal-part h4 { margin: 0; font-size: 13.5px; overflow-wrap: anywhere; }
+  .journal-event { display: grid; grid-template-columns: 52px 1fr; gap: 9px; align-items: start; border-top: 1px solid var(--border); padding-top: 8px; }
+  .journal-event .thumb { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: var(--soft, var(--border)); }
+  .journal-event .meta { font-size: 12px; color: var(--muted); }
+  .journal-event p { margin: 2px 0; line-height: 1.35; }
+  .journal-event ul { margin: 3px 0; padding-left: 17px; font-size: 12.5px; color: var(--muted); }
+  .journal-event .res { font-size: 12.5px; font-weight: 600; }
+  .journal-event .res.ok { color: var(--accent); }
+  .journal-event .res.bad { color: var(--warn); }
+  .journal-event .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .journal-list { display: flex; flex-direction: column; gap: 10px; }
   .outcome { border: 1px solid var(--accent); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); padding: 11px 12px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
   .outcome header { display: flex; align-items: center; gap: 7px; font-weight: 650; }
   .outcome header .ic { color: var(--accent); }
@@ -243,6 +255,7 @@
     <div class="menu hidden" id="menu" role="menu">
       <button type="button" id="m-new" role="menuitem">Nouvelle conversation</button>
       <button type="button" id="m-convs" role="menuitem">Mes conversations</button>
+      <button type="button" id="m-parts" role="menuitem">Mes pièces</button>
       <button type="button" id="m-usage" role="menuitem">Mon utilisation</button>
       <hr>
       <button type="button" id="m-check" role="menuitem">Vérifier ma plaque avant d’imprimer</button>
@@ -728,6 +741,65 @@
     });
   }
 
+  // ---------- Journal des pièces ----------
+  var journalTarget = null;
+  function openJournal() {
+    openDrawer('Mes pièces', function (body) {
+      body.appendChild(el('p', 'muted', 'Les pièces que tu as traitées avec l’assistant : le problème vu, les réglages appliqués et le résultat. Tout reste sur cet ordinateur.'));
+      var list = el('div', 'journal-list');
+      list.appendChild(el('p', 'muted', 'Chargement…'));
+      body.appendChild(list);
+      journalTarget = list;
+      window.orca.postMessage({ type: 'journal_list' });
+    });
+  }
+  function fillJournal(events) {
+    if (!journalTarget || $('drawer').classList.contains('hidden')) return;
+    var list = journalTarget;
+    list.textContent = '';
+    var groups = Logic.journalGroups(events);
+    if (!groups.length) { list.appendChild(el('p', 'muted', 'Pas encore de pièce : pose une question à l’assistant avec une pièce sur le plateau, elle apparaîtra ici.')); return; }
+    var here = lastValues && lastValues.context;
+    groups.forEach(function (g) {
+      var card = el('div', 'journal-part');
+      card.appendChild(el('h4', '', g.part));
+      g.events.forEach(function (e) {
+        var row = el('div', 'journal-event');
+        if (e.thumb) { var img = el('img', 'thumb'); img.src = e.thumb; img.alt = ''; row.appendChild(img); }
+        else row.appendChild(el('span', 'thumb'));
+        var col = el('div');
+        var d = new Date(e.at);
+        col.appendChild(el('div', 'meta', (isNaN(d) ? '' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) + ' · ') + e.printer + ' · ' + e.filament));
+        col.appendChild(el('p', '', e.problem || 'Question à l’assistant'));
+        var q = Logic.outcomeQuestion(e, function (id) { var p = paramOf(id); return p.label === id ? null : p; });
+        if (q.changes.length) {
+          var ul = el('ul');
+          q.changes.forEach(function (c) { ul.appendChild(el('li', '', c)); });
+          col.appendChild(ul);
+        }
+        col.appendChild(el('span', 'res ' + (e.outcome === 'ok' ? 'ok' : e.outcome === 'bad' ? 'bad' : ''), Logic.journalOutcome(e)));
+        var acts = el('div', 'acts');
+        acts.appendChild(button('Rouvrir la conversation', function () { closeDrawer(); openConversation(e.conv); }, 'btn sm ghost'));
+        var again = Logic.reapplyChanges(e, here);
+        if (again) {
+          var re = button('Réappliquer ces réglages', function () {
+            re.disabled = true;
+            pendingSheet = { kind: 'apply', onResult: function (ok, text) {
+              noteLine(ok ? 'Réglages de « ' + g.part + ' » réappliqués.' : text, ok ? 'ok' : 'error', ok ? 'check' : 'alert');
+              if (ok) closeDrawer(); else re.disabled = false;
+            } };
+            window.orca.postMessage({ type: 'apply', changes: again, why: 'Journal : ' + g.part });
+          }, 'btn sm');
+          acts.appendChild(re);
+        } else if (e.changes && e.changes.length) acts.appendChild(el('span', 'meta', 'Réglages trouvés pour une autre imprimante ou un autre filament.'));
+        col.appendChild(acts);
+        row.appendChild(col);
+        card.appendChild(row);
+      });
+      list.appendChild(card);
+    });
+  }
+
   function openUsage() {
     if (requireLogin('Ta jauge est liée à ton compte.', openUsage)) return;
     openDrawer('Mon utilisation', function (body) {
@@ -829,6 +901,7 @@
   $('m-new').addEventListener('click', function () { menu.classList.add('hidden'); newConversation(); });
   $('m-convs').addEventListener('click', openConversations);
   $('m-usage').addEventListener('click', openUsage);
+  $('m-parts').addEventListener('click', function () { menu.classList.add('hidden'); openJournal(); });
   $('m-check').addEventListener('click', function () { menu.classList.add('hidden'); checkPlate(); });
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
@@ -1646,7 +1719,7 @@
     shareLabel.appendChild(share);
     shareLabel.appendChild(document.createTextNode('Partager anonymement ce résultat pour améliorer Plyo (le problème, les réglages changés, l’imprimante et le filament ; jamais de photo).'));
     function answer(outcome) {
-      window.orca.postMessage({ type: 'outcome_set', machine: item.machine, at: item.at, outcome: outcome });
+      window.orca.postMessage({ type: 'outcome_set', machine: item.machine, at: item.at, conv: item.conv, outcome: outcome });
       slot.textContent = '';
       if (outcome !== 'later' && share.checked && session)
         apiFetch('/api/outcomes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Logic.outcomePayload(item, outcome)) }).catch(function () {});
@@ -1903,7 +1976,9 @@
       showError(code, function () { ask(note, photos); });
     }
 
+    var plateParts = [];       // pièces sur le plateau au moment de la question (journal des pièces)
     aiContext().then(function (ctx) {
+      if (ctx && ctx.plate && ctx.plate.objects) plateParts = ctx.plate.objects.map(function (o) { return o.name; });
       var body = {
         locale: lastValues.locale || 'fr',
         settings: { params: lastValues.params.map(function (p) { return { id: p.id, value: p.value, unit: p.unit }; }) },
@@ -1959,11 +2034,25 @@
       target.history.push({ role: 'assistant', text: summaryForHistory(a) });
       target.history = target.history.slice(-MAX_HISTORY);
       var entry = record({ kind: 'answer', data: a, photoCount: photos.length, question: note, date: new Date().toISOString(), applied: false }, target);
+      journalAnswer(a, target, plateParts, photos);
       // Un souci d'affichage n'est pas une erreur réseau : la réponse est gardée, rien n'est redemandé.
       if (target !== conv) return;
       try { renderAnswer(entry, false); }
       catch (e) { noteLine('La réponse est arrivée mais n’a pas pu s’afficher. Rouvre la conversation depuis « Mes conversations ».', 'error', 'alert'); }
     }
+  }
+
+  // Une réponse sur une pièce du plateau entre dans le journal des pièces, avec une vignette de la première photo.
+  function journalAnswer(a, target, parts, photos) {
+    var key = a.defect && a.defect.key;
+    if (a.status !== 'ok' || !parts.length || !key || key === 'general_question' || key === 'unknown') return;
+    var first = photos[0];
+    var src = first ? (first.preview || 'data:' + first.media_type + ';base64,' + first.data) : null;
+    (src ? scaled(src, 160, 0.7) : Promise.resolve('')).catch(function () { return ''; }).then(function (thumb) {
+      var ctx = lastValues.context || {};
+      window.orca.postMessage({ type: 'journal_add', conv: target.id, parts: parts.slice(0, 3), printer: ctx.printer || '', filament: ctx.filament || '',
+        problem: a.defect.name || '', defect: key, thumb: thumb });
+    });
   }
 
   // Erreur : ce qui s'est passé et l'action suivante. La demande est gardée pour « Réessayer ».
@@ -2310,6 +2399,8 @@
       $('focus-chip').classList.remove('hidden');
     } else if (msg.type === 'ai_context') {
       if (contextWaiter) contextWaiter(msg);
+    } else if (msg.type === 'journal') {
+      fillJournal(msg.events || []);
     } else if (msg.type === 'outcome_pending') {
       onOutcomePending(msg.item);
     } else if (msg.type === 'preflight') {

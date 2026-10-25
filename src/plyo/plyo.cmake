@@ -29,6 +29,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoStore.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoConversations.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoConversations.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoJournal.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoJournal.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoMemory.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoMemory.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPlateActions.cpp

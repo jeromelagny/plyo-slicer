@@ -3,6 +3,7 @@
 #include "PlyoConversations.hpp"
 #include "PlyoFirstSteps.hpp"
 #include "PlyoHighlight.hpp"
+#include "PlyoJournal.hpp"
 #include "PlyoLoginDialog.hpp"
 #include "PlyoMakerWorldImport.hpp"
 #include "PlyoMakerWorldWindow.hpp"
@@ -108,10 +109,15 @@ void handle_page_message(const nlohmann::json& data)
             // Chaque application réussie est notée dans la mémoire de la machine (imprimante + filament).
             const nlohmann::json before = SettingsBridge::read_values();
             const nlohmann::json result = SettingsBridge::apply_changes(data.contains("changes") ? data["changes"] : nlohmann::json());
-            if (result.value("ok", false))
-                SettingsBridge::set_memory_key(result.value("undo_id", 0),
-                                               Memory::note_applied(before, SettingsBridge::read_values(), data.value("why", std::string()),
-                                                                    data.contains("ask") ? data["ask"] : nlohmann::json()));
+            if (result.value("ok", false)) {
+                const nlohmann::json ask = data.contains("ask") ? data["ask"] : nlohmann::json();
+                const std::string    key = Memory::note_applied(before, SettingsBridge::read_values(), data.value("why", std::string()), ask);
+                SettingsBridge::set_memory_key(result.value("undo_id", 0), key);
+                // Réglages venus d'une réponse de l'IA : notés aussi dans le journal de la pièce.
+                const nlohmann::json noted = Memory::for_current();
+                if (ask.is_object() && !key.empty() && !noted.empty())
+                    Journal::set_changes(ask.value("conv", std::string()), noted[0].value("changes", nlohmann::json::array()));
+            }
             send_result(result);
         } else if (type == "undo") {
             // `undo_id` : l'annulation d'une fiche précise ; sans, le dernier lot (menu « ⋯ »).
@@ -124,9 +130,14 @@ void handle_page_message(const nlohmann::json& data)
             send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()}});
         else if (type == "outcome_pending")
             send({{"type", "outcome_pending"}, {"item", Memory::pending()}});
-        else if (type == "outcome_set")
+        else if (type == "outcome_set") {
+            Journal::set_outcome(data.value("conv", std::string()), data.value("outcome", std::string()));
             send({{"type", "outcome_saved"},
                   {"ok", Memory::set_outcome(data.value("machine", std::string()), data.value("at", std::string()), data.value("outcome", std::string()))}});
+        } else if (type == "journal_add")
+            Journal::record(data);
+        else if (type == "journal_list")
+            send({{"type", "journal"}, {"events", Journal::list()}});
         else if (type == "preflight")
             // Après un découpage (ou sur demande) : mesures du plateau pour la vérification avant impression.
             send({{"type", "preflight"}, {"data", Preflight::measure()}});

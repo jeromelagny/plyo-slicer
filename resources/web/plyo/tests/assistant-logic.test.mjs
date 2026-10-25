@@ -111,3 +111,41 @@ test('outcomePayload : seulement le défaut, les changements, les profils et le 
   });
   assert.equal(L.outcomePayload({ ...pendingItem, defect: '' }, 'ok').defect, 'unknown');
 });
+
+// ---------- Journal des pièces ----------
+const ev = (o) => ({ at: '2026-10-20T10:00:00', conv: 'c1', parts: ['Support_casque.stl'], printer: 'A1', filament: 'PLA', problem: 'Fils', defect: 'stringing', changes: [], outcome: '', ...o });
+
+test('journalGroups : une fiche par pièce, la plus récente d’abord, ses événements du plus récent au plus ancien', () => {
+  const groups = L.journalGroups([
+    ev({ at: '2026-10-20T10:00:00' }),
+    ev({ at: '2026-10-22T10:00:00', parts: ['Boule.stl'], conv: 'c2' }),
+    ev({ at: '2026-10-21T10:00:00', conv: 'c3', problem: 'Coin décollé' }),
+  ]);
+  assert.deepEqual(groups.map((g) => g.part), ['Boule.stl', 'Support_casque.stl']);
+  assert.deepEqual(groups[1].events.map((e) => e.problem), ['Coin décollé', 'Fils']);
+  assert.equal(groups[1].updated, '2026-10-21T10:00:00');
+});
+
+test('journalGroups : plusieurs pièces sur la plaque forment une seule fiche « A + B »', () => {
+  const [g] = L.journalGroups([ev({ parts: ['A.stl', 'B.stl'] })]);
+  assert.equal(g.part, 'A.stl + B.stl');
+});
+
+test('journalOutcome : libellé du résultat', () => {
+  assert.equal(L.journalOutcome(ev({ changes: [{ id: 'retraction', before: 0.8, after: 1.2 }], outcome: 'ok' })), 'A marché');
+  assert.equal(L.journalOutcome(ev({ changes: [{ id: 'x', before: 1, after: 2 }], outcome: 'bad' })), 'N’a pas réglé le problème');
+  assert.equal(L.journalOutcome(ev({ changes: [{ id: 'x', before: 1, after: 2 }], outcome: 'pending' })), 'Résultat pas encore donné');
+  assert.equal(L.journalOutcome(ev({ changes: [] })), 'Aucun réglage appliqué');
+});
+
+test('reapplyChanges : valeurs d’après, seulement sur la même imprimante et le même filament', () => {
+  const e = ev({ changes: [{ id: 'retraction', before: 0.8, after: 1.2 }], outcome: 'ok' });
+  assert.deepEqual(L.reapplyChanges(e, { printer: 'A1', filament: 'PLA' }), [{ id: 'retraction', value: 1.2 }]);
+  assert.equal(L.reapplyChanges(e, { printer: 'X1C', filament: 'PLA' }), null);
+  assert.equal(L.reapplyChanges(ev({}), { printer: 'A1', filament: 'PLA' }), null);
+});
+
+test('reapplyChanges : jamais pour des réglages qui n’ont pas réglé le problème', () => {
+  const e = ev({ changes: [{ id: 'retraction', before: 0.8, after: 1.2 }], outcome: 'bad' });
+  assert.equal(L.reapplyChanges(e, { printer: 'A1', filament: 'PLA' }), null);
+});
