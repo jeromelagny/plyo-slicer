@@ -178,3 +178,9 @@ test('outcomePayload : imprimante et filament séparés quand le slicer les donn
   assert.equal(p.printer, 'A | B');
   assert.equal(p.filament, 'C');
 });
+
+test('outcomePayload : le mot de l’utilisateur ne part jamais dans le partage anonyme', () => {
+  const p = L.outcomePayload({ ...pendingItem, note: 'mon garage est froid' }, 'bad');
+  assert.equal(JSON.stringify(p).includes('garage'), false);
+  assert.equal('note' in p, false);
+});

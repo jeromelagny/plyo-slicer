@@ -88,7 +88,7 @@ void clear_changes(const std::string& conv)
     Store::write(file(), all);
 }
 
-void set_outcome(const std::string& conv, const std::string& outcome)
+void set_outcome(const std::string& conv, const std::string& outcome, const std::string& note)
 {
     if (conv.empty() || (outcome != "ok" && outcome != "bad"))
         return;
@@ -97,6 +97,7 @@ void set_outcome(const std::string& conv, const std::string& outcome)
     if (e == nullptr)
         return;
     (*e)["outcome"] = outcome;
+    (*e)["note"]    = note.substr(0, 200);
     Store::write(file(), all);
 }
 

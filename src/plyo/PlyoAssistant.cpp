@@ -131,9 +131,10 @@ void handle_page_message(const nlohmann::json& data)
         else if (type == "outcome_pending")
             send({{"type", "outcome_pending"}, {"items", Memory::pending()}});
         else if (type == "outcome_set") {
-            Journal::set_outcome(data.value("conv", std::string()), data.value("outcome", std::string()));
+            const std::string note = data.value("note", std::string());
+            Journal::set_outcome(data.value("conv", std::string()), data.value("outcome", std::string()), note);
             send({{"type", "outcome_saved"},
-                  {"ok", Memory::set_outcome(data.value("machine", std::string()), data.value("at", std::string()), data.value("outcome", std::string()))}});
+                  {"ok", Memory::set_outcome(data.value("machine", std::string()), data.value("at", std::string()), data.value("outcome", std::string()), note)}});
         } else if (type == "journal_add")
             Journal::record(data);
         else if (type == "journal_list")

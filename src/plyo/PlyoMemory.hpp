@@ -29,6 +29,7 @@ nlohmann::json pending();
 
 // Résultat déclaré pour l'entrée `at` de `machine` : "ok", "bad", ou "later" (redemander plus tard ; après
 // 3 reports, le résultat devient « inconnu » et on ne demande plus). Faux si l'entrée n'existe plus.
-bool           set_outcome(const std::string& machine, const std::string& at, const std::string& outcome);
+// `note` : mot facultatif de l'utilisateur (200 caractères au plus), gardé avec le résultat et lu par l'IA.
+bool           set_outcome(const std::string& machine, const std::string& at, const std::string& outcome, const std::string& note = std::string());
 
 }} // namespace Plyo::Memory

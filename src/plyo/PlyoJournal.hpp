@@ -19,7 +19,7 @@ void           set_changes(const std::string& conv, const nlohmann::json& change
 // Réglages annulés : la dernière entrée de `conv` n'a plus de réglages appliqués.
 void           clear_changes(const std::string& conv);
 // Résultat déclaré (« ok » ou « bad ») pour la dernière entrée de `conv` qui a des réglages.
-void           set_outcome(const std::string& conv, const std::string& outcome);
+void           set_outcome(const std::string& conv, const std::string& outcome, const std::string& note = std::string());
 // Toutes les entrées, de la plus récente à la plus ancienne.
 nlohmann::json list();
 

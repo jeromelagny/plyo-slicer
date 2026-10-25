@@ -127,7 +127,7 @@ nlohmann::json pending()
     return out;
 }
 
-bool set_outcome(const std::string& machine, const std::string& at, const std::string& outcome)
+bool set_outcome(const std::string& machine, const std::string& at, const std::string& outcome, const std::string& note)
 {
     if (at.empty() || (outcome != "ok" && outcome != "bad" && outcome != "later"))
         return false;
@@ -142,8 +142,11 @@ bool set_outcome(const std::string& machine, const std::string& at, const std::s
             e["asked"]      = asked;
             if (asked >= 3)
                 e["outcome"] = "unknown";
-        } else
+        } else {
             e["outcome"] = outcome;
+            if (!note.empty())
+                e["note"] = note.substr(0, 200);
+        }
         return Store::write(file(), all);
     }
     return false;
