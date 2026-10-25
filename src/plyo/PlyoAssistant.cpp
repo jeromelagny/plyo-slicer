@@ -27,6 +27,7 @@
 #include <boost/log/trivial.hpp>
 #include <nlohmann/json.hpp>
 
+#include <wx/aui/framemanager.h>
 #include <wx/gdicmn.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
@@ -330,6 +331,18 @@ void toggle_assistant(Plater* plater)
     s_panel           = panel;
     s_refresh_pending = false; // un rafraîchissement en attente meurt avec l'ancien panneau
     plater->add_dock_pane(panel, PANE_NAME, "Assistant Plyo", "right", wxSize(340, 600), [panel]() { panel->fire_close(); });
+    // La disposition enregistrée par Orca peut garder une largeur minuscule (18 px vu) : le panneau serait
+    // à peine visible. On lui impose une largeur minimale, et sa largeur normale si la sienne est trop petite.
+    if (wxAuiManager* aui = wxAuiManager::GetManager(panel)) {
+        wxAuiPaneInfo& pane  = aui->GetPane(panel);
+        const int      min_w = panel->FromDIP(300);
+        if (pane.IsOk()) {
+            pane.MinSize(wxSize(min_w, -1));
+            if (pane.best_size.x < min_w)
+                pane.BestSize(wxSize(panel->FromDIP(340), pane.best_size.y));
+            aui->Update();
+        }
+    }
     refresh_topbar_button();
 }
 
@@ -340,6 +353,7 @@ wxWindow* create_topbar_button(wxWindow* parent)
     auto* holder = new wxPanel(parent, wxID_ANY);
     holder->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#3B4446")));
     auto* button = new SideButton(holder, "Assistant", "");
+    button->SetLayoutStyle(1); // pilule arrondie des deux côtés (le style par défaut est collé à une flèche « ˅ »)
     button->SetTextLayout(SideButton::EHorizontalOrientation::HO_Center, holder->FromDIP(15));
     button->SetCornerRadius(holder->FromDIP(12));
     button->SetExtraSize(wxSize(holder->FromDIP(38), holder->FromDIP(10)));
