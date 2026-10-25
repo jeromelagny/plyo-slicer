@@ -1,5 +1,6 @@
 #include "PlyoAssistant.hpp"
 #include "PlyoCalibration.hpp"
+#include "PlyoCommands.hpp"
 #include "PlyoConversations.hpp"
 #include "PlyoFirstSteps.hpp"
 #include "PlyoHighlight.hpp"
@@ -174,6 +175,16 @@ void handle_page_message(const nlohmann::json& data)
             done["type"]           = "plate_action";
             done["kind"]           = kind;
             done["request"]        = data.value("request", 0); // pour retrouver le bouton qui a demandé l'action
+            send(done);
+        } else if (type == "commands") {
+            // Ordres de l'IA (« penche la pièce de 20° ») : exécutés aussitôt, annulables d'un clic (plate_action « undo »).
+            nlohmann::json done = Commands::run(data.contains("commands") ? data["commands"] : nlohmann::json());
+            done["type"]        = "commands";
+            done["request"]     = data.value("request", 0);
+            send(done);
+        } else if (type == "open_tool") {
+            nlohmann::json done = Commands::open_tool(data.value("tool", std::string()));
+            done["type"]        = "open_tool";
             send(done);
         } else if (type == "show_setting") {
             const std::string key = data.value("key", std::string());

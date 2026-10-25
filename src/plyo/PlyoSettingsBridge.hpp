@@ -37,4 +37,8 @@ nlohmann::json undo_last(int expected_id = 0);
 // Plage Plyo d'une clé de configuration de la liste blanche : {min, max, unit}, ou null hors liste blanche.
 nlohmann::json whitelist_range(const std::string& key);
 
+// Réglage d'impression d'une seule pièce (ordres de l'assistant), vérifié comme apply_changes. Écrit la clé d'Orca
+// dans `out` et rend {ok, key, text} ; refuse les réglages du filament et de l'imprimante.
+nlohmann::json object_override(const std::string& id, const nlohmann::json& value, Slic3r::DynamicPrintConfig& out);
+
 }} // namespace Plyo::SettingsBridge

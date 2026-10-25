@@ -125,6 +125,10 @@
   .note-line { align-self: center; font-size: 12px; color: var(--muted); text-align: center; padding: 2px 8px; display: inline-flex; gap: 5px; align-items: center; }
   .note-line.ok { color: var(--accent); }
   .note-line.start { align-self: flex-start; text-align: left; }
+  .cmds { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .cmds-list { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+  .cmds .note-line { padding-left: 0; }
+  .howto { border-left: 3px solid var(--accent); padding: 4px 0 4px 10px; display: flex; flex-direction: column; gap: 6px; }
   .thinking { color: var(--muted); font-size: 12px; display: flex; gap: 8px; align-items: center; }
   .thinking i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.2s infinite; }
   @keyframes blink { 50% { opacity: .2; } }
@@ -1059,6 +1063,72 @@
     else if (msg.hidden) noteLine('J’ai ouvert la bonne page. Si tu ne vois pas le réglage, active le bouton « Avancé » en haut des réglages.', '', 'info');
   }
 
+  // ---------- Ordres exécutés tout de suite (« penche la pièce de 20° ») ----------
+  // Le slicer les exécute dès la réponse, en une seule étape annulable ; la conversation garde ce qui a été fait.
+  var commandWaiters = {};
+  function commandLine(text, tone, iconName) {
+    var line = el('div', 'note-line start' + (tone ? ' ' + tone : ''));
+    line.appendChild(icon(iconName, 13));
+    line.appendChild(document.createTextNode(text));
+    return line;
+  }
+  function renderCommands(entry, archived) {
+    var a = entry.data;
+    var wrap = el('div', 'cmds');
+    var list = el('div', 'cmds-list');
+    wrap.appendChild(list);
+    function show(result) {
+      list.textContent = '';
+      result.done.forEach(function (d) { list.appendChild(commandLine(d, 'ok', 'check')); });
+      if (result.text) list.appendChild(commandLine(result.text, 'error', 'alert'));
+      result.skipped.forEach(function (t) { if (t) list.appendChild(commandLine(t, '', 'info')); });
+      if (result.undone) list.appendChild(commandLine('Annulé : le plateau est revenu comme avant.', '', 'undo'));
+    }
+    if (entry.commandsResult) show(entry.commandsResult);
+    else if (archived) list.appendChild(commandLine('Ces changements n’ont pas été faits sur le plateau.', '', 'info'));
+    else {
+      list.appendChild(commandLine('Je modifie le plateau…', '', 'wand'));
+      var id = ++plateRequest;
+      commandWaiters[id] = function (msg) {
+        entry.commandsResult = { done: msg.done || [], text: msg.text || '', skipped: msg.skipped || [] };
+        if (entry.hist) entry.hist.text = (summaryForHistory(a, entry.commandsResult)).slice(0, 2000);
+        scheduleSave();
+        show(entry.commandsResult);
+        if (msg.undo_token === undefined) return;
+        plateUndoLinks.forEach(function (b) { b.remove(); });
+        var undo = button('Annuler', function () {
+          undo.disabled = true;
+          plateAction('undo', function (ok) {
+            if (!ok) { undo.disabled = false; return; }
+            undo.remove();
+            entry.commandsResult.undone = true;
+            scheduleSave();
+            show(entry.commandsResult);
+          }, { undo_token: msg.undo_token });
+        }, 'link');
+        plateUndoLinks = [undo];
+        list.appendChild(undo);
+      };
+      window.orca.postMessage({ type: 'commands', commands: a.commands, request: id });
+    }
+    if (a.how_to) {
+      var how = el('div', 'howto hidden');
+      how.appendChild(rich(a.how_to));
+      var tool = Logic.commandTool(a.commands);
+      if (tool && !archived) how.appendChild(el('div', 'row-acts')).appendChild(button('Ouvre l’outil sur la pièce', function () {
+        window.orca.postMessage({ type: 'open_tool', tool: tool });
+      }, 'btn ghost sm', 'eye'));
+      var toggle = button('Comment le faire moi-même', function () {
+        how.classList.toggle('hidden');
+        toggle.setAttribute('aria-expanded', how.classList.contains('hidden') ? 'false' : 'true');
+      }, 'link');
+      toggle.setAttribute('aria-expanded', 'false');
+      wrap.appendChild(toggle);
+      wrap.appendChild(how);
+    }
+    return wrap;
+  }
+
   // Boutons d'action proposés par l'IA. Dans une conversation rouverte, seules les actions sans effet restent.
   var PLATE_KINDS = ['orient', 'arrange', 'scale_to_fit', 'slice'];
   function renderActions(actions, archived) {
@@ -1066,9 +1136,10 @@
     if (!list.length) return null;
     var row = el('div', 'row-acts');
     list.forEach(function (a) {
-      var iconName = a.kind === 'show' || a.kind === 'show_setting' ? 'eye' : 'wand';
+      var iconName = a.kind === 'show' || a.kind === 'show_setting' || a.kind === 'open_tool' ? 'eye' : 'wand';
       var b = button(a.label, function () {
         if (a.kind === 'show') showMe(a.target);
+        else if (a.kind === 'open_tool') window.orca.postMessage({ type: 'open_tool', tool: a.target });
         else if (a.kind === 'show_setting') showSetting(a.target);
         else { b.disabled = true; plateAction(a.kind, function (ok) { if (!ok) b.disabled = false; }); }
       }, 'btn ghost sm', iconName);
@@ -2062,9 +2133,12 @@
       if (a.credits) setGauge(a.credits.gauge);
       // 2 000 caractères au plus : au-delà, l'API refuserait toutes les demandes suivantes de la conversation.
       target.history.push({ role: 'user', text: ((photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note).slice(0, 2000) });
-      target.history.push({ role: 'assistant', text: summaryForHistory(a) });
+      var hist = { role: 'assistant', text: summaryForHistory(a) };
+      target.history.push(hist);
       target.history = target.history.slice(-MAX_HISTORY);
       var entry = record({ kind: 'answer', data: a, photoCount: photos.length, question: note, date: new Date().toISOString(), applied: false }, target);
+      // Ce que les ordres ont réellement fait remplacera « demandé » dans l'historique (non enregistré avec l'entrée).
+      Object.defineProperty(entry, 'hist', { value: hist, enumerable: false, writable: true });
       journalAnswer(a, target, plateParts, photos);
       // Un souci d'affichage n'est pas une erreur réseau : la réponse est gardée, rien n'est redemandé.
       if (target !== conv) return;
@@ -2137,8 +2211,10 @@
   }
 
   // Ce que l'assistant a répondu, pour le renvoyer dans l'historique au tour suivant.
-  function summaryForHistory(a) {
+  function summaryForHistory(a, commandsResult) {
     var parts = [a.message];
+    var orders = Logic.commandsForHistory(a, commandsResult || null);
+    if (orders) parts.push(orders);
     a.questions.forEach(function (q) { parts.push(q.text + ' (' + q.choices.join(' / ') + ')'); });
     a.suggestions.forEach(function (s) { parts.push('suggestion: ' + s.id + ' ' + (s.delta !== null ? 'delta ' + s.delta : '= ' + s.value)); });
     return parts.join('\n').slice(0, 2000);
@@ -2354,6 +2430,7 @@
       box.appendChild(rich(a.message));
     }
 
+    if (a.commands && a.commands.length) box.appendChild(renderCommands(entry, archived));
     var actions = renderActions(a.actions, archived);
     if (actions) box.appendChild(actions);
     if (!archived && a.calibration_offer && CALIB[a.calibration_offer.test]) box.appendChild(calibrationOffer(a.calibration_offer));
@@ -2438,6 +2515,12 @@
       onPreflight(msg.data);
     } else if (msg.type === 'plate_action') {
       onPlateAction(msg);
+    } else if (msg.type === 'commands') {
+      var waiter = commandWaiters[msg.request];
+      delete commandWaiters[msg.request];
+      if (waiter) waiter(msg);
+    } else if (msg.type === 'open_tool') {
+      noteLine(msg.text, msg.ok ? '' : 'error', msg.ok ? 'eye' : 'alert');
     } else if (msg.type === 'conv_list') {
       // Au lancement : la dernière conversation est rouverte ; ensuite, la liste remplit le volet.
       if (!restored) { restored = true; if (msg.items && msg.items.length && !(conv && conv.entries.length)) openConversation(msg.items[0].id); }

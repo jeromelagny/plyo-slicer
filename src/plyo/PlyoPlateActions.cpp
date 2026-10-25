@@ -9,12 +9,16 @@
 #include "slic3r/GUI/GLToolbar.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/Jobs/Worker.hpp"
+#include "slic3r/GUI/GLCanvas3D.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
+#include "slic3r/GUI/PartPlate.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/GUI/Selection.hpp"
 #include "slic3r/Utils/UndoRedo.hpp"
 
 #include <wx/event.h>
 
+#include <algorithm>
 #include <cmath>
 
 namespace Plyo { namespace PlateActions {
@@ -63,10 +67,20 @@ nlohmann::json context()
         return nullptr;
     const nlohmann::json signals = FirstSteps::tour_signals();
     nlohmann::json       objects = nlohmann::json::array();
-    for (const Slic3r::ModelObject* object : plater->model().objects) {
-        if (objects.size() >= 50)
-            break;
-        objects.push_back({{"name", object->name.substr(0, 120)}, {"size_mm", size_json(object_size(*object))}});
+    // `ref` (rang + 1) désigne la pièce dans les ordres de l'assistant (PlyoCommands) ; la sélection et la plaque
+    // l'aident à savoir de quelle pièce parle l'utilisateur.
+    const auto&                           selected = plater->get_view3D_canvas3D()->get_selection().get_content();
+    Slic3r::GUI::PartPlateList&           plates   = plater->get_partplate_list();
+    const std::vector<Slic3r::ModelObject*>& model_objects = plater->model().objects;
+    for (size_t i = 0; i < model_objects.size() && objects.size() < 50; ++i) {
+        const Slic3r::ModelObject* object = model_objects[i];
+        nlohmann::json item{{"ref", std::to_string(i + 1)}, {"name", object->name.substr(0, 120)}, {"size_mm", size_json(object_size(*object))},
+                            {"copies", std::max<size_t>(1, std::min<size_t>(object->instances.size(), 200))}};
+        if (selected.count(static_cast<int>(i)))
+            item["selected"] = true;
+        if (const int plate = plates.find_instance(static_cast<int>(i), 0); plate >= 0 && plate < 100)
+            item["plate"] = plate + 1;
+        objects.push_back(item);
     }
     return {{"objects", objects}, {"bed_mm", size_json(bed_size())}, {"sliced", signals.value("sliced", false)},
             {"time_s", signals.value("time_s", 0.0)}, {"weight_g", signals.value("weight_g", 0.0)}};

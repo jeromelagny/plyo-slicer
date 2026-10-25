@@ -184,3 +184,20 @@ test('outcomePayload : le mot de l’utilisateur ne part jamais dans le partage 
   assert.equal(JSON.stringify(p).includes('garage'), false);
   assert.equal('note' in p, false);
 });
+
+test('commandTool : l’outil d’Orca qui fait la même chose que le premier ordre', () => {
+  assert.equal(L.commandTool([{ op: 'rotate' }, { op: 'center' }]), 'rotate');
+  assert.equal(L.commandTool([{ op: 'lay_flat' }]), 'lay_flat');
+  assert.equal(L.commandTool([{ op: 'scale_to_size' }]), 'scale');
+  assert.equal(L.commandTool([{ op: 'cut_height' }]), 'cut');
+  assert.equal(L.commandTool([{ op: 'set_copies' }]), null);
+  assert.equal(L.commandTool([]), null);
+});
+
+test('commandsForHistory : l’IA sait ce qui a été fait, ou que rien n’a pu l’être', () => {
+  const a = { commands: [{ summary: 'J’ai penché la pièce de 20°.' }, { summary: 'J’ai centré la pièce.' }] };
+  assert.equal(L.commandsForHistory(a, { done: ['J’ai penché la pièce de 20°.'], text: 'Cette pièce n’est plus sur le plateau.' }),
+    'fait : J’ai penché la pièce de 20°.\nnon fait : Cette pièce n’est plus sur le plateau.');
+  assert.equal(L.commandsForHistory({ commands: [] }, null), '');
+  assert.equal(L.commandsForHistory(a, null), 'demandé : J’ai penché la pièce de 20°. J’ai centré la pièce.');
+});

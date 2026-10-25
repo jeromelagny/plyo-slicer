@@ -423,4 +423,32 @@ nlohmann::json whitelist_range(const std::string& key)
     return nullptr;
 }
 
+nlohmann::json object_override(const std::string& id, const nlohmann::json& value, DynamicPrintConfig& out)
+{
+    const Param* param = find_param(id);
+    // Une pièce seule ne reçoit que des réglages d'impression : jamais ceux du filament ni de l'imprimante.
+    if (param == nullptr || param->preset != Preset::TYPE_PRINT)
+        return {{"ok", false}, {"text", "Refusé : « " + id + " » ne peut pas être réglé pour une seule pièce."}};
+    std::string serialized, shown;
+    if (param->kind == Kind::Enum) {
+        const std::string text    = value.is_string() ? value.get<std::string>() : std::string();
+        const auto        allowed = allowed_values(id, enum_value(*find_param("support_type")));
+        if (std::find(allowed.begin(), allowed.end(), text) == allowed.end())
+            return {{"ok", false}, {"text", "Refusé : « " + text + " » n'est pas un choix possible pour " + param->label + "."}};
+        serialized = shown = text;
+    } else if (param->kind == Kind::Bool) {
+        if (!value.is_boolean())
+            return {{"ok", false}, {"text", std::string("Refusé : valeur attendue oui ou non pour ") + param->label + "."}};
+        serialized = value.get<bool>() ? "1" : "0";
+        shown      = value.get<bool>() ? "oui" : "non";
+    } else {
+        if (!value.is_number() || value.get<double>() < param->min || value.get<double>() > param->max)
+            return {{"ok", false}, {"text", std::string("Refusé : ") + param->label + " doit rester entre " + range_text(*param) + "."}};
+        serialized = to_config_string(value.get<double>(), param->kind);
+        shown      = format_number(value.get<double>(), param->kind) + (*param->unit ? std::string(" ") + param->unit : std::string());
+    }
+    out.set_deserialize_strict(resolve_key(*param), serialized);
+    return {{"ok", true}, {"key", resolve_key(*param)}, {"text", std::string(param->label) + " : " + shown}};
+}
+
 }} // namespace Plyo::SettingsBridge

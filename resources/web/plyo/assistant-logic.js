@@ -166,7 +166,23 @@
     return e.changes.map(function (c) { return { id: c.id, value: c.after }; });
   }
 
-  var api = { firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  // Ordres exécutés par le slicer : l'outil d'Orca qui fait la même chose (« Comment le faire moi-même »).
+  var COMMAND_TOOLS = { rotate: 'rotate', reset_rotation: 'rotate', lay_flat: 'lay_flat', move: 'move', center: 'move', drop: 'move',
+    scale: 'scale', scale_to_size: 'scale', cut_height: 'cut' };
+  function commandTool(commands) {
+    var first = (commands || [])[0];
+    return (first && COMMAND_TOOLS[first.op]) || null;
+  }
+  // Ce que l'historique de la conversation dit des ordres : faits, refusés, ou seulement demandés (non exécutés).
+  function commandsForHistory(a, result) {
+    if (!a.commands || !a.commands.length) return '';
+    if (!result) return 'demandé : ' + a.commands.map(function (c) { return c.summary; }).join(' ');
+    var lines = (result.done || []).map(function (d) { return 'fait : ' + d; });
+    if (result.text) lines.push('non fait : ' + result.text);
+    return lines.join('\n');
+  }
+
+  var api = { commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
