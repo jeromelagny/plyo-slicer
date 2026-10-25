@@ -330,16 +330,16 @@ void toggle_assistant(Plater* plater)
     });
     s_panel           = panel;
     s_refresh_pending = false; // un rafraîchissement en attente meurt avec l'ancien panneau
-    plater->add_dock_pane(panel, PANE_NAME, "Assistant Plyo", "right", wxSize(340, 600), [panel]() { panel->fire_close(); });
+    plater->add_dock_pane(panel, PANE_NAME, "Assistant Plyo", "right", wxSize(380, 600), [panel]() { panel->fire_close(); });
     // La disposition enregistrée par Orca peut garder une largeur minuscule (18 px vu) : le panneau serait
     // à peine visible. On lui impose une largeur minimale, et sa largeur normale si la sienne est trop petite.
     if (wxAuiManager* aui = wxAuiManager::GetManager(panel)) {
         wxAuiPaneInfo& pane  = aui->GetPane(panel);
-        const int      min_w = panel->FromDIP(300);
+        const int      min_w = panel->FromDIP(320);
         if (pane.IsOk()) {
             pane.MinSize(wxSize(min_w, -1));
-            if (pane.best_size.x < min_w)
-                pane.BestSize(wxSize(panel->FromDIP(340), pane.best_size.y));
+            if (pane.best_size.x < panel->FromDIP(360))
+                pane.BestSize(wxSize(panel->FromDIP(380), pane.best_size.y));
             aui->Update();
         }
     }

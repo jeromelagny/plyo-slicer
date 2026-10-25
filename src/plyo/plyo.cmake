@@ -40,3 +40,12 @@ set(PLYO_SOURCES
 )
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
 source_group(TREE ${CMAKE_CURRENT_LIST_DIR} PREFIX plyo FILES ${PLYO_SOURCES})
+
+# Traductions renommées « Plyo Slicer » (les fichiers .po d'Orca ne sont pas modifiés) : voir rebrand_translations.py.
+find_program(PLYO_PYTHON3 NAMES python3)
+if (PLYO_PYTHON3)
+    add_custom_target(plyo_translations ALL
+        COMMAND ${PLYO_PYTHON3} ${CMAKE_CURRENT_LIST_DIR}/rebrand_translations.py
+                ${CMAKE_SOURCE_DIR}/localization/i18n ${CMAKE_SOURCE_DIR}/resources/i18n ${CMAKE_BINARY_DIR}/plyo-i18n
+        COMMENT "Plyo : traductions renommées Plyo Slicer")
+endif ()
