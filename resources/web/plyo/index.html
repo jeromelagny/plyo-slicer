@@ -179,6 +179,13 @@
   .send:disabled { opacity: .5; cursor: default; }
 
   /* Premiers pas : carte du parcours, puce « Tu regardes », fiche d'un réglage */
+  .outcome { border: 1px solid var(--accent); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); padding: 11px 12px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .outcome header { display: flex; align-items: center; gap: 7px; font-weight: 650; }
+  .outcome header .ic { color: var(--accent); }
+  .outcome p { margin: 0; line-height: 1.4; }
+  .outcome ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+  .outcome .answers { display: flex; flex-wrap: wrap; gap: 6px; }
+  .outcome label { display: flex; gap: 7px; align-items: flex-start; font-size: 12.5px; color: var(--muted); cursor: pointer; }
   .preflight { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: var(--radius); background: var(--warn-soft); padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; margin-bottom: 10px; }
   .preflight header { display: flex; align-items: center; gap: 7px; font-weight: 650; }
   .preflight header .ic { color: var(--warn); }
@@ -252,6 +259,7 @@
   <div class="body" id="body">
     <!-- Premiers pas : étape du parcours en cours -->
     <div id="tour-slot"></div>
+    <div id="outcome-slot"></div>
     <div id="preflight-slot"></div>
 
     <!-- Accueil (conversation vide) -->
@@ -1602,6 +1610,64 @@
   }
   function stopTourTimer() { if (tourTimer) { clearInterval(tourTimer); tourTimer = null; } }
 
+  // ---------- « Ça a marché ? » ----------
+  // Des réglages proposés par l'IA ont été appliqués : au moins 30 minutes plus tard (au démarrage, puis toutes
+  // les 3 heures), une carte demande le résultat. Il est gardé dans la mémoire de la machine, et partagé
+  // anonymement seulement si l'utilisateur a coché la case (désactivée par défaut).
+  var outcomeAsked = {};   // entrées déjà montrées pendant cette session
+  function askOutcome() { window.orca.postMessage({ type: 'outcome_pending' }); }
+  setInterval(askOutcome, 3 * 60 * 60 * 1000);
+  function onOutcomePending(item) {
+    if (!item || outcomeAsked[item.at] || !Logic.outcomeDue(item, new Date())) return;
+    outcomeAsked[item.at] = true;
+    renderOutcome(item);
+  }
+  function renderOutcome(item) {
+    var slot = $('outcome-slot');
+    slot.textContent = '';
+    var q = Logic.outcomeQuestion(item, function (id) { var p = paramOf(id); return p.label === id ? null : p; });
+    var box = el('div', 'outcome');
+    box.setAttribute('role', 'status');
+    var head = el('header');
+    head.appendChild(icon('check', 15));
+    head.appendChild(document.createTextNode(q.title));
+    box.appendChild(head);
+    box.appendChild(el('p', '', q.text));
+    if (q.changes.length) {
+      var list = el('ul');
+      q.changes.forEach(function (c) { list.appendChild(el('li', '', c)); });
+      box.appendChild(list);
+    }
+    var share = el('input');
+    share.type = 'checkbox';
+    share.checked = !!fsState.share_outcomes;
+    share.addEventListener('change', function () { window.orca.postMessage({ type: 'firststeps_set', patch: { share_outcomes: share.checked } }); });
+    var shareLabel = el('label');
+    shareLabel.appendChild(share);
+    shareLabel.appendChild(document.createTextNode('Partager anonymement ce résultat pour améliorer Plyo (le problème, les réglages changés, l’imprimante et le filament ; jamais de photo).'));
+    function answer(outcome) {
+      window.orca.postMessage({ type: 'outcome_set', machine: item.machine, at: item.at, outcome: outcome });
+      slot.textContent = '';
+      if (outcome !== 'later' && share.checked && session)
+        apiFetch('/api/outcomes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Logic.outcomePayload(item, outcome)) }).catch(function () {});
+      if (outcome === 'ok') noteLine('Super ! Je m’en souviendrai pour mes prochains conseils sur cette imprimante.', 'ok', 'check');
+      if (outcome === 'bad') {
+        if (item.conv && (!conv || conv.id !== item.conv)) openConversation(item.conv);
+        noteLine('Dommage. Dis-moi ce que tu vois ou envoie une photo : je ne te reproposerai pas les mêmes réglages.', '', 'info');
+        var note = $('note');
+        note.value = 'Ça n’a pas marché : ';
+        note.focus();
+      }
+    }
+    var answers = el('div', 'answers');
+    answers.appendChild(button('Oui', function () { answer('ok'); }, 'btn sm'));
+    answers.appendChild(button('Non, toujours le problème', function () { answer('bad'); }, 'btn sm ghost'));
+    answers.appendChild(button('Pas encore imprimé', function () { answer('later'); }, 'link'));
+    box.appendChild(answers);
+    box.appendChild(shareLabel);
+    slot.appendChild(box);
+  }
+
   // ---------- Vérification avant impression ----------
   // Après chaque nouveau découpage, le slicer mesure le plateau ; preflight.js en déduit les risques. Une carte
   // n'apparaît que s'il y en a. Rien n'est envoyé à l'IA, sauf si l'utilisateur clique « En parler à l'assistant ».
@@ -2069,7 +2135,9 @@
         }, 'link');
         footer.appendChild(undoBtn);
       } };
-      window.orca.postMessage({ type: 'apply', changes: changes, why: (entry.data.defect && entry.data.defect.name) || '' });
+      // `ask` : ces réglages viennent de l'IA, Plyo demandera plus tard si l'impression a marché.
+      window.orca.postMessage({ type: 'apply', changes: changes, why: (entry.data.defect && entry.data.defect.name) || '',
+        ask: { conv: conv ? conv.id : '', defect: (entry.data.defect && entry.data.defect.key) || '' } });
     });
     ignore.addEventListener('click', function () { sheet.remove(); });
     container.appendChild(sheet);
@@ -2204,7 +2272,9 @@
         if (afterLogin) { var retry = afterLogin; afterLogin = null; retry(); }
       }
     } else if (msg.type === 'values') {
+      var firstValues = !lastValues;
       renderValues(msg);
+      if (firstValues) askOutcome(); // au démarrage, une fois les libellés des réglages connus
       window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
       drainPhoneQueue();
     } else if (msg.type === 'result') {
@@ -2240,6 +2310,8 @@
       $('focus-chip').classList.remove('hidden');
     } else if (msg.type === 'ai_context') {
       if (contextWaiter) contextWaiter(msg);
+    } else if (msg.type === 'outcome_pending') {
+      onOutcomePending(msg.item);
     } else if (msg.type === 'preflight') {
       onPreflight(msg.data);
     } else if (msg.type === 'plate_action') {

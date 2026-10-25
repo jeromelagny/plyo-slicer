@@ -39,7 +39,7 @@ std::string last_date(const nlohmann::json& list)
 
 } // namespace
 
-std::string note_applied(const nlohmann::json& before, const nlohmann::json& after, const std::string& why)
+std::string note_applied(const nlohmann::json& before, const nlohmann::json& after, const std::string& why, const nlohmann::json& ask)
 {
     nlohmann::json changes = nlohmann::json::array();
     for (const nlohmann::json& p : after.value("params", nlohmann::json::array()))
@@ -53,8 +53,16 @@ std::string note_applied(const nlohmann::json& before, const nlohmann::json& aft
     nlohmann::json&   list = all[key];
     if (!list.is_array())
         list = nlohmann::json::array();
-    const std::string date = boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time()).substr(0, 10);
-    list.insert(list.begin(), {{"date", date}, {"changes", changes}, {"why", why.substr(0, 200)}});
+    const std::string at   = boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time());
+    nlohmann::json    entry{{"date", at.substr(0, 10)}, {"changes", changes}, {"why", why.substr(0, 200)}};
+    if (ask.is_object()) {
+        entry["at"]      = at;
+        entry["outcome"] = "pending";
+        entry["asked"]   = 0;
+        entry["conv"]    = ask.value("conv", std::string()).substr(0, 40);
+        entry["defect"]  = ask.value("defect", std::string()).substr(0, 40);
+    }
+    list.insert(list.begin(), entry);
     if (list.size() > MAX_PER_MACHINE)
         list.erase(list.begin() + MAX_PER_MACHINE, list.end());
     // Trop de machines : on retire la moins récemment utilisée (jamais celle qu'on vient de noter).
@@ -90,6 +98,47 @@ nlohmann::json for_current()
     const std::string    key = machine_key(SettingsBridge::read_values());
     const auto           it  = all.find(key);
     return it != all.end() && it->is_array() ? *it : nlohmann::json::array();
+}
+
+nlohmann::json pending()
+{
+    const nlohmann::json all = load_all();
+    const std::string    key = machine_key(SettingsBridge::read_values());
+    const auto           it  = all.find(key);
+    if (it == all.end() || !it->is_array())
+        return nullptr;
+    for (const nlohmann::json& e : *it)
+        if (e.is_object() && e.value("outcome", std::string()) == "pending")
+            return {{"machine", key},
+                    {"at", e.value("at", std::string())},
+                    {"date", e.value("date", std::string())},
+                    {"why", e.value("why", std::string())},
+                    {"defect", e.value("defect", std::string())},
+                    {"conv", e.value("conv", std::string())},
+                    {"changes", e.value("changes", nlohmann::json::array())}};
+    return nullptr;
+}
+
+bool set_outcome(const std::string& machine, const std::string& at, const std::string& outcome)
+{
+    if (at.empty() || (outcome != "ok" && outcome != "bad" && outcome != "later"))
+        return false;
+    nlohmann::json all = load_all();
+    if (!all.contains(machine) || !all[machine].is_array())
+        return false;
+    for (nlohmann::json& e : all[machine]) {
+        if (!e.is_object() || e.value("at", std::string()) != at)
+            continue;
+        if (outcome == "later") {
+            const int asked = e.value("asked", 0) + 1;
+            e["asked"]      = asked;
+            if (asked >= 3)
+                e["outcome"] = "unknown";
+        } else
+            e["outcome"] = outcome;
+        return Store::write(file(), all);
+    }
+    return false;
 }
 
 }} // namespace Plyo::Memory

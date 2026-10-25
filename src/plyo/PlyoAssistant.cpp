@@ -110,7 +110,8 @@ void handle_page_message(const nlohmann::json& data)
             const nlohmann::json result = SettingsBridge::apply_changes(data.contains("changes") ? data["changes"] : nlohmann::json());
             if (result.value("ok", false))
                 SettingsBridge::set_memory_key(result.value("undo_id", 0),
-                                               Memory::note_applied(before, SettingsBridge::read_values(), data.value("why", std::string())));
+                                               Memory::note_applied(before, SettingsBridge::read_values(), data.value("why", std::string()),
+                                                                    data.contains("ask") ? data["ask"] : nlohmann::json()));
             send_result(result);
         } else if (type == "undo") {
             // `undo_id` : l'annulation d'une fiche précise ; sans, le dernier lot (menu « ⋯ »).
@@ -121,6 +122,11 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "ai_context")
             // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
             send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()}});
+        else if (type == "outcome_pending")
+            send({{"type", "outcome_pending"}, {"item", Memory::pending()}});
+        else if (type == "outcome_set")
+            send({{"type", "outcome_saved"},
+                  {"ok", Memory::set_outcome(data.value("machine", std::string()), data.value("at", std::string()), data.value("outcome", std::string()))}});
         else if (type == "preflight")
             // Après un découpage (ou sur demande) : mesures du plateau pour la vérification avant impression.
             send({{"type", "preflight"}, {"data", Preflight::measure()}});

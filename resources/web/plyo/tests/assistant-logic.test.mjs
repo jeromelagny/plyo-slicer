@@ -83,3 +83,31 @@ test('Entrée envoie, sauf avec Maj ou pendant une saisie composée', () => {
   assert.equal(L.isSendKey({ key: 'Enter', shiftKey: false, isComposing: false, keyCode: 229 }), false);
   assert.equal(L.isSendKey({ key: 'a', shiftKey: false, isComposing: false, keyCode: 65 }), false);
 });
+
+// ---------- « Ça a marché ? » ----------
+const pendingItem = {
+  machine: 'Bambu Lab A1 0.4 nozzle | Bambu PLA Basic', at: '2026-10-25T10:00:00', date: '2026-10-25', why: 'Fils d’araignée',
+  defect: 'stringing', conv: 'abc-123', changes: [{ id: 'retraction', before: 0.8, after: 1.2 }, { id: 'nozzle_temp', before: 220, after: 210 }]
+};
+
+test('outcomeDue : on demande au plus tôt 30 minutes après l’application', () => {
+  assert.equal(L.outcomeDue(pendingItem, new Date('2026-10-25T10:20:00')), false);
+  assert.equal(L.outcomeDue(pendingItem, new Date('2026-10-25T10:31:00')), true);
+  assert.equal(L.outcomeDue(null, new Date()), false);
+  assert.equal(L.outcomeDue({ ...pendingItem, at: 'abîmé' }, new Date()), false);
+});
+
+test('outcomeQuestion : rappelle le problème et les réglages changés, avec leurs libellés', () => {
+  const label = (id) => ({ retraction: { label: 'Longueur de rétraction', unit: 'mm' }, nozzle_temp: { label: 'Température de buse', unit: '°C' } })[id];
+  const q = L.outcomeQuestion(pendingItem, label);
+  assert.equal(q.title, 'Ça a marché ?');
+  assert.equal(q.text, 'Le 25/10, on a changé des réglages pour « Fils d’araignée ». Ta dernière impression avec ces réglages, ça a marché ?');
+  assert.deepEqual(q.changes, ['Longueur de rétraction : 0,8 → 1,2 mm', 'Température de buse : 220 → 210 °C']);
+});
+
+test('outcomePayload : seulement le défaut, les changements, les profils et le résultat', () => {
+  assert.deepEqual(L.outcomePayload(pendingItem, 'ok'), {
+    defect: 'stringing', changes: pendingItem.changes, printer: 'Bambu Lab A1 0.4 nozzle', filament: 'Bambu PLA Basic', outcome: 'ok'
+  });
+  assert.equal(L.outcomePayload({ ...pendingItem, defect: '' }, 'ok').defect, 'unknown');
+});

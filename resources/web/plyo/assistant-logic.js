@@ -97,7 +97,35 @@
     };
   }
 
-  var api = { conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  // « Ça a marché ? » : on ne demande qu'au moins 30 minutes après l'application des réglages.
+  var OUTCOME_DELAY_MS = 30 * 60 * 1000;
+  function outcomeDue(item, now) {
+    if (!item || !item.at) return false;
+    var at = new Date(item.at).getTime();
+    return !isNaN(at) && now.getTime() - at >= OUTCOME_DELAY_MS;
+  }
+
+  function frValue(v) { return typeof v === 'number' ? String(v).replace('.', ',') : String(v); }
+
+  // `labelOf(id)` → { label, unit } du réglage (lus dans le slicer), ou undefined.
+  function outcomeQuestion(item, labelOf) {
+    var changes = (item.changes || []).map(function (c) {
+      var p = labelOf(c.id) || { label: c.id, unit: '' };
+      return p.label + ' : ' + frValue(c.before) + ' → ' + frValue(c.after) + (p.unit ? ' ' + p.unit : '');
+    });
+    var day = shortDate(item.at || item.date);
+    var text = (day ? 'Le ' + day + ', on' : 'On') + ' a changé des réglages' + (item.why ? ' pour « ' + item.why + ' »' : '') +
+      '. Ta dernière impression avec ces réglages, ça a marché ?';
+    return { title: 'Ça a marché ?', text: text, changes: changes };
+  }
+
+  // Résultat partagé (si l'utilisateur l'a accepté) : rien d'autre que le défaut, les changements, les profils et le résultat.
+  function outcomePayload(item, outcome) {
+    var parts = String(item.machine || '').split(' | ');
+    return { defect: item.defect || 'unknown', changes: item.changes, printer: parts[0] || '', filament: parts[1] || '', outcome: outcome };
+  }
+
+  var api = { outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
