@@ -17,13 +17,14 @@ constexpr size_t MAX_MACHINES    = 50;
 // `ask` : {conv, defect} pour des réglages proposés par l'IA ; l'entrée attend alors le résultat (« Ça a marché ? »).
 std::string    note_applied(const nlohmann::json& before, const nlohmann::json& after, const std::string& why,
                             const nlohmann::json& ask = nullptr);
-// Annulation d'un lot : retire la dernière entrée de cette machine.
-void           forget(const std::string& machine_key);
+// Annulation d'un lot : retire la dernière entrée de cette machine. Renvoie la conversation qui l'avait
+// demandée ("" sinon), pour retirer aussi ces réglages du journal des pièces.
+std::string    forget(const std::string& machine_key);
 // [{date, changes: [{id, before, after}], why}] pour l'imprimante et le filament en cours, du plus récent au plus ancien.
 nlohmann::json for_current();
 
-// Dernière entrée de l'imprimante et du filament en cours qui attend son résultat :
-// {machine, at, date, why, defect, conv, changes}, ou null.
+// Entrées de l'imprimante et du filament en cours qui attendent leur résultat, de la plus récente à la plus
+// ancienne : [{machine, printer, filament, at, date, why, defect, conv, changes}].
 nlohmann::json pending();
 
 // Résultat déclaré pour l'entrée `at` de `machine` : "ok", "bad", ou "later" (redemander plus tard ; après

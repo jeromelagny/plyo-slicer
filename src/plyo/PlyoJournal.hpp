@@ -16,6 +16,8 @@ constexpr size_t MAX_THUMB_BYTES = 40 * 1024;
 void           record(const nlohmann::json& event);
 // Réglages de l'IA appliqués dans la conversation `conv` : notés sur sa dernière entrée, résultat attendu.
 void           set_changes(const std::string& conv, const nlohmann::json& changes);
+// Réglages annulés : la dernière entrée de `conv` n'a plus de réglages appliqués.
+void           clear_changes(const std::string& conv);
 // Résultat déclaré (« ok » ou « bad ») pour la dernière entrée de `conv` qui a des réglages.
 void           set_outcome(const std::string& conv, const std::string& outcome);
 // Toutes les entrées, de la plus récente à la plus ancienne.

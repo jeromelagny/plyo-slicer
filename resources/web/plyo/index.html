@@ -1687,11 +1687,13 @@
   // Des réglages proposés par l'IA ont été appliqués : au moins 30 minutes plus tard (au démarrage, puis toutes
   // les 3 heures), une carte demande le résultat. Il est gardé dans la mémoire de la machine, et partagé
   // anonymement seulement si l'utilisateur a coché la case (désactivée par défaut).
-  var outcomeAsked = {};   // entrées déjà montrées pendant cette session
+  var outcomeAsked = {};
+  var afterConvLoaded = null; // suite à donner une fois une conversation rouverte (réponse « Non »)   // entrées déjà montrées pendant cette session
   function askOutcome() { window.orca.postMessage({ type: 'outcome_pending' }); }
   setInterval(askOutcome, 3 * 60 * 60 * 1000);
-  function onOutcomePending(item) {
-    if (!item || outcomeAsked[item.at] || !Logic.outcomeDue(item, new Date())) return;
+  function onOutcomePending(items) {
+    var item = Logic.firstDueOutcome((items || []).filter(function (it) { return !outcomeAsked[it.at]; }), new Date());
+    if (!item) return;
     outcomeAsked[item.at] = true;
     renderOutcome(item);
   }
@@ -1721,15 +1723,20 @@
     function answer(outcome) {
       window.orca.postMessage({ type: 'outcome_set', machine: item.machine, at: item.at, conv: item.conv, outcome: outcome });
       slot.textContent = '';
+      if (outcome === 'later') delete outcomeAsked[item.at]; // redemandé au prochain passage (3 reports au plus)
       if (outcome !== 'later' && share.checked && session)
         apiFetch('/api/outcomes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Logic.outcomePayload(item, outcome)) }).catch(function () {});
       if (outcome === 'ok') noteLine('Super ! Je m’en souviendrai pour mes prochains conseils sur cette imprimante.', 'ok', 'check');
       if (outcome === 'bad') {
-        if (item.conv && (!conv || conv.id !== item.conv)) openConversation(item.conv);
-        noteLine('Dommage. Dis-moi ce que tu vois ou envoie une photo : je ne te reproposerai pas les mêmes réglages.', '', 'info');
-        var note = $('note');
-        note.value = 'Ça n’a pas marché : ';
-        note.focus();
+        var followUp = function () {
+          noteLine('Dommage. Dis-moi ce que tu vois ou envoie une photo : je ne te reproposerai pas les mêmes réglages.', '', 'info');
+          var note = $('note');
+          note.value = 'Ça n’a pas marché : ';
+          note.focus();
+        };
+        // La conversation se recharge sans attendre : le message de suite vient une fois qu'elle est affichée.
+        if (item.conv && (!conv || conv.id !== item.conv)) { afterConvLoaded = followUp; openConversation(item.conv); }
+        else followUp();
       }
     }
     var answers = el('div', 'answers');
@@ -1744,16 +1751,18 @@
   // ---------- Vérification avant impression ----------
   // Après chaque nouveau découpage, le slicer mesure le plateau ; preflight.js en déduit les risques. Une carte
   // n'apparaît que s'il y en a. Rien n'est envoyé à l'IA, sauf si l'utilisateur clique « En parler à l'assistant ».
-  var lastSliced = null;      // état du découpage au dernier signal (null : pas encore reçu)
+  var sliceSig = null;        // signature du dernier découpage vu (null : pas encore de signal)
   var preflightManual = false;
   var dismissedRisks = {};    // risques ignorés pendant cette session
   setInterval(function () { if (!tourTimer) window.orca.postMessage({ type: 'tour_signals' }); }, 2500);
   function watchSlice(signals) {
-    if (lastSliced === false && signals.sliced) window.orca.postMessage({ type: 'preflight' });
-    lastSliced = !!signals.sliced;
+    var r = Logic.newSlice(sliceSig, signals);
+    sliceSig = r.sig;
+    if (r.fire) window.orca.postMessage({ type: 'preflight' });
   }
   function checkPlate() {
     preflightManual = true;
+    setTimeout(function () { preflightManual = false; }, 5000); // sans réponse (erreur), le prochain contrôle redevient automatique
     window.orca.postMessage({ type: 'preflight' });
   }
   function onPreflight(data) {
@@ -1787,6 +1796,7 @@
     }
     risks.forEach(function (r) {
       var row = el('div', 'risk');
+      row.dataset.fix = JSON.stringify(r.fixes[0].changes || r.fixes[0].action);
       row.appendChild(el('p', '', r.text));
       var fixes = el('div', 'fixes');
       r.fixes.forEach(function (f, i) {
@@ -1795,7 +1805,9 @@
           if (f.action) return plateAction(f.action, function (ok) { if (ok) solved(row); else b.disabled = false; });
           pendingSheet = { kind: 'apply', onResult: function (ok, text) {
             noteLine(ok ? text + ' Découpe à nouveau la plaque pour en tenir compte.' : text, ok ? 'ok' : 'error', ok ? 'check' : 'alert');
-            if (ok) solved(row); else b.disabled = false;
+            if (!ok) { b.disabled = false; return; }
+            // Une même correction (la bordure) règle toutes les lignes qui la proposent.
+            box.querySelectorAll('.risk').forEach(function (other) { if (other.dataset.fix === row.dataset.fix || other === row) solved(other); });
           } };
           window.orca.postMessage({ type: 'apply', changes: f.changes, why: 'Vérification avant impression' });
         }, i === 0 ? 'btn sm' : 'btn sm ghost');
@@ -2030,7 +2042,8 @@
     function done(a) {
       finish();
       if (a.credits) setGauge(a.credits.gauge);
-      target.history.push({ role: 'user', text: (photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note });
+      // 2 000 caractères au plus : au-delà, l'API refuserait toutes les demandes suivantes de la conversation.
+      target.history.push({ role: 'user', text: ((photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note).slice(0, 2000) });
       target.history.push({ role: 'assistant', text: summaryForHistory(a) });
       target.history = target.history.slice(-MAX_HISTORY);
       var entry = record({ kind: 'answer', data: a, photoCount: photos.length, question: note, date: new Date().toISOString(), applied: false }, target);
@@ -2402,7 +2415,7 @@
     } else if (msg.type === 'journal') {
       fillJournal(msg.events || []);
     } else if (msg.type === 'outcome_pending') {
-      onOutcomePending(msg.item);
+      onOutcomePending(msg.items);
     } else if (msg.type === 'preflight') {
       onPreflight(msg.data);
     } else if (msg.type === 'plate_action') {
@@ -2415,6 +2428,7 @@
       if (!saveFailedShown) { saveFailedShown = true; noteLine('Cette conversation est devenue trop longue pour être gardée : commence-en une nouvelle depuis le menu « ⋯ ».', 'error', 'alert'); }
     } else if (msg.type === 'conv_loaded') {
       if (msg.conversation) restoreConversation(msg.id, msg.conversation);
+      if (afterConvLoaded) { var then = afterConvLoaded; afterConvLoaded = null; if (msg.conversation) then(); }
       else noteLine('Cette conversation n’a pas pu être ouverte.', 'error', 'alert');
     }
   });

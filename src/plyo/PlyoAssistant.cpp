@@ -123,13 +123,13 @@ void handle_page_message(const nlohmann::json& data)
             // `undo_id` : l'annulation d'une fiche précise ; sans, le dernier lot (menu « ⋯ »).
             const nlohmann::json result = SettingsBridge::undo_last(data.value("undo_id", 0));
             if (result.value("ok", false))
-                Memory::forget(result.value("memory_key", std::string()));
+                Journal::clear_changes(Memory::forget(result.value("memory_key", std::string())));
             send_result(result);
         } else if (type == "ai_context")
             // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
             send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()}});
         else if (type == "outcome_pending")
-            send({{"type", "outcome_pending"}, {"item", Memory::pending()}});
+            send({{"type", "outcome_pending"}, {"items", Memory::pending()}});
         else if (type == "outcome_set") {
             Journal::set_outcome(data.value("conv", std::string()), data.value("outcome", std::string()));
             send({{"type", "outcome_saved"},

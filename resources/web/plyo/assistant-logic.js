@@ -122,7 +122,21 @@
   // Résultat partagé (si l'utilisateur l'a accepté) : rien d'autre que le défaut, les changements, les profils et le résultat.
   function outcomePayload(item, outcome) {
     var parts = String(item.machine || '').split(' | ');
-    return { defect: item.defect || 'unknown', changes: item.changes, printer: parts[0] || '', filament: parts[1] || '', outcome: outcome };
+    return { defect: item.defect || 'unknown', changes: item.changes, printer: item.printer || parts[0] || '',
+      filament: item.filament || parts[1] || '', outcome: outcome };
+  }
+
+  // Plus récente des entrées en attente de résultat qui est due (une entrée toute fraîche ne masque pas les autres).
+  function firstDueOutcome(items, now) {
+    var due = (items || []).filter(function (it) { return outcomeDue(it, now); });
+    return due.length ? due[0] : null;
+  }
+
+  // Nouveau découpage : la signature du résultat (temps, poids, nombre de pièces) change. `prev` vaut null au
+  // premier signal (point de départ, rien à signaler) ; « none » quand la plaque n'est pas découpée.
+  function newSlice(prev, signals) {
+    var sig = signals && signals.sliced ? [signals.time_s, signals.weight_g, signals.objects].join('|') : 'none';
+    return { fire: prev !== null && sig !== 'none' && sig !== prev, sig: sig };
   }
 
   // Journal des pièces : une fiche par pièce (ou groupe de pièces de la plaque), la plus récente d'abord.
@@ -152,7 +166,7 @@
     return e.changes.map(function (c) { return { id: c.id, value: c.after }; });
   }
 
-  var api = { journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

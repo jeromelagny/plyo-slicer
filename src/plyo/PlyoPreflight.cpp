@@ -2,6 +2,7 @@
 #include "PlyoPlateActions.hpp"
 
 #include "libslic3r/Model.hpp"
+#include "libslic3r/ObjectID.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/PrintBase.hpp"
@@ -49,9 +50,10 @@ double contact_area(const Slic3r::ModelObject& object)
 }
 
 // Pièces pour lesquelles le dernier découpage a signalé des parties dans le vide (supports désactivés).
-std::set<const Slic3r::ModelObject*> needing_support(Slic3r::GUI::Plater& plater)
+// Le découpage travaille sur sa propre copie du modèle : on compare les identifiants, que la copie conserve.
+std::set<Slic3r::ObjectID> needing_support(Slic3r::GUI::Plater& plater)
 {
-    std::set<const Slic3r::ModelObject*> out;
+    std::set<Slic3r::ObjectID> out;
     Slic3r::GUI::PartPlate*              plate = plater.get_partplate_list().get_curr_plate();
     if (plate == nullptr || !plate->is_slice_result_valid())
         return out;
@@ -59,7 +61,7 @@ std::set<const Slic3r::ModelObject*> needing_support(Slic3r::GUI::Plater& plater
         const auto state = po->step_state_with_warnings(Slic3r::posSupportMaterial);
         for (const auto& w : state.warnings)
             if (w.current && w.message_id == Slic3r::PrintStateBase::SlicingNeedSupportOn)
-                out.insert(po->model_object());
+                out.insert(po->model_object()->id());
     }
     return out;
 }
@@ -80,7 +82,11 @@ nlohmann::json measure()
     const auto           floating = needing_support(*plater);
     const Slic3r::Vec3d  bed      = PlateActions::bed_size();
     nlohmann::json       objects  = nlohmann::json::array();
-    for (const Slic3r::ModelObject* object : plater->model().objects) {
+    // Seulement la plaque en cours : c'est elle qui est découpée, et que corrigent « Orienter » et « Réduire ».
+    Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
+    if (plate == nullptr)
+        return nullptr;
+    for (const Slic3r::ModelObject* object : plate->get_objects_on_this_plate()) {
         if (objects.size() >= 50)
             break;
         if (object->instances.empty())
@@ -90,10 +96,9 @@ nlohmann::json measure()
                            {"height", std::round(size.z() * 10) / 10},
                            {"foot", {std::round(size.x() * 10) / 10, std::round(size.y() * 10) / 10}},
                            {"contact_mm2", std::round(contact_area(*object))},
-                           {"needs_support", floating.count(object) > 0},
+                           {"needs_support", floating.count(object->id()) > 0},
                            {"fits", PlateActions::fits(size, bed)}});
     }
-    Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
     return {{"settings", settings}, {"objects", objects}, {"sliced", plate != nullptr && plate->is_slice_result_valid()}};
 }
 

@@ -75,6 +75,19 @@ void set_changes(const std::string& conv, const nlohmann::json& changes)
     Store::write(file(), all);
 }
 
+void clear_changes(const std::string& conv)
+{
+    if (conv.empty())
+        return;
+    nlohmann::json  all = load();
+    nlohmann::json* e   = latest(all, conv, [](const nlohmann::json& x) { return x.contains("changes") && x["changes"].is_array() && !x["changes"].empty(); });
+    if (e == nullptr)
+        return;
+    (*e)["changes"] = nlohmann::json::array();
+    (*e)["outcome"] = "";
+    Store::write(file(), all);
+}
+
 void set_outcome(const std::string& conv, const std::string& outcome)
 {
     if (conv.empty() || (outcome != "ok" && outcome != "bad"))

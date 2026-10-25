@@ -79,17 +79,20 @@ std::string note_applied(const nlohmann::json& before, const nlohmann::json& aft
     return key;
 }
 
-void forget(const std::string& machine_key)
+std::string forget(const std::string& machine_key)
 {
     if (machine_key.empty())
-        return;
+        return std::string();
     nlohmann::json all = load_all();
     if (!all.contains(machine_key) || !all[machine_key].is_array() || all[machine_key].empty())
-        return;
+        return std::string();
+    const nlohmann::json& first = all[machine_key][0];
+    const std::string     conv  = first.is_object() && first.contains("conv") && first["conv"].is_string() ? first["conv"].get<std::string>() : std::string();
     all[machine_key].erase(all[machine_key].begin());
     if (all[machine_key].empty())
         all.erase(machine_key);
     Store::write(file(), all);
+    return conv;
 }
 
 nlohmann::json for_current()
@@ -102,21 +105,26 @@ nlohmann::json for_current()
 
 nlohmann::json pending()
 {
-    const nlohmann::json all = load_all();
-    const std::string    key = machine_key(SettingsBridge::read_values());
-    const auto           it  = all.find(key);
+    const nlohmann::json all    = load_all();
+    const nlohmann::json values = SettingsBridge::read_values();
+    const std::string    key    = machine_key(values);
+    const nlohmann::json ctx    = values.value("context", nlohmann::json::object());
+    nlohmann::json       out    = nlohmann::json::array();
+    const auto           it     = all.find(key);
     if (it == all.end() || !it->is_array())
-        return nullptr;
+        return out;
     for (const nlohmann::json& e : *it)
         if (e.is_object() && e.value("outcome", std::string()) == "pending")
-            return {{"machine", key},
+            out.push_back({{"machine", key},
+                    {"printer", ctx.value("printer", std::string())},
+                    {"filament", ctx.value("filament", std::string())},
                     {"at", e.value("at", std::string())},
                     {"date", e.value("date", std::string())},
                     {"why", e.value("why", std::string())},
                     {"defect", e.value("defect", std::string())},
                     {"conv", e.value("conv", std::string())},
-                    {"changes", e.value("changes", nlohmann::json::array())}};
-    return nullptr;
+                    {"changes", e.value("changes", nlohmann::json::array())}});
+    return out;
 }
 
 bool set_outcome(const std::string& machine, const std::string& at, const std::string& outcome)

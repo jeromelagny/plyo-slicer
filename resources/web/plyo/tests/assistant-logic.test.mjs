@@ -149,3 +149,32 @@ test('reapplyChanges : jamais pour des réglages qui n’ont pas réglé le prob
   const e = ev({ changes: [{ id: 'retraction', before: 0.8, after: 1.2 }], outcome: 'bad' });
   assert.equal(L.reapplyChanges(e, { printer: 'A1', filament: 'PLA' }), null);
 });
+
+// ---------- Corrections de la relecture ----------
+test('firstDueOutcome : la plus récente des entrées en attente qui est due, pas seulement la toute dernière', () => {
+  const now = new Date('2026-10-25T12:00:00');
+  const fresh = { ...pendingItem, at: '2026-10-25T11:50:00' };
+  const old = { ...pendingItem, at: '2026-10-24T09:00:00' };
+  assert.equal(L.firstDueOutcome([fresh, old], now), old);
+  assert.equal(L.firstDueOutcome([fresh], now), null);
+  assert.equal(L.firstDueOutcome(null, now), null);
+});
+
+test('newSlice : un nouveau découpage se reconnaît à son résultat, même sans passage par « non découpé »', () => {
+  let r = L.newSlice(null, { sliced: true, time_s: 100, weight_g: 5, objects: 1 });
+  assert.equal(r.fire, false); // premier signal : simple point de départ
+  r = L.newSlice(r.sig, { sliced: true, time_s: 100, weight_g: 5, objects: 1 });
+  assert.equal(r.fire, false);
+  r = L.newSlice(r.sig, { sliced: true, time_s: 140, weight_g: 6, objects: 1 });
+  assert.equal(r.fire, true);
+  r = L.newSlice(r.sig, { sliced: false, time_s: 0, weight_g: 0, objects: 1 });
+  assert.equal(r.fire, false);
+  r = L.newSlice(r.sig, { sliced: true, time_s: 140, weight_g: 6, objects: 1 });
+  assert.equal(r.fire, true); // re-découpé après une modification
+});
+
+test('outcomePayload : imprimante et filament séparés quand le slicer les donne', () => {
+  const p = L.outcomePayload({ ...pendingItem, machine: 'A | B | C', printer: 'A | B', filament: 'C' }, 'bad');
+  assert.equal(p.printer, 'A | B');
+  assert.equal(p.filament, 'C');
+});
