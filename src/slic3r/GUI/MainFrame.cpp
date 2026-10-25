@@ -2292,6 +2292,8 @@ wxBoxSizer* MainFrame::create_side_tools()
     m_slice_option_btn->Enable();
     m_print_option_btn->Enable();
     //sizer->Add(FromDIP(15), 0, 0, 0, 0);
+    sizer->Add(Plyo::create_topbar_button(this), 0, wxALIGN_CENTER_VERTICAL); // PLYO: bouton « Assistant » (src/plyo/)
+    sizer->Add(FromDIP(15), 0, 0, 0, 0);                                        // PLYO: espace avant « Découper »
     sizer->Add(slice_panel);
     sizer->Add(FromDIP(15), 0, 0, 0, 0);
     sizer->Add(print_panel);
@@ -2905,7 +2907,7 @@ wxMenu* MainFrame::generate_help_menu()
 
     // About
 #ifndef __APPLE__
-    wxString about_title = wxString::Format(_L("&About %s"), SLIC3R_APP_FULL_NAME);
+    wxString about_title = wxString::Format(_L("&About %s"), "Plyo Slicer"); // PLYO: nom de l'application
     append_menu_item(helpMenu, wxID_ANY, about_title, about_title,
             [](wxCommandEvent&) { Slic3r::GUI::about(); });
 #endif
@@ -3541,7 +3543,7 @@ void MainFrame::init_menubar_as_editor()
 #endif
 
 #ifdef __APPLE__
-    wxString about_title = wxString::Format(_L("&About %s"), SLIC3R_APP_FULL_NAME);
+    wxString about_title = wxString::Format(_L("&About %s"), "Plyo Slicer"); // PLYO: nom de l'application
     append_menu_item(
         parent_menu, wxID_ANY, _L(about_title), "",
         [](wxCommandEvent &) { Slic3r::GUI::about();},
@@ -3880,7 +3882,7 @@ void MainFrame::init_menubar_as_gcodeviewer()
             [](wxCommandEvent&) { start_new_slicer(); }, "", nullptr,
             []() {return true; }, this);
         fileMenu->AppendSeparator();
-        append_menu_item(fileMenu, wxID_EXIT, _L("&Quit"), wxString::Format(_L("Quit %s"), SLIC3R_APP_NAME),
+        append_menu_item(fileMenu, wxID_EXIT, _L("&Quit"), wxString::Format(_L("Quit %s"), "Plyo Slicer") /* PLYO: nom de l'application */,
             [this](wxCommandEvent&) { Close(false); });
     }
 

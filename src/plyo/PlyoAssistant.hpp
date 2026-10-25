@@ -1,5 +1,7 @@
 #pragma once
 
+class wxWindow;
+
 namespace Slic3r { namespace GUI {
 class Plater;
 }} // namespace Slic3r::GUI
@@ -12,6 +14,10 @@ namespace Plyo {
 void toggle_assistant(Slic3r::GUI::Plater* plater);
 
 bool is_assistant_shown();
+
+// Bouton « Assistant » de la barre du haut d'Orca (à gauche de « Découper ») : ouvre ou ferme le panneau,
+// et reste en surbrillance tant que le panneau est ouvert. `parent` : la fenêtre principale.
+wxWindow* create_topbar_button(wxWindow* parent);
 
 // Appelé par MainFrame::on_config_changed() à chaque changement de configuration
 // (saisie manuelle, changement de préréglage, modification par Plyo).

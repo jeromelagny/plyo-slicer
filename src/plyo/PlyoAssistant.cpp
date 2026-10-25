@@ -20,12 +20,16 @@
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/GUI/Widgets/SideButton.hpp"
+#include "slic3r/GUI/Widgets/StateColor.hpp"
 
 #include <boost/filesystem/path.hpp>
 #include <boost/log/trivial.hpp>
 #include <nlohmann/json.hpp>
 
 #include <wx/gdicmn.h>
+#include <wx/panel.h>
+#include <wx/sizer.h>
 #include <wx/weakref.h>
 
 #include <exception>
@@ -45,6 +49,27 @@ constexpr const char* PANE_NAME = "plyo:assistant";
 // Le panneau est détruit par Orca quand on le ferme ; wxWeakRef repasse alors à nullptr tout seul.
 wxWeakRef<DockPanel> s_panel;
 bool                 s_refresh_pending = false;
+wxWeakRef<SideButton> s_topbar_button;
+
+// Bouton de la barre du haut : plein quand le panneau est ouvert, cerné quand il est fermé.
+void refresh_topbar_button()
+{
+    if (!s_topbar_button)
+        return;
+    const wxColour bar     = StateColor::darkModeColorFor(wxColour("#3B4446"));
+    const wxColour teal    = wxColour(0, 150, 136);
+    const wxColour hovered = wxColour(38, 166, 154);
+    StateColor     bg;
+    bg.append(wxColour(0, 137, 123), StateColor::Pressed);
+    bg.append(hovered, StateColor::Hovered);
+    bg.append(s_panel ? teal : bar, StateColor::Normal);
+    StateColor border;
+    border.append(hovered, StateColor::Hovered);
+    border.append(teal, StateColor::Normal);
+    s_topbar_button->SetBackgroundColor(bg);
+    s_topbar_button->SetBorderColor(border);
+    s_topbar_button->Refresh();
+}
 
 std::string read_resource(const std::string& name)
 {
@@ -292,20 +317,48 @@ void toggle_assistant(Plater* plater)
     if (plater == nullptr)
         return;
 
-    // Fermé par l'utilisateur (pas par la fermeture d'Orca) : il ne se rouvre plus tout seul au lancement.
-    FirstSteps::set_state({{"panel_closed", false}});
     FirstSteps::set_focus_listener([](const nlohmann::json& focus) {
         nlohmann::json message = focus;
         message["type"]        = "focus_setting";
         send(message);
     });
-    auto* panel = new DockPanel(plater, load_page(), on_page_message, [] { FirstSteps::set_state({{"panel_closed", true}}); }, nullptr);
+    auto* panel = new DockPanel(plater, load_page(), on_page_message, [] {}, [] {
+        // Panneau détruit (fermé par sa croix ou par le bouton) : le bouton du haut repasse à « fermé ».
+        if (s_topbar_button)
+            s_topbar_button->CallAfter([] { refresh_topbar_button(); });
+    });
     s_panel           = panel;
     s_refresh_pending = false; // un rafraîchissement en attente meurt avec l'ancien panneau
     plater->add_dock_pane(panel, PANE_NAME, "Assistant Plyo", "right", wxSize(340, 600), [panel]() { panel->fire_close(); });
+    refresh_topbar_button();
 }
 
 bool is_assistant_shown() { return s_panel; }
+
+wxWindow* create_topbar_button(wxWindow* parent)
+{
+    auto* holder = new wxPanel(parent, wxID_ANY);
+    holder->SetBackgroundColour(StateColor::darkModeColorFor(wxColour("#3B4446")));
+    auto* button = new SideButton(holder, "Assistant", "");
+    button->SetTextLayout(SideButton::EHorizontalOrientation::HO_Center, holder->FromDIP(15));
+    button->SetCornerRadius(holder->FromDIP(12));
+    button->SetExtraSize(wxSize(holder->FromDIP(38), holder->FromDIP(10)));
+    button->SetMinSize(wxSize(-1, holder->FromDIP(24)));
+    button->SetToolTip("Ouvrir ou fermer l'assistant Plyo");
+    button->Bind(wxEVT_BUTTON, [](wxCommandEvent&) {
+        // Le panneau vit dans le plateau : depuis un autre onglet, on revient d'abord sur « Préparer ».
+        auto* frame = Slic3r::GUI::wxGetApp().mainframe;
+        if (!s_panel && frame != nullptr && !frame->is_prepare_or_preview_tab())
+            frame->select_tab(TAB_ID_PREPARE);
+        toggle_assistant(Slic3r::GUI::wxGetApp().plater());
+    });
+    auto* sizer = new wxBoxSizer(wxHORIZONTAL);
+    sizer->Add(button, 0, wxALIGN_CENTER_VERTICAL);
+    holder->SetSizer(sizer);
+    s_topbar_button = button;
+    refresh_topbar_button();
+    return holder;
+}
 
 void on_config_changed()
 {

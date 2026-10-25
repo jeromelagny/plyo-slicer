@@ -36,7 +36,7 @@ namespace {
 
 fs::path state_path() { return fs::path(Slic3r::data_dir()) / "plyo" / "premiers-pas.json"; }
 
-nlohmann::json defaults() { return {{"seen", false}, {"level", nullptr}, {"panel_closed", false}, {"tour_step", nullptr}, {"greeted", false}, {"share_outcomes", false}}; }
+nlohmann::json defaults() { return {{"seen", false}, {"level", nullptr}, {"tour_step", nullptr}, {"greeted", false}, {"share_outcomes", false}}; }
 
 nlohmann::json load_state()
 {
@@ -78,10 +78,11 @@ Slic3r::GUI::GuideFrame* visible_guide()
     return nullptr;
 }
 
-void open_panel_unless_closed()
+// Le panneau s'ouvre à chaque lancement ; le bouton « Assistant » de la barre du haut le ferme d'un clic.
+void open_panel_at_startup()
 {
     auto* frame = wxGetApp().mainframe;
-    if (frame != nullptr && !load_state().value("panel_closed", false) && !is_assistant_shown())
+    if (frame != nullptr && !is_assistant_shown())
         toggle_assistant(wxGetApp().plater());
 }
 
@@ -206,7 +207,7 @@ private:
     {
         if (!m_done) {
             m_done = true;
-            wxGetApp().CallAfter([] { open_panel_unless_closed(); });
+            wxGetApp().CallAfter([] { open_panel_at_startup(); });
         }
         if (m_tabs_bound)
             Stop();
