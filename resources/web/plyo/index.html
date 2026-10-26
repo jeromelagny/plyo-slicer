@@ -259,7 +259,7 @@
     <button class="linked hidden push" id="phone-linked" type="button" title="Téléphone relié à cette conversation : clique pour revoir le QR code"></button>
     <button class="gauge hidden push" id="gauge" type="button" title="Ton utilisation ce mois-ci : clique pour le détail"><span class="bar"><i id="gauge-fill"></i></span><span id="gauge-label">…</span></button>
     <button class="btn sm hidden push" id="btn-login" type="button" title="Connexion par lien envoyé par e-mail, sans mot de passe">Me connecter</button>
-    <button class="icon-btn" id="btn-more" type="button" title="Plus d'options" aria-haspopup="menu" aria-label="Plus d'options"></button>
+    <button class="icon-btn" id="btn-more" type="button" title="Plus d’options" aria-haspopup="menu" aria-label="Plus d’options"></button>
     <div class="menu hidden" id="menu" role="menu">
       <button type="button" id="m-new" role="menuitem">Nouvelle conversation</button>
       <button type="button" id="m-convs" role="menuitem">Mes conversations</button>
@@ -268,7 +268,7 @@
       <hr>
       <button type="button" id="m-check" role="menuitem">Vérifier ma plaque avant d’imprimer</button>
       <button type="button" id="m-undo" role="menuitem" disabled>Annuler les derniers réglages appliqués</button>
-      <button type="button" id="m-values" role="menuitem">Voir les réglages lus par l'assistant</button>
+      <button type="button" id="m-values" role="menuitem">Voir les réglages lus par l’assistant</button>
       <button type="button" id="m-tour" role="menuitem">Refaire la visite « Ma première impression »</button>
       <button type="button" id="m-help" role="menuitem">Aide</button>
       <hr id="m-account-sep">
@@ -298,7 +298,7 @@
         </button>
         <button class="action" type="button" data-action="files">
           <span class="badge" data-icon="camera"></span>
-          <span><b>Ajouter une photo depuis l'ordinateur</b><span class="sub">JPEG ou PNG, une ou plusieurs</span></span>
+          <span><b>Ajouter une photo depuis l’ordinateur</b><span class="sub">JPEG ou PNG, une ou plusieurs</span></span>
         </button>
         <button class="action" type="button" data-action="model">
           <span class="badge" data-icon="cube"></span>
@@ -365,7 +365,7 @@
   var NOTICE_KEY = 'plyo.gaugeNotice';
 
   var $ = function (id) { return document.getElementById(id); };
-  var Logic = window.PlyoLogic, FS = window.PlyoFirstSteps;
+  var Logic = window.PlyoLogic, FS = window.PlyoFirstSteps, fr = Logic.fr;
   var bodyEl = $('body'), thread = $('thread'), home = $('home');
   var noteInput = $('note'), sendButton = $('btn-send'), fileInput = $('file-input'), attachedEl = $('attached');
   var menu = $('menu');
@@ -424,19 +424,31 @@
   $('btn-send').appendChild(icon('send', 16));
   $('focus-close').appendChild(icon('x', 12));
   $('phone-linked').appendChild(icon('phone', 12));
-  $('phone-linked').appendChild(document.createTextNode('Relié'));
+  $('phone-linked').appendChild(txt('Relié'));
+  // Textes écrits dans le HTML : même typographie que ceux créés en JS.
+  (function frStatic() {
+    var walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function (n) {
+      return /^(SCRIPT|STYLE|TEXTAREA)$/.test(n.parentNode.nodeName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    } });
+    while (walk.nextNode()) walk.currentNode.nodeValue = fr(walk.currentNode.nodeValue);
+    document.querySelectorAll('[title],[placeholder],[aria-label]').forEach(function (e) {
+      ['title', 'placeholder', 'aria-label'].forEach(function (a) { if (e.hasAttribute(a)) e.setAttribute(a, fr(e.getAttribute(a))); });
+    });
+  })();
 
+  // Tout texte affiché passe par fr() : espaces insécables et apostrophes typographiques.
+  function txt(text) { return document.createTextNode(fr(text)); }
   function el(tag, className, text) {
     var e = document.createElement(tag);
     if (className) e.className = className;
-    if (text !== undefined && text !== null) e.textContent = text;
+    if (text !== undefined && text !== null) e.textContent = fr(text);
     return e;
   }
   function button(label, onClick, className, iconName) {
     var b = el('button', className || 'btn');
     b.type = 'button';
     if (iconName) b.appendChild(icon(iconName, 14));
-    b.appendChild(document.createTextNode(label));
+    b.appendChild(txt(label));
     if (onClick) b.addEventListener('click', onClick);
     return b;
   }
@@ -444,7 +456,7 @@
   function whoLine(suffix) {
     var who = el('div', 'who');
     who.appendChild(el('i', '', 'P'));
-    who.appendChild(document.createTextNode('Assistant' + (suffix ? ' · ' + suffix : '')));
+    who.appendChild(txt('Assistant' + (suffix ? ' · ' + suffix : '')));
     return who;
   }
   function alertBox(kind, text, iconName) {
@@ -464,10 +476,10 @@
       parts.forEach(function (part) {
         if (part.t === 'bold') parent.appendChild(el('strong', '', part.v));
         else if (part.t === 'ui') parent.appendChild(el('span', 'ui', part.v));
-        else parent.appendChild(document.createTextNode(part.v));
+        else parent.appendChild(txt(part.v));
       });
     }
-    window.PlyoRichText.parseRich(text).forEach(function (block) {
+    window.PlyoRichText.parseRich(fr(text)).forEach(function (block) {
       if (block.type === 'p') {
         var p = el('p');
         block.lines.forEach(function (line, i) { if (i) p.appendChild(el('br')); fill(p, line); });
@@ -485,7 +497,7 @@
     showConversation();
     var line = el('div', 'note-line' + (tone ? ' ' + tone : ''));
     if (iconName) line.appendChild(icon(iconName, 13));
-    line.appendChild(document.createTextNode(text));
+    line.appendChild(txt(text));
     thread.appendChild(line);
     scrollDown();
     return line;
@@ -494,7 +506,7 @@
   // window.orca est fourni par OrcaSlicer (pont JS <-> C++). Absent dans un navigateur.
   if (!window.orca) {
     home.classList.remove('hidden');
-    $('hello-text').textContent = 'Ouvre ce panneau depuis Plyo Slicer : il a besoin du slicer pour fonctionner.';
+    $('hello-text').textContent = fr('Ouvre ce panneau depuis Plyo Slicer : il a besoin du slicer pour fonctionner.');
     return;
   }
 
@@ -624,7 +636,7 @@
     var v = Logic.gaugeView(g);
     if (!v) return;
     lastGauge = g;
-    $('gauge-label').textContent = v.label;
+    $('gauge-label').textContent = fr(v.label);
     $('gauge').title = 'Utilisé ce mois-ci : ' + v.label + '. Se recharge ' + v.resets + '. Clique pour le détail.';
     paintGauge($('gauge'), $('gauge-fill'), v);
     // Après la réponse qui a rempli la jauge, pas avant : la réponse s'affiche dans la même tâche.
@@ -654,10 +666,10 @@
     return apiFetch('/api/me', { method: 'GET' })
       .then(function (r) {
         if (r.status === 401) { logout('Ta session a expiré : reconnecte-toi pour continuer.'); return false; }
-        if (r.status === 503) { $('gauge-label').textContent = 'Indisponible'; return false; }
-        return r.ok ? r.json().then(function (me) { setGauge(me.gauge); $('m-email').textContent = me.email; return true; }) : false;
+        if (r.status === 503) { $('gauge-label').textContent = fr('Indisponible'); return false; }
+        return r.ok ? r.json().then(function (me) { setGauge(me.gauge); $('m-email').textContent = fr(me.email); return true; }) : false;
       })
-      .catch(function () { $('gauge-label').textContent = 'Hors ligne'; return false; });
+      .catch(function () { $('gauge-label').textContent = fr('Hors ligne'); return false; });
   }
 
   function logout(message) {
@@ -686,7 +698,7 @@
   // ---------- Volets ----------
   function openDrawer(title, fill) {
     menu.classList.add('hidden');
-    $('drawer-title').textContent = title;
+    $('drawer-title').textContent = fr(title);
     var body = $('drawer-body');
     body.textContent = '';
     fill(body);
@@ -848,8 +860,8 @@
       function show(g) {
         var v = Logic.gaugeView(g);
         if (!v) return;
-        pct.textContent = v.label + ' utilisés ce mois-ci';
-        when.textContent = 'Formule ' + v.plan + ' · se recharge ' + v.resets;
+        pct.textContent = fr(v.label + ' utilisés ce mois-ci');
+        when.textContent = fr('Formule ' + v.plan + ' · se recharge ' + v.resets);
         paintGauge(big, fill, v);
         reserve.classList.toggle('hidden', !(g.reserve > 0));
         plans.textContent = '';
@@ -889,7 +901,7 @@
         .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
         .then(function (data) { loading.remove(); setGauge(data.gauge); show(data.gauge); })
         .catch(function () {
-          loading.textContent = 'Le détail n’a pas pu être chargé. Vérifie ta connexion, puis rouvre ce volet.';
+          loading.textContent = fr('Le détail n’a pas pu être chargé. Vérifie ta connexion, puis rouvre ce volet.');
           if (!loading.parentNode) body.appendChild(loading);
         });
     });
@@ -1074,7 +1086,7 @@
   function commandLine(text, tone, iconName) {
     var line = el('div', 'note-line start' + (tone ? ' ' + tone : ''));
     line.appendChild(icon(iconName, 13));
-    line.appendChild(document.createTextNode(text));
+    line.appendChild(txt(text));
     return line;
   }
   function renderCommands(entry, archived) {
@@ -1176,7 +1188,7 @@
     if (!said.warn) {
       var ok = el('div', 'note-line ok start');
       ok.appendChild(icon('check', 13));
-      ok.appendChild(document.createTextNode(said.text));
+      ok.appendChild(txt(said.text));
       box.appendChild(ok);
       if (!archived) box.appendChild(el('div', 'row-acts')).appendChild(adviceButton());
     } else {
@@ -1404,7 +1416,7 @@
     scrollDown();
 
     function ready(note) {
-      status.textContent = note;
+      status.textContent = fr(note);
       apply.disabled = false;
       scrollDown();
     }
@@ -1416,9 +1428,9 @@
       ignore.disabled = true;
       fail.classList.add('hidden');
       pendingSheet = { kind: 'apply', onResult: function (ok, text) {
-        if (!ok) { apply.disabled = false; ignore.disabled = false; fail.textContent = text; fail.classList.remove('hidden'); return; }
+        if (!ok) { apply.disabled = false; ignore.disabled = false; fail.textContent = fr(text); fail.classList.remove('hidden'); return; }
         Object.keys(rows).forEach(function (id) { if (!rows[id].check.checked) rows[id].row.remove(); else rows[id].check.replaceWith(markCell()); });
-        sheet.querySelector('header').textContent = 'Appliqué sur ton imprimante';
+        sheet.querySelector('header').textContent = fr('Appliqué sur ton imprimante');
         footer.textContent = '';
         footer.appendChild(doneLabel('Appliqué'));
         var undo = button('Annuler', function () {
@@ -1470,7 +1482,7 @@
   }
 
   function markCell() { var m = el('span', 'mark'); m.appendChild(icon('check', 14)); return m; }
-  function doneLabel(text, iconName) { var d = el('span', 'done'); d.appendChild(icon(iconName || 'check', 13)); d.appendChild(document.createTextNode(text)); return d; }
+  function doneLabel(text, iconName) { var d = el('span', 'done'); d.appendChild(icon(iconName || 'check', 13)); d.appendChild(txt(text)); return d; }
 
   // ---------- Calibration guidée par photo ----------
   var CALIB = {
@@ -1548,7 +1560,7 @@
       if (!choice) return;
       action.classList.remove('hidden');
       action.disabled = false;
-      action.textContent = msg.test === 'flow' && msg.pass === 1 ? 'Lancer la passe fine' : 'Enregistrer pour ce filament sur cette imprimante';
+      action.textContent = fr(msg.test === 'flow' && msg.pass === 1 ? 'Lancer la passe fine' : 'Enregistrer pour ce filament sur cette imprimante');
     }
 
     function setPhotoButtons(enabled) { photoBtn.disabled = !enabled; phoneBtn.disabled = !enabled; }
@@ -1558,7 +1570,7 @@
       card.analyzing = true;
       card.awaiting = false;
       setPhotoButtons(false);
-      status.textContent = 'L’assistant regarde ta photo…';
+      status.textContent = fr('L’assistant regarde ta photo…');
       scrollDown();
       var body = {
         locale: (lastValues && lastValues.locale) || 'fr',
@@ -1570,7 +1582,7 @@
         printer: lastValues && lastValues.context ? lastValues.context.printer : undefined
       };
       if (!session) {
-        status.textContent = 'Connecte-toi pour que l’assistant lise la photo, ou choisis toi-même le meilleur.';
+        status.textContent = fr('Connecte-toi pour que l’assistant lise la photo, ou choisis toi-même le meilleur.');
         card.awaiting = true; card.analyzing = false; setPhotoButtons(true);
         requireLogin('Pour lire la photo de ton test, je l’envoie à l’IA.', function () { analyze(photos); });
         return;
@@ -1583,13 +1595,13 @@
           if (calibCard !== card) return;
           if (!r.ok) {
             if (r.data.error === 'insufficient_credits') setGauge(r.data.gauge, true);
-            status.textContent = Logic.errorView(r.data.error).text + ' Tu peux aussi choisir toi-même le meilleur.';
+            status.textContent = fr(Logic.errorView(r.data.error).text + ' Tu peux aussi choisir toi-même le meilleur.');
             card.awaiting = true;
             return;
           }
           if (r.data.credits) setGauge(r.data.credits.gauge);
           if (r.data.status !== 'ok') {
-            status.textContent = r.data.retake_advice;
+            status.textContent = fr(r.data.retake_advice);
             card.awaiting = true;
             return;
           }
@@ -1599,11 +1611,11 @@
           choice = win.s;
           status.textContent = '';
           status.appendChild(el('strong', '', 'Le meilleur : ' + win.s.label + (CONFIDENCE[r.data.confidence] ? ' · ' + CONFIDENCE[r.data.confidence] : '') + '. '));
-          status.appendChild(document.createTextNode(r.data.explanation + ' Tu as la pièce en main : choisis-en un autre si tu n’es pas d’accord.'));
+          status.appendChild(txt(r.data.explanation + ' Tu as la pièce en main : choisis-en un autre si tu n’es pas d’accord.'));
           updateActions();
           scrollDown();
         })
-        .catch(function () { card.analyzing = false; setPhotoButtons(true); if (calibCard === card) { status.textContent = Logic.errorView('network').text + ' Tu peux aussi choisir toi-même le meilleur.'; card.awaiting = true; } });
+        .catch(function () { card.analyzing = false; setPhotoButtons(true); if (calibCard === card) { status.textContent = fr(Logic.errorView('network').text + ' Tu peux aussi choisir toi-même le meilleur.'); card.awaiting = true; } });
     }
     card.receivePhotos = analyze;
 
@@ -1627,12 +1639,12 @@
     action.addEventListener('click', function () {
       action.disabled = true;
       if (msg.test === 'flow' && msg.pass === 1) {
-        pendingSheet = { kind: 'calib', onResult: function (ok, t) { if (!ok) { action.disabled = false; status.textContent = t; } } };
+        pendingSheet = { kind: 'calib', onResult: function (ok, t) { if (!ok) { action.disabled = false; status.textContent = fr(t); } } };
         window.orca.postMessage({ type: 'calib_start', test: 'flow', pass: 2, base_value: choice.value });
         return;
       }
       pendingSheet = { kind: 'calib_save', onResult: function (ok, t) {
-        if (!ok) { action.disabled = false; status.textContent = t; return; }
+        if (!ok) { action.disabled = false; status.textContent = fr(t); return; }
         record({ kind: 'note', text: info.name + ' : ' + t, tone: 'ok', icon: 'check' });
         footer.textContent = '';
         footer.appendChild(doneLabel(t));
@@ -1712,7 +1724,7 @@
     var acts = el('div', 'row-acts');
     var where = el('div', 'where');
     function next() { setTourStep(FS.TOUR_STEPS[n] || null); }
-    function tell(iconName, text) { where.textContent = ''; where.appendChild(icon(iconName, 14)); where.appendChild(document.createTextNode(text)); }
+    function tell(iconName, text) { where.textContent = ''; where.appendChild(icon(iconName, 14)); where.appendChild(txt(text)); }
     if (step === 'model') {
       box.appendChild(el('h3', '', 'Le modèle à imprimer'));
       box.appendChild(el('p', '', 'On commence par un petit bateau : c’est le test classique, rapide, et parfait pour une première fois.'));
@@ -1735,7 +1747,7 @@
     } else if (step === 'print') {
       box.appendChild(el('h3', '', 'Imprimer'));
       var summary = printSummary();
-      if (summary) { var s = el('p', 'done'); s.appendChild(icon('check', 13)); s.appendChild(document.createTextNode(summary)); box.appendChild(s); }
+      if (summary) { var s = el('p', 'done'); s.appendChild(icon('check', 13)); s.appendChild(txt(summary)); box.appendChild(s); }
       box.appendChild(el('p', '', 'Si ton imprimante est reliée, « Imprimer la plaque » l’envoie directement. Sinon, ouvre la petite flèche de ce bouton, choisis « Exporter le fichier G-code », puis copie le fichier sur la clé USB ou la carte SD de ton imprimante.'));
       acts.appendChild(button('Montre-moi', function () { showMe('print'); }, 'btn ghost sm', 'eye'));
       acts.appendChild(button('C’est lancé, suivant', next, 'btn sm'));
@@ -1785,7 +1797,7 @@
     box.setAttribute('role', 'status');
     var head = el('header');
     head.appendChild(icon('check', 15));
-    head.appendChild(document.createTextNode(q.title));
+    head.appendChild(txt(q.title));
     box.appendChild(head);
     box.appendChild(el('p', '', q.text));
     if (q.changes.length) {
@@ -1799,7 +1811,7 @@
     share.addEventListener('change', function () { window.orca.postMessage({ type: 'firststeps_set', patch: { share_outcomes: share.checked } }); });
     var shareLabel = el('label');
     shareLabel.appendChild(share);
-    shareLabel.appendChild(document.createTextNode('Partager anonymement ce résultat pour améliorer Plyo (le problème, les réglages changés, l’imprimante et le filament ; jamais de photo).'));
+    shareLabel.appendChild(txt('Partager anonymement ce résultat pour améliorer Plyo (le problème, les réglages changés, l’imprimante et le filament ; jamais de photo).'));
     var said = el('textarea');
     said.maxLength = 200;
     said.rows = 2;
@@ -1876,7 +1888,7 @@
     box.setAttribute('role', 'status');
     var head = el('header');
     head.appendChild(icon('alert', 15));
-    head.appendChild(document.createTextNode('Avant d’imprimer'));
+    head.appendChild(txt('Avant d’imprimer'));
     head.appendChild(button('Ignorer', function () {
       risks.forEach(function (r) { dismissedRisks[window.PlyoPreflight.riskKey(r)] = true; });
       slot.textContent = '';
@@ -1932,7 +1944,7 @@
     fsState = state;
     renderTour();
     if (first && state.level === 'expert' && !state.greeted) {
-      $('hello-text').textContent = 'Je suis là si tu as besoin : pose ta question en bas, ou clique dans un réglage du slicer pour que je te l’explique.';
+      $('hello-text').textContent = fr('Je suis là si tu as besoin : pose ta question en bas, ou clique dans un réglage du slicer pour que je te l’explique.');
       window.orca.postMessage({ type: 'firststeps_set', patch: { greeted: true } });
     }
   }
@@ -1987,7 +1999,7 @@
       me.appendChild(grid);
     }
     if (entry.text) me.appendChild(el('div', 'text', entry.text));
-    if (entry.fromPhone) { var f = el('span', 'from'); f.appendChild(icon('phone', 11)); f.appendChild(document.createTextNode('Envoyé depuis le téléphone')); me.appendChild(f); }
+    if (entry.fromPhone) { var f = el('span', 'from'); f.appendChild(icon('phone', 11)); f.appendChild(txt('Envoyé depuis le téléphone')); me.appendChild(f); }
     thread.appendChild(me);
     scrollDown();
     return me;
@@ -2058,7 +2070,7 @@
     var cap = setTimeout(function () { controller.abort('timeout'); }, ANSWER_MAX_MS);
     var thinking = el('div', 'thinking');
     thinking.appendChild(el('i'));
-    thinking.appendChild(document.createTextNode(photos.length ? 'Je regarde ta photo…' : 'Je réfléchis…'));
+    thinking.appendChild(txt(photos.length ? 'Je regarde ta photo…' : 'Je réfléchis…'));
     thinking.appendChild(button('Annuler', function () { controller.abort('cancel'); }, 'link'));
     thread.appendChild(thinking);
     scrollDown();
@@ -2208,7 +2220,7 @@
     return {
       box: box,
       update: function (p) {
-        title.textContent = p.name || '';
+        title.textContent = fr(p.name || '');
         set(explanation, p.explanation, !p.message);
         set(message, p.message, !!p.message);
         scrollDown();
@@ -2239,7 +2251,7 @@
     var b = el('button', 'setting-name');
     b.type = 'button';
     b.title = 'C’est quoi ce réglage ?';
-    b.appendChild(document.createTextNode(label));
+    b.appendChild(txt(label));
     b.appendChild(icon('help', 13));
     b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); explain(key); });
     return b;
@@ -2294,7 +2306,7 @@
     function checked() { return rows.filter(function (r) { return r.box.checked; }); }
     function updateCount() {
       var n = checked().length;
-      apply.textContent = n ? 'Appliquer ' + n + ' réglage' + (n > 1 ? 's' : '') : 'Aucun réglage coché';
+      apply.textContent = fr(n ? 'Appliquer ' + n + ' réglage' + (n > 1 ? 's' : '') : 'Aucun réglage coché');
       apply.disabled = !n;
     }
     updateCount();
@@ -2307,14 +2319,14 @@
       fail.classList.add('hidden');
       lock(true);
       pendingSheet = { kind: 'apply', onResult: function (ok, text, result) {
-        if (!ok) { lock(false); updateCount(); fail.textContent = text; fail.classList.remove('hidden'); return; }
+        if (!ok) { lock(false); updateCount(); fail.textContent = fr(text); fail.classList.remove('hidden'); return; }
         var undoId = result && result.undo_id;
         // La conversation garde ce qui a été appliqué, valeurs comprises, pour la relire plus tard.
         entry.applied = true;
         entry.data.suggestions = picked.map(function (r) { return r.s; });
         scheduleSave();
         rows.forEach(function (r) { if (!r.box.checked) r.row.remove(); else r.box.replaceWith(markCell()); });
-        sheet.querySelector('header').textContent = 'Réglages appliqués';
+        sheet.querySelector('header').textContent = fr('Réglages appliqués');
         footer.textContent = '';
         var preset = lastValues && lastValues.context ? lastValues.context.process : '';
         footer.appendChild(doneLabel('Appliqué' + (preset ? ' : préréglage « ' + preset + ' » marqué modifié, à enregistrer si tu veux le garder' : '')));
@@ -2330,7 +2342,7 @@
           pendingSheet = { kind: 'undo', onResult: function (okUndo, msg) {
             if (okUndo) return; // la fiche est prévenue par undoneListeners
             undoBtn.disabled = false;
-            fail.textContent = msg;
+            fail.textContent = fr(msg);
             fail.classList.remove('hidden');
           } };
           window.orca.postMessage({ type: 'undo', undo_id: undoId || 0 });
@@ -2401,7 +2413,7 @@
         }) })
           .then(function (r) { return r.ok ? null : Promise.reject(); })
           .then(function () { form.replaceWith(doneLabel('Merci, c’est noté : on s’en sert pour corriger l’assistant.')); entry.flagged = true; scheduleSave(); })
-          .catch(function () { go.disabled = false; go.textContent = 'Réessayer l’envoi'; });
+          .catch(function () { go.disabled = false; go.textContent = fr('Réessayer l’envoi'); });
       }, 'btn sm');
       acts.appendChild(go);
       acts.appendChild(button('Laisser tomber', function () { form.replaceWith(link); }, 'link'));
@@ -2510,7 +2522,7 @@
     } else if (msg.type === 'explain') {
       onExplain(msg);
     } else if (msg.type === 'focus_setting') {
-      $('focus-label').textContent = msg.label;
+      $('focus-label').textContent = fr(msg.label);
       focusKey = msg.key;
       $('focus-chip').classList.remove('hidden');
     } else if (msg.type === 'ai_context') {

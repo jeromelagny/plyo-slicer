@@ -191,6 +191,18 @@
   };
   function choiceLabel(value) { return Object.prototype.hasOwnProperty.call(CHOICE_LABELS, value) ? CHOICE_LABELS[value] : value; }
 
+  // Typographie française de tout texte affiché : sans espaces insécables, « ? » et « : » partent seuls en début
+  // de ligne. Fine (U+202F) avant ? ! ; ; normale (U+00A0) avant : et dans « ». Heures (18:00) et adresses
+  // (https://, ?b=1) restent intactes : la ponctuation doit être suivie d'une espace ou de la fin du texte.
+  function fr(text) {
+    return String(text === null || text === undefined ? '' : text)
+      .replace(/([A-Za-zÀ-ÿ])'(?=[A-Za-zÀ-ÿ])/g, '$1’')
+      .replace(/(\S)[   ]?([?!;]+)(?=$|[\s»)\].,…"’])/g, '$1 $2')
+      .replace(/(\S)[   ]?:(?=$|\s)/g, '$1 :')
+      .replace(/«[   ]?/g, '« ')
+      .replace(/[   ]?»/g, ' »');
+  }
+
   // Réponse du slicer à « conv_load » : rouvrir, donner la suite prévue, ou dire que ça n'a pas marché.
   // `auto` : réouverture au lancement, dont l'échec reste silencieux (l'accueil suffit).
   function convLoaded(msg, hasFollowUp, auto) {
@@ -198,7 +210,7 @@
     return { restore: ok, followUp: ok && !!hasFollowUp, error: !ok && !auto };
   }
 
-  var api = { convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
