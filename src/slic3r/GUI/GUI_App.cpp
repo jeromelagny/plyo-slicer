@@ -2688,7 +2688,10 @@ void GUI_App::init_webview_runtime()
 void GUI_App::init_app_config()
 {
 	// Profiles for the alpha are stored into the PrusaSlicer-alpha directory to not mix with the current release.
-    SetAppName(SLIC3R_APP_KEY);
+    // PLYO: dossier de réglages propre à Plyo Slicer (« PlyoSlicer » dans Application Support, %APPDATA% ou ~/.config),
+    // pour ne pas partager les préréglages d'un OrcaSlicer installé à côté. SLIC3R_APP_KEY reste « OrcaSlicer »
+    // (nom du fichier de configuration, traductions, métadonnées 3MF/G-code).
+    SetAppName("PlyoSlicer");
 //	SetAppName(SLIC3R_APP_KEY "-alpha");
 //  SetAppName(SLIC3R_APP_KEY "-beta");
 //	SetAppDisplayName(SLIC3R_APP_NAME);
