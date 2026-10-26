@@ -122,12 +122,13 @@ void select_object(int idx, bool first_copy_only = false)
 
 void rotate(int idx, int axis, double degrees)
 {
-    select_object(idx, true);
+    // Tous les exemplaires, chacun autour de son propre centre : Orca ne recopie pas une rotation à plat (axe Z)
+    // sur les autres exemplaires.
+    select_object(idx);
     Slic3r::GUI::Selection&          sel = selection();
     Slic3r::GUI::TransformationType  type;
     type.set_relative();
-    if (sel.is_single_full_instance())
-        type.set_independent();
+    type.set_independent();
     Vec3d rotation = Vec3d::Zero();
     rotation(axis) = degrees * M_PI / 180.0;
     sel.setup_cache();
@@ -154,7 +155,7 @@ void lay_flat(int idx, const std::string& face)
         plane = Slic3r::find_plane_by_normal(planes, (matrix.linear().transpose() * it->second).normalized());
     if (plane < 0)
         throw Refused("Je ne trouve pas cette face sur la pièce.");
-    select_object(idx, true);
+    select_object(idx); // tous les exemplaires
     selection().flattening_rotate(planes[plane].normal);
     canvas().do_rotate("Gizmo-Place on Face"); // ce nom fait reposer la pièce même si elle s'enfonçait
 }
@@ -191,7 +192,7 @@ void move(int idx, int axis, double mm)
 // Agrandit ou réduit d'un facteur (relatif à la taille actuelle), sur un axe ou proportionnellement.
 void scale(int idx, int axis, double factor)
 {
-    select_object(idx, true);
+    select_object(idx); // tous les exemplaires, chacun autour de son centre
     const Vec3d size = model().objects[idx]->instance_bounding_box(0).size();
     for (int i = 0; i < 3; ++i)
         if ((axis < 0 || axis == i) && size(i) * factor > 2000.0)
@@ -199,6 +200,7 @@ void scale(int idx, int axis, double factor)
     Slic3r::GUI::Selection&         sel = selection();
     Slic3r::GUI::TransformationType type;
     type.set_relative();
+    type.set_independent();
     Vec3d factors = Vec3d::Ones();
     if (axis < 0)
         factors *= factor;
@@ -375,7 +377,8 @@ std::string execute(const nlohmann::json& c, const std::optional<Slic3r::ObjectI
         const double size = model().objects[idx]->instance_bounding_box(0).size()(axis);
         if (size <= 0)
             throw Refused("Taille de la pièce inconnue.");
-        scale(idx, -1, amount(c, "amount", 0.1, 2000) / size);
+        // « axis_only » : étirer sur cet axe seulement (« plus épaisse »), sinon proportions gardées.
+        scale(idx, c.value("text", std::string()) == "axis_only" ? axis : -1, amount(c, "amount", 0.1, 2000) / size);
     } else if (op == "mirror") {
         const int axis = axis_of(c);
         select_object(idx);

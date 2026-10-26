@@ -229,6 +229,16 @@ std::optional<double> current_value(const Param& p, const Configs& configs, std:
 
 std::optional<double> current_value(const Param& p, std::string* note = nullptr) { return current_value(p, edited_configs(), note); }
 
+// Plage réellement autorisée : la hauteur de couche reste sous 75 % du diamètre de buse (au-delà, Orca refuse de
+// découper : « Largeur de ligne trop petite », ou couches mal collées).
+double max_of(const Param& p, const Configs& configs)
+{
+    if (std::string(p.id) == "layer_height")
+        if (const std::optional<double> nozzle = first_value(configs.printer, "nozzle_diameter"); nozzle && *nozzle > 0)
+            return std::min(p.max, std::floor(*nozzle * 0.75 * 100 + 1e-6) / 100);
+    return p.max;
+}
+
 // Valeurs de la liste blanche lues dans `configs`, au format envoyé au panneau.
 nlohmann::json read_params(const Configs& configs)
 {
@@ -237,7 +247,7 @@ nlohmann::json read_params(const Configs& configs)
         std::string           note;
         std::optional<double> v = current_value(p, configs, &note);
         nlohmann::json        item{{"id", p.id}, {"label", p.label}, {"key", target(p, configs).second}, {"unit", p.unit},
-                                   {"min", p.min}, {"max", p.max}, {"note", note}};
+                                   {"min", p.min}, {"max", max_of(p, configs)}, {"note", note}};
         if (p.kind == Kind::Enum) {
             item["value"] = enum_value(p, configs);
             // Choix acceptés par apply_changes (le style de support dépend du type de support).
@@ -301,9 +311,12 @@ nlohmann::json read_values()
 {
     const nlohmann::json params = read_params(edited_configs());
     // Noms des préréglages en cours, transmis au service Plyo (type de filament, imprimante).
-    const nlohmann::json context{{"printer", bundle().printers.get_edited_preset().name},
+    nlohmann::json context{{"printer", bundle().printers.get_edited_preset().name},
                                  {"filament", bundle().filaments.get_edited_preset().name},
                                  {"process", bundle().prints.get_edited_preset().name}};
+    // Diamètre de buse : l'IA en déduit la hauteur de couche maximale (75 % de la buse).
+    if (const std::optional<double> nozzle = first_value(bundle().printers.get_edited_preset().config, "nozzle_diameter"))
+        context["nozzle_mm"] = *nozzle;
     return {{"params", params}, {"context", context}, {"can_undo", !s_undo_stack.empty()}};
 }
 
@@ -355,6 +368,10 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
             return {{"ok", false},
                     {"text", std::string("Refusé : ") + param->label + " à " + format_number(value, param->kind) + " " + param->unit +
                                  " est hors de la plage autorisée (" + range_text(*param) + "). Aucune modification appliquée."}};
+        if (const double max = max_of(*param, edited_configs()); value > max + 1e-9)
+            return {{"ok", false},
+                    {"text", std::string("Refusé : ") + param->label + " à " + format_number(value, param->kind) + " " + param->unit +
+                                 " est trop haute pour ta buse (" + format_number(max, param->kind) + " " + param->unit + " au plus). Aucune modification appliquée."}};
 
         const auto [type, key] = target(*param, edited_configs());
         planned.push_back({param, key, value, to_config_string(value, param->kind), type});
@@ -448,6 +465,8 @@ nlohmann::json object_override(const std::string& id, const nlohmann::json& valu
     } else {
         if (!value.is_number() || value.get<double>() < param->min || value.get<double>() > param->max)
             return {{"ok", false}, {"text", std::string("Refusé : ") + param->label + " doit rester entre " + range_text(*param) + "."}};
+        if (value.get<double>() > max_of(*param, edited_configs()) + 1e-9)
+            return {{"ok", false}, {"text", std::string("Refusé : ") + param->label + " trop haute pour ta buse."}};
         serialized = to_config_string(value.get<double>(), param->kind);
         shown      = format_number(value.get<double>(), param->kind) + (*param->unit ? std::string(" ") + param->unit : std::string());
     }
