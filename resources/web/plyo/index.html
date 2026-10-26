@@ -114,6 +114,15 @@
   .card p { margin: 0; }
   .card .meta { color: var(--muted); font-size: var(--fs-sm); }
   .card ul { margin: 0; padding-left: var(--s4); }
+  .card.attention > header > .ic { color: var(--warn-text); }
+  .card .badge-pill { flex: none; }
+  .card > header > span:not(.badge-pill) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pf-part { display: flex; flex-direction: column; gap: 2px; }
+  .pf-part b { overflow-wrap: anywhere; }
+  .pf-part ul { font-size: var(--fs-sm); }
+  .fix-list { border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); overflow: hidden; }
+  .fix-list .fix-head { padding: 6px var(--s3); font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); }
+  .fix-list .row { padding: var(--s2) var(--s3); }
 
   /* En-tête */
   .top { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s3) var(--s3) var(--s4); border-bottom: 1px solid var(--border); position: relative; flex: none; }
@@ -309,13 +318,6 @@
   .check-line { display: flex; gap: var(--s2); align-items: flex-start; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
   .check-line input { margin: 3px 0 0; flex: none; }
   .fail-text { margin: 0; color: var(--danger-text); font-size: var(--fs-sm); }
-  .preflight { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: var(--r-md); background: var(--warn-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
-  .preflight header { display: flex; align-items: center; gap: var(--s2); font-weight: 600; }
-  .preflight header .ic { color: var(--warn-text); }
-  .preflight header .link { margin-left: auto; }
-  .preflight .risk { display: flex; flex-direction: column; gap: 6px; }
-  .preflight .risk p { margin: 0; }
-  .preflight .fixes { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
 </style>
 </head>
 <body>
@@ -1576,6 +1578,11 @@
       });
   }
 
+  // « Annuler » : toujours le même petit bouton discret avec son icône, à droite de « Fait ✓ ».
+  function undoButton(label, onClick) {
+    var b = button(label || 'Annuler', function () { b.disabled = true; onClick(b); }, 'btn ghost sm', 'undo');
+    return b;
+  }
   function markCell() { var m = el('span', 'mark'); m.appendChild(icon('check', 14)); return m; }
   function doneLabel(text, iconName) { var d = el('span', 'done'); d.appendChild(icon(iconName || 'check', 13)); d.appendChild(txt(text)); return d; }
 
@@ -2021,8 +2028,10 @@
   function onPreflight(data) {
     var manual = preflightManual;
     preflightManual = false;
-    var risks = window.PlyoPreflight.preflightRisks(data).filter(function (r) { return manual || !dismissedRisks[window.PlyoPreflight.riskKey(r)]; });
-    renderPreflight(risks, data);
+    // Une carte ignorée ne revient pas d'elle-même tant que ses risques restent les mêmes ; « Vérifier » la remontre.
+    var risks = window.PlyoPreflight.preflightRisks(data);
+    var fresh = risks.filter(function (r) { return !dismissedRisks[window.PlyoPreflight.riskKey(r)]; });
+    renderPreflight(manual || fresh.length ? risks : [], data);
     if (!manual || risks.length) return;
     var slot = $('preflight-slot');
     var close = function () { slot.textContent = ''; };
@@ -2054,51 +2063,130 @@
     if (action) box.appendChild(el('div', 'row-acts')).appendChild(action);
     return box;
   }
-  function renderPreflight(risks) {
+  // Carte « Avant d'imprimer » : neutre (le badge ambre porte l'alerte), les soucis rangés par pièce, puis une
+  // liste de corrections à cocher et un seul bouton principal, comme la fiche de réglages.
+  var preflightSeq = 0;
+  function renderPreflight(risks, data) {
+    var PF = window.PlyoPreflight;
     var slot = $('preflight-slot');
     slot.textContent = '';
     if (!risks.length) return;
-    var box = el('div', 'preflight');
-    box.setAttribute('role', 'status');
+    var plan = PF.preflightPlan(data);
+    var plateCount = data && data.objects ? data.objects.length : undefined;
+    var box = el('div', 'card attention');
+    var titleId = 'preflight-title-' + (++preflightSeq);
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-labelledby', titleId);
     var head = el('header');
-    head.appendChild(icon('alert', 15));
-    head.appendChild(txt('Avant d’imprimer'));
-    head.appendChild(button('Ignorer', function () {
-      risks.forEach(function (r) { dismissedRisks[window.PlyoPreflight.riskKey(r)] = true; });
+    head.appendChild(icon('alert', 16));
+    var title = el('span', '', 'Avant d’imprimer');
+    title.id = titleId;
+    head.appendChild(title);
+    head.appendChild(el('span', 'badge-pill warn', plan.count > 1 ? plan.count + ' pièces' : '1 pièce'));
+    var dismiss = button('', function () {
+      risks.forEach(function (r) { dismissedRisks[PF.riskKey(r)] = true; });
       slot.textContent = '';
-    }, 'link'));
+    }, 'icon-btn push');
+    dismiss.title = 'Ignorer pour cette plaque';
+    dismiss.setAttribute('aria-label', 'Ignorer pour cette plaque');
+    dismiss.appendChild(icon('x', 14));
+    head.appendChild(dismiss);
     box.appendChild(head);
-    var left = risks.length;
-    function solved(row) {
-      row.remove();
-      if (--left === 0) slot.textContent = '';
-    }
-    risks.forEach(function (r) {
-      var row = el('div', 'risk');
-      row.dataset.fix = JSON.stringify(r.fixes[0].changes || r.fixes[0].action);
-      row.appendChild(el('p', '', r.text));
-      var fixes = el('div', 'fixes');
-      r.fixes.forEach(function (f, i) {
-        var b = button(f.label, function () {
-          b.disabled = true;
-          if (f.action) return plateAction(f.action, function (ok) { if (ok) solved(row); else b.disabled = false; });
-          pendingSheet = { kind: 'apply', onResult: function (ok, text) {
-            noteLine(ok ? text + ' Découpe à nouveau la plaque pour en tenir compte.' : text, ok ? 'ok' : 'error', ok ? 'check' : 'alert');
-            if (!ok) { b.disabled = false; return; }
-            // Une même correction (la bordure) règle toutes les lignes qui la proposent.
-            box.querySelectorAll('.risk').forEach(function (other) { if (other.dataset.fix === row.dataset.fix || other === row) solved(other); });
-          } };
-          window.orca.postMessage({ type: 'apply', changes: f.changes, why: 'Vérification avant impression' });
-        }, i === 0 ? 'btn sm' : 'btn sm ghost');
-        fixes.appendChild(b);
-      });
-      row.appendChild(fixes);
-      box.appendChild(row);
+
+    plan.parts.forEach(function (part) {
+      var block = el('div', 'pf-part');
+      block.appendChild(el('b', '', part.name));
+      var ul = el('ul');
+      part.issues.forEach(function (t) { ul.appendChild(el('li', '', t)); });
+      block.appendChild(ul);
+      box.appendChild(block);
     });
-    box.appendChild(button('En parler à l’assistant', function () {
+
+    var list = el('div', 'fix-list');
+    list.appendChild(el('div', 'fix-head', 'Ce que je peux corriger'));
+    var rows = plan.fixes.map(function (f) {
+      var row = el('label', 'row' + (f.checked ? '' : ' off'));
+      var check = el('input');
+      check.type = 'checkbox';
+      check.checked = f.checked;
+      var info = el('div');
+      info.appendChild(el('div', 'name', f.label));
+      info.appendChild(el('div', 'why', f.key === 'orient' ? 'Autre solution : tourner les pièces pour avoir moins de vide.'
+        : 'Pour ' + f.objects.map(function (n) { return '« ' + n + ' »'; }).join(', ') + '.'));
+      row.appendChild(check);
+      row.appendChild(info);
+      list.appendChild(row);
+      check.addEventListener('change', function () { row.classList.toggle('off', !check.checked); update(); });
+      return { fix: f, check: check, row: row };
+    });
+    box.appendChild(list);
+
+    var fail = el('p', 'fail-text hidden');
+    var acts = el('div', 'stack');
+    var fixAll = button('', null, 'btn');
+    acts.appendChild(fixAll);
+    box.appendChild(acts);
+    box.appendChild(fail);
+    var talk = button('En parler à l’assistant', function () {
       slot.textContent = '';
       send('Avant d’imprimer, Plyo me signale : ' + risks.map(function (r) { return r.text; }).join(' ') + ' Que me conseilles-tu ?');
-    }, 'link'));
+    }, 'link');
+    box.appendChild(talk);
+
+    function picked() { return rows.filter(function (r) { return r.check.checked; }); }
+    // « Tout corriger » tant que la sélection est celle conseillée ; sinon « Corriger » ce qui est coché.
+    function update() {
+      var n = picked().length;
+      var advised = rows.every(function (r) { return r.check.checked === r.fix.checked; });
+      fixAll.textContent = fr(!n ? 'Rien de coché' : (advised ? 'Tout corriger (' : 'Corriger (') + n + ')');
+      fixAll.disabled = !n;
+    }
+    update();
+    function lock(on) { rows.forEach(function (r) { r.check.disabled = on; }); fixAll.disabled = on; }
+
+    // Réglages cochés en un seul envoi (une étape à annuler), puis les actions sur le plateau, l'une après l'autre.
+    fixAll.addEventListener('click', function () {
+      var fixes = picked().map(function (r) { return r.fix; });
+      var changes = PF.fixChanges(fixes);
+      var actions = fixes.filter(function (f) { return f.action; });
+      var undoId = 0;
+      lock(true);
+      fail.classList.add('hidden');
+      function stop(text) { lock(false); update(); if (text) { fail.textContent = fr(text); fail.classList.remove('hidden'); } }
+      function next(i) {
+        if (i >= actions.length) return finished();
+        plateAction(actions[i].action, function (ok) { if (ok) next(i + 1); else stop(''); }, null, plateCount);
+      }
+      function finished() {
+        box.classList.remove('attention');
+        box.textContent = '';
+        var h = el('header');
+        h.appendChild(icon('check', 16));
+        h.appendChild(el('span', '', 'Corrigé'));
+        box.appendChild(h);
+        box.appendChild(el('p', 'muted', 'Découpe à nouveau la plaque : je revérifie tout de suite après.'));
+        var row = el('div', 'row-acts');
+        row.appendChild(button('Découper la plaque', function () { slot.textContent = ''; plateAction('slice'); }, 'btn sm', 'wand'));
+        // « Annuler » au bout de la ligne « fait », comme partout ailleurs.
+        if (undoId) h.appendChild(undoButton('Annuler', function (b) {
+          pendingSheet = { kind: 'undo', onResult: function (ok, t) {
+            if (!ok) { b.disabled = false; noteLine(t, 'error', 'alert'); return; }
+            slot.textContent = '';
+            noteLine('Réglages d’avant remis.', '', 'undo');
+          } };
+          window.orca.postMessage({ type: 'undo', undo_id: undoId });
+        }));
+        if (h.lastChild.classList.contains('btn')) h.lastChild.classList.add('push');
+        box.appendChild(row);
+      }
+      if (!changes.length) return next(0);
+      pendingSheet = { kind: 'apply', onResult: function (ok, text, result) {
+        if (!ok) return stop(text);
+        undoId = (result && result.undo_id) || 0;
+        next(0);
+      } };
+      window.orca.postMessage({ type: 'apply', changes: changes, why: 'Vérification avant impression' });
+    });
     slot.appendChild(box);
   }
 

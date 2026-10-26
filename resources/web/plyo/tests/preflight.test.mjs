@@ -92,3 +92,45 @@ test('données absentes ou abîmées : aucune alerte', () => {
   assert.deepEqual(preflightRisks({}), []);
   assert.deepEqual(preflightRisks({ settings: noBrim, objects: [{ name: 'X' }] }), []);
 });
+
+// Carte « Avant d'imprimer » : les risques regroupés par pièce, et une liste de corrections sans doublon.
+const { preflightPlan, fixChanges } = require('../preflight.js');
+
+test('preflightPlan : un bloc par pièce, ses soucis en phrases courtes', () => {
+  const casque = { ...cube, name: 'Support_casque.stl', height: 120, foot: [18, 22], contact_mm2: 300, needs_support: true };
+  const boule = { ...cube, name: 'Boule.stl', height: 30, foot: [30, 30], contact_mm2: 9 };
+  const plan = preflightPlan(plate([casque, boule]));
+  assert.deepEqual(plan.parts.map((p) => p.name), ['Support_casque.stl', 'Boule.stl']);
+  assert.deepEqual(plan.parts[0].issues, ['Des parties dans le vide : sans supports, elles risquent de s’effondrer.',
+    'Haute et fine : sans bordure, elle risque de basculer.']);
+  assert.deepEqual(plan.parts[1].issues, ['Touche peu le plateau : sans bordure, elle risque de se décoller.']);
+});
+
+test('preflightPlan : la bordure n’apparaît qu’une fois ; l’orientation est proposée décochée', () => {
+  const casque = { ...cube, name: 'Casque', height: 120, foot: [18, 22], contact_mm2: 300, needs_support: true };
+  const boule = { ...cube, name: 'Boule', height: 30, foot: [30, 30], contact_mm2: 9 };
+  const plan = preflightPlan(plate([casque, boule]));
+  assert.deepEqual(plan.fixes.map((f) => [f.key, f.checked]), [['support', true], ['brim', true], ['orient', false]]);
+  const brim = plan.fixes.find((f) => f.key === 'brim');
+  assert.equal(brim.label, 'Ajouter une bordure de 5 mm');
+  assert.deepEqual(brim.objects, ['Casque', 'Boule']);
+  assert.deepEqual(brim.changes, [{ id: 'brim_type', value: 'outer_only' }, { id: 'brim_width', value: 5 }]);
+});
+
+test('preflightPlan : pièce trop grande → réduire (action du plateau), cochée', () => {
+  const plan = preflightPlan(plate([{ ...cube, name: 'Grand', fits: false }]));
+  assert.deepEqual(plan.fixes, [{ key: 'fit', label: 'Réduire pour que tout tienne sur le plateau', action: 'scale_to_fit', objects: ['Grand'], checked: true }]);
+  assert.equal(plan.count, 1);
+});
+
+test('preflightPlan : rien à signaler → aucune pièce, aucune correction', () => {
+  assert.deepEqual(preflightPlan(plate([cube])), { parts: [], fixes: [], count: 0 });
+  assert.deepEqual(preflightPlan(null), { parts: [], fixes: [], count: 0 });
+});
+
+test('fixChanges : les réglages des corrections cochées partent en un seul envoi', () => {
+  const fixes = [{ key: 'support', changes: [{ id: 'support', value: true }] }, { key: 'fit', action: 'scale_to_fit' },
+    { key: 'brim', changes: [{ id: 'brim_width', value: 5 }] }];
+  assert.deepEqual(fixChanges(fixes), [{ id: 'support', value: true }, { id: 'brim_width', value: 5 }]);
+  assert.deepEqual(fixChanges([]), []);
+});

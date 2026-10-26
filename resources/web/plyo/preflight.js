@@ -70,7 +70,50 @@
 
   function riskKey(r) { return r.kind + ':' + r.objects.join('|'); }
 
-  var api = { preflightRisks: preflightRisks, riskKey: riskKey };
+  // Carte « Avant d'imprimer » : les soucis rangés par pièce (on lit sa pièce, pas une liste de risques), puis
+  // une seule liste de corrections sans doublon, cochées comme la fiche de réglages. L'orientation est une autre
+  // façon d'éviter supports et décollement : proposée, mais pas cochée d'office.
+  var ISSUES = {
+    fit: 'Dépasse du plateau.',
+    support: 'Des parties dans le vide : sans supports, elles risquent de s’effondrer.',
+    tall: 'Haute et fine : sans bordure, elle risque de basculer.',
+    contact: 'Touche peu le plateau : sans bordure, elle risque de se décoller.'
+  };
+  var FIX_ORDER = ['fit', 'support', 'brim', 'orient'];
+
+  function preflightPlan(data) {
+    var plan = { parts: [], fixes: [], count: 0 };
+    if (!data || !data.settings || !Array.isArray(data.objects)) return plan;
+    var s = data.settings;
+    var fixes = {};
+    function want(key, objName, make) {
+      var f = fixes[key] = fixes[key] || make();
+      if (f.objects.indexOf(objName) < 0) f.objects.push(objName);
+    }
+    data.objects.filter(valid).forEach(function (o) {
+      var kinds = kindOf(o, s);
+      if (!kinds.length) return;
+      plan.parts.push({ name: o.name, issues: kinds.map(function (k) { return ISSUES[k]; }) });
+      kinds.forEach(function (k) {
+        if (k === 'fit') want('fit', o.name, function () { return { key: 'fit', label: 'Réduire pour que tout tienne sur le plateau', action: 'scale_to_fit', objects: [], checked: true }; });
+        if (k === 'support') want('support', o.name, function () { return { key: 'support', label: 'Activer les supports', changes: [{ id: 'support', value: true }], objects: [], checked: true }; });
+        if (k === 'tall' || k === 'contact')
+          want('brim', o.name, function () { return { key: 'brim', label: 'Ajouter une bordure de ' + BRIM + ' mm', changes: brimFix(s).changes, objects: [], checked: true }; });
+        if (k === 'support' || k === 'contact')
+          want('orient', o.name, function () { return { key: 'orient', label: ORIENT.label, action: ORIENT.action, objects: [], checked: false }; });
+      });
+    });
+    plan.fixes = FIX_ORDER.filter(function (k) { return fixes[k]; }).map(function (k) { return fixes[k]; });
+    plan.count = plan.parts.length;
+    return plan;
+  }
+
+  // Réglages des corrections cochées, réunis pour un seul message « apply » (une seule étape à annuler).
+  function fixChanges(fixes) {
+    return fixes.reduce(function (all, f) { return f.changes ? all.concat(f.changes) : all; }, []);
+  }
+
+  var api = { preflightRisks: preflightRisks, riskKey: riskKey, preflightPlan: preflightPlan, fixChanges: fixChanges };
   root.PlyoPreflight = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
