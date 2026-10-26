@@ -113,3 +113,14 @@ test('typographie française : un nombre reste collé à son unité', () => {
   assert.equal(L.fr('3 pièces'), '3 pièces');            // pas une unité
   assert.equal(L.fr('2 grandes pièces'), '2 grandes pièces');
 });
+
+test('tour de calibration affichée dans l’ordre physique : le haut en premier', () => {
+  const sections = [{ index: 0, label: '230 °C', value: 230 }, { index: 1, label: '225 °C', value: 225 }, { index: 2, label: '220 °C', value: 220 }];
+  const tower = L.calibOrder(sections, true);
+  assert.deepEqual(tower.map((s) => s.label), ['220 °C', '225 °C', '230 °C']);
+  assert.deepEqual(tower.map((s) => s.where), ['En haut', '', 'En bas']);
+  assert.equal(tower[0].index, 2);
+  // Carrés ou lignes d'un test à plat : l'ordre reçu, sans repère.
+  assert.deepEqual(L.calibOrder(sections, false).map((s) => [s.label, s.where]), [['230 °C', ''], ['225 °C', ''], ['220 °C', '']]);
+  assert.deepEqual(L.calibOrder([], true), []);
+});

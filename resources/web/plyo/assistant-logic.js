@@ -257,6 +257,16 @@
     return msg.ok && count === 1 && SINGULAR[msg.kind] ? SINGULAR[msg.kind] : msg.text;
   }
 
+  // Étages d'une tour de calibration (reçus du bas vers le haut) montrés comme on tient la tour : le haut en
+  // premier. Les tests à plat (carrés, lignes) gardent l'ordre reçu.
+  function calibOrder(sections, tower) {
+    var list = (sections || []).map(function (s) { return Object.assign({}, s, { where: '' }); });
+    if (!tower || !list.length) return list;
+    list.reverse();
+    if (list.length > 1) { list[0].where = 'En haut'; list[list.length - 1].where = 'En bas'; }
+    return list;
+  }
+
   // Réponse du slicer à « conv_load » : rouvrir, donner la suite prévue, ou dire que ça n'a pas marché.
   // `auto` : réouverture au lancement, dont l'échec reste silencieux (l'accueil suffit).
   function convLoaded(msg, hasFollowUp, auto) {
@@ -264,7 +274,7 @@
     return { restore: ok, followUp: ok && !!hasFollowUp, error: !ok && !auto };
   }
 
-  var api = { journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

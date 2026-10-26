@@ -240,6 +240,9 @@
   .row.static { cursor: default; }
   .sheet .status { padding: var(--s2) var(--s3); color: var(--muted); font-size: var(--fs-sm); }
   .sheet .status:empty { display: none; }
+  .calib-head { display: flex; flex-direction: column; gap: 2px; }
+  .calib-head b { color: var(--fg); font-size: var(--fs-md); }
+  .calib-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
   .sheet footer { display: flex; flex-wrap: wrap; gap: var(--s2); padding: var(--s3); border-top: 1px solid var(--border); background: var(--bg); align-items: center; }
   .sheet footer .btn { flex: 1 1 calc(50% - 4px); }
   .sheet footer .btn.full { flex-basis: 100%; order: -1; }
@@ -1577,11 +1580,11 @@
 
   // ---------- Calibration guidée par photo ----------
   var CALIB = {
-    temperature: { name: 'Tour de température', shows: 'la température où ton filament fait le moins de fils et soude bien ses couches', duration: '≈ 45 min', parts: 'Les étages de ta tour, du bas vers le haut' },
-    flow: { name: 'Test de débit', shows: 'la quantité de plastique juste : ni trous, ni bourrelets sur le dessus', duration: '≈ 20 min par passe', parts: 'Les carrés du test' },
-    retraction: { name: 'Tour de rétraction', shows: 'la rétraction la plus courte qui supprime les fils', duration: '≈ 40 min', parts: 'Les bandes de ta tour, du bas vers le haut' },
-    pressure_advance: { name: 'Test de pressure advance', shows: 'le réglage qui rend les angles nets, sans bourrelet', duration: '≈ 10 min', parts: 'Les lignes du motif' },
-    ironing: { name: 'Plaque de lissage', shows: 'le débit et l’espacement qui donnent le dessus le plus lisse', duration: '≈ 15 min', parts: 'Les carrés de la plaque' }
+    temperature: { name: 'Tour de température', shows: 'la température où ton filament fait le moins de fils et soude bien ses couches', duration: '≈ 45 min', parts: 'Ta tour, étage par étage', pick: 'Choisis l’étage le plus propre', tower: true },
+    flow: { name: 'Test de débit', shows: 'la quantité de plastique juste : ni trous, ni bourrelets sur le dessus', duration: '≈ 20 min par passe', parts: 'Les carrés du test', pick: 'Choisis le carré le plus lisse' },
+    retraction: { name: 'Tour de rétraction', shows: 'la rétraction la plus courte qui supprime les fils', duration: '≈ 40 min', parts: 'Ta tour, bande par bande', pick: 'Choisis la bande la plus propre', tower: true },
+    pressure_advance: { name: 'Test de pressure advance', shows: 'le réglage qui rend les angles nets, sans bourrelet', duration: '≈ 10 min', parts: 'Les lignes du motif', pick: 'Choisis la ligne aux angles les plus nets' },
+    ironing: { name: 'Plaque de lissage', shows: 'le débit et l’espacement qui donnent le dessus le plus lisse', duration: '≈ 15 min', parts: 'Les carrés de la plaque', pick: 'Choisis le carré le plus lisse' }
   };
   var calibHistory = [];   // calibrations déjà faites pour ce filament sur cette imprimante (slicer)
   var calibCard = null;    // carte du test en cours
@@ -1615,27 +1618,35 @@
     box.appendChild(el('p', 'why', 'Ta pièce et tes réglages sont gardés : « Remettre ma pièce » les ramène à tout moment.'));
 
     var sheet = el('div', 'sheet');
-    sheet.appendChild(el('header', '', info.parts));
+    var sheetHead = el('header', 'calib-head');
+    sheetHead.appendChild(el('span', '', info.parts));
+    sheetHead.appendChild(el('b', '', info.pick));
+    sheet.appendChild(sheetHead);
     var choice = null;
     var group = 'calib-' + Date.now();
-    var rows = msg.sections.map(function (s) {
+    // Une tour se lit comme on la tient : le haut en premier, avec un repère « En haut » / « En bas ».
+    var rows = Logic.calibOrder(msg.sections, info.tower).map(function (s) {
       var row = el('label', 'row');
       var radio = el('input');
       radio.type = 'radio';
       radio.name = group;
-      var info2 = el('div');
-      info2.appendChild(el('div', 'name', s.label));
+      var info2 = el('div', 'calib-row');
+      info2.appendChild(el('span', 'name', s.label));
+      if (s.where) info2.appendChild(el('span', 'badge-pill', s.where));
       row.appendChild(radio);
       row.appendChild(info2);
       radio.addEventListener('change', function () { choice = s; updateActions(); });
       sheet.appendChild(row);
       return { radio: radio, row: row, s: s };
     });
-    var status = el('div', 'status', 'Une fois le test imprimé, envoie-moi une photo.');
+    var status = el('div', 'status', 'Pas sûr ? Une fois le test imprimé, envoie-moi une photo : je t’aide à choisir.');
     sheet.appendChild(status);
     var footer = el('footer');
-    var photoBtn = button('Ajouter la photo', null, 'btn', 'camera');
+    // Libellés courts et parallèles : les deux boutons tiennent côte à côte à 320 px.
+    var photoBtn = button('Photo', null, 'btn', 'camera');
+    photoBtn.title = fr('Ajouter une photo depuis l’ordinateur');
     var phoneBtn = button('Téléphone', null, 'btn ghost', 'phone');
+    phoneBtn.title = fr('Prendre la photo avec ton téléphone');
     var action = button('', null, 'btn full hidden');
     var back = button('Remettre ma pièce', null, 'link');
     footer.appendChild(photoBtn);
@@ -1654,7 +1665,9 @@
       if (!choice) return;
       action.classList.remove('hidden');
       action.disabled = false;
-      action.textContent = fr(msg.test === 'flow' && msg.pass === 1 ? 'Lancer la passe fine' : 'Enregistrer pour ce filament sur cette imprimante');
+      action.textContent = fr(msg.test === 'flow' && msg.pass === 1 ? 'Lancer la passe fine' : 'Enregistrer ' + choice.label + ' pour ce filament');
+      // Le choix fait, l'enregistrement devient l'action principale ; la photo reste possible en secondaire.
+      photoBtn.classList.add('ghost');
     }
 
     function setPhotoButtons(enabled) { photoBtn.disabled = !enabled; phoneBtn.disabled = !enabled; }
