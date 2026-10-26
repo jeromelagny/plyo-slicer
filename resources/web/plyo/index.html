@@ -258,6 +258,7 @@
     <h1>Assistant Plyo</h1>
     <button class="linked hidden push" id="phone-linked" type="button" title="Téléphone relié à cette conversation : clique pour revoir le QR code"></button>
     <button class="gauge hidden push" id="gauge" type="button" title="Ton utilisation ce mois-ci : clique pour le détail"><span class="bar"><i id="gauge-fill"></i></span><span id="gauge-label">…</span></button>
+    <button class="btn sm hidden push" id="btn-login" type="button" title="Connexion par lien envoyé par e-mail, sans mot de passe">Me connecter</button>
     <button class="icon-btn" id="btn-more" type="button" title="Plus d'options" aria-haspopup="menu" aria-label="Plus d'options"></button>
     <div class="menu hidden" id="menu" role="menu">
       <button type="button" id="m-new" role="menuitem">Nouvelle conversation</button>
@@ -273,6 +274,7 @@
       <hr id="m-account-sep">
       <div class="who" id="m-email"></div>
       <button type="button" id="m-logout" role="menuitem">Me déconnecter</button>
+      <button type="button" id="m-login" role="menuitem">Me connecter</button>
     </div>
   </div>
 
@@ -502,6 +504,7 @@
   function showLoggedIn(loggedIn) {
     $('gauge').classList.toggle('hidden', !loggedIn);
     ['m-email', 'm-logout', 'm-account-sep', 'm-usage'].forEach(function (id) { $(id).classList.toggle('hidden', !loggedIn); });
+    ['btn-login', 'm-login'].forEach(function (id) { $(id).classList.toggle('hidden', loggedIn); });
     if (!thread.children.length) { home.classList.remove('hidden'); thread.classList.add('hidden'); }
     else thread.classList.remove('hidden');
   }
@@ -917,6 +920,8 @@
   $('m-values').addEventListener('click', openValues);
   $('m-help').addEventListener('click', openHelp);
   $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
+  $('m-login').addEventListener('click', function () { menu.classList.add('hidden'); openLogin(); });
+  $('btn-login').addEventListener('click', openLogin);
   $('m-tour').addEventListener('click', function () {
     menu.classList.add('hidden');
     window.orca.postMessage({ type: 'firststeps_set', patch: { level: 'beginner', tour_step: 'model' } });
