@@ -2156,6 +2156,8 @@
   function journalAnswer(a, target, parts, photos) {
     var key = a.defect && a.defect.key;
     if (a.status !== 'ok' || !parts.length || !key || key === 'general_question' || key === 'unknown') return;
+    // Un simple ordre sur le plateau (« penche la pièce ») n'est pas un problème d'impression à suivre.
+    if (a.commands && a.commands.length && !a.suggestions.length) return;
     var first = photos[0];
     var src = first ? (first.preview || 'data:' + first.media_type + ';base64,' + first.data) : null;
     (src ? scaled(src, 160, 0.7) : Promise.resolve('')).catch(function () { return ''; }).then(function (thumb) {
