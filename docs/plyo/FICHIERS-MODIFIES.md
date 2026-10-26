@@ -22,7 +22,7 @@ Retrouver toutes les modifications : `git grep -n "PLYO:" -- src resources`.
 
 ## Marque (icônes et logos)
 
-Les images d'Orca ci-dessous sont remplacées par celles de Plyo, **mêmes noms et mêmes dimensions**, pour ne toucher à aucune ligne de code. Elles sont produites par `src/plyo/brand/make_assets.py` (à relancer après une mise à jour d'Orca qui changerait ces fichiers) à partir de `src/plyo/brand/logo_degrade.py` (le logo en dégradé, en vectoriel) et de la police HarmonyOS Sans livrée avec Orca. L'icône de l'app est le symbole sur un carré blanc ; « À propos », le dépannage et l'écran de démarrage montrent le symbole seul. Les SVG utilisent des dégradés, que nanosvg (le lecteur SVG d'Orca) sait afficher. L'ancien logo (blanc sur menthe) reste dans `logo_geometry.py`, dont le nouveau module réutilise les fonctions de tracé.
+Les images d'Orca ci-dessous sont remplacées par celles de Plyo, **mêmes noms et mêmes dimensions**, pour ne toucher à aucune ligne de code. Elles sont produites par `src/plyo/brand/make_assets.py` (à relancer après une mise à jour d'Orca qui changerait ces fichiers) à partir de `src/plyo/brand/logo_geometry.py` (le logo en vectoriel) et de la police HarmonyOS Sans livrée avec Orca.
 
 - `resources/Icon.icns` (icône de l'app macOS), `resources/images/OrcaSlicer.icns` (documents associés)
 - `resources/images/OrcaSlicer.ico` (exe et installateur Windows), `OrcaSlicer-mac_256px.ico` (Dock au lancement), `OrcaSlicerTitle.ico/.png` (petites fenêtres)

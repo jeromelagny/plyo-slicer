@@ -1,7 +1,7 @@
 """Fabrique les icônes et logos de Plyo Slicer à la place de ceux d'Orca (mêmes noms de fichiers, mêmes dimensions).
 
 Lancer depuis la racine du dépôt :  python3 src/plyo/brand/make_assets.py
-Il faut Pillow, numpy et fontTools (pip), et `iconutil` (macOS) pour les .icns. Les fichiers produits sont versionnés : le script
+Il faut Pillow et fontTools (pip), et `iconutil` (macOS) pour les .icns. Les fichiers produits sont versionnés : le script
 ne tourne pas pendant la compilation. Liste des fichiers remplacés : docs/plyo/FICHIERS-MODIFIES.md (section Marque).
 """
 import os
@@ -17,21 +17,26 @@ from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageOps
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import logo_degrade as logo  # noqa: E402
+import logo_geometry as geo  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 IMAGES = os.path.join(ROOT, "resources", "images")
 FONTS = os.path.join(ROOT, "resources", "fonts")
 
+MINT = "#00F1CF"
 WHITE = "#FFFFFF"
-# Couleurs du nom « plyo slicer », prises dans le dégradé du logo (bleu sur fond clair, cyan sur fond sombre).
-TEXT = {"light": ("#0050FF", "#949494"), "dark": ("#00D9E3", "#A8A8A8")}
+# Couleurs du nom « plyo slicer » : la menthe du logo est trop claire pour du texte sur fond blanc.
+TEXT = {"light": ("#00A38A", "#949494"), "dark": (MINT, "#A8A8A8")}
+
+MARK = geo.mark_commands()
+OX, OY = geo.centering_offset(MARK)
+POLYS = [geo.sample(c) for c in MARK]
 
 
 # --- images en pixels -------------------------------------------------------------------------------------------
 
 def tile(size, margin=0.0, radius=0.0, alpha=255, ss=8):
-    """Carré blanc (arrondi si radius > 0, en fraction du côté du carré) avec le symbole en dégradé, centré."""
+    """Carré menthe (arrondi si radius > 0, en fraction du côté du carré) avec le symbole blanc, centré."""
     S = size * ss
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -39,15 +44,13 @@ def tile(size, margin=0.0, radius=0.0, alpha=255, ss=8):
     side = S - 2 * m
     box = (m, m, S - m - 1, S - m - 1)
     if radius > 0:
-        d.rounded_rectangle(box, radius=radius * side, fill=(255, 255, 255, 255))
+        d.rounded_rectangle(box, radius=radius * side, fill=geo.BG + (alpha,))
     else:
-        d.rectangle(box, fill=(255, 255, 255, 255))
-    img = img.resize((size, size), Image.LANCZOS)
-    m = round(margin * size)
-    img.alpha_composite(logo.render(size - 2 * m), (m, m))
-    if alpha < 255:
-        img.putalpha(img.getchannel("A").point(lambda v: v * alpha // 255))
-    return img
+        d.rectangle(box, fill=geo.BG + (alpha,))
+    k = side / geo.SIZE
+    for poly in POLYS:
+        d.polygon([(m + (x + OX) * k, m + (y + OY) * k) for x, y in poly], fill=(255, 255, 255, alpha))
+    return img.resize((size, size), Image.LANCZOS)
 
 
 # Proportions d'une icône macOS (grille Apple : carré de 824 sur 1024, coins de 185).
@@ -93,14 +96,15 @@ def save_icns(path):
 # --- images vectorielles (lues par nanosvg dans Orca : chemins seulement, pas de <text>) ---------------------------
 
 def mark_group(x, y, side):
-    """Symbole en dégradé dans un carré de `side` placé en (x, y), en chemins SVG."""
-    k = side / logo.SIZE
-    return f'<g transform="translate({x:.2f} {y:.2f}) scale({k:.5f})">{logo.svg_body()}</g>'
+    """Symbole blanc dans un carré de `side` placé en (x, y), en chemins SVG."""
+    k = side / geo.SIZE
+    d = " ".join(geo.svg_d(c, 1, OX, OY) for c in MARK)
+    return f'<g transform="translate({x:.2f} {y:.2f}) scale({k:.5f})"><path d="{d}" style="fill:{WHITE};"/></g>'
 
 
 def tile_svg(x, y, side, rx):
     return (f'<rect x="{x:.2f}" y="{y:.2f}" width="{side:.2f}" height="{side:.2f}" rx="{rx:.2f}" ry="{rx:.2f}" '
-            f'style="fill:{WHITE};"/>' + mark_group(x, y, side))
+            f'style="fill:{MINT};"/>' + mark_group(x, y, side))
 
 
 class Word:
@@ -195,15 +199,15 @@ def main():
         width = 112 * min(1.0, 64 / h)  # le nom tient dans 64 px de haut
         _, h = wordmark(0, 0, width, theme)
         words, _ = wordmark(92, (80 - h) / 2, width, theme)
-        out.append(write_svg(f"OrcaSlicer_horizontal{suffix}.svg", 214, 80, mark_group(0, 0, 80) + words))
+        out.append(write_svg(f"OrcaSlicer_horizontal{suffix}.svg", 214, 80, tile_svg(0, 0, 80, 9.57) + words))
     for theme, name in (("light", "OrcaSlicer_about.svg"), ("dark", "OrcaSlicer_about_dark.svg")):
         _, h = wordmark(0, 0, 120, theme)
         words, _ = wordmark(116, 21.22 + (80.56 - h) / 2, 120, theme)
         line = f'<rect x="20" y="123" width="520" height="2" style="fill:{TEXT[theme][0]};"/>'
-        out.append(write_svg(name, 560, 125, mark_group(20, 21.22, 80.56) + words + line))
-    # Écran de démarrage : le symbole seul, centré au-dessus de la version (écrite par Orca à 72 % de la hauteur).
+        out.append(write_svg(name, 560, 125, tile_svg(20, 21.22, 80.56, 9.64) + words + line))
+    # Écran de démarrage : le logo seul, centré au-dessus de la version (écrite par Orca à 72 % de la hauteur).
     for name in ("splash_logo.svg", "splash_logo_dark.svg"):
-        out.append(write_svg(name, 480, 480, mark_group(140, 90, 200)))
+        out.append(write_svg(name, 480, 480, tile_svg(150, 100, 180, 21.5)))
 
     for p in out:
         print(os.path.relpath(p, ROOT))
