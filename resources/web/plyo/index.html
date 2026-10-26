@@ -124,6 +124,17 @@
   .fix-list { border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); overflow: hidden; }
   .fix-list .fix-head { padding: 6px var(--s3); font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); }
   .fix-list .row { padding: var(--s2) var(--s3); }
+  .journal-list { display: flex; flex-direction: column; gap: var(--s3); }
+  .journal-part { background: transparent; }
+  .journal-part h4 { margin: 0; font-size: var(--fs-md); font-weight: 600; overflow-wrap: anywhere; }
+  .journal-event { display: grid; grid-template-columns: 40px 1fr; gap: var(--s2) var(--s3); align-items: start; border-top: 1px solid var(--border); padding-top: var(--s3); }
+  .journal-event .thumb { width: 40px; height: 40px; border-radius: var(--r-sm); object-fit: cover; }
+  .journal-event .thumb.placeholder { display: grid; place-items: center; background: var(--surface); border: 1px solid var(--border); color: var(--muted); }
+  .journal-body { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
+  .journal-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s2); }
+  .journal-top .meta { min-width: 0; }
+  .journal-body .problem { font-weight: 600; }
+  .journal-event > .row-acts { grid-column: 1 / -1; }
 
   /* En-tête */
   .top { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s3) var(--s3) var(--s4); border-bottom: 1px solid var(--border); position: relative; flex: none; }
@@ -305,18 +316,6 @@
   .plan .price { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .plan .row-acts { margin-top: var(--s1); }
   /* Cartes encore à reprendre (journal, résultat, vérification) */
-  .journal-part { border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
-  .journal-part h4 { margin: 0; font-size: var(--fs-md); overflow-wrap: anywhere; }
-  .journal-event { display: grid; grid-template-columns: 52px 1fr; gap: var(--s2); align-items: start; border-top: 1px solid var(--border); padding-top: var(--s2); }
-  .journal-event .thumb { width: 52px; height: 52px; border-radius: var(--r-sm); object-fit: cover; background: var(--border); }
-  .journal-event .meta { font-size: var(--fs-sm); color: var(--muted); }
-  .journal-event p { margin: 2px 0; line-height: 1.35; }
-  .journal-event ul { margin: var(--s1) 0; padding-left: var(--s4); font-size: var(--fs-sm); color: var(--muted); }
-  .journal-event .res { font-size: var(--fs-sm); font-weight: 600; }
-  .journal-event .res.ok { color: var(--accent-text); }
-  .journal-event .res.bad { color: var(--warn-text); }
-  .journal-event .acts { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s1); }
-  .journal-list { display: flex; flex-direction: column; gap: var(--s3); }
   .answers { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
   .check-line { display: flex; gap: var(--s2); align-items: flex-start; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
   .check-line input { margin: 3px 0 0; flex: none; }
@@ -885,40 +884,48 @@
     }
     var here = lastValues && lastValues.context;
     groups.forEach(function (g) {
-      var card = el('div', 'journal-part');
+      var card = el('div', 'card journal-part');
       card.appendChild(el('h4', '', g.part));
       g.events.forEach(function (e) {
         var row = el('div', 'journal-event');
+        // Sans photo, une vignette neutre avec l'icône de pièce plutôt qu'un carré gris vide.
         if (e.thumb) { var img = el('img', 'thumb'); img.src = e.thumb; img.alt = ''; row.appendChild(img); }
-        else row.appendChild(el('span', 'thumb'));
-        var col = el('div');
-        var d = new Date(e.at);
-        col.appendChild(el('div', 'meta', (isNaN(d) ? '' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) + ' · ') + e.printer + ' · ' + e.filament));
-        col.appendChild(el('p', '', e.problem || 'Question à l’assistant'));
+        else { var ph = el('span', 'thumb placeholder'); ph.appendChild(icon('cube', 20)); row.appendChild(ph); }
+        var col = el('div', 'journal-body');
+        var top = el('div', 'journal-top');
+        top.appendChild(el('span', 'meta', [dayOf(e.at), Logic.shortMachine(e.printer, e.filament)].filter(Boolean).join(' · ')));
+        var st = Logic.journalStatus(e);
+        top.appendChild(el('span', 'badge-pill' + (st.tone ? ' ' + st.tone : ''), st.label));
+        col.appendChild(top);
+        col.appendChild(el('p', 'problem', e.problem || 'Question à l’assistant'));
         var q = Logic.outcomeQuestion(e, function (id) { var p = paramOf(id); return p.label === id ? null : p; });
         if (q.changes.length) {
-          var ul = el('ul');
+          var ul = el('ul', 'meta');
           q.changes.forEach(function (c) { ul.appendChild(el('li', '', c)); });
           col.appendChild(ul);
         }
-        col.appendChild(el('span', 'res ' + (e.outcome === 'ok' ? 'ok' : e.outcome === 'bad' ? 'bad' : ''), Logic.journalOutcome(e)));
-        if (e.note) col.appendChild(el('p', 'meta', '« ' + e.note + ' »'));
-        var acts = el('div', 'acts');
-        acts.appendChild(button('Rouvrir la conversation', function () { closeDrawer(); openConversation(e.conv); }, 'btn sm ghost'));
+        if (e.note) col.appendChild(el('p', 'meta', 'Ton mot : « ' + e.note + ' »'));
+        var acts = el('div', 'row-acts');
+        var reopen = button('Conversation', function () { closeDrawer(); openConversation(e.conv); }, 'btn ghost sm', 'chat');
+        reopen.title = fr('Rouvrir la conversation');
+        acts.appendChild(reopen);
         var again = Logic.reapplyChanges(e, here);
         if (again) {
-          var re = button('Réappliquer ces réglages', function () {
+          var re = button('Réappliquer', function () {
             re.disabled = true;
             pendingSheet = { kind: 'apply', onResult: function (ok, text) {
               noteLine(ok ? 'Réglages de « ' + g.part + ' » réappliqués.' : text, ok ? 'ok' : 'error', ok ? 'check' : 'alert');
               if (ok) closeDrawer(); else re.disabled = false;
             } };
             window.orca.postMessage({ type: 'apply', changes: again, why: 'Journal : ' + g.part });
-          }, 'btn sm');
+          }, 'btn ghost sm', 'wand');
+          re.title = fr('Remettre ces réglages sur ton profil actuel');
           acts.appendChild(re);
-        } else if (e.changes && e.changes.length) acts.appendChild(el('span', 'meta', 'Réglages trouvés pour une autre imprimante ou un autre filament.'));
-        col.appendChild(acts);
+        }
+        if (!again && e.changes && e.changes.length && e.outcome !== 'bad')
+          col.appendChild(el('p', 'meta', 'Trouvés pour une autre imprimante ou un autre filament : pas réappliqués ici.'));
         row.appendChild(col);
+        row.appendChild(acts); // sur toute la largeur : les deux boutons tiennent sur une ligne à 320 px
         card.appendChild(row);
       });
       list.appendChild(card);

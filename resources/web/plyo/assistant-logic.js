@@ -183,6 +183,25 @@
     return e.outcome === 'ok' ? 'A marché' : e.outcome === 'bad' ? 'N’a pas réglé le problème' : 'Résultat pas encore donné';
   }
 
+  // Statut affiché en pastille dans « Mes pièces ».
+  function journalStatus(e) {
+    if (!e.changes || !e.changes.length) return { label: 'Sans réglage', tone: '' };
+    return e.outcome === 'ok' ? { label: 'Réussi', tone: 'ok' } : e.outcome === 'bad' ? { label: 'Pas réglé', tone: 'bad' } : { label: 'En attente', tone: 'warn' };
+  }
+
+  // Nom court de la machine pour une liste étroite : « Bambu Lab A1 0.4 nozzle » + « Bambu PLA Basic » →
+  // « A1 · PLA Basic ». Marque, buse, projet 3MF et suffixe « @BBL A1 » retirés ; un nom inconnu reste entier.
+  var BRANDS = /^(bambu lab|bambu|creality|original prusa|prusa research|prusa|elegoo|anycubic|qidi|sovol|artillery|flashforge|voron|generic|polymaker|esun|sunlu)\s+/i;
+  function shortName(name, nozzle) {
+    var n = String(name || '').replace(/\([^()]*\.3mf\)$/i, '').replace(/\s*@.*$/, '').trim();
+    if (nozzle) n = n.replace(/\s+\d+(\.\d+)?\s*nozzle$/i, '');
+    var short = n.replace(BRANDS, '').trim();
+    return short || n;
+  }
+  function shortMachine(printer, filament) {
+    return [shortName(printer, true), shortName(filament, false)].filter(Boolean).join(' · ');
+  }
+
   // Réglages à réappliquer (valeurs d'après), seulement pour l'imprimante et le filament où ils ont été trouvés,
   // et jamais s'ils n'ont pas réglé le problème.
   function reapplyChanges(e, context) {
@@ -218,13 +237,15 @@
   // Typographie française de tout texte affiché : sans espaces insécables, « ? » et « : » partent seuls en début
   // de ligne. Fine (U+202F) avant ? ! ; ; normale (U+00A0) avant : et dans « ». Heures (18:00) et adresses
   // (https://, ?b=1) restent intactes : la ponctuation doit être suivie d'une espace ou de la fin du texte.
+  // Un nombre reste aussi collé à son unité (« 235 °C » ne se coupe pas).
   function fr(text) {
     return String(text === null || text === undefined ? '' : text)
       .replace(/([A-Za-zÀ-ÿ])'(?=[A-Za-zÀ-ÿ])/g, '$1’')
-      .replace(/(\S)[   ]?([?!;]+)(?=$|[\s»)\].,…"’])/g, '$1 $2')
-      .replace(/(\S)[   ]?:(?=$|\s)/g, '$1 :')
-      .replace(/«[   ]?/g, '« ')
-      .replace(/[   ]?»/g, ' »');
+      .replace(/(\S)[ \u00A0\u202F]?([?!;]+)(?=$|[\s»)\].,…"’])/g, '$1\u202F$2')
+      .replace(/(\S)[ \u00A0\u202F]?:(?=$|\s)/g, '$1\u00A0:')
+      .replace(/«[ \u00A0\u202F]?/g, '«\u00A0')
+      .replace(/[ \u00A0\u202F]?»/g, '\u00A0»')
+      .replace(/(\d) (?=(°C|°|mm²|mm|%|g|min|h|s|Mo|€)(?![A-Za-zÀ-ÿ0-9]))/g, '$1\u00A0');
   }
 
   // Le slicer parle toujours de « les pièces » : avec une seule pièce sur le plateau, le panneau dit « la pièce ».
@@ -243,7 +264,7 @@
     return { restore: ok, followUp: ok && !!hasFollowUp, error: !ok && !auto };
   }
 
-  var api = { dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

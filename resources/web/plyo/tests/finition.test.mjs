@@ -22,7 +22,7 @@ test('typographie française : espaces insécables avant ? ! ; : et dans « »',
   assert.equal(L.fr('Ça a marché ?'), 'Ça a marché' + NNBSP + '?');
   assert.equal(L.fr('Super !'), 'Super' + NNBSP + '!');
   assert.equal(L.fr('Oui ; non'), 'Oui' + NNBSP + '; non');
-  assert.equal(L.fr('Valeur : 0,8 mm'), 'Valeur' + NBSP + ': 0,8 mm');
+  assert.equal(L.fr('Valeur : 0,8 mm'), 'Valeur' + NBSP + ': 0,8' + NBSP + 'mm');
   assert.equal(L.fr('« Tour »'), '«' + NBSP + 'Tour' + NBSP + '»');
   // Ponctuation collée (texte de l'IA) : l'espace manquante est ajoutée.
   assert.equal(L.fr('Prêt?'), 'Prêt' + NNBSP + '?');
@@ -86,4 +86,30 @@ test('alerte de jauge : seulement au passage d’un seuil pendant la session, pa
   assert.equal(L.gaugeNotice(low, null, null), null);       // premier relevé (lancement) : rien
   assert.equal(L.gaugeNotice(empty, null, 'low'), 'empty');
   assert.equal(L.gaugeNotice(low, 'low:2026-11-01T00:00:00.000Z', 'ok'), null); // déjà dit ce mois-ci
+});
+
+test('nom court de la machine : « A1 · PLA Basic »', () => {
+  assert.equal(L.shortMachine('Bambu Lab A1 0.4 nozzle', 'Bambu PLA Basic'), 'A1 · PLA Basic');
+  assert.equal(L.shortMachine('Bambu Lab X1 Carbon 0.4 nozzle', 'Generic PETG'), 'X1 Carbon · PETG');
+  assert.equal(L.shortMachine('Creality Ender-3 V3 0.4 nozzle(projet.3mf)', 'Bambu PLA Basic @BBL A1'), 'Ender-3 V3 · PLA Basic');
+  assert.equal(L.shortMachine('Original Prusa MK4 0.6 nozzle', ''), 'MK4');
+  assert.equal(L.shortMachine('', 'Generic PLA'), 'PLA');
+  assert.equal(L.shortMachine('Ma machine', 'Mon fil'), 'Ma machine · Mon fil');
+  assert.equal(L.shortMachine('', ''), '');
+});
+
+test('statut d’une pièce du journal : Réussi, Pas réglé, En attente, Sans réglage', () => {
+  const ch = [{ id: 'retraction', before: 0.8, after: 1.2 }];
+  assert.deepEqual(L.journalStatus({ changes: ch, outcome: 'ok' }), { label: 'Réussi', tone: 'ok' });
+  assert.deepEqual(L.journalStatus({ changes: ch, outcome: 'bad' }), { label: 'Pas réglé', tone: 'bad' });
+  assert.deepEqual(L.journalStatus({ changes: ch, outcome: '' }), { label: 'En attente', tone: 'warn' });
+  assert.deepEqual(L.journalStatus({ changes: [] }), { label: 'Sans réglage', tone: '' });
+});
+
+test('typographie française : un nombre reste collé à son unité', () => {
+  assert.equal(L.fr('240 → 235 °C'), '240 → 235\u00A0°C');
+  assert.equal(L.fr('1,2 mm et 35 % et 12 g'), '1,2\u00A0mm et 35\u00A0% et 12\u00A0g');
+  assert.equal(L.fr('environ 45 min'), 'environ 45\u00A0min');
+  assert.equal(L.fr('3 pièces'), '3 pièces');            // pas une unité
+  assert.equal(L.fr('2 grandes pièces'), '2 grandes pièces');
 });
