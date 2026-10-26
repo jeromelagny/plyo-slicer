@@ -205,9 +205,9 @@ def main():
         words, _ = wordmark(116, 21.22 + (80.56 - h) / 2, 120, theme)
         line = f'<rect x="20" y="123" width="520" height="2" style="fill:{TEXT[theme][0]};"/>'
         out.append(write_svg(name, 560, 125, tile_svg(20, 21.22, 80.56, 9.64) + words + line))
-    for theme, name in (("light", "splash_logo.svg"), ("dark", "splash_logo_dark.svg")):
-        words, _ = wordmark(168.97, 248, 142.05, theme, align="center")
-        out.append(write_svg(name, 480, 480, tile_svg(168.97, 80.54, 142.05, 17) + words))
+    # Écran de démarrage : le logo seul, centré au-dessus de la version (écrite par Orca à 72 % de la hauteur).
+    for name in ("splash_logo.svg", "splash_logo_dark.svg"):
+        out.append(write_svg(name, 480, 480, tile_svg(150, 100, 180, 21.5)))
 
     for p in out:
         print(os.path.relpath(p, ROOT))
