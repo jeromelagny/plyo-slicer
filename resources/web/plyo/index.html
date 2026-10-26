@@ -1637,7 +1637,6 @@
         footer.textContent = '';
         footer.appendChild(doneLabel(t));
         var restored = false;
-  var saveFailedShown = false;
         var restore = button('Remettre ma pièce', function () { restoreCalibration(restore, function (okR) { restored = okR; }); }, 'btn');
         footer.appendChild(restore);
         if (msg.test === 'ironing') {
@@ -1768,8 +1767,8 @@
   // Des réglages proposés par l'IA ont été appliqués : au moins 30 minutes plus tard (au démarrage, puis toutes
   // les 3 heures), une carte demande le résultat. Il est gardé dans la mémoire de la machine, et partagé
   // anonymement seulement si l'utilisateur a coché la case (désactivée par défaut).
-  var outcomeAsked = {};
-  var afterConvLoaded = null; // suite à donner une fois une conversation rouverte (réponse « Non »)   // entrées déjà montrées pendant cette session
+  var outcomeAsked = {};      // entrées déjà montrées pendant cette session
+  var afterConvLoaded = null; // suite à donner une fois une conversation rouverte (réponse « Non »)
   function askOutcome() { window.orca.postMessage({ type: 'outcome_pending' }); }
   setInterval(askOutcome, 3 * 60 * 60 * 1000);
   function onOutcomePending(items) {
@@ -2466,6 +2465,8 @@
 
   // ---------- Messages du slicer ----------
   var restored = false;
+  var autoOpening = null;     // conversation rouverte d'office au lancement (son échec ne s'affiche pas)
+  var saveFailedShown = false; // « conversation trop longue » : dit une seule fois
   window.orca.onMessage(function (msg) {
     if (!msg || !msg.type) return;
     if (msg.type === 'session') {
@@ -2530,14 +2531,18 @@
       noteLine(msg.text, msg.ok ? '' : 'error', msg.ok ? 'eye' : 'alert');
     } else if (msg.type === 'conv_list') {
       // Au lancement : la dernière conversation est rouverte ; ensuite, la liste remplit le volet.
-      if (!restored) { restored = true; if (msg.items && msg.items.length && !(conv && conv.entries.length)) openConversation(msg.items[0].id); }
+      if (!restored) { restored = true; if (msg.items && msg.items.length && !(conv && conv.entries.length)) { autoOpening = msg.items[0].id; openConversation(msg.items[0].id); } }
       else fillConversations(msg.items || []);
     } else if (msg.type === 'conv_save_failed') {
       if (!saveFailedShown) { saveFailedShown = true; noteLine('Cette conversation est devenue trop longue pour être gardée : commence-en une nouvelle depuis le menu « ⋯ ».', 'error', 'alert'); }
     } else if (msg.type === 'conv_loaded') {
-      if (msg.conversation) restoreConversation(msg.id, msg.conversation);
-      if (afterConvLoaded) { var then = afterConvLoaded; afterConvLoaded = null; if (msg.conversation) then(); }
-      else noteLine('Cette conversation n’a pas pu être ouverte.', 'error', 'alert');
+      var then = afterConvLoaded, auto = autoOpening === msg.id;
+      afterConvLoaded = null;
+      autoOpening = null;
+      var loaded = Logic.convLoaded(msg, !!then, auto);
+      if (loaded.restore) restoreConversation(msg.id, msg.conversation);
+      if (loaded.followUp) then();
+      if (loaded.error) noteLine('Cette conversation n’a pas pu être ouverte.', 'error', 'alert');
     }
   });
 
