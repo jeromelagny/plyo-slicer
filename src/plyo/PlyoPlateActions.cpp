@@ -107,22 +107,24 @@ nlohmann::json run(const std::string& kind)
             return {{"ok", false}, {"text", nothing}};
         return {{"ok", true}, {"text", text}, {"undo_token", after}};
     };
+    const bool one = plater->model().objects.size() == 1; // accord au singulier quand il n'y a qu'une pièce
     if (kind == "orient") {
         plater->select_all();
         const long long before = snapshot();
         plater->orient();
-        return done(before, "J'oriente tes pièces au mieux.", "Je n'ai pas pu lancer l'orientation. Réessaie dans un instant.");
+        return done(before, one ? "J'oriente ta pièce au mieux." : "J'oriente tes pièces au mieux.", "Je n'ai pas pu lancer l'orientation. Réessaie dans un instant.");
     }
     if (kind == "arrange") {
         const long long before = snapshot();
         plater->arrange();
-        return done(before, "Je range les pièces sur le plateau.", "Je n'ai pas pu ranger le plateau. Réessaie dans un instant.");
+        return done(before, one ? "Je place la pièce sur le plateau." : "Je range les pièces sur le plateau.", "Je n'ai pas pu ranger le plateau. Réessaie dans un instant.");
     }
     if (kind == "scale_to_fit") {
         plater->select_all();
         const long long before = snapshot();
         plater->scale_selection_to_fit_print_volume();
-        return done(before, "J'ai réduit les pièces de cette plaque pour qu'elles tiennent.", "Les pièces de cette plaque tiennent déjà : rien à réduire.");
+        return done(before, one ? "J'ai réduit la pièce pour qu'elle tienne sur le plateau." : "J'ai réduit les pièces de cette plaque pour qu'elles tiennent.",
+                    one ? "La pièce tient déjà sur le plateau : rien à réduire." : "Les pièces de cette plaque tiennent déjà : rien à réduire.");
     }
     if (kind == "slice") {
         wxPostEvent(plater, Slic3r::GUI::SimpleEvent(Slic3r::GUI::EVT_GLTOOLBAR_SLICE_PLATE));
