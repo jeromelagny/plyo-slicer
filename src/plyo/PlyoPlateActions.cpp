@@ -1,4 +1,5 @@
 #include "PlyoPlateActions.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoFirstSteps.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
@@ -67,14 +68,14 @@ nlohmann::json context()
         return nullptr;
     const nlohmann::json signals = FirstSteps::tour_signals();
     nlohmann::json       objects = nlohmann::json::array();
-    // `ref` (rang + 1) désigne la pièce dans les ordres de l'assistant (PlyoCommands) ; la sélection et la plaque
+    // `ref` (identifiant stable de l'objet) désigne la pièce dans les ordres de l'assistant (PlyoCommands) ; la sélection et la plaque
     // l'aident à savoir de quelle pièce parle l'utilisateur.
     const auto&                           selected = plater->get_view3D_canvas3D()->get_selection().get_content();
     Slic3r::GUI::PartPlateList&           plates   = plater->get_partplate_list();
     const std::vector<Slic3r::ModelObject*>& model_objects = plater->model().objects;
     for (size_t i = 0; i < model_objects.size() && objects.size() < 50; ++i) {
         const Slic3r::ModelObject* object = model_objects[i];
-        nlohmann::json item{{"ref", std::to_string(i + 1)}, {"name", object->name.substr(0, 120)}, {"size_mm", size_json(object_size(*object))},
+        nlohmann::json item{{"ref", std::to_string(object->id().id)}, {"name", object->name.substr(0, 120)}, {"size_mm", size_json(object_size(*object))},
                             {"copies", std::max<size_t>(1, std::min<size_t>(object->instances.size(), 200))}};
         if (selected.count(static_cast<int>(i)))
             item["selected"] = true;
@@ -82,8 +83,8 @@ nlohmann::json context()
             item["plate"] = plate + 1;
         objects.push_back(item);
     }
-    return {{"objects", objects}, {"bed_mm", size_json(bed_size())}, {"sliced", signals.value("sliced", false)},
-            {"time_s", signals.value("time_s", 0.0)}, {"weight_g", signals.value("weight_g", 0.0)}};
+    return {{"objects", objects}, {"bed_mm", size_json(bed_size())}, {"sliced", Json::boolean(signals, "sliced", false)},
+            {"time_s", Json::num(signals, "time_s", 0.0)}, {"weight_g", Json::num(signals, "weight_g", 0.0)}};
 }
 
 nlohmann::json run(const std::string& kind)

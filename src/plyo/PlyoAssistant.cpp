@@ -1,4 +1,6 @@
 #include "PlyoAssistant.hpp"
+#include "PlyoGuard.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoCalibration.hpp"
 #include "PlyoCommands.hpp"
 #include "PlyoConversations.hpp"
@@ -26,6 +28,7 @@
 
 #include <boost/filesystem/path.hpp>
 #include <boost/log/trivial.hpp>
+#include <boost/nowide/fstream.hpp>
 #include <nlohmann/json.hpp>
 
 #include <wx/aui/framemanager.h>
@@ -76,7 +79,7 @@ void refresh_topbar_button()
 std::string read_resource(const std::string& name)
 {
     const boost::filesystem::path path = boost::filesystem::path(Slic3r::resources_dir()) / "web" / "plyo" / name;
-    std::ifstream                 file(path.string(), std::ios::binary);
+    boost::nowide::ifstream       file(path.string(), std::ios::binary);
     if (!file) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: impossible de lire " << path.string();
         return std::string();
@@ -125,7 +128,7 @@ void send_result(const nlohmann::json& result)
 
 void handle_page_message(const nlohmann::json& data)
 {
-    const std::string type = data.is_object() ? data.value("type", std::string()) : std::string();
+    const std::string type = data.is_object() ? Json::str(data, "type") : std::string();
     try {
         if (type == "ready") {
             send({{"type", "status"}, {"text", "Connecté au slicer."}});
@@ -136,21 +139,21 @@ void handle_page_message(const nlohmann::json& data)
             // Chaque application réussie est notée dans la mémoire de la machine (imprimante + filament).
             const nlohmann::json before = SettingsBridge::read_values();
             const nlohmann::json result = SettingsBridge::apply_changes(data.contains("changes") ? data["changes"] : nlohmann::json());
-            if (result.value("ok", false)) {
+            if (Json::boolean(result, "ok", false)) {
                 const nlohmann::json ask = data.contains("ask") ? data["ask"] : nlohmann::json();
-                const std::string    key = Memory::note_applied(before, SettingsBridge::read_values(), data.value("why", std::string()), ask);
-                SettingsBridge::set_memory_key(result.value("undo_id", 0), key);
+                const std::string    key = Memory::note_applied(before, SettingsBridge::read_values(), Json::str(data, "why"), ask);
+                SettingsBridge::set_memory_key(Json::integer(result, "undo_id", 0), key);
                 // Réglages venus d'une réponse de l'IA : notés aussi dans le journal de la pièce.
                 const nlohmann::json noted = Memory::for_current();
                 if (ask.is_object() && !key.empty() && !noted.empty())
-                    Journal::set_changes(ask.value("conv", std::string()), noted[0].value("changes", nlohmann::json::array()));
+                    Journal::set_changes(Json::str(ask, "conv"), Json::arr(noted[0], "changes"));
             }
             send_result(result);
         } else if (type == "undo") {
             // `undo_id` : l'annulation d'une fiche précise ; sans, le dernier lot (menu « ⋯ »).
-            const nlohmann::json result = SettingsBridge::undo_last(data.value("undo_id", 0));
-            if (result.value("ok", false))
-                Journal::clear_changes(Memory::forget(result.value("memory_key", std::string())));
+            const nlohmann::json result = SettingsBridge::undo_last(Json::integer(data, "undo_id", 0));
+            if (Json::boolean(result, "ok", false))
+                Journal::clear_changes(Memory::forget(Json::str(result, "memory_key")));
             send_result(result);
         } else if (type == "ai_context")
             // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
@@ -158,10 +161,10 @@ void handle_page_message(const nlohmann::json& data)
         else if (type == "outcome_pending")
             send({{"type", "outcome_pending"}, {"items", Memory::pending()}});
         else if (type == "outcome_set") {
-            const std::string note = data.value("note", std::string());
-            Journal::set_outcome(data.value("conv", std::string()), data.value("outcome", std::string()), note);
+            const std::string note = Json::str(data, "note");
+            Journal::set_outcome(Json::str(data, "conv"), Json::str(data, "outcome"), note);
             send({{"type", "outcome_saved"},
-                  {"ok", Memory::set_outcome(data.value("machine", std::string()), data.value("at", std::string()), data.value("outcome", std::string()), note)}});
+                  {"ok", Memory::set_outcome(Json::str(data, "machine"), Json::str(data, "at"), Json::str(data, "outcome"), note)}});
         } else if (type == "journal_add")
             Journal::record(data);
         else if (type == "journal_list")
@@ -170,24 +173,24 @@ void handle_page_message(const nlohmann::json& data)
             // Après un découpage (ou sur demande) : mesures du plateau pour la vérification avant impression.
             send({{"type", "preflight"}, {"data", Preflight::measure()}});
         else if (type == "plate_action") {
-            const std::string kind = data.value("kind", std::string());
-            nlohmann::json    done = kind == "undo" ? PlateActions::undo(data.value("undo_token", -1LL)) : PlateActions::run(kind);
+            const std::string kind = Json::str(data, "kind");
+            nlohmann::json    done = kind == "undo" ? PlateActions::undo(Json::integer(data, "undo_token", -1LL)) : PlateActions::run(kind);
             done["type"]           = "plate_action";
             done["kind"]           = kind;
-            done["request"]        = data.value("request", 0); // pour retrouver le bouton qui a demandé l'action
+            done["request"]        = Json::integer(data, "request", 0); // pour retrouver le bouton qui a demandé l'action
             send(done);
         } else if (type == "commands") {
             // Ordres de l'IA (« penche la pièce de 20° ») : exécutés aussitôt, annulables d'un clic (plate_action « undo »).
             nlohmann::json done = Commands::run(data.contains("commands") ? data["commands"] : nlohmann::json());
             done["type"]        = "commands";
-            done["request"]     = data.value("request", 0);
+            done["request"]     = Json::integer(data, "request", 0);
             send(done);
         } else if (type == "open_tool") {
-            nlohmann::json done = Commands::open_tool(data.value("tool", std::string()));
+            nlohmann::json done = Commands::open_tool(Json::str(data, "tool"));
             done["type"]        = "open_tool";
             send(done);
         } else if (type == "show_setting") {
-            const std::string key = data.value("key", std::string());
+            const std::string key = Json::str(data, "key");
             Highlight::show_setting(key, [key](const nlohmann::json& shown) {
                 nlohmann::json message = shown;
                 message["type"]        = "show_setting";
@@ -197,16 +200,16 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "conv_list")
             send({{"type", "conv_list"}, {"items", Conversations::list()}});
         else if (type == "conv_load") {
-            const std::string id = data.value("id", std::string());
+            const std::string id = Json::str(data, "id");
             send({{"type", "conv_loaded"}, {"id", id}, {"conversation", Conversations::load(id)}});
         } else if (type == "conv_save") {
             // Enregistrement silencieux : le panneau n'attend pas de réponse, un échec est seulement journalisé.
-            if (!Conversations::save(data.value("id", std::string()), data.value("conversation", nlohmann::json()))) {
+            if (!Conversations::save(Json::str(data, "id"), Json::any(data, "conversation"))) {
                 BOOST_LOG_TRIVIAL(warning) << "Plyo: conversation non enregistrée";
-                send({{"type", "conv_save_failed"}, {"id", data.value("id", std::string())}});
+                send({{"type", "conv_save_failed"}, {"id", Json::str(data, "id")}});
             }
         } else if (type == "conv_delete") {
-            Conversations::remove(data.value("id", std::string()));
+            Conversations::remove(Json::str(data, "id"));
             send({{"type", "conv_list"}, {"items", Conversations::list()}});
         }
         else if (type == "session_load")
@@ -229,7 +232,7 @@ void handle_page_message(const nlohmann::json& data)
             // Au premier envoi du téléphone elle se ferme, et le panneau va chercher l'envoi aussitôt.
             static bool s_phone_open = false;
             const nlohmann::json session = Session::load();
-            const nlohmann::json link    = data.value("link", nlohmann::json());
+            const nlohmann::json link    = Json::any(data, "link");
             if (!s_phone_open && session.is_object() && link.is_object() && link.contains("id") && link["id"].is_string()) {
                 s_phone_open = true;
                 PhoneDialog dialog(Slic3r::GUI::wxGetApp().mainframe, session["access_token"].get<std::string>(), link);
@@ -240,7 +243,7 @@ void handle_page_message(const nlohmann::json& data)
             }
         } else if (type == "makerworld") {
             // Page MakerWorld dans une fenêtre Plyo ; le lien « Ouvrir dans … » est importé par Orca.
-            const std::string url = data.value("url", std::string());
+            const std::string url = Json::str(data, "url");
             if (MakerWorldWindow::is_makerworld_url(url)) {
                 auto* window = new MakerWorldWindow(Slic3r::GUI::wxGetApp().mainframe, url, [](const std::string& open_url) {
                     send({{"type", "makerworld_opened"}});
@@ -253,21 +256,21 @@ void handle_page_message(const nlohmann::json& data)
             } else
                 send_result({{"ok", false}, {"text", "Adresse MakerWorld non reconnue."}});
         } else if (type == "makerworld_apply")
-            send_result(MakerWorldImport::apply(data.value("keep_filaments", false), data.contains("changes") ? data["changes"] : nlohmann::json()));
+            send_result(MakerWorldImport::apply(Json::boolean(data, "keep_filaments", false), data.contains("changes") ? data["changes"] : nlohmann::json()));
         else if (type == "makerworld_undo")
             send_result(MakerWorldImport::restore_creator());
         else if (type == "makerworld_mono")
             send_result(MakerWorldImport::use_my_filament_everywhere());
         else if (type == "calib_start") {
             // Calibration guidée : lancé seulement par le bouton « Lancer le test » du panneau.
-            nlohmann::json started = Calibration::start_test(data.value("test", std::string()), data.value("pass", 1), data.value("base_value", 0.0));
-            if (started.value("ok", false)) {
+            nlohmann::json started = Calibration::start_test(Json::str(data, "test"), Json::integer(data, "pass", 1), Json::num(data, "base_value", 0.0));
+            if (Json::boolean(started, "ok", false)) {
                 started["type"] = "calib_started";
                 send(started);
             } else
                 send_result(started);
         } else if (type == "calib_save") {
-            send_result(Calibration::save_result(data.value("test", std::string()), data.value("value", 0.0)));
+            send_result(Calibration::save_result(Json::str(data, "test"), Json::num(data, "value", 0.0)));
             send({{"type", "calib_history"}, {"items", Calibration::history_for_current()}});
         } else if (type == "calib_restore")
             send_result(Calibration::restore());
@@ -276,7 +279,7 @@ void handle_page_message(const nlohmann::json& data)
         else if (type == "firststeps_state")
             send({{"type", "firststeps"}, {"state", FirstSteps::state()}});
         else if (type == "firststeps_set") {
-            FirstSteps::set_state(data.value("patch", nlohmann::json::object()));
+            FirstSteps::set_state(Json::obj(data, "patch"));
             send({{"type", "firststeps"}, {"state", FirstSteps::state()}});
         } else if (type == "tour_signals") {
             nlohmann::json signals = FirstSteps::tour_signals();
@@ -286,14 +289,14 @@ void handle_page_message(const nlohmann::json& data)
             send_result(FirstSteps::add_benchy());
         else if (type == "model_add") {
             // Modèle 3D joint dans le panneau (trombone ou glisser-déposer).
-            nlohmann::json added = ModelImport::add(data.value("name", std::string()), data.value("data", std::string()));
+            nlohmann::json added = ModelImport::add(Json::str(data, "name"), Json::str(data, "data"));
             added["type"]        = "model_added";
             send(added);
         } else if (type == "show_me") {
-            const std::string target = data.value("target", std::string());
-            send({{"type", "show_me"}, {"target", target}, {"ok", Highlight::show(target).value("ok", false)}});
+            const std::string target = Json::str(data, "target");
+            send({{"type", "show_me"}, {"target", target}, {"ok", Json::boolean(Highlight::show(target), "ok", false)}});
         } else if (type == "explain") {
-            nlohmann::json fiche = FirstSteps::explain(data.value("key", std::string()));
+            nlohmann::json fiche = FirstSteps::explain(Json::str(data, "key"));
             fiche["type"]        = "explain";
             send(fiche);
         } else if (type == "session_clear") {
@@ -315,7 +318,7 @@ void handle_page_message(const nlohmann::json& data)
 void on_page_message(const nlohmann::json& data)
 {
     if (s_panel)
-        s_panel->CallAfter([data]() { handle_page_message(data); });
+        s_panel->CallAfter([data]() { guarded("un message du panneau", [&] { handle_page_message(data); }); });
 }
 
 } // namespace
@@ -393,7 +396,7 @@ void on_config_changed()
     s_refresh_pending = true;
     s_panel->CallAfter([]() {
         s_refresh_pending = false;
-        send_values();
+        guarded("la lecture des réglages", [] { send_values(); });
     });
 }
 

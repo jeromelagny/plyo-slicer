@@ -1,4 +1,8 @@
 #include "PlyoFirstSteps.hpp"
+#include "PlyoStore.hpp"
+#include "PlyoSanitize.hpp"
+#include "PlyoGuard.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoAssistant.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoWelcomeDialog.hpp"
@@ -36,39 +40,11 @@ namespace {
 
 fs::path state_path() { return fs::path(Slic3r::data_dir()) / "plyo" / "premiers-pas.json"; }
 
-nlohmann::json defaults() { return {{"seen", false}, {"level", nullptr}, {"tour_step", nullptr}, {"greeted", false}, {"share_outcomes", false}}; }
+// Chaque champ est relu avec son type (Sanitize::first_steps) : une valeur inattendue, venue du panneau ou d'un
+// fichier modifié à la main, ne peut pas faire planter le démarrage.
+nlohmann::json load_state() { return Sanitize::first_steps(Store::read(state_path())); }
 
-nlohmann::json load_state()
-{
-    nlohmann::json s = defaults();
-    std::ifstream  in(state_path().string(), std::ios::binary);
-    if (!in)
-        return s;
-    const nlohmann::json stored = nlohmann::json::parse(in, nullptr, false);
-    if (stored.is_object())
-        for (auto& [key, value] : s.items())
-            if (stored.contains(key))
-                value = stored[key];
-    return s;
-}
-
-void store_state(const nlohmann::json& s)
-{
-    const fs::path            path = state_path();
-    const fs::path            tmp  = path.string() + ".tmp";
-    boost::system::error_code ec;
-    fs::create_directories(path.parent_path(), ec);
-    {
-        std::ofstream out(tmp.string(), std::ios::binary | std::ios::trunc);
-        if (!out)
-            return;
-        out << s.dump(2);
-    }
-    fs::permissions(tmp, fs::owner_read | fs::owner_write, ec);
-    fs::rename(tmp, path, ec);
-    if (ec)
-        BOOST_LOG_TRIVIAL(error) << "Plyo: impossible d'enregistrer l'état des premiers pas : " << ec.message();
-}
+void store_state(const nlohmann::json& s) { Store::write(state_path(), Sanitize::first_steps(s)); }
 
 Slic3r::GUI::GuideFrame* visible_guide()
 {
@@ -182,7 +158,7 @@ public:
                 m_welcomed  = true;
                 m_saw_guide = true;
                 wxWindow* parent = guide;
-                wxGetApp().CallAfter([parent] { show_welcome(parent, true); });
+                wxGetApp().CallAfter([parent] { guarded("l'accueil", [&] { show_welcome(parent, true); }); });
                 return;
             }
             // Pas d'écran de configuration en vue (Orca déjà configuré, ou délai dépassé) : accueil sur la fenêtre principale.
@@ -191,7 +167,7 @@ public:
                 return;
             m_welcomed = true;
             wxGetApp().CallAfter([this] {
-                show_welcome(wxGetApp().mainframe, false);
+                guarded("l'accueil", [] { show_welcome(wxGetApp().mainframe, false); });
                 finish();
             });
             return;
@@ -207,7 +183,7 @@ private:
     {
         if (!m_done) {
             m_done = true;
-            wxGetApp().CallAfter([] { open_panel_at_startup(); });
+            wxGetApp().CallAfter([] { guarded("l'ouverture du panneau", [] { open_panel_at_startup(); }); });
         }
         if (m_tabs_bound)
             Stop();
@@ -254,7 +230,7 @@ void on_startup()
         if (frame == nullptr || frame == s_watched_frame || !wxGetApp().is_editor())
             return;
         s_watched_frame = frame;
-        new StartupWatcher(!load_state().value("seen", false)); // s'arrête seul ; vit autant que l'application
+        new StartupWatcher(!Json::boolean(load_state(), "seen", false)); // s'arrête seul ; vit autant que l'application
     });
 }
 
@@ -268,7 +244,7 @@ void set_state(const nlohmann::json& patch)
     for (auto& [key, value] : s.items())
         if (patch.contains(key))
             value = patch[key];
-    store_state(s);
+    store_state(s); // nettoyé à l'écriture : un mauvais type est remplacé par la valeur par défaut
 }
 
 nlohmann::json tour_signals()

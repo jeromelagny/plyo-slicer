@@ -1,4 +1,7 @@
 #include "PlyoCalibration.hpp"
+#include "PlyoStore.hpp"
+#include "PlyoSanitize.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/Format/STL.hpp"
@@ -315,30 +318,9 @@ nlohmann::json ironing_test()
 
 fs::path history_path() { return plyo_dir() / "calibrations.json"; }
 
-nlohmann::json load_history()
-{
-    std::ifstream        in(history_path().string(), std::ios::binary);
-    const nlohmann::json h = in ? nlohmann::json::parse(in, nullptr, false) : nlohmann::json();
-    return h.is_object() ? h : nlohmann::json::object();
-}
+nlohmann::json load_history() { return Sanitize::calibrations(Store::read(history_path())); }
 
-void store_history(const nlohmann::json& history)
-{
-    const fs::path            path = history_path();
-    const fs::path            tmp  = path.string() + ".tmp";
-    boost::system::error_code ec;
-    fs::create_directories(path.parent_path(), ec);
-    {
-        std::ofstream out(tmp.string(), std::ios::binary | std::ios::trunc);
-        if (!out)
-            return;
-        out << history.dump(2);
-    }
-    fs::permissions(tmp, fs::owner_read | fs::owner_write, ec);
-    fs::rename(tmp, path, ec);
-    if (ec)
-        BOOST_LOG_TRIVIAL(error) << "Plyo: impossible d'enregistrer l'historique de calibration : " << ec.message();
-}
+void store_history(const nlohmann::json& history) { Store::write(history_path(), history); }
 
 std::string history_key() { return origin_filament(filament_name()) + " | " + printer_name(); }
 
@@ -529,7 +511,7 @@ nlohmann::json history_for_current()
     const auto           it      = history.find(history_key());
     if (it != history.end() && it->is_object())
         for (const auto& [test, item] : it->items())
-            list.push_back({{"test", test}, {"value", item.value("value", 0.0)}, {"date", item.value("date", std::string())}});
+            list.push_back({{"test", test}, {"value", Json::num(item, "value", 0.0)}, {"date", Json::str(item, "date")}});
     return list;
 }
 

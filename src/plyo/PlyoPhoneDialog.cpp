@@ -1,4 +1,6 @@
 #include "PlyoPhoneDialog.hpp"
+#include "PlyoGuard.hpp"
+#include "PlyoJson.hpp"
 
 #include "slic3r/GUI/GUI_App.hpp"
 
@@ -28,7 +30,7 @@ void PhoneDialog::add_user_scripts()
 {
     if (wxWebView* view = browser()) {
         const nlohmann::json plyo{{"accessToken", m_access_token},
-                                  {"link", {{"id", m_link.value("id", std::string())}, {"qr_svg", m_link.value("qr_svg", std::string())}}}};
+                                  {"link", {{"id", Json::str(m_link, "id")}, {"qr_svg", Json::str(m_link, "qr_svg")}}}};
         const std::string script = "window.PLYO = " + plyo.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) + ";";
         view->AddUserScript(wxString::FromUTF8(script));
     }
@@ -39,7 +41,7 @@ void PhoneDialog::on_script_message(const nlohmann::json& payload)
     // Aucun travail sur la fenêtre pendant le callback de la vue web (règle Orca/wxWidgets).
     Slic3r::GUI::wxGetApp().CallAfter([this, alive = m_alive, payload] {
         if (alive->load(std::memory_order_acquire) && !m_closing)
-            handle_command(payload);
+            guarded("la fenêtre du téléphone", [&] { handle_command(payload); });
     });
 }
 
@@ -47,7 +49,7 @@ void PhoneDialog::handle_command(const nlohmann::json& payload)
 {
     if (!payload.is_object())
         return;
-    if (payload.value("command", std::string()) == "phone_done") {
+    if (Json::str(payload, "command") == "phone_done") {
         m_closing = true;
         EndModal(wxID_OK);
         return;

@@ -27,6 +27,12 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoHighlight.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoModelImport.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoModelImport.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoFiles.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoFiles.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoGuard.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoJson.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSanitize.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSanitize.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoStore.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoStore.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoConversations.cpp

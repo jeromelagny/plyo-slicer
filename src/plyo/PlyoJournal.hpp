@@ -10,6 +10,8 @@ namespace Plyo { namespace Journal {
 
 constexpr size_t MAX_EVENTS      = 200;
 constexpr size_t MAX_THUMB_BYTES = 40 * 1024;
+// Le journal plein doit rester lisible (Store::MAX_READ_BYTES, 16 Mo) : 200 × (40 Ko + 4 Ko de texte) ≈ 9 Mo.
+static_assert(MAX_EVENTS * (MAX_THUMB_BYTES + 4096) < 16ULL * 1024 * 1024);
 
 // Après une réponse de l'IA : {conv, parts, printer, filament, problem, defect, thumb}. Une seule entrée par
 // conversation et par pièce : une nouvelle réponse la met à jour (la vignette d'origine est gardée).

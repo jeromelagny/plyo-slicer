@@ -1,4 +1,5 @@
 #include "PlyoCommands.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
@@ -70,26 +71,26 @@ double amount(const nlohmann::json& c, const char* key, double lo, double hi)
 
 int axis_of(const nlohmann::json& c)
 {
-    const int axis = axis_index(c.value("axis", std::string()));
+    const int axis = axis_index(Json::str(c, "axis"));
     if (axis < 0)
         throw Refused("Axe manquant : ordre ignoré.");
     return axis;
 }
 
-// Pièce visée : sa référence (« 1 », « 2 »… = rang dans le modèle + 1), sinon la pièce sélectionnée, sinon la seule.
+// Pièce visée : sa référence (identifiant stable de l'objet d'Orca, envoyé avec le plateau), sinon la pièce
+// sélectionnée, sinon la seule. Un identifiant survit aux suppressions et aux coupes faites pendant que l'IA répond,
+// contrairement au rang dans la liste.
 std::optional<Slic3r::ObjectID> target_of(const std::string& ref)
 {
     const auto& objects = model().objects;
     if (!ref.empty()) {
-        int n = 0;
-        for (char ch : ref) {
-            if (ch < '0' || ch > '9' || n > 1000)
-                return std::nullopt;
-            n = n * 10 + (ch - '0');
-        }
-        if (n < 1 || n > static_cast<int>(objects.size()))
+        if (ref.size() > 18 || ref.find_first_not_of("0123456789") != std::string::npos)
             return std::nullopt;
-        return objects[n - 1]->id();
+        const size_t id = std::stoull(ref);
+        for (const Slic3r::ModelObject* o : objects)
+            if (o->id().id == id)
+                return o->id();
+        return Slic3r::ObjectID(); // identifiant invalide : « Cette pièce n'est plus sur le plateau. »
     }
     if (const int idx = selection().get_object_idx(); idx >= 0 && idx < static_cast<int>(objects.size()))
         return objects[idx]->id();
@@ -274,14 +275,14 @@ std::string object_setting(int idx, const std::string& id, const nlohmann::json&
 {
     Slic3r::DynamicPrintConfig config;
     const nlohmann::json       checked = SettingsBridge::object_override(id, value, config);
-    if (!checked.value("ok", false))
+    if (!Json::boolean(checked, "ok", false))
         throw Refused(checked.value("text", std::string("Réglage refusé.")));
     Slic3r::ModelObject* object = model().objects[idx];
     object->config.apply(config);
     Slic3r::GUI::ObjectList* list = wxGetApp().obj_list();
     list->add_settings_item(list->GetModel()->GetItemById(idx), &object->config.get());
     plater().changed_object(idx);
-    return checked.value("text", std::string());
+    return Json::str(checked, "text");
 }
 
 std::string range_setting(int idx, double from, double to, const std::string& id, const nlohmann::json& value)
@@ -295,7 +296,7 @@ std::string range_setting(int idx, double from, double to, const std::string& id
     Slic3r::GUI::ObjectList*   list   = wxGetApp().obj_list();
     Slic3r::DynamicPrintConfig config = list->get_default_layer_config(idx);
     const nlohmann::json       checked = SettingsBridge::object_override(id, value, config);
-    if (!checked.value("ok", false))
+    if (!Json::boolean(checked, "ok", false))
         throw Refused(checked.value("text", std::string("Réglage refusé.")));
     object->layer_config_ranges[{from, to}].assign_config(config);
     const wxDataViewItem object_item = list->GetModel()->GetItemById(idx);
@@ -305,7 +306,7 @@ std::string range_setting(int idx, double from, double to, const std::string& id
     else
         list->add_layer_root_item(object_item);
     plater().changed_object(idx);
-    return checked.value("text", std::string());
+    return Json::str(checked, "text");
 }
 
 // Deux exemplaires de la même plaque se chevauchent ou se touchent (vus de dessus, à 1 mm près) :
@@ -331,7 +332,7 @@ bool pieces_overlap()
 // Exécute un ordre ; rend le texte de vérification à ajouter à la phrase de l'IA (réglage appliqué), ou vide.
 std::string execute(const nlohmann::json& c, const std::optional<Slic3r::ObjectID>& target)
 {
-    const std::string op = c.value("op", std::string());
+    const std::string op = Json::str(c, "op");
     if (is_plate_wide(op)) {
         if (op == "orient") {
             plater().select_all();
@@ -353,10 +354,12 @@ std::string execute(const nlohmann::json& c, const std::optional<Slic3r::ObjectI
     if (!target)
         throw Refused("Je ne sais pas quelle pièce modifier : clique d'abord sur la pièce, puis redemande-moi.");
     const int idx = index_of(*target);
+    if (model().objects[idx]->instances.empty())
+        throw Refused("Cette pièce n'a pas d'exemplaire sur le plateau.");
     if (op == "rotate")
         rotate(idx, axis_of(c), amount(c, "amount", -360, 360));
     else if (op == "lay_flat")
-        lay_flat(idx, c.value("text", std::string()));
+        lay_flat(idx, Json::str(c, "text"));
     else if (op == "reset_rotation")
         reset_rotation(idx);
     else if (op == "move") {
@@ -371,14 +374,14 @@ std::string execute(const nlohmann::json& c, const std::optional<Slic3r::ObjectI
         select_object(idx);
         plater().drop_selection();
     } else if (op == "scale")
-        scale(idx, axis_index(c.value("axis", std::string())), amount(c, "amount", 1, 1000) / 100.0);
+        scale(idx, axis_index(Json::str(c, "axis")), amount(c, "amount", 1, 1000) / 100.0);
     else if (op == "scale_to_size") {
         const int    axis = axis_of(c);
         const double size = model().objects[idx]->instance_bounding_box(0).size()(axis);
         if (size <= 0)
             throw Refused("Taille de la pièce inconnue.");
         // « axis_only » : étirer sur cet axe seulement (« plus épaisse »), sinon proportions gardées.
-        scale(idx, c.value("text", std::string()) == "axis_only" ? axis : -1, amount(c, "amount", 0.1, 2000) / size);
+        scale(idx, Json::str(c, "text") == "axis_only" ? axis : -1, amount(c, "amount", 0.1, 2000) / size);
     } else if (op == "mirror") {
         const int axis = axis_of(c);
         select_object(idx);
@@ -392,23 +395,23 @@ std::string execute(const nlohmann::json& c, const std::optional<Slic3r::ObjectI
         select_object(idx);
         plater().remove_selected();
     } else if (op == "rename") {
-        const std::string name = c.value("text", std::string());
+        const std::string name = Json::str(c, "text");
         if (name.empty() || name.size() > 240)
             throw Refused("Nom vide ou trop long : ordre ignoré.");
         rename(idx, name);
     } else if (op == "printable")
         set_printable(idx, amount(c, "amount", 0, 1) >= 0.5);
     else if (op == "split")
-        split(idx, c.value("text", std::string()));
+        split(idx, Json::str(c, "text"));
     else if (op == "inch_to_mm") {
         select_object(idx);
         plater().convert_unit(Slic3r::ConversionType::CONV_FROM_INCH);
     } else if (op == "cut_height")
-        cut_at(idx, amount(c, "amount", 0, 2000), c.value("text", std::string()));
+        cut_at(idx, amount(c, "amount", 0, 2000), Json::str(c, "text"));
     else if (op == "object_setting")
-        return object_setting(idx, c.value("setting", std::string()), c.contains("setting_value") ? c["setting_value"] : nlohmann::json());
+        return object_setting(idx, Json::str(c, "setting"), c.contains("setting_value") ? c["setting_value"] : nlohmann::json());
     else if (op == "range_setting")
-        return range_setting(idx, amount(c, "amount", 0, 2000), amount(c, "amount2", 0, 2000), c.value("setting", std::string()),
+        return range_setting(idx, amount(c, "amount", 0, 2000), amount(c, "amount2", 0, 2000), Json::str(c, "setting"),
                              c.contains("setting_value") ? c["setting_value"] : nlohmann::json());
     else if (op == "select")
         select_object(idx);
@@ -434,12 +437,12 @@ nlohmann::json run(const nlohmann::json& commands)
     for (const nlohmann::json& c : commands) {
         if (!c.is_object())
             continue;
-        const std::string op = c.value("op", std::string());
+        const std::string op = Json::str(c, "op");
         (op == "slice" ? slicing : is_background(op) ? background : ordered).push_back(c);
     }
     nlohmann::json skipped = nlohmann::json::array();
     while (background.size() > 1) {
-        skipped.push_back(background.back().value("summary", std::string()));
+        skipped.push_back(Json::str(background.back(), "summary"));
         background.pop_back();
     }
     // Découper pendant qu'Orca range ou oriente la plaque donnerait un résultat périmé.
@@ -453,7 +456,7 @@ nlohmann::json run(const nlohmann::json& commands)
     // Pièces visées résolues avant tout changement : une coupe décale les rangs des pièces suivantes.
     std::vector<std::optional<Slic3r::ObjectID>> targets;
     for (const nlohmann::json& c : ordered)
-        targets.push_back(is_plate_wide(c.value("op", std::string())) ? std::nullopt : target_of(c.value("object", std::string())));
+        targets.push_back(is_plate_wide(Json::str(c, "op")) ? std::nullopt : target_of(Json::str(c, "object")));
 
     nlohmann::json done = nlohmann::json::array();
     std::string    failure;
@@ -483,7 +486,7 @@ nlohmann::json run(const nlohmann::json& commands)
             const nlohmann::json& c = ordered[i];
             try {
                 const std::string checked = execute(c, targets[i]);
-                std::string       said    = c.value("summary", std::string());
+                std::string       said    = Json::str(c, "summary");
                 if (!checked.empty())
                     said += " (" + checked + ")";
                 done.push_back(said);
@@ -491,7 +494,7 @@ nlohmann::json run(const nlohmann::json& commands)
                 failure = e.what();
                 break;
             } catch (const std::exception& e) {
-                BOOST_LOG_TRIVIAL(error) << "Plyo: ordre " << c.value("op", std::string()) << " en échec : " << e.what();
+                BOOST_LOG_TRIVIAL(error) << "Plyo: ordre " << Json::str(c, "op") << " en échec : " << e.what();
                 failure = "Orca n'a pas pu exécuter cet ordre.";
                 break;
             }

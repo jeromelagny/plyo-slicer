@@ -1,4 +1,5 @@
 #include "PlyoModelImport.hpp"
+#include "PlyoFiles.hpp"
 #include "PlyoPlateActions.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
@@ -62,11 +63,8 @@ nlohmann::json add(const std::string& name, const std::string& base64)
     fs::path path = dir / file;
     for (int i = 2; fs::exists(path) && i < 1000; ++i)
         path = dir / (fs::path(file).stem().string() + "-" + std::to_string(i) + fs::path(file).extension().string());
-    {
-        std::ofstream out(path.string(), std::ios::binary | std::ios::trunc);
-        if (!out || !out.write(bytes.data(), std::streamsize(bytes.size())))
-            return {{"ok", false}, {"text", "Le fichier n'a pas pu être copié."}};
-    }
+    if (!Files::write_atomic(path, bytes, false))
+        return {{"ok", false}, {"text", "Le fichier n'a pas pu être copié."}};
 
     Slic3r::GUI::Plater* plater = wxGetApp().plater();
     if (plater == nullptr)

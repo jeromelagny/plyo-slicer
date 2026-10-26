@@ -1,4 +1,5 @@
 #include "PlyoMakerWorldWindow.hpp"
+#include "PlyoGuard.hpp"
 
 #include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
@@ -131,10 +132,12 @@ bool MakerWorldWindow::capture(const std::string& url)
     BOOST_LOG_TRIVIAL(info) << "Plyo: lien MakerWorld capté (" << url.substr(0, url.find(':')) << ")";
     // Hors du callback de la vue web : fermeture de la fenêtre puis téléchargement par Orca.
     Slic3r::GUI::wxGetApp().CallAfter([self = wxWeakRef<wxFrame>(this), url, on_open = m_on_open] {
-        if (self)
-            self->Close(true);
-        if (on_open)
-            on_open(url);
+        guarded("l'import MakerWorld", [&] {
+            if (self)
+                self->Close(true);
+            if (on_open)
+                on_open(url);
+        });
     });
     return true;
 }

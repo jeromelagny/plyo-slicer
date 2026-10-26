@@ -1,4 +1,6 @@
 #include "PlyoJournal.hpp"
+#include "PlyoJson.hpp"
+#include "PlyoSanitize.hpp"
 #include "PlyoStore.hpp"
 
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -11,14 +13,8 @@ boost::filesystem::path file() { return Store::dir() / "journal.json"; }
 
 nlohmann::json load()
 {
-    const nlohmann::json all = Store::read(file());
-    nlohmann::json       kept = nlohmann::json::array();
     // Seules les fiches bien formées sont gardées : une fiche abîmée ne bloque pas le tiroir « Mes pièces ».
-    if (all.is_array())
-        for (const nlohmann::json& e : all)
-            if (e.is_object())
-                kept.push_back(e);
-    return kept;
+    return Sanitize::journal(Store::read(file()));
 }
 
 std::string text(const nlohmann::json& e, const char* key, size_t max)
@@ -30,7 +26,7 @@ std::string text(const nlohmann::json& e, const char* key, size_t max)
 template<class Pred> nlohmann::json* latest(nlohmann::json& all, const std::string& conv, Pred pred)
 {
     for (nlohmann::json& e : all)
-        if (e.is_object() && e.value("conv", std::string()) == conv && pred(e))
+        if (e.is_object() && Json::str(e, "conv") == conv && pred(e))
             return &e;
     return nullptr;
 }
@@ -51,7 +47,7 @@ void record(const nlohmann::json& event)
         thumb.clear();
 
     nlohmann::json all = load();
-    nlohmann::json* e  = latest(all, conv, [&](const nlohmann::json& x) { return x.value("parts", nlohmann::json()) == parts; });
+    nlohmann::json* e  = latest(all, conv, [&](const nlohmann::json& x) { return Json::any(x, "parts") == parts; });
     if (e == nullptr) {
         // Une seule fiche : insert(pos, {…}) prendrait les accolades pour une liste d'éléments à insérer.
         const nlohmann::json entry = {{"conv", conv}, {"parts", parts}, {"changes", nlohmann::json::array()}, {"outcome", ""}, {"thumb", ""}};
@@ -63,7 +59,7 @@ void record(const nlohmann::json& event)
     (*e)["filament"] = text(event, "filament", 200);
     (*e)["problem"]  = text(event, "problem", 120);
     (*e)["defect"]   = text(event, "defect", 40);
-    if ((*e).value("thumb", std::string()).empty())
+    if (Json::str((*e), "thumb").empty())
         (*e)["thumb"] = thumb;
     if (all.size() > MAX_EVENTS)
         all.erase(all.begin() + MAX_EVENTS, all.end());

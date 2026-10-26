@@ -1,4 +1,5 @@
 #include "PlyoMakerWorldImport.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/Model.hpp"
@@ -167,9 +168,9 @@ nlohmann::json apply(bool keep_creator_filaments, const nlohmann::json& changes)
 
     if (changes.is_array() && !changes.empty()) {
         nlohmann::json result = SettingsBridge::apply_changes(changes);
-        if (!result.value("ok", false)) {
+        if (!Json::boolean(result, "ok", false)) {
             restore_creator();
-            result["text"] = result.value("text", std::string()) + " Les réglages du créateur ont été remis.";
+            result["text"] = Json::str(result, "text") + " Les réglages du créateur ont été remis.";
         }
         return result;
     }

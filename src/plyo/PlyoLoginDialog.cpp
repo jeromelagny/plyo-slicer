@@ -1,4 +1,6 @@
 #include "PlyoLoginDialog.hpp"
+#include "PlyoGuard.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoSession.hpp"
 
 #include "slic3r/GUI/GUI_App.hpp"
@@ -26,7 +28,7 @@ void LoginDialog::on_script_message(const nlohmann::json& payload)
     // Aucun travail sur la fenêtre pendant le callback de la vue web (règle Orca/wxWidgets).
     Slic3r::GUI::wxGetApp().CallAfter([this, alive = m_alive, payload] {
         if (alive->load(std::memory_order_acquire) && !m_closing)
-            handle_command(payload);
+            guarded("la fenêtre de connexion", [&] { handle_command(payload); });
     });
 }
 
@@ -34,7 +36,7 @@ void LoginDialog::handle_command(const nlohmann::json& payload)
 {
     if (!payload.is_object())
         return;
-    if (payload.value("command", std::string()) == "login_success" && payload.contains("session") &&
+    if (Json::str(payload, "command") == "login_success" && payload.contains("session") &&
         Session::save(payload["session"])) {
         m_closing = true;
         EndModal(wxID_OK);

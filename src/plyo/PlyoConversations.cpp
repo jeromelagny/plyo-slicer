@@ -1,4 +1,5 @@
 #include "PlyoConversations.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoStore.hpp"
 
 #include <boost/filesystem.hpp>
@@ -42,7 +43,7 @@ nlohmann::json list()
         const nlohmann::json c = Store::read(p);
         if (!well_formed(c))
             continue;
-        out.push_back({{"id", p.stem().string()}, {"title", c.value("title", std::string())}, {"updated", updated_of(c)}});
+        out.push_back({{"id", p.stem().string()}, {"title", Json::str(c, "title")}, {"updated", updated_of(c)}});
     }
     // Dates ISO 8601 : l'ordre du texte est l'ordre du temps.
     std::sort(out.begin(), out.end(), [](const nlohmann::json& a, const nlohmann::json& b) { return a["updated"] > b["updated"]; });

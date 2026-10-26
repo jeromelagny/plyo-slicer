@@ -1,4 +1,5 @@
 #include "PlyoSettingsBridge.hpp"
+#include "PlyoJson.hpp"
 
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
@@ -92,6 +93,7 @@ struct SavedValue
     Preset::Type preset;
     std::string  key;
     std::string  serialized;
+    std::string  preset_name; // préréglage modifié : l'annulation n'écrit jamais dans un autre
 };
 // Un lot appliqué : son identifiant (rendu au panneau), les valeurs d'avant, et l'entrée de la mémoire de la
 // machine qu'il a créée (vide sinon), retirée s'il est annulé.
@@ -105,6 +107,11 @@ std::vector<UndoEntry> s_undo_stack;
 int                    s_next_undo_id = 1;
 
 Slic3r::PresetBundle& bundle() { return *Slic3r::GUI::wxGetApp().preset_bundle; }
+
+std::string edited_name(Preset::Type type)
+{
+    return type == Preset::TYPE_PRINT ? bundle().prints.get_edited_preset().name : bundle().filaments.get_edited_preset().name;
+}
 
 DynamicPrintConfig& edited_config(Preset::Type type)
 {
@@ -331,12 +338,12 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
     // Type de support final (demandé dans ce lot, sinon actuel), pour vérifier la cohérence du style.
     std::string support_type = enum_value(*find_param("support_type"));
     for (const nlohmann::json& change : changes)
-        if (change.is_object() && change.value("id", std::string()) == "support_type" && change.contains("value") && change["value"].is_string())
+        if (change.is_object() && Json::str(change, "id") == "support_type" && change.contains("value") && change["value"].is_string())
             support_type = change["value"].get<std::string>();
 
     // 1. Validation complète avant toute écriture (tout ou rien).
     for (const nlohmann::json& change : changes) {
-        const std::string id    = change.is_object() ? change.value("id", std::string()) : std::string();
+        const std::string id    = change.is_object() ? Json::str(change, "id") : std::string();
         const Param*      param = find_param(id);
         if (param == nullptr)
             return {{"ok", false}, {"text", "Refusé : « " + id + " » ne fait pas partie des paramètres modifiables."}};
@@ -385,7 +392,7 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
         const Preset::Type type = p.type;
         if (!configs.count(type))
             configs.emplace(type, edited_config(type));
-        saved.push_back({type, p.key, edited_config(type).opt_serialize(p.key)});
+        saved.push_back({type, p.key, edited_config(type).opt_serialize(p.key), edited_name(type)});
         set_value(configs[type], p.key, p.text);
         const std::string shown = p.param->kind == Kind::Enum ? p.text
                                 : p.param->kind == Kind::Bool ? (p.value != 0 ? "oui" : "non")
@@ -417,6 +424,13 @@ nlohmann::json undo_last(int expected_id)
         return {{"ok", false}, {"text", known ? "Un changement plus récent a été appliqué depuis : annule-le d'abord."
                                               : "Ce changement ne peut plus être annulé ici (un import ou une calibration est passé depuis). Remets la valeur à la main si besoin."}};
     }
+
+    // Changement de filament ou de profil depuis : remettre les anciennes valeurs écrirait dans le mauvais préréglage.
+    for (const SavedValue& v : s_undo_stack.back().saved)
+        if (v.preset_name != edited_name(v.preset))
+            return {{"ok", false},
+                    {"text", "Tu as changé de " + std::string(v.preset == Preset::TYPE_PRINT ? "profil d'impression" : "filament") +
+                                 " depuis : je ne peux plus annuler ici sans risque. Repasse sur « " + v.preset_name + " » pour annuler, ou remets la valeur à la main."}};
 
     std::map<Preset::Type, DynamicPrintConfig> configs;
     for (const SavedValue& v : s_undo_stack.back().saved) {

@@ -1,4 +1,5 @@
 #include "PlyoHighlight.hpp"
+#include "PlyoGuard.hpp"
 
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
@@ -167,7 +168,7 @@ void show_setting(const std::string& key, std::function<void(const nlohmann::jso
     }
     plater->sidebar().jump_to_option(key, type, L"");
     // La page vient d'être affichée : on encadre le champ une fois la mise en page faite.
-    wxGetApp().CallAfter([key, type, done]() {
+    wxGetApp().CallAfter([key, type, done]() { guarded("le surlignage d'un réglage", [&] {
         Slic3r::GUI::Tab* t     = wxGetApp().get_tab(type);
         Slic3r::GUI::Field* field = t != nullptr ? t->get_field(key) : nullptr;
         const int first_extruder = 0; // une variable : le littéral 0 serait aussi un pointeur (surcharge ambiguë)
@@ -175,7 +176,7 @@ void show_setting(const std::string& key, std::function<void(const nlohmann::jso
             field = t->get_field(key, first_extruder); // réglage par extrudeur (ex. température de buse)
         const bool framed = field != nullptr && frame_window(field->getWindow());
         done({{"ok", true}, {"hidden", !framed}});
-    });
+    }); });
 }
 
 }} // namespace Plyo::Highlight

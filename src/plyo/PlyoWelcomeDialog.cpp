@@ -1,4 +1,6 @@
 #include "PlyoWelcomeDialog.hpp"
+#include "PlyoGuard.hpp"
+#include "PlyoJson.hpp"
 
 #include "slic3r/GUI/GUI_App.hpp"
 
@@ -25,7 +27,7 @@ void WelcomeDialog::on_script_message(const nlohmann::json& payload)
 {
     Slic3r::GUI::wxGetApp().CallAfter([this, alive = m_alive, payload] {
         if (alive->load(std::memory_order_acquire) && !m_closing)
-            handle_command(payload);
+            guarded("la fenêtre d'accueil", [&] { handle_command(payload); });
     });
 }
 
@@ -33,13 +35,13 @@ void WelcomeDialog::handle_command(const nlohmann::json& payload)
 {
     if (!payload.is_object())
         return;
-    const std::string command = payload.value("command", std::string());
+    const std::string command = Json::str(payload, "command");
     if (command == "welcome_ready") {
         run_script(m_with_setup_tips ? "plyoWelcomeSetup(true)" : "plyoWelcomeSetup(false)");
         return;
     }
     if (command == "welcome_choice") {
-        const std::string choice = payload.value("choice", std::string());
+        const std::string choice = Json::str(payload, "choice");
         if (choice == "beginner" || choice == "expert")
             m_choice = choice;
         m_closing = true;
