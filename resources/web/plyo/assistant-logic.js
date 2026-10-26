@@ -237,7 +237,7 @@
   // Typographie française de tout texte affiché : sans espaces insécables, « ? » et « : » partent seuls en début
   // de ligne. Fine (U+202F) avant ? ! ; ; normale (U+00A0) avant : et dans « ». Heures (18:00) et adresses
   // (https://, ?b=1) restent intactes : la ponctuation doit être suivie d'une espace ou de la fin du texte.
-  // Un nombre reste aussi collé à son unité (« 235 °C » ne se coupe pas).
+  // Un nombre reste aussi collé à son unité (« 235 °C ») et le jour à son mois (« 1er novembre »).
   function fr(text) {
     return String(text === null || text === undefined ? '' : text)
       .replace(/([A-Za-zÀ-ÿ])'(?=[A-Za-zÀ-ÿ])/g, '$1’')
@@ -245,7 +245,8 @@
       .replace(/(\S)[ \u00A0\u202F]?:(?=$|\s)/g, '$1\u00A0:')
       .replace(/«[ \u00A0\u202F]?/g, '«\u00A0')
       .replace(/[ \u00A0\u202F]?»/g, '\u00A0»')
-      .replace(/(\d) (?=(°C|°|mm²|mm|%|g|min|h|s|Mo|€)(?![A-Za-zÀ-ÿ0-9]))/g, '$1\u00A0');
+      .replace(/(\d) (?=(°C|°|mm²|mm|%|g|min|h|s|Mo|€)(?![A-Za-zÀ-ÿ0-9]))/g, '$1\u00A0')
+      .replace(/(\b\d{1,2}|1er) (?=(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\b)/g, '$1\u00A0');
   }
 
   // Le slicer parle toujours de « les pièces » : avec une seule pièce sur le plateau, le panneau dit « la pièce ».

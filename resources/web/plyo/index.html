@@ -90,6 +90,7 @@
   .alert { display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s3); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); }
   .alert > .ic { margin-top: 2px; color: var(--muted); }
   .alert .alert-body { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; flex: 1; }
+  .alert .alert-body > .btn { align-self: flex-start; }
   .alert p { margin: 0; }
   .alert.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); background: var(--warn-soft); }
   .alert.warn > .ic { color: var(--warn-text); }
@@ -289,6 +290,7 @@
   .tour .bottom { display: flex; justify-content: space-between; align-items: center; gap: var(--s2); }
   .focus-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--surface); font-size: var(--fs-sm); align-self: flex-start; max-width: 100%; }
   .focus-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .focus-chip > span { white-space: nowrap; }
   .focus-chip .go { border: 0; background: none; color: var(--accent-text); cursor: pointer; font: inherit; font-weight: 600; padding: 0; white-space: nowrap; }
   .focus-chip .x { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0; display: grid; place-items: center; }
   .fiche h4 { margin: var(--s1) 0 0; font-size: var(--fs-sm); color: var(--muted); font-weight: 600; }
@@ -1938,7 +1940,7 @@
     var said = el('textarea', 'field');
     said.maxLength = 200;
     said.rows = 2;
-    said.placeholder = fr('Un mot à ajouter ? (facultatif, par exemple « mieux, mais encore quelques fils »)');
+    said.placeholder = fr('Un mot à ajouter ? (facultatif)');
     said.setAttribute('aria-label', 'Un mot à ajouter sur le résultat (facultatif)');
     var share = el('input');
     share.type = 'checkbox';

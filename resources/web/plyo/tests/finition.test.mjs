@@ -124,3 +124,9 @@ test('tour de calibration affichée dans l’ordre physique : le haut en premier
   assert.deepEqual(L.calibOrder(sections, false).map((s) => [s.label, s.where]), [['230 °C', ''], ['225 °C', ''], ['220 °C', '']]);
   assert.deepEqual(L.calibOrder([], true), []);
 });
+
+test('typographie française : le jour reste collé au mois', () => {
+  assert.equal(L.fr('le 1er novembre'), 'le 1er\u00A0novembre');
+  assert.equal(L.fr('Le 24 octobre, on'), 'Le 24\u00A0octobre, on');
+  assert.equal(L.fr('24 pièces'), '24 pièces');
+});
