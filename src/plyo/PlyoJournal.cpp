@@ -11,8 +11,14 @@ boost::filesystem::path file() { return Store::dir() / "journal.json"; }
 
 nlohmann::json load()
 {
-    nlohmann::json all = Store::read(file());
-    return all.is_array() ? all : nlohmann::json::array();
+    const nlohmann::json all = Store::read(file());
+    nlohmann::json       kept = nlohmann::json::array();
+    // Seules les fiches bien formées sont gardées : une fiche abîmée ne bloque pas le tiroir « Mes pièces ».
+    if (all.is_array())
+        for (const nlohmann::json& e : all)
+            if (e.is_object())
+                kept.push_back(e);
+    return kept;
 }
 
 std::string text(const nlohmann::json& e, const char* key, size_t max)

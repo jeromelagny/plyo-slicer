@@ -21,7 +21,21 @@ std::string machine_key(const nlohmann::json& values)
 nlohmann::json load_all()
 {
     nlohmann::json all = Store::read(file());
-    return all.is_object() ? all : nlohmann::json::object();
+    if (!all.is_object())
+        return nlohmann::json::object();
+    // Une fiche abîmée (écrite par une ancienne version) ne doit pas bloquer la lecture des autres.
+    for (auto it = all.begin(); it != all.end(); ++it) {
+        if (!it.value().is_array()) {
+            it.value() = nlohmann::json::array();
+            continue;
+        }
+        nlohmann::json kept = nlohmann::json::array();
+        for (const nlohmann::json& e : it.value())
+            if (e.is_object() && e.value("changes", nlohmann::json()).is_array())
+                kept.push_back(e);
+        it.value() = kept;
+    }
+    return all;
 }
 
 bool same(const nlohmann::json& a, const nlohmann::json& b)
