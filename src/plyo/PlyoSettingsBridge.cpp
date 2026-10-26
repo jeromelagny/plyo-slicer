@@ -152,7 +152,7 @@ std::string to_config_string(double value, Kind kind)
     return kind == Kind::Percent ? out.str() + "%" : out.str();
 }
 
-// Configurations lues : celles en cours d'édition, ou celles d'un préréglage quelconque (import MakerWorld).
+// Configurations lues (celles en cours d'édition).
 struct Configs
 {
     const DynamicPrintConfig& print;
@@ -306,11 +306,6 @@ void load_into_tabs(const std::map<Preset::Type, DynamicPrintConfig>& configs)
 }
 
 } // namespace
-
-nlohmann::json read_values_from(const DynamicPrintConfig& print, const DynamicPrintConfig& filament, const DynamicPrintConfig& printer)
-{
-    return read_params({print, filament, printer});
-}
 
 void clear_undo() { s_undo_stack.clear(); }
 

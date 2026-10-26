@@ -11,10 +11,6 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoLoginDialog.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPhoneDialog.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPhoneDialog.hpp
-    ${CMAKE_CURRENT_LIST_DIR}/PlyoMakerWorldWindow.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/PlyoMakerWorldWindow.hpp
-    ${CMAKE_CURRENT_LIST_DIR}/PlyoMakerWorldImport.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/PlyoMakerWorldImport.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibration.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibration.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCommands.cpp

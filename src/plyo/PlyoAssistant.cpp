@@ -8,8 +8,6 @@
 #include "PlyoHighlight.hpp"
 #include "PlyoJournal.hpp"
 #include "PlyoLoginDialog.hpp"
-#include "PlyoMakerWorldImport.hpp"
-#include "PlyoMakerWorldWindow.hpp"
 #include "PlyoMemory.hpp"
 #include "PlyoModelImport.hpp"
 #include "PlyoPhoneDialog.hpp"
@@ -241,27 +239,7 @@ void handle_page_message(const nlohmann::json& data)
                 if (result == wxID_OK)
                     send({{"type", "phone_batch_ready"}});
             }
-        } else if (type == "makerworld") {
-            // Page MakerWorld dans une fenêtre Plyo ; le lien « Ouvrir dans … » est importé par Orca.
-            const std::string url = Json::str(data, "url");
-            if (MakerWorldWindow::is_makerworld_url(url)) {
-                auto* window = new MakerWorldWindow(Slic3r::GUI::wxGetApp().mainframe, url, [](const std::string& open_url) {
-                    send({{"type", "makerworld_opened"}});
-                    // Import synchrone, puis fiche « créateur → toi » si le projet a apporté ses réglages.
-                    const nlohmann::json imported = MakerWorldImport::import_link(open_url);
-                    if (!imported.is_null())
-                        send(imported);
-                });
-                window->Show();
-            } else
-                send_result({{"ok", false}, {"text", "Adresse MakerWorld non reconnue."}});
-        } else if (type == "makerworld_apply")
-            send_result(MakerWorldImport::apply(Json::boolean(data, "keep_filaments", false), data.contains("changes") ? data["changes"] : nlohmann::json()));
-        else if (type == "makerworld_undo")
-            send_result(MakerWorldImport::restore_creator());
-        else if (type == "makerworld_mono")
-            send_result(MakerWorldImport::use_my_filament_everywhere());
-        else if (type == "calib_start") {
+        } else if (type == "calib_start") {
             // Calibration guidée : lancé seulement par le bouton « Lancer le test » du panneau.
             nlohmann::json started = Calibration::start_test(Json::str(data, "test"), Json::integer(data, "pass", 1), Json::num(data, "base_value", 0.0));
             if (Json::boolean(started, "ok", false)) {

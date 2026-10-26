@@ -32,7 +32,7 @@ test('typographie française : espaces insécables avant ? ! ; : et dans « »',
 
 test('typographie française : heures, adresses et doubles passages intacts', () => {
   assert.equal(L.fr('à 18:00'), 'à 18:00');
-  assert.equal(L.fr('https://makerworld.com/a?b=1'), 'https://makerworld.com/a?b=1');
+  assert.equal(L.fr('https://example.com/a?b=1'), 'https://example.com/a?b=1');
   assert.equal(L.fr(L.fr('Ça a marché ?')), L.fr('Ça a marché ?'));
   assert.equal(L.fr(''), '');
   assert.equal(L.fr(null), '');

@@ -15,11 +15,7 @@ namespace Plyo { namespace SettingsBridge {
 //  "context": {"printer", "filament", "process"}, "can_undo": bool}
 nlohmann::json read_values();
 
-// Valeurs de la liste blanche lues dans des préréglages quelconques, sans les sélectionner (import MakerWorld).
-nlohmann::json read_values_from(const Slic3r::DynamicPrintConfig& print, const Slic3r::DynamicPrintConfig& filament,
-                                const Slic3r::DynamicPrintConfig& printer);
-
-// Vide la pile d'annulation (ses entrées viseraient d'autres préréglages après un import).
+// Vide la pile d'annulation (ses entrées viseraient d'autres préréglages après un changement de préréglage).
 void clear_undo();
 
 // changes : [{"id": "...", "value": x} ou {"id": "...", "delta": x}, ...]
