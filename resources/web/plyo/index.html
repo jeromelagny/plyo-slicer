@@ -96,6 +96,7 @@
   .alert.error { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: var(--danger-soft); }
   .alert.error > .ic { color: var(--danger-text); }
   .alert.tip > .ic { color: var(--accent-text); }
+  .offer-title { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
   .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
   .chip { padding: 6px var(--s3); border-radius: var(--r-pill); border: 1px solid var(--border); background: transparent; font-size: var(--fs-sm); cursor: pointer; text-align: left; }
   .chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); }
@@ -720,25 +721,30 @@
   }
 
   // quiet : l'erreur « jauge pleine » vient d'être affichée, le message doux ferait doublon.
+  var gaugeState = null;       // état de la jauge vu juste avant (passage d'un seuil)
+  var noticeShown = null;      // repli en mémoire si le stockage du panneau est indisponible
   function setGauge(g, quiet) {
     var v = Logic.gaugeView(g);
     if (!v) return;
     lastGauge = g;
+    var prev = gaugeState;
+    gaugeState = v.state;
     $('gauge-label').textContent = fr(v.label);
     $('gauge').title = 'Utilisé ce mois-ci : ' + v.label + '. Se recharge ' + v.resets + '. Clique pour le détail.';
     paintGauge($('gauge'), $('gauge-fill'), v);
     // Après la réponse qui a rempli la jauge, pas avant : la réponse s'affiche dans la même tâche.
-    if (quiet) { try { localStorage.setItem(NOTICE_KEY, Logic.noticeKey(v.state, g)); } catch (e) { /* stockage indisponible */ } return; }
-    setTimeout(function () { gaugeNotice(g, v); }, 0);
+    if (quiet) { noticeShown = Logic.noticeKey(v.state, g); try { localStorage.setItem(NOTICE_KEY, noticeShown); } catch (e) { /* stockage indisponible */ } return; }
+    setTimeout(function () { gaugeNotice(g, v, prev); }, 0);
   }
 
   // Message doux vers 80 %, puis quand la jauge est pleine : une seule fois par mois (mémorisé sur cet ordinateur).
-  function gaugeNotice(g, v) {
-    var last = null;
-    try { last = localStorage.getItem(NOTICE_KEY); } catch (e) { /* stockage indisponible : le message peut revenir */ }
-    var kind = Logic.gaugeNotice(g, last);
+  function gaugeNotice(g, v, prev) {
+    var last = noticeShown;
+    try { last = localStorage.getItem(NOTICE_KEY) || last; } catch (e) { /* stockage indisponible : la mémoire suffit */ }
+    var kind = Logic.gaugeNotice(g, last, prev);
     if (!kind || !thread.children.length) return;
-    try { localStorage.setItem(NOTICE_KEY, Logic.noticeKey(kind, g)); } catch (e) { /* idem */ }
+    noticeShown = Logic.noticeKey(kind, g);
+    try { localStorage.setItem(NOTICE_KEY, noticeShown); } catch (e) { /* idem */ }
     var box = kind === 'low'
       ? alertBox('warn', 'Tu as utilisé **' + v.label + '** de ta jauge ce mois-ci. Elle se recharge ' + v.resets + '.')
       : alertBox('warn', 'Ta jauge du mois est pleine. Elle se recharge ' + v.resets + '.');
@@ -1573,16 +1579,19 @@
   var calibHistory = [];   // calibrations déjà faites pour ce filament sur cette imprimante (slicer)
   var calibCard = null;    // carte du test en cours
 
-  function calibrationOffer(offer) {
+  function calibrationOffer(offer, secondary) {
     var info = CALIB[offer.test];
     var box = alertBox('tip', null, 'target');
-    box.body.appendChild(el('div', 'name', info.name + ' (' + info.duration + ')'));
-    box.body.appendChild(el('div', '', offer.reason || ('Ce test montre ' + info.shows + '.')));
+    var title = el('div', 'offer-title');
+    title.appendChild(el('b', '', info.name));
+    title.appendChild(el('span', 'muted small', info.duration));
+    box.body.appendChild(title);
+    box.body.appendChild(el('p', '', offer.reason || ('Ce test montre ' + info.shows + '.')));
     var start = button('Lancer le test', function () {
       start.disabled = true;
       pendingSheet = { kind: 'calib', onResult: function (ok, t) { if (!ok) { start.disabled = false; noteLine(t, 'error', 'alert'); } } };
       window.orca.postMessage({ type: 'calib_start', test: offer.test, pass: 1 });
-    }, 'btn sm');
+    }, secondary ? 'btn ghost sm' : 'btn sm', 'target');
     box.body.appendChild(el('div', 'row-acts')).appendChild(start);
     return box;
   }
@@ -2689,7 +2698,8 @@
     if (a.commands && a.commands.length) box.appendChild(renderCommands(entry, archived));
     var actions = renderActions(a.actions, archived);
     if (actions) box.appendChild(actions);
-    if (!archived && a.calibration_offer && CALIB[a.calibration_offer.test]) box.appendChild(calibrationOffer(a.calibration_offer));
+    // Un seul bouton principal par réponse : « Appliquer » s'il y a une fiche, le test passe alors en secondaire.
+    if (!archived && a.calibration_offer && CALIB[a.calibration_offer.test]) box.appendChild(calibrationOffer(a.calibration_offer, a.suggestions.length > 0));
     if (a.questions && a.questions.length) renderQuestions(box, entry, archived);
 
     var foot = el('div', 'ai-foot');

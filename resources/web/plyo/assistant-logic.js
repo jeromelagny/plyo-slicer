@@ -64,9 +64,12 @@
   }
   // Message doux à afficher (« low » vers 80 %, « empty » jauge pleine), une seule fois par mois et par état.
   function noticeKey(kind, g) { return kind + ':' + g.resets_at; }
-  function gaugeNotice(g, lastShown) {
+  // `prev` (si fourni) : l'état vu juste avant dans la session. On ne prévient qu'au passage d'un seuil, jamais au
+  // premier relevé ni sous chaque réponse quand la jauge était déjà haute (le stockage du panneau peut manquer).
+  function gaugeNotice(g, lastShown, prev) {
     var v = gaugeView(g);
     if (!v || v.state === 'ok') return null;
+    if (arguments.length >= 3 && (!prev || prev === v.state)) return null;
     return lastShown === noticeKey(v.state, g) ? null : v.state;
   }
 

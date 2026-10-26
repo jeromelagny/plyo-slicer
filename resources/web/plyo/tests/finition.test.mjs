@@ -77,3 +77,13 @@ test('« Chercher une autre piste » : la demande préremplie rappelle le probl�
     'Les réglages essayés pour « Fils d’araignée » n’ont pas marché (encore quelques fils). Qu’est-ce que je peux essayer d’autre ?');
   assert.equal(L.retryPrompt({ why: '' }, ''), 'Les réglages essayés n’ont pas marché. Qu’est-ce que je peux essayer d’autre ?');
 });
+
+test('alerte de jauge : seulement au passage d’un seuil pendant la session, pas sous chaque réponse', () => {
+  const low = { used_pct: 84, resets_at: '2026-11-01T00:00:00.000Z', state: 'low' };
+  const empty = { ...low, used_pct: 100, state: 'empty' };
+  assert.equal(L.gaugeNotice(low, null, 'ok'), 'low');      // 79 % → 84 % : on prévient
+  assert.equal(L.gaugeNotice(low, null, 'low'), null);      // déjà au-dessus avant cette réponse : rien
+  assert.equal(L.gaugeNotice(low, null, null), null);       // premier relevé (lancement) : rien
+  assert.equal(L.gaugeNotice(empty, null, 'low'), 'empty');
+  assert.equal(L.gaugeNotice(low, 'low:2026-11-01T00:00:00.000Z', 'ok'), null); // déjà dit ce mois-ci
+});
