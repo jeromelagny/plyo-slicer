@@ -190,7 +190,7 @@
   .ai { display: flex; flex-direction: column; gap: var(--s2); }
   .ai .who { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-sm); color: var(--muted); }
   .ai .who .link { margin-left: auto; }
-  .ai .who i { width: 18px; height: 18px; border-radius: 5px; background: var(--accent-fill); display: grid; place-items: center; color: var(--on-accent); font-style: normal; font-size: var(--fs-xs); font-weight: 700; }
+  .ai .who i { width: 18px; height: 18px; border-radius: var(--r-sm); background: var(--accent-fill); display: grid; place-items: center; color: var(--on-accent); font-style: normal; font-size: var(--fs-xs); font-weight: 700; }
   .diag { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
   .diag h3 { margin: 0; font-size: var(--fs-lg); font-weight: 600; line-height: 1.35; }
   .pill { font-size: var(--fs-xs); padding: 1px var(--s2); border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent-text); font-weight: 600; white-space: nowrap; }
@@ -199,7 +199,7 @@
   .rich p { margin: 0; }
   .rich ul, .rich ol { margin: 0; padding-left: var(--s5); display: flex; flex-direction: column; gap: var(--s1); }
   /* Libellé d'Orca : serré, sinon il ouvre un blanc avant la virgule qui suit. */
-  .rich .ui { font-weight: 600; padding: 0 2px; margin: 0; border-radius: 4px; background: var(--raised); white-space: nowrap; }
+  .rich .ui { font-weight: 600; padding: 0 2px; margin: 0; border-radius: var(--r-sm); background: var(--raised); white-space: nowrap; }
   .caret::after { content: "▍"; color: var(--accent); animation: blink 1s infinite; }
   .questions { display: flex; flex-direction: column; gap: var(--s2); }
   .q { font-weight: 600; margin: 0; }
@@ -322,9 +322,6 @@
   .plan { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); }
   .plan.current { border-color: var(--accent); background: var(--accent-soft); }
   .plan .head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s2); font-weight: 600; }
-  .plan .price { font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .plan .row-acts { margin-top: var(--s1); }
-  /* Cartes encore à reprendre (journal, résultat, vérification) */
   .answers { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
   .check-line { display: flex; gap: var(--s2); align-items: flex-start; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
   .check-line input { margin: 3px 0 0; flex: none; }
