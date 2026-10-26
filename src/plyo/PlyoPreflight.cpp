@@ -1,4 +1,5 @@
 #include "PlyoPreflight.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoPlateActions.hpp"
 
 #include "libslic3r/Model.hpp"
@@ -92,7 +93,7 @@ nlohmann::json measure()
         if (object->instances.empty())
             continue;
         const Slic3r::Vec3d size = object->instance_bounding_box(0).size();
-        objects.push_back({{"name", object->name.substr(0, 120)},
+        objects.push_back({{"name", Json::utf8_prefix(object->name, 120)},
                            {"height", std::round(size.z() * 10) / 10},
                            {"foot", {std::round(size.x() * 10) / 10, std::round(size.y() * 10) / 10}},
                            {"contact_mm2", std::round(contact_area(*object))},

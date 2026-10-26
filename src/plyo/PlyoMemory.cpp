@@ -56,13 +56,13 @@ std::string note_applied(const nlohmann::json& before, const nlohmann::json& aft
     if (!list.is_array())
         list = nlohmann::json::array();
     const std::string at   = boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time());
-    nlohmann::json    entry{{"date", at.substr(0, 10)}, {"changes", changes}, {"why", why.substr(0, 200)}};
+    nlohmann::json    entry{{"date", at.substr(0, 10)}, {"changes", changes}, {"why", Json::utf8_prefix(why, 200)}};
     if (ask.is_object()) {
         entry["at"]      = at;
         entry["outcome"] = "pending";
         entry["asked"]   = 0;
-        entry["conv"]    = Json::str(ask, "conv").substr(0, 40);
-        entry["defect"]  = Json::str(ask, "defect").substr(0, 40);
+        entry["conv"]    = Json::str(ask, "conv", 40);
+        entry["defect"]  = Json::str(ask, "defect", 40);
     }
     list.insert(list.begin(), entry);
     if (list.size() > MAX_PER_MACHINE)
@@ -147,7 +147,7 @@ bool set_outcome(const std::string& machine, const std::string& at, const std::s
         } else {
             e["outcome"] = outcome;
             if (!note.empty())
-                e["note"] = note.substr(0, 200);
+                e["note"] = Json::utf8_prefix(note, 200);
         }
         return Store::write(file(), all);
     }

@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <ctime>
+#include <utility>
 #include <vector>
 
 namespace Plyo { namespace Conversations {
@@ -27,6 +29,24 @@ bool valid_id(const std::string& id)
 {
     return !id.empty() && id.size() <= 40 &&
            std::all_of(id.begin(), id.end(), [](unsigned char c) { return std::islower(c) || std::isdigit(c) || c == '-'; });
+}
+
+// Garde les MAX_KEPT conversations les plus récentes, d'après la date des fichiers : sans les relire (jusqu'à
+// 4 Mo chacune), l'enregistrement automatique ne fige pas l'interface.
+static void prune()
+{
+    boost::system::error_code                    ec;
+    std::vector<std::pair<std::time_t, fs::path>> files;
+    for (const fs::directory_entry& entry : fs::directory_iterator(Store::dir("conversations"), ec)) {
+        const fs::path& p = entry.path();
+        if (p.extension() == ".json" && valid_id(p.stem().string()))
+            files.emplace_back(fs::last_write_time(p, ec), p);
+    }
+    if (files.size() <= MAX_KEPT)
+        return;
+    std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    for (size_t i = MAX_KEPT; i < files.size(); ++i)
+        fs::remove(files[i].second, ec);
 }
 
 nlohmann::json list()
@@ -64,9 +84,7 @@ bool save(const std::string& id, const nlohmann::json& conversation)
         return false;
     if (!Store::write(path_of(id), conversation))
         return false;
-    const nlohmann::json all = list();
-    for (size_t i = MAX_KEPT; i < all.size(); ++i)
-        remove(all[i]["id"].get<std::string>());
+    prune();
     return true;
 }
 

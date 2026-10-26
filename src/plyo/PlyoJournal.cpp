@@ -41,7 +41,7 @@ void record(const nlohmann::json& event)
     nlohmann::json parts = nlohmann::json::array();
     for (const nlohmann::json& p : event["parts"])
         if (p.is_string() && parts.size() < 3)
-            parts.push_back(p.get<std::string>().substr(0, 120));
+            parts.push_back(Json::utf8_prefix(p.get<std::string>(), 120));
     std::string thumb = text(event, "thumb", MAX_THUMB_BYTES + 1);
     if (thumb.size() > MAX_THUMB_BYTES || thumb.rfind("data:image/", 0) != 0)
         thumb.clear();
@@ -101,7 +101,7 @@ void set_outcome(const std::string& conv, const std::string& outcome, const std:
     if (e == nullptr)
         return;
     (*e)["outcome"] = outcome;
-    (*e)["note"]    = note.substr(0, 200);
+    (*e)["note"]    = Json::utf8_prefix(note, 200);
     Store::write(file(), all);
 }
 

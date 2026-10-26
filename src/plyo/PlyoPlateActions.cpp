@@ -75,7 +75,7 @@ nlohmann::json context()
     const std::vector<Slic3r::ModelObject*>& model_objects = plater->model().objects;
     for (size_t i = 0; i < model_objects.size() && objects.size() < 50; ++i) {
         const Slic3r::ModelObject* object = model_objects[i];
-        nlohmann::json item{{"ref", std::to_string(object->id().id)}, {"name", object->name.substr(0, 120)}, {"size_mm", size_json(object_size(*object))},
+        nlohmann::json item{{"ref", std::to_string(object->id().id)}, {"name", Json::utf8_prefix(object->name, 120)}, {"size_mm", size_json(object_size(*object))},
                             {"copies", std::max<size_t>(1, std::min<size_t>(object->instances.size(), 200))}};
         if (selected.count(static_cast<int>(i)))
             item["selected"] = true;
