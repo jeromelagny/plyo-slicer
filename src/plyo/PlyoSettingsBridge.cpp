@@ -64,10 +64,14 @@ const std::vector<Param> WHITELIST = {
     {"sparse_infill_density", "Taux de remplissage",         Preset::TYPE_PRINT, "sparse_infill_density", Kind::Percent, 5, 100, "%"},
     {"top_shell_layers",      "Couches pleines (dessus)",    Preset::TYPE_PRINT, "top_shell_layers",      Kind::Int,     2, 10,  ""},
     {"bottom_shell_layers",   "Couches pleines (dessous)",   Preset::TYPE_PRINT, "bottom_shell_layers",   Kind::Int,     2, 10,  ""},
+    {"elephant_foot_comp", "Compensation du pied d'éléphant", Preset::TYPE_PRINT, "elefant_foot_compensation", Kind::Float, 0, 0.5, "mm"},
+    {"bridge_speed",       "Vitesse des ponts",               Preset::TYPE_PRINT, "bridge_speed",              Kind::Float, 10, 100, "mm/s"},
+    {"bridge_flow",        "Débit des ponts",                 Preset::TYPE_PRINT, "bridge_flow",               Kind::Float, 0.5, 1.5, ""},
+    {"overhang_fan_speed", "Ventilation des ponts et surplombs", Preset::TYPE_FILAMENT, "overhang_fan_speed",  Kind::Int,   0, 100, "%"},
 };
 
-// Valeurs permises pour les réglages à choix. Les modes de support « manual » (zones peintes) sont exclus,
-// et le style doit correspondre au type : les styles arborescents n'existent que pour tree(auto).
+// Valeurs permises pour les réglages à choix. Les modes de support « manual » ne gardent que les zones peintes
+// (outil « Peindre les supports ») ; le style doit correspondre au type : les styles arborescents sont pour tree.
 std::vector<std::string> allowed_values(const std::string& id, const std::string& support_type)
 {
     if (id == "brim_type")
@@ -75,9 +79,9 @@ std::vector<std::string> allowed_values(const std::string& id, const std::string
     if (id == "ironing_type")
         return {"no ironing", "top", "topmost", "solid"};
     if (id == "support_type")
-        return {"normal(auto)", "tree(auto)"};
+        return {"normal(auto)", "tree(auto)", "normal(manual)", "tree(manual)"};
     if (id == "support_style")
-        return support_type == "tree(auto)" ? std::vector<std::string>{"default", "organic", "tree_slim", "tree_strong", "tree_hybrid"}
+        return support_type.rfind("tree(", 0) == 0 ? std::vector<std::string>{"default", "organic", "tree_slim", "tree_strong", "tree_hybrid"}
                                             : std::vector<std::string>{"default", "grid", "snug"};
     return {};
 }

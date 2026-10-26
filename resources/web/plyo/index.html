@@ -926,7 +926,7 @@
   function formatValue(value, unit) {
     if (value === null || value === undefined) return '—';
     if (typeof value === 'boolean') return value ? 'Oui' : 'Non';
-    if (typeof value === 'string') return value;
+    if (typeof value === 'string') return Logic.choiceLabel(value);
     return (Math.round(value * 1000) / 1000).toLocaleString('fr-FR') + (unit ? ' ' + unit : '');
   }
 

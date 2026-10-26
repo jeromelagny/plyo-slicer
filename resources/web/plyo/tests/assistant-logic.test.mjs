@@ -201,3 +201,10 @@ test('commandsForHistory : l’IA sait ce qui a été fait, ou que rien n’a pu
   assert.equal(L.commandsForHistory({ commands: [] }, null), '');
   assert.equal(L.commandsForHistory(a, null), 'demandé : J’ai penché la pièce de 20°. J’ai centré la pièce.');
 });
+
+test('choiceLabel : les choix s’affichent avec le libellé d’Orca, jamais la valeur brute', () => {
+  assert.equal(L.choiceLabel('top'), 'Surfaces supérieures');
+  assert.equal(L.choiceLabel('tree(manual)'), 'Arbre (manuel)');
+  assert.equal(L.choiceLabel('outer_only'), 'Bordure extérieure uniquement');
+  assert.equal(L.choiceLabel('inconnu'), 'inconnu');
+});
