@@ -239,8 +239,10 @@
   .done > .ic { margin-top: 2px; }
   .fail { color: var(--danger-text); font-size: var(--fs-sm); padding: 0 var(--s3) var(--s3); background: var(--bg); }
   /* « Fait ✓ · Annuler » : même ligne et même bouton pour toute action annulable */
-  .undo-row { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
-  .undo-row .done { flex: 0 1 auto; }
+  .undo-row { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; align-self: stretch; }
+  .undo-row .done { flex: 1 1 auto; }
+  .undo-row > .btn, .note-line > .btn { flex: none; margin-left: auto; }
+  .undo-row .footnote { margin: 0; flex-basis: 100%; order: 2; }
 
   /* Zone de saisie */
   .composer { border-top: 1px solid var(--border); padding: var(--s3) var(--s3) var(--s2); display: flex; flex-direction: column; gap: var(--s2); flex: none; }
@@ -474,7 +476,9 @@
     x: '<path d="M6 6l12 12M18 6L6 18"/>',
     eye: '<path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     wand: '<path d="M4 20L15 9M14 4v3M19 9h-3M18 5l-2 2M10 4l.5 1.5M20 14l-1.5-.5"/>',
-    stop: '<rect x="7" y="7" width="10" height="10" rx="1.5"/>'
+    stop: '<rect x="7" y="7" width="10" height="10" rx="1.5"/>',
+    chevron: '<path d="M9 6l6 6-6 6"/>',
+    chat: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 4v-4h0A1.5 1.5 0 0 1 4 14.5z"/>'
   };
   function icon(name, size) {
     var span = document.createElement('span');
@@ -827,7 +831,7 @@
     var list = convListTarget;
     list.textContent = '';
     if (!items.length) {
-      list.appendChild(emptyState('send', 'Pas encore de conversation', 'Pose ta première question ou envoie une photo : la conversation sera gardée ici.',
+      list.appendChild(emptyState('chat', 'Pas encore de conversation', 'Pose ta première question ou envoie une photo : la conversation sera gardée ici.',
         'Poser une question', function () { closeDrawer(); noteInput.focus(); }));
       return;
     }
@@ -1160,10 +1164,9 @@
     var line = noteLine(text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
     if (msg.ok && msg.kind !== 'undo') plateUndoLinks.forEach(function (b) { b.remove(); });
     if (msg.ok && msg.undo_token !== undefined) {
-      var undo = button('Annuler', function () {
-        undo.disabled = true;
-        plateAction('undo', function (ok) { if (ok) undo.remove(); else undo.disabled = false; }, { undo_token: msg.undo_token });
-      }, 'link');
+      var undo = undoButton('Annuler', function (b) {
+        plateAction('undo', function (ok) { if (ok) b.remove(); else b.disabled = false; }, { undo_token: msg.undo_token });
+      });
       plateUndoLinks = [undo];
       line.appendChild(undo);
     }
@@ -1208,20 +1211,22 @@
         if (entry.hist) entry.hist.text = (summaryForHistory(a, entry.commandsResult)).slice(0, 2000);
         scheduleSave();
         show(entry.commandsResult);
-        if (msg.undo_token === undefined) return;
+        if (msg.undo_token === undefined || !entry.commandsResult.done.length) return;
         plateUndoLinks.forEach(function (b) { b.remove(); });
-        var undo = button('Annuler', function () {
-          undo.disabled = true;
+        var row = el('div', 'undo-row');
+        row.appendChild(doneLabel('Fait sur le plateau'));
+        var undo = undoButton('Annuler', function (b) {
           plateAction('undo', function (ok) {
-            if (!ok) { undo.disabled = false; return; }
-            undo.remove();
+            if (!ok) { b.disabled = false; return; }
+            row.remove();
             entry.commandsResult.undone = true;
             scheduleSave();
             show(entry.commandsResult);
           }, { undo_token: msg.undo_token });
-        }, 'link');
-        plateUndoLinks = [undo];
-        list.appendChild(undo);
+        });
+        row.appendChild(undo);
+        plateUndoLinks = [row];
+        list.after(row);
       };
       window.orca.postMessage({ type: 'commands', commands: a.commands, request: id });
     }
@@ -1235,7 +1240,7 @@
       var toggle = button('Comment le faire moi-même', function () {
         how.classList.toggle('hidden');
         toggle.setAttribute('aria-expanded', how.classList.contains('hidden') ? 'false' : 'true');
-      }, 'link');
+      }, 'disclosure', 'chevron');
       toggle.setAttribute('aria-expanded', 'false');
       wrap.appendChild(toggle);
       wrap.appendChild(how);
@@ -1502,7 +1507,7 @@
       var tip = alertBox('tip', text || MONO_ADVICE, 'palette');
       var mono = button('Tout dans mon filament', function () {
         mono.disabled = true;
-        pendingSheet = { kind: 'mono', onResult: function (ok, t) { mono.replaceWith(el('div', ok ? 'done' : 'fail', ok ? 'Ton filament est dans tous les emplacements.' : t)); } };
+        pendingSheet = { kind: 'mono', onResult: function (ok, t) { mono.replaceWith(el('div', ok ? 'done' : 'fail-text', ok ? 'Ton filament est dans tous les emplacements.' : t)); } };
         window.orca.postMessage({ type: 'makerworld_mono' });
       }, 'btn ghost sm');
       tip.body.appendChild(mono);
@@ -1530,14 +1535,13 @@
         sheet.querySelector('header').textContent = fr('Appliqué sur ton imprimante');
         footer.textContent = '';
         footer.appendChild(doneLabel('Appliqué'));
-        var undo = button('Annuler', function () {
+        footer.appendChild(undoButton('Annuler', function () {
           pendingSheet = { kind: 'undo', onResult: function (okUndo, t) {
             footer.textContent = '';
-            footer.appendChild(okUndo ? doneLabel('Réglages du créateur remis', 'undo') : el('span', 'fail', t));
+            footer.appendChild(okUndo ? doneLabel('Réglages du créateur remis', 'undo') : el('span', 'fail-text', t));
           } };
           window.orca.postMessage({ type: 'makerworld_undo' });
-        }, 'link');
-        footer.appendChild(undo);
+        }));
       } };
       window.orca.postMessage({ type: 'makerworld_apply', keep_filaments: multi, changes: changes });
     });
@@ -1758,7 +1762,7 @@
           var on = button('Remettre ma pièce et activer le lissage', null, 'btn ghost');
           on.dataset.keep = '1';
           var activate = function () {
-            pendingSheet = { kind: 'apply', onResult: function (okOn, tt) { on.replaceWith(okOn ? doneLabel('Lissage activé') : el('span', 'fail', tt)); } };
+            pendingSheet = { kind: 'apply', onResult: function (okOn, tt) { on.replaceWith(okOn ? doneLabel('Lissage activé') : el('span', 'fail-text', tt)); } };
             window.orca.postMessage({ type: 'apply', changes: [{ id: 'ironing_type', value: 'top' }], why: 'Plaque de lissage' });
           };
           on.addEventListener('click', function () {
@@ -2590,8 +2594,10 @@
         rows.forEach(function (r) { if (!r.box.checked) r.row.remove(); else r.box.replaceWith(markCell()); });
         sheet.querySelector('header').textContent = fr('Réglages appliqués');
         footer.textContent = '';
+        footer.classList.add('undo-row');
         var preset = lastValues && lastValues.context ? lastValues.context.process : '';
-        footer.appendChild(doneLabel('Appliqué' + (preset ? ' : préréglage « ' + preset + ' » marqué modifié, à enregistrer si tu veux le garder' : '')));
+        footer.appendChild(doneLabel('Appliqué'));
+        if (preset) footer.appendChild(el('p', 'muted small footnote', 'Le préréglage « ' + preset + ' » est marqué modifié : enregistre-le si tu veux garder ces réglages.'));
         function showUndone() {
           entry.applied = false;
           scheduleSave();
@@ -2599,8 +2605,7 @@
           footer.appendChild(doneLabel('Réglages d’avant remis', 'undo'));
         }
         if (undoId) undoneListeners[undoId] = showUndone;
-        var undoBtn = button('Annuler', function () {
-          undoBtn.disabled = true;
+        footer.appendChild(undoButton('Annuler', function (undoBtn) {
           pendingSheet = { kind: 'undo', onResult: function (okUndo, msg) {
             if (okUndo) return; // la fiche est prévenue par undoneListeners
             undoBtn.disabled = false;
@@ -2608,8 +2613,7 @@
             fail.classList.remove('hidden');
           } };
           window.orca.postMessage({ type: 'undo', undo_id: undoId || 0 });
-        }, 'link');
-        footer.appendChild(undoBtn);
+        }));
       } };
       // `ask` : ces réglages viennent de l'IA, Plyo demandera plus tard si l'impression a marché.
       window.orca.postMessage({ type: 'apply', changes: changes, why: (entry.data.defect && entry.data.defect.name) || '',
