@@ -450,7 +450,7 @@
 
   var session = null;        // { access_token, refresh_token, expires_at, email }, conservée par le slicer
   var lastValues = null;     // dernier message « values » du slicer (réglages, contexte, langue)
-  var lastGauge = null;      // dernière jauge reçue du service ({ plan, used_pct, resets_at, reserve, state })
+  var lastGauge = null;      // dernière jauge reçue du service ({ plan, used_pct, resets_at, extra_pct, state })
   var attachments = [];      // [{ media_type, data, preview }]
   var busy = false;
   var pendingSheet = null;   // fiche dont on attend le résultat d'application ou d'annulation
@@ -960,8 +960,8 @@
       big.appendChild(bar);
       big.appendChild(when);
       body.appendChild(big);
-      var reserve = el('p', 'muted hidden', 'Tu as aussi une réserve : elle prend le relais quand ta jauge est pleine.');
-      body.appendChild(reserve);
+      var extra = el('p', 'muted hidden', '');
+      body.appendChild(extra);
       body.appendChild(el('h3', '', 'Ta formule'));
       var plan = el('div', 'plan current');
       var planHead = el('div', 'head');
@@ -977,7 +977,7 @@
       soonHead.appendChild(icon('bulb', 16));
       soonHead.appendChild(el('span', '', 'Les formules arrivent'));
       soon.appendChild(soonHead);
-      soon.appendChild(el('p', 'muted', 'Bientôt : Plyo+ et Pro pour une jauge plus grande, et une recharge sans abonnement quand ta jauge est pleine. Tu les verras ici dès qu’elles seront prêtes ; d’ici là, ta jauge gratuite se recharge chaque mois.'));
+      soon.appendChild(el('p', 'muted', 'Bientôt : Plyo+ et Pro pour une jauge plus grande chaque mois, et une recharge sans abonnement qui agrandit ta jauge (ce que tu n’en utilises pas reste le mois suivant). Tu les verras ici dès qu’elles seront prêtes ; d’ici là, ta jauge gratuite se recharge chaque mois.'));
       body.appendChild(soon);
       body.appendChild(el('h3', '', 'Comment la jauge se remplit'));
       body.appendChild(rich('Chaque demande à l’IA remplit un peu ta jauge : un peu plus avec des photos, rien quand la demande sort de l’impression 3D. Une réponse commencée va toujours jusqu’au bout.'));
@@ -986,9 +986,10 @@
         var v = Logic.gaugeView(g);
         if (!v) return;
         pct.textContent = fr(v.label + ' utilisés ce mois-ci');
-        when.textContent = fr('Se recharge ' + v.resets);
+        when.textContent = fr(Logic.gaugeResetText(g));
         paintGauge(big, fill, v);
-        reserve.classList.toggle('hidden', !(g.reserve > 0));
+        extra.textContent = fr(Logic.gaugeExtraText(g));
+        extra.classList.toggle('hidden', !extra.textContent);
         planName.textContent = fr(v.plan);
         planText.textContent = fr(PLAN_TEXT[g.plan] || PLAN_TEXT.gratuit);
       }

@@ -208,3 +208,17 @@ test('choiceLabel : les choix s’affichent avec le libellé d’Orca, jamais la
   assert.equal(L.choiceLabel('outer_only'), 'Bordure extérieure uniquement');
   assert.equal(L.choiceLabel('inconnu'), 'inconnu');
 });
+
+test('gaugeExtraText : une seule jauge, agrandie par les crédits ajoutés', () => {
+  const base = { plan: 'gratuit', used_pct: 50, resets_at: '2026-11-01T00:00:00.000Z', state: 'ok' };
+  assert.equal(L.gaugeExtraText({ ...base, extra_pct: 0 }), '');
+  assert.equal(L.gaugeExtraText({ ...base }), '');
+  assert.equal(L.gaugeExtraText({ ...base, extra_pct: 200 }),
+    'Ta jauge est agrandie de 200 % par des crédits ajoutés : ce que tu n’en utilises pas reste le mois suivant.');
+});
+
+test('gaugeResetText : la part incluse se renouvelle, les crédits ajoutés restent', () => {
+  const base = { plan: 'gratuit', used_pct: 50, resets_at: '2026-11-01T00:00:00.000Z', state: 'ok' };
+  assert.match(L.gaugeResetText({ ...base, extra_pct: 0 }), /^Se recharge le 1er novembre/);
+  assert.match(L.gaugeResetText({ ...base, extra_pct: 40 }), /^La part incluse dans ta formule se renouvelle le 1er novembre/);
+});

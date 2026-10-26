@@ -62,6 +62,16 @@
       resets: resetText(g.resets_at)
     };
   }
+  // Une seule jauge : les crédits ajoutés (recharges, offerts) l'agrandissent ; la part incluse dans la formule se
+  // renouvelle chaque mois, les crédits ajoutés non utilisés restent.
+  function gaugeExtraText(g) {
+    var extra = g && typeof g.extra_pct === 'number' ? Math.round(g.extra_pct) : 0;
+    return extra > 0 ? 'Ta jauge est agrandie de ' + extra + ' % par des crédits ajoutés : ce que tu n’en utilises pas reste le mois suivant.' : '';
+  }
+  function gaugeResetText(g) {
+    var when = resetText(g && g.resets_at);
+    return gaugeExtraText(g) ? 'La part incluse dans ta formule se renouvelle ' + when + '.' : 'Se recharge ' + when + '.';
+  }
   // Message doux à afficher (« low » vers 80 %, « empty » jauge pleine), une seule fois par mois et par état.
   function noticeKey(kind, g) { return kind + ':' + g.resets_at; }
   // `prev` (si fourni) : l'état vu juste avant dans la session. On ne prévient qu'au passage d'un seuil, jamais au
@@ -297,7 +307,7 @@
     return { restore: ok, followUp: ok && !!hasFollowUp, error: !ok && !auto };
   }
 
-  var api = { retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
