@@ -47,7 +47,9 @@ void record(const nlohmann::json& event)
     nlohmann::json all = load();
     nlohmann::json* e  = latest(all, conv, [&](const nlohmann::json& x) { return x.value("parts", nlohmann::json()) == parts; });
     if (e == nullptr) {
-        all.insert(all.begin(), {{"conv", conv}, {"parts", parts}, {"changes", nlohmann::json::array()}, {"outcome", ""}, {"thumb", ""}});
+        // Une seule fiche : insert(pos, {…}) prendrait les accolades pour une liste d'éléments à insérer.
+        const nlohmann::json entry = {{"conv", conv}, {"parts", parts}, {"changes", nlohmann::json::array()}, {"outcome", ""}, {"thumb", ""}};
+        all.insert(all.begin(), entry);
         e = &all[0];
     }
     (*e)["at"]       = boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time());
