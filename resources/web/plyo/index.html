@@ -113,6 +113,7 @@
   .card > header .push { margin-left: auto; }
   .card p { margin: 0; }
   .card .meta { color: var(--muted); font-size: var(--fs-sm); }
+  .card ul { margin: 0; padding-left: var(--s4); }
 
   /* En-tête */
   .top { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s3) var(--s3) var(--s4); border-bottom: 1px solid var(--border); position: relative; flex: none; }
@@ -304,14 +305,10 @@
   .journal-event .res.bad { color: var(--warn-text); }
   .journal-event .acts { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s1); }
   .journal-list { display: flex; flex-direction: column; gap: var(--s3); }
-  .outcome { border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--accent-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
-  .outcome header { display: flex; align-items: center; gap: var(--s2); font-weight: 600; }
-  .outcome header .ic { color: var(--accent-text); }
-  .outcome p { margin: 0; }
-  .outcome ul { margin: 0; padding-left: var(--s4); color: var(--muted); font-size: var(--fs-sm); }
-  .outcome .answers { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
-  .outcome textarea { width: 100%; min-height: 40px; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px var(--s2); font: inherit; font-size: var(--fs-sm); background: var(--bg); color: var(--fg); }
-  .outcome label { display: flex; gap: var(--s2); align-items: flex-start; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
+  .answers { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+  .check-line { display: flex; gap: var(--s2); align-items: flex-start; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
+  .check-line input { margin: 3px 0 0; flex: none; }
+  .fail-text { margin: 0; color: var(--danger-text); font-size: var(--fs-sm); }
   .preflight { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: var(--r-md); background: var(--warn-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .preflight header { display: flex; align-items: center; gap: var(--s2); font-weight: 600; }
   .preflight header .ic { color: var(--warn-text); }
@@ -512,6 +509,13 @@
     if (text !== undefined && text !== null) e.textContent = fr(text);
     return e;
   }
+  // Jour local d'une date ISO, toujours au même format (« 24 octobre ») ; heure « 18:00 ».
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function dayOf(iso) {
+    var d = new Date(iso);
+    return isNaN(d) ? '' : Logic.dayText(d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()));
+  }
+  function timeOf(iso) { var d = new Date(iso); return isNaN(d) ? '' : pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
   function button(label, onClick, className, iconName) {
     var b = el('button', className || 'btn');
     b.type = 'button';
@@ -830,8 +834,7 @@
       var open = el('button', 'open');
       open.type = 'button';
       open.appendChild(el('span', 't', it.title || 'Conversation'));
-      var d = it.updated ? new Date(it.updated) : null;
-      open.appendChild(el('span', 'd', d && !isNaN(d) ? d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''));
+      open.appendChild(el('span', 'd', dayOf(it.updated) ? dayOf(it.updated) + ' à ' + timeOf(it.updated) : ''));
       open.addEventListener('click', function () { closeDrawer(); openConversation(it.id); });
       var del = el('button', 'icon-btn');
       del.type = 'button';
@@ -1881,34 +1884,40 @@
     outcomeAsked[item.at] = true;
     renderOutcome(item);
   }
+  var outcomeSeq = 0;
   function renderOutcome(item) {
     var slot = $('outcome-slot');
     slot.textContent = '';
     var q = Logic.outcomeQuestion(item, function (id) { var p = paramOf(id); return p.label === id ? null : p; });
-    var box = el('div', 'outcome');
-    box.setAttribute('role', 'status');
+    var box = el('div', 'card');
+    // Une question qui attend une réponse : un groupe nommé par son titre, pas une annonce (role="status").
+    var titleId = 'outcome-title-' + (++outcomeSeq);
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-labelledby', titleId);
     var head = el('header');
-    head.appendChild(icon('check', 15));
-    head.appendChild(txt(q.title));
+    head.appendChild(icon('help', 16));
+    var title = el('span', '', q.title);
+    title.id = titleId;
+    head.appendChild(title);
     box.appendChild(head);
     box.appendChild(el('p', '', q.text));
     if (q.changes.length) {
-      var list = el('ul');
+      var list = el('ul', 'meta');
       q.changes.forEach(function (c) { list.appendChild(el('li', '', c)); });
       box.appendChild(list);
     }
+    var said = el('textarea', 'field');
+    said.maxLength = 200;
+    said.rows = 2;
+    said.placeholder = fr('Un mot à ajouter ? (facultatif, par exemple « mieux, mais encore quelques fils »)');
+    said.setAttribute('aria-label', 'Un mot à ajouter sur le résultat (facultatif)');
     var share = el('input');
     share.type = 'checkbox';
     share.checked = !!fsState.share_outcomes;
     share.addEventListener('change', function () { window.orca.postMessage({ type: 'firststeps_set', patch: { share_outcomes: share.checked } }); });
-    var shareLabel = el('label');
+    var shareLabel = el('label', 'check-line');
     shareLabel.appendChild(share);
-    shareLabel.appendChild(txt('Partager anonymement ce résultat pour améliorer Plyo (le problème, les réglages changés, l’imprimante et le filament ; jamais de photo).'));
-    var said = el('textarea');
-    said.maxLength = 200;
-    said.rows = 2;
-    said.placeholder = 'Un mot à ajouter ? (facultatif, par exemple « mieux, mais encore quelques fils »)';
-    said.setAttribute('aria-label', 'Un mot à ajouter sur le résultat (facultatif)');
+    shareLabel.appendChild(el('span', '', 'Partager anonymement ce résultat pour améliorer Plyo (le problème, les réglages changés, l’imprimante et le filament ; jamais de photo).'));
     function answer(outcome) {
       var note = outcome === 'later' ? '' : said.value.trim();
       // Le mot reste sur l'ordinateur (mémoire de la machine, journal) ; il n'est jamais partagé.
@@ -1918,30 +1927,77 @@
       if (outcome !== 'later' && share.checked && session)
         apiFetch('/api/outcomes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Logic.outcomePayload(item, outcome)) }).catch(function () {});
       if (outcome === 'ok') noteLine('Super ! Je m’en souviendrai pour mes prochains conseils sur cette imprimante.', 'ok', 'check');
-      if (outcome === 'bad') {
-        // Pas d'appel à l'IA imposé : on propose seulement d'en reparler.
-        var line = noteLine('C’est noté : je ne te reproposerai pas ces réglages.', '', 'info');
-        var followUp = function () {
-          noteLine('Dis-moi ce que tu vois ou envoie une photo, et on cherche une autre piste.', '', 'info');
-          var input = $('note');
-          input.value = 'Ça n’a pas marché' + (note ? ' : ' + note : ' : ');
-          input.focus();
-        };
-        line.appendChild(button('Demander à l’assistant', function () {
-          line.remove();
-          // La conversation se recharge sans attendre : la suite vient une fois qu'elle est affichée.
-          if (item.conv && (!conv || conv.id !== item.conv)) { afterConvLoaded = followUp; openConversation(item.conv); }
-          else followUp();
-        }, 'link'));
-      }
+      if (outcome === 'bad') renderOutcomeBad(item, note);
     }
+    // Oui et Non pèsent le même poids : la carte ne souffle pas la réponse.
     var answers = el('div', 'answers');
-    answers.appendChild(button('Oui', function () { answer('ok'); }, 'btn sm'));
-    answers.appendChild(button('Non', function () { answer('bad'); }, 'btn sm ghost'));
-    answers.appendChild(button('Pas encore imprimé', function () { answer('later'); }, 'link'));
+    answers.appendChild(button('Oui', function () { answer('ok'); }, 'btn ghost'));
+    answers.appendChild(button('Non', function () { answer('bad'); }, 'btn ghost'));
     box.appendChild(said);
     box.appendChild(answers);
+    box.appendChild(button('Pas encore imprimé, redemande-moi plus tard', function () { answer('later'); }, 'link'));
     box.appendChild(shareLabel);
+    slot.appendChild(box);
+  }
+
+  // « Ça n'a pas marché » : les réglages essayés sont encore appliqués. On propose de les retirer (sans appel à
+  // l'IA), puis de chercher une autre piste ou d'envoyer une photo.
+  function renderOutcomeBad(item, note) {
+    var slot = $('outcome-slot');
+    slot.textContent = '';
+    var box = el('div', 'card');
+    var titleId = 'outcome-title-' + (++outcomeSeq);
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-labelledby', titleId);
+    var head = el('header');
+    head.appendChild(icon('flag', 16));
+    var title = el('span', '', 'Ça n’a pas marché');
+    title.id = titleId;
+    head.appendChild(title);
+    var close = button('', function () { slot.textContent = ''; }, 'icon-btn push');
+    close.title = 'Fermer';
+    close.setAttribute('aria-label', 'Fermer');
+    close.appendChild(icon('x', 14));
+    head.appendChild(close);
+    box.appendChild(head);
+    var revert = Logic.revertChanges(item, lastValues && lastValues.params);
+    box.appendChild(el('p', '', revert.length
+      ? 'C’est noté, je ne te reproposerai pas ces réglages. Ils sont encore appliqués : tu peux remettre ceux d’avant, puis on cherche une autre piste.'
+      : 'C’est noté, je ne te reproposerai pas ces réglages. Tes réglages ont déjà changé depuis : on peut chercher une autre piste.'));
+    var acts = el('div', 'stack');
+    var status = el('p', 'fail-text hidden');
+    if (revert.length) {
+      var undo = button(revert.length > 1 ? 'Remettre mes anciens réglages' : 'Remettre mon ancien réglage', function () {
+        undo.disabled = true;
+        status.classList.add('hidden');
+        pendingSheet = { kind: 'apply', onResult: function (ok, text) {
+          // Valeur d'avant hors des plages d'aujourd'hui : le slicer refuse, et on montre pourquoi.
+          if (!ok) { undo.disabled = false; status.textContent = fr(text); status.classList.remove('hidden'); return; }
+          var done = el('div', 'undo-row');
+          done.appendChild(doneLabel('Anciens réglages remis. Découpe à nouveau la plaque pour en tenir compte.', 'undo'));
+          undo.replaceWith(done);
+        } };
+        // Sans « ask » : un retour en arrière ne doit pas reposer la question « Ça a marché ? ».
+        window.orca.postMessage({ type: 'apply', changes: revert, why: 'Retour aux réglages d’avant' + (item.why ? ' (' + item.why + ')' : '') });
+      }, 'btn', 'undo');
+      acts.appendChild(undo);
+    }
+    acts.appendChild(button('Chercher une autre piste', function () {
+      var followUp = function () {
+        noteInput.value = Logic.retryPrompt(item, note);
+        noteInput.focus();
+        noteInput.setSelectionRange(noteInput.value.length, noteInput.value.length);
+      };
+      // La conversation d'origine se recharge sans attendre : la suite vient une fois qu'elle est affichée.
+      if (item.conv && (!conv || conv.id !== item.conv)) { afterConvLoaded = followUp; openConversation(item.conv); }
+      else followUp();
+    }, revert.length ? 'btn ghost' : 'btn', 'search'));
+    box.appendChild(acts);
+    box.appendChild(status);
+    box.appendChild(button('Envoyer une photo du résultat', function () {
+      noteInput.value = Logic.retryPrompt(item, note);
+      pickFiles();
+    }, 'link', 'camera'));
     slot.appendChild(box);
   }
 
@@ -2379,7 +2435,7 @@
   function renderSheet(container, entry, archived) {
     var suggestions = entry.data.suggestions;
     var sheet = el('div', 'sheet');
-    var day = entry.date ? new Date(entry.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) : '';
+    var day = entry.date ? dayOf(entry.date) : '';
     sheet.appendChild(el('header', '', archived ? (entry.applied ? 'Réglages appliqués le ' + day : 'Réglages proposés le ' + day) : 'Réglages proposés'));
     var rows = suggestions.map(function (s) {
       var c = archived && entry.changes && entry.changes[s.id] ? entry.changes[s.id] : change(s);

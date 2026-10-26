@@ -9,9 +9,9 @@ const L = require('../assistant-logic.js');
 test('titre d’une conversation : la première demande, raccourcie', () => {
   assert.equal(L.conversationTitle('Plein de fils entre les tours', 0, '2026-10-24'), 'Plein de fils entre les tours');
   assert.equal(L.conversationTitle('a'.repeat(80), 0, '2026-10-24'), 'a'.repeat(47) + '…');
-  assert.equal(L.conversationTitle('', 2, '2026-10-24'), 'Photos du 24/10');
-  assert.equal(L.conversationTitle('  ', 1, '2026-10-24'), 'Photo du 24/10');
-  assert.equal(L.conversationTitle('', 0, '2026-10-24'), 'Conversation du 24/10');
+  assert.equal(L.conversationTitle('', 2, '2026-10-24'), 'Photos du 24 octobre');
+  assert.equal(L.conversationTitle('  ', 1, '2026-10-24'), 'Photo du 24 octobre');
+  assert.equal(L.conversationTitle('', 0, '2026-10-24'), 'Conversation du 24 octobre');
 });
 
 test('réponses aux questions de l’IA envoyées ensemble', () => {
@@ -101,7 +101,7 @@ test('outcomeQuestion : rappelle le problème et les réglages changés, avec le
   const label = (id) => ({ retraction: { label: 'Longueur de rétraction', unit: 'mm' }, nozzle_temp: { label: 'Température de buse', unit: '°C' } })[id];
   const q = L.outcomeQuestion(pendingItem, label);
   assert.equal(q.title, 'Ça a marché ?');
-  assert.equal(q.text, 'Le 25/10, on a changé des réglages pour « Fils d’araignée ». Ta dernière impression avec ces réglages, ça a marché ?');
+  assert.equal(q.text, 'Le 25 octobre, on a changé des réglages pour « Fils d’araignée ». Ta dernière impression avec ces réglages, ça a marché ?');
   assert.deepEqual(q.changes, ['Longueur de rétraction : 0,8 → 1,2 mm', 'Température de buse : 220 → 210 °C']);
 });
 

@@ -2,12 +2,17 @@
 // jauge du mois, erreurs et lecture du flux de réponse.
 // Chargée par index.html (window.PlyoLogic) et testée par node (tests/assistant-logic.test.mjs).
 (function (root) {
-  function shortDate(iso) {
-    var d = String(iso || '').slice(0, 10).split('-');
-    return d.length === 3 ? d[2] + '/' + d[1] : '';
+  var MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  // La seule façon d'écrire un jour dans le panneau : « 24 octobre », « 1er novembre » (date locale, sans fuseau).
+  function dayText(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    if (!m || +m[2] < 1 || +m[2] > 12) return '';
+    var day = +m[3];
+    return (day === 1 ? '1er' : day) + ' ' + MONTHS[+m[2] - 1];
   }
+  var shortDate = dayText;
 
-  // Titre d'une conversation : sa première demande, ou « Photo(s) du jj/mm ».
+  // Titre d'une conversation : sa première demande, ou « Photo(s) du 24 octobre ».
   function conversationTitle(text, photoCount, isoDate) {
     var t = String(text || '').replace(/\s+/g, ' ').trim();
     if (t) return t.length > 48 ? t.slice(0, 47) + '…' : t;
@@ -40,7 +45,6 @@
 
   // Jauge d'utilisation du mois : un pourcentage, jamais de tokens ni de crédits par message.
   var PLAN_NAMES = { gratuit: 'Gratuit', plus: 'Plyo+', pro: 'Pro' };
-  var MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
   function resetText(iso) {
     var d = new Date(iso);
     if (isNaN(d)) return '';
@@ -117,6 +121,23 @@
     var text = (day ? 'Le ' + day + ', on' : 'On') + ' a changé des réglages' + (item.why ? ' pour « ' + item.why + ' »' : '') +
       '. Ta dernière impression avec ces réglages, ça a marché ?';
     return { title: 'Ça a marché ?', text: text, changes: changes };
+  }
+
+  // « Ça n'a pas marché » : remettre les valeurs d'avant, mais seulement là où la valeur essayée est encore en
+  // place (un réglage changé à la main depuis n'est pas écrasé). `params` absent : tout est remis.
+  function revertChanges(item, params) {
+    return ((item && item.changes) || []).filter(function (c) {
+      if (!params) return true;
+      var p = params.find(function (x) { return x.id === c.id; });
+      if (!p) return false;
+      return typeof p.value === 'number' && typeof c.after === 'number' ? Math.abs(p.value - c.after) < 1e-6 : p.value === c.after;
+    }).map(function (c) { return { id: c.id, value: c.before }; });
+  }
+
+  // Demande préremplie de « Chercher une autre piste » : l'IA repart du problème et de ce que l'utilisateur a vu.
+  function retryPrompt(item, note) {
+    return 'Les réglages essayés' + (item.why ? ' pour « ' + item.why + ' »' : '') + ' n’ont pas marché' +
+      (note ? ' (' + note + ')' : '') + '. Qu’est-ce que je peux essayer d’autre ?';
   }
 
   // Résultat partagé (si l'utilisateur l'a accepté) : rien d'autre que le défaut, les changements, les profils et le résultat.
@@ -219,7 +240,7 @@
     return { restore: ok, followUp: ok && !!hasFollowUp, error: !ok && !auto };
   }
 
-  var api = { plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

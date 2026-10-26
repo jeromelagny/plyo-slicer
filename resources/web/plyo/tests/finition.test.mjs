@@ -53,3 +53,27 @@ test('action sur le plateau : le texte du slicer passe au singulier pour une seu
   assert.equal(L.plateText({ kind: 'arrange', ok: true, text: 'Je range les pièces sur le plateau.' }, 1), 'Je range la pièce sur le plateau.');
   assert.equal(L.plateText({ kind: 'orient', ok: true, text: 'Orientée.' }, 1), 'Orientée.');
 });
+
+test('une seule façon d’écrire une date : « 24 octobre », « 1er novembre »', () => {
+  assert.equal(L.dayText('2026-10-24T18:00:00'), '24 octobre');
+  assert.equal(L.dayText('2026-11-01'), '1er novembre');
+  assert.equal(L.dayText(''), '');
+  assert.equal(L.dayText('n’importe quoi'), '');
+});
+
+test('« Ça n’a pas marché » : les anciennes valeurs, seulement pour les réglages encore à la valeur essayée', () => {
+  const item = { changes: [{ id: 'retraction', before: 0.8, after: 1.2 }, { id: 'nozzle_temp', before: 220, after: 210 }, { id: 'brim_type', before: 'no_brim', after: 'outer_only' }] };
+  const params = [{ id: 'retraction', value: 1.2 }, { id: 'nozzle_temp', value: 215 }, { id: 'brim_type', value: 'outer_only' }];
+  // La température a été changée à la main depuis : on n'y touche pas.
+  assert.deepEqual(L.revertChanges(item, params), [{ id: 'retraction', value: 0.8 }, { id: 'brim_type', value: 'no_brim' }]);
+  assert.deepEqual(L.revertChanges(item, null), [{ id: 'retraction', value: 0.8 }, { id: 'nozzle_temp', value: 220 }, { id: 'brim_type', value: 'no_brim' }]);
+  assert.deepEqual(L.revertChanges(item, [{ id: 'retraction', value: 1.2000000001 }]), [{ id: 'retraction', value: 0.8 }]);
+  assert.deepEqual(L.revertChanges({ changes: [] }, params), []);
+  assert.deepEqual(L.revertChanges({}, params), []);
+});
+
+test('« Chercher une autre piste » : la demande préremplie rappelle le problème et le mot ajouté', () => {
+  assert.equal(L.retryPrompt({ why: 'Fils d’araignée' }, 'encore quelques fils'),
+    'Les réglages essayés pour « Fils d’araignée » n’ont pas marché (encore quelques fils). Qu’est-ce que je peux essayer d’autre ?');
+  assert.equal(L.retryPrompt({ why: '' }, ''), 'Les réglages essayés n’ont pas marché. Qu’est-ce que je peux essayer d’autre ?');
+});
