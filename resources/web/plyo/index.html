@@ -143,6 +143,7 @@
   /* Jauge d'utilisation du mois : un pourcentage, jamais de crédits par message */
   .gauge { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px; border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--border); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; }
   .gauge .gauge-name { color: var(--muted); }
+  @media (max-width: 340px) { .gauge .gauge-name { display: none; } }
   .bar { position: relative; display: block; width: 36px; height: 6px; border-radius: var(--r-pill); background: var(--raised); overflow: hidden; }
   .bar i { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: inherit; background: var(--accent); transition: width .3s ease; }
   .low .bar i { background: var(--warn); }
@@ -273,7 +274,10 @@
   .tools .hint { margin-left: auto; margin-right: 6px; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .send { width: 32px; height: 32px; padding: 0; border-radius: var(--r-sm); border: 0; background: var(--accent-fill); color: var(--on-accent); display: grid; place-items: center; cursor: pointer; flex: none; }
   .send:disabled { opacity: .5; cursor: default; }
-  .disclaimer { margin: 0; text-align: center; font-size: var(--fs-xs); line-height: 1.35; color: var(--muted); }
+  /* Une ligne, même à 320 px : le détail (réglages dans des plages sûres) est dans l'aide. */
+  .disclaimer { margin: 0; display: flex; justify-content: center; align-items: baseline; gap: var(--s1); font-size: var(--fs-xs); line-height: 1.35; color: var(--muted); white-space: nowrap; min-width: 0; }
+  .disclaimer span { overflow: hidden; text-overflow: ellipsis; }
+  .disclaimer .link { font-size: var(--fs-xs); min-height: 0; flex: none; }
 
   /* Premiers pas : carte du parcours, puce « Tu regardes », fiche d'un réglage */
   .tour { border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--accent-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
@@ -329,24 +333,29 @@
   <div class="top">
     <h1>Assistant Plyo</h1>
     <button class="linked hidden push" id="phone-linked" type="button" title="Téléphone relié à cette conversation : clique pour revoir le QR code"></button>
-    <button class="gauge hidden push" id="gauge" type="button" title="Ton utilisation ce mois-ci : clique pour le détail"><span class="bar"><i id="gauge-fill"></i></span><span id="gauge-label">…</span></button>
-    <button class="btn sm hidden push" id="btn-login" type="button" title="Connexion par lien envoyé par e-mail, sans mot de passe">Me connecter</button>
+    <button class="gauge hidden push" id="gauge" type="button" title="Jauge IA : ton utilisation ce mois-ci. Clique pour le détail." aria-label="Jauge IA du mois"><span class="gauge-name">Jauge IA</span><span class="bar"><i id="gauge-fill"></i></span><span id="gauge-label">…</span></button>
+    <button class="btn sm hidden push" id="btn-login" type="button" title="Connexion par un code envoyé par e-mail, sans mot de passe">Me connecter</button>
     <button class="icon-btn" id="btn-more" type="button" title="Plus d’options" aria-haspopup="menu" aria-label="Plus d’options"></button>
+    <!-- Menu en trois groupes ; chaque entrée a son icône, une entrée indisponible reste visible mais grisée. -->
     <div class="menu hidden" id="menu" role="menu">
-      <button type="button" id="m-new" role="menuitem">Nouvelle conversation</button>
-      <button type="button" id="m-convs" role="menuitem">Mes conversations</button>
-      <button type="button" id="m-parts" role="menuitem">Mes pièces</button>
-      <button type="button" id="m-usage" role="menuitem">Mon utilisation</button>
+      <div class="group" role="presentation">Conversation</div>
+      <button type="button" id="m-new" role="menuitem" data-icon="plus">Nouvelle conversation</button>
+      <button type="button" id="m-convs" role="menuitem" data-icon="chat">Mes conversations</button>
       <hr>
-      <button type="button" id="m-check" role="menuitem">Vérifier ma plaque avant d’imprimer</button>
-      <button type="button" id="m-undo" role="menuitem" disabled>Annuler les derniers réglages appliqués</button>
-      <button type="button" id="m-values" role="menuitem">Voir les réglages lus par l’assistant</button>
-      <button type="button" id="m-tour" role="menuitem">Refaire la visite « Ma première impression »</button>
-      <button type="button" id="m-help" role="menuitem">Aide</button>
+      <div class="group" role="presentation">Plaque</div>
+      <button type="button" id="m-check" role="menuitem" data-icon="search">Vérifier ma plaque avant d’imprimer</button>
+      <button type="button" id="m-parts" role="menuitem" data-icon="cube">Mes pièces</button>
+      <button type="button" id="m-undo" role="menuitem" data-icon="undo" disabled title="Rien à annuler pour l’instant">Annuler les derniers réglages appliqués</button>
+      <button type="button" id="m-values" role="menuitem" data-icon="eye">Voir les réglages lus par l’assistant</button>
       <hr id="m-account-sep">
+      <div class="group" role="presentation">Compte</div>
       <div class="who" id="m-email"></div>
-      <button type="button" id="m-logout" role="menuitem">Me déconnecter</button>
-      <button type="button" id="m-login" role="menuitem">Me connecter</button>
+      <button type="button" id="m-usage" role="menuitem" data-icon="bars">Mon utilisation</button>
+      <button type="button" id="m-logout" role="menuitem" data-icon="logout">Me déconnecter</button>
+      <button type="button" id="m-login" role="menuitem" data-icon="login">Me connecter</button>
+      <hr>
+      <button type="button" id="m-tour" role="menuitem" data-icon="flag">Refaire la visite guidée</button>
+      <button type="button" id="m-help" role="menuitem" data-icon="help">Aide</button>
     </div>
   </div>
 
@@ -362,7 +371,7 @@
     <!-- Accueil (conversation vide) -->
     <div class="hidden" id="home">
       <div class="hello">
-        <h2>Bonjour 👋</h2>
+        <h2>Bonjour !</h2>
         <p id="hello-text">Montre-moi une impression ratée ou dis-moi ce que tu veux obtenir. Je propose les réglages, tu choisis ce qu’on applique.</p>
       </div>
       <p class="home-mini">Une question pendant la visite ? Écris-la en bas, je réponds.</p>
@@ -403,7 +412,7 @@
         <button class="send" id="btn-send" type="button" title="Envoyer (Entrée) · Maj + Entrée pour aller à la ligne" aria-label="Envoyer"></button>
       </div>
     </div>
-    <p class="disclaimer">L’assistant est une IA qui te guide : tu valides chaque suggestion, et les réglages restent toujours dans des plages sûres.</p>
+    <p class="disclaimer"><span>L’IA te guide, tu valides chaque réglage.</span><button class="link" type="button" id="btn-ai-info">En savoir plus</button></p>
     <input id="file-input" type="file" accept="image/*,.stl,.3mf,.obj,.step,.stp,.amf" multiple hidden>
   </div>
 
@@ -479,6 +488,10 @@
     wand: '<path d="M4 20L15 9M14 4v3M19 9h-3M18 5l-2 2M10 4l.5 1.5M20 14l-1.5-.5"/>',
     stop: '<rect x="7" y="7" width="10" height="10" rx="1.5"/>',
     chevron: '<path d="M9 6l6 6-6 6"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    bars: '<path d="M5 20V11M12 20V4M19 20v-6"/>',
+    logout: '<path d="M9 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h3"/><path d="M16 16l4-4-4-4M20 12H9"/>',
+    login: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l4-4-4-4M14 12H3"/>',
     chat: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 4v-4h0A1.5 1.5 0 0 1 4 14.5z"/>'
   };
   function icon(name, size) {
@@ -489,7 +502,7 @@
     span.innerHTML = '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICONS[name] + '</svg>';
     return span;
   }
-  document.querySelectorAll('[data-icon]').forEach(function (e) { e.appendChild(icon(e.getAttribute('data-icon'), e.classList.contains('badge') ? 20 : 14)); });
+  document.querySelectorAll('[data-icon]').forEach(function (e) { e.insertBefore(icon(e.getAttribute('data-icon'), e.classList.contains('badge') ? 20 : e.getAttribute('role') === 'menuitem' ? 16 : 14), e.firstChild); });
   $('btn-more').appendChild(icon('more', 18));
   $('btn-files').appendChild(icon('clip', 18));
   $('btn-phone').appendChild(icon('phone', 18));
@@ -732,7 +745,8 @@
     var prev = gaugeState;
     gaugeState = v.state;
     $('gauge-label').textContent = fr(v.label);
-    $('gauge').title = 'Utilisé ce mois-ci : ' + v.label + '. Se recharge ' + v.resets + '. Clique pour le détail.';
+    $('gauge').title = fr('Jauge IA : ' + v.label + ' utilisés ce mois-ci. Elle se recharge ' + v.resets + '. Clique pour le détail.');
+    $('gauge').setAttribute('aria-label', fr('Jauge IA du mois : ' + v.label + ' utilisés'));
     paintGauge($('gauge'), $('gauge-fill'), v);
     // Après la réponse qui a rempli la jauge, pas avant : la réponse s'affiche dans la même tâche.
     if (quiet) { noticeShown = Logic.noticeKey(v.state, g); try { localStorage.setItem(NOTICE_KEY, noticeShown); } catch (e) { /* stockage indisponible */ } return; }
@@ -995,6 +1009,7 @@
   function openHelp() {
     openDrawer('Aide', function (body) {
       [
+        ['Une IA qui te guide', 'L’assistant est une IA : il peut se tromper. Il propose, et **tu valides chaque réglage** avant qu’il soit appliqué. Les réglages restent toujours dans des plages sûres, vérifiées par le slicer, et tout s’annule d’un clic.'],
         ['Ce que je sais faire', '- Regarder la photo d’une impression ratée et te dire ce qui cloche\n- Proposer des réglages : tu choisis ce qu’on applique, et tout s’annule d’un clic\n- Répondre à tes questions d’impression 3D, avec tes mots\n- Te montrer où se trouve un bouton ou un réglage dans le slicer\n- Orienter, ranger, réduire ou découper tes pièces quand tu me le demandes\n- Te guider pour calibrer ton filament, photo à l’appui'],
         ['Gratuit, sans compte', 'La visite guidée, les explications des réglages (« Explique-moi » ou « c’est quoi la rétraction ? »), « Montre-moi » et la pose d’un modèle sur le plateau.'],
         ['Avec ton compte', 'Les réponses de l’IA et la lecture des photos remplissent ta jauge du mois, en haut à droite. Elle se recharge chaque mois.'],
@@ -1016,6 +1031,7 @@
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
   $('m-values').addEventListener('click', openValues);
   $('m-help').addEventListener('click', openHelp);
+  $('btn-ai-info').addEventListener('click', openHelp);
   $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
   $('m-login').addEventListener('click', function () { menu.classList.add('hidden'); openLogin(); });
   $('btn-login').addEventListener('click', openLogin);
@@ -1035,6 +1051,7 @@
   function renderValues(msg) {
     lastValues = msg;
     $('m-undo').disabled = !msg.can_undo;
+    $('m-undo').title = fr(msg.can_undo ? 'Remet les réglages d’avant la dernière application' : 'Rien à annuler pour l’instant');
   }
 
   function paramOf(id) {
@@ -2517,7 +2534,7 @@
     if (!key || !window.PLYO_FICHES[key]) return el('div', 'name', label);
     var b = el('button', 'setting-name');
     b.type = 'button';
-    b.title = 'C’est quoi ce réglage ?';
+    b.title = fr('C’est quoi ce réglage ?');
     b.appendChild(txt(label));
     b.appendChild(icon('help', 13));
     b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); explain(key); });
