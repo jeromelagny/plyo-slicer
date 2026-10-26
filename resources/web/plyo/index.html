@@ -1380,7 +1380,10 @@
       .then(function (r) { return r.status === 200 ? r.json() : null; })
       .then(function (batch) {
         if (!batch) return;
-        if (!batch.images.length) { noteLine('Les photos du téléphone n’ont pas pu être récupérées. Renvoie-les depuis le téléphone.', 'error', 'alert'); return; }
+        // `missing` : photos de l'envoi que le service n'a pas pu rendre ; les autres partent quand même.
+        var missing = Logic.missingPhotosText(batch.missing);
+        if (missing) noteLine(missing, 'error', 'alert');
+        if (!batch.images || !batch.images.length) { if (!missing) noteLine('Les photos du téléphone n’ont pas pu être récupérées. Renvoie-les depuis le téléphone.', 'error', 'alert'); return; }
         phoneQueue.push({
           message: batch.message,
           photos: batch.images.map(function (img) {
@@ -1718,7 +1721,7 @@
           if (calibCard !== card) return;
           if (!r.ok) {
             if (r.data.error === 'insufficient_credits') setGauge(r.data.gauge, true);
-            status.textContent = fr(Logic.errorView(r.data.error).text + ' Tu peux aussi choisir toi-même le meilleur.');
+            status.textContent = fr(Logic.errorView(r.data.error, r.data).text + ' Tu peux aussi choisir toi-même le meilleur.');
             card.awaiting = true;
             return;
           }
@@ -1945,7 +1948,7 @@
     share.addEventListener('change', function () { window.orca.postMessage({ type: 'firststeps_set', patch: { share_outcomes: share.checked } }); });
     var shareLabel = el('label', 'check-line');
     shareLabel.appendChild(share);
-    shareLabel.appendChild(el('span', '', 'Partager anonymement ce résultat pour améliorer Plyo (le problème, les réglages changés, l’imprimante et le filament ; jamais de photo).'));
+    shareLabel.appendChild(el('span', '', 'Partager anonymement ce résultat pour améliorer Plyo : les noms de tes profils d’imprimante et de filament, le problème, les réglages changés et le jour ; jamais ton compte ni de photo.'));
     function answer(outcome) {
       var note = outcome === 'later' ? '' : said.value.trim();
       // Le mot reste sur l'ordinateur (mémoire de la machine, journal) ; il n'est jamais partagé.
@@ -1953,6 +1956,7 @@
       slot.textContent = '';
       if (outcome === 'later') delete outcomeAsked[item.at]; // redemandé au prochain passage (3 reports au plus)
       if (outcome !== 'later' && share.checked && session)
+        // Envoi discret : une réponse { ok, duplicate } (déjà reçu) comme une erreur ne changent rien pour l'utilisateur.
         apiFetch('/api/outcomes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Logic.outcomePayload(item, outcome)) }).catch(function () {});
       if (outcome === 'ok') noteLine('Super ! Je m’en souviendrai pour mes prochains conseils sur cette imprimante.', 'ok', 'check');
       if (outcome === 'bad') renderOutcomeBad(item, note);
@@ -2369,11 +2373,11 @@
       scrollDown();
       drainPhoneQueue();
     }
-    function fail(code) {
+    function fail(code, data) {
       finish();
       if (code === 'cancel') { noteLine('Demande annulée.', '', 'info'); return; }
       if (code === 'unauthorized') { logout(); requireLogin('Ta session a expiré.', function () { send(note, { photos: photos, shown: true }); }); return; }
-      showError(code, function () { ask(note, photos); });
+      showError(code, function () { ask(note, photos); }, data);
     }
 
     var plateParts = [];       // pièces sur le plateau au moment de la question (journal des pièces)
@@ -2395,14 +2399,19 @@
       if (response.status === 401) return { error: 'unauthorized' };
       var type = response.headers.get('Content-Type') || '';
       if (type.indexOf('ndjson') < 0 || !response.body)
-        return response.json().then(function (data) { return response.ok ? { final: data } : { error: data.error, gauge: data.gauge }; });
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (response.ok) return { final: data };
+          // Corps sans code (proxy, limite de débit) : le statut HTTP suffit à choisir le message.
+          var code = data.error || (response.status === 429 ? 'rate_limited' : response.status === 409 ? 'request_in_progress' : 'internal');
+          return { error: code, gauge: data.gauge, data: Object.assign({}, data, { retry_after: Logic.retryAfter(data, response.headers.get('Retry-After')) }) };
+        });
       // Réponse en flux : les textes s'affichent au fur et à mesure, puis la réponse complète remplace le brouillon.
       var reader = response.body.getReader(), decoder = new TextDecoder(), nd = Logic.ndjsonReader();
       function handle(events) {
         events.forEach(function (ev) {
           if (ev.type === 'partial') { if (!live) { thinking.classList.add('hidden'); live = liveAnswer(function () { controller.abort('cancel'); }); } live.update(ev); }
           else if (ev.type === 'final') out.final = ev;
-          else if (ev.type === 'error') out.error = ev.error;
+          else if (ev.type === 'error') { out.error = ev.error; out.data = ev; }
         });
       }
       function pump() {
@@ -2417,7 +2426,7 @@
     }).then(function (r) {
       if (r.error) {
         if (r.error === 'insufficient_credits') setGauge(r.gauge, true);
-        fail(r.error);
+        fail(r.error, r.data);
         return;
       }
       done(r.final);
@@ -2462,15 +2471,34 @@
   }
 
   // Erreur : ce qui s'est passé et l'action suivante. La demande est gardée pour « Réessayer ».
-  function showError(code, retry) {
+  function showError(code, retry, data) {
     showConversation();
-    var view = Logic.errorView(code);
+    var view = Logic.errorView(code, data);
     var g = code === 'insufficient_credits' ? Logic.gaugeView(lastGauge) : null;
-    var box = alertBox('error', view.text + (g && g.resets ? ' Elle se recharge ' + g.resets + '.' : ''), 'alert');
+    // « Une autre demande est en cours » n'est pas une panne : simple information, sans bouton.
+    var box = view.action === 'none' ? alertBox('info', view.text, 'info')
+      : alertBox('error', view.text + (g && g.resets ? ' Elle se recharge ' + g.resets + '.' : ''), 'alert');
     var acts = el('div', 'row-acts');
     if (view.action === 'credits') acts.appendChild(button('Voir mon utilisation', openUsage, 'btn sm'));
     else if (view.action === 'login') acts.appendChild(button('Me reconnecter', openLogin, 'btn sm'));
-    else if (retry) acts.appendChild(button('Réessayer', function () { box.remove(); retry(); }, 'btn sm'));
+    else if (view.action === 'photo') acts.appendChild(button('Choisir une autre photo', function () { box.remove(); pickFiles(); }, 'btn sm', 'camera'));
+    else if (view.action === 'retry' && retry) {
+      var again = button('Réessayer', function () { box.remove(); retry(); }, 'btn sm');
+      acts.appendChild(again);
+      // Trop de demandes : le bouton attend la fin du délai annoncé, avec le compte à rebours.
+      if (view.wait) {
+        var left = view.wait;
+        again.disabled = true;
+        var tick = function () {
+          if (!again.isConnected) return;
+          if (left <= 0) { again.disabled = false; again.textContent = fr('Réessayer'); return; }
+          again.textContent = fr('Réessayer dans ' + left + ' s');
+          left--;
+          setTimeout(tick, 1000);
+        };
+        setTimeout(tick, 0); // une fois la carte dans le fil
+      }
+    }
     box.body.appendChild(acts);
     thread.appendChild(box);
     scrollDown();

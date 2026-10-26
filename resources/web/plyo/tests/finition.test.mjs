@@ -130,3 +130,38 @@ test('typographie française : le jour reste collé au mois', () => {
   assert.equal(L.fr('Le 24 octobre, on'), 'Le 24\u00A0octobre, on');
   assert.equal(L.fr('24 pièces'), '24 pièces');
 });
+
+test('nouveaux codes du service : trop de demandes, demande en cours, photo illisible', () => {
+  const rl = L.errorView('rate_limited', { retry_after: 12 });
+  assert.equal(rl.text, 'Trop de demandes d’un coup : réessaie dans 12 s.');
+  assert.equal(rl.action, 'retry');
+  assert.equal(rl.wait, 12);
+  assert.equal(L.errorView('rate_limited', {}).text, 'Trop de demandes d’un coup : réessaie dans un instant.');
+  assert.equal(L.errorView('rate_limited', {}).wait, 0);
+  assert.equal(L.errorView('rate_limited', { retry_after: '7' }).wait, 7);
+  assert.equal(L.errorView('request_in_progress').text, 'Une autre demande est déjà en cours : attends sa réponse.');
+  assert.equal(L.errorView('request_in_progress').action, 'none');
+  assert.equal(L.errorView('invalid_image').text, 'Cette photo n’est pas lisible (JPEG, PNG ou WebP) : reprends-la.');
+  // Les anciens codes ne changent pas.
+  assert.equal(L.errorView('insufficient_credits').action, 'credits');
+});
+
+test('délai d’attente : champ retry_after, sinon en-tête Retry-After (secondes), sinon 0', () => {
+  assert.equal(L.retryAfter({ retry_after: 30 }, '5'), 30);
+  assert.equal(L.retryAfter({}, '5'), 5);
+  assert.equal(L.retryAfter(null, null), 0);
+  assert.equal(L.retryAfter({ retry_after: -3 }, 'abc'), 0);
+});
+
+test('outcomePayload : imprimante et filament coupés à 100 caractères', () => {
+  const p = L.outcomePayload({ printer: 'P'.repeat(150), filament: 'F'.repeat(120), changes: [], defect: 'x' }, 'ok');
+  assert.equal(p.printer.length, 100);
+  assert.equal(p.filament.length, 100);
+});
+
+test('photos du téléphone manquantes : phrase au singulier ou au pluriel', () => {
+  assert.equal(L.missingPhotosText(1), '1 photo n’a pas pu être récupérée : renvoie-la depuis ton téléphone.');
+  assert.equal(L.missingPhotosText(3), '3 photos n’ont pas pu être récupérées : renvoie-les depuis ton téléphone.');
+  assert.equal(L.missingPhotosText(0), '');
+  assert.equal(L.missingPhotosText(undefined), '');
+});

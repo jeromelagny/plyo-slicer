@@ -85,9 +85,30 @@
     invalid_request: { text: 'La demande n’a pas pu partir : une photo est peut-être trop lourde ou dans un format inconnu (prends du JPEG ou du PNG).', action: 'retry' },
     auth_unavailable: { text: 'La connexion à ton compte est momentanément indisponible. Réessaie dans un instant.', action: 'retry' },
     config_missing: { text: 'Le service Plyo n’est pas prêt pour le moment. Réessaie un peu plus tard.', action: 'retry' },
-    internal: { text: 'Un souci technique m’a empêché de répondre. Réessaie dans un instant.', action: 'retry' }
+    internal: { text: 'Un souci technique m’a empêché de répondre. Réessaie dans un instant.', action: 'retry' },
+    request_in_progress: { text: 'Une autre demande est déjà en cours : attends sa réponse.', action: 'none' },
+    invalid_image: { text: 'Cette photo n’est pas lisible (JPEG, PNG ou WebP) : reprends-la.', action: 'photo' }
   };
-  function errorView(code) { return ERRORS[code] || ERRORS.internal; }
+  // `data` : le corps de l'erreur (rate_limited porte retry_after, en secondes). `wait` : secondes avant de réessayer.
+  function errorView(code, data) {
+    if (code === 'rate_limited') {
+      var wait = retryAfter(data, null);
+      return { text: 'Trop de demandes d’un coup : réessaie dans ' + (wait ? wait + ' s.' : 'un instant.'), action: 'retry', wait: wait };
+    }
+    return ERRORS[code] || ERRORS.internal;
+  }
+  // Délai demandé par le service : champ retry_after, sinon en-tête Retry-After (secondes) ; 0 s'il manque.
+  function retryAfter(data, header) {
+    var v = Number(data && data.retry_after);
+    if (!(v > 0)) v = Number(header);
+    return v > 0 ? Math.ceil(v) : 0;
+  }
+  // Envoi du téléphone incomplet (champ `missing` de la récupération des photos).
+  function missingPhotosText(n) {
+    if (!(n > 0)) return '';
+    return n > 1 ? n + ' photos n’ont pas pu être récupérées : renvoie-les depuis ton téléphone.'
+      : '1 photo n’a pas pu être récupérée : renvoie-la depuis ton téléphone.';
+  }
 
   // Flux NDJSON reçu par morceaux : une ligne JSON par événement ; une ligne illisible est ignorée.
   function ndjsonReader() {
@@ -146,8 +167,9 @@
   // Résultat partagé (si l'utilisateur l'a accepté) : rien d'autre que le défaut, les changements, les profils et le résultat.
   function outcomePayload(item, outcome) {
     var parts = String(item.machine || '').split(' | ');
-    return { defect: item.defect || 'unknown', changes: item.changes, printer: item.printer || parts[0] || '',
-      filament: item.filament || parts[1] || '', outcome: outcome };
+    // Noms de profils coupés à 100 caractères : le service refuse au-delà.
+    return { defect: item.defect || 'unknown', changes: item.changes, printer: String(item.printer || parts[0] || '').slice(0, 100),
+      filament: String(item.filament || parts[1] || '').slice(0, 100), outcome: outcome };
   }
 
   // Plus récente des entrées en attente de résultat qui est due (une entrée toute fraîche ne masque pas les autres).
@@ -275,7 +297,7 @@
     return { restore: ok, followUp: ok && !!hasFollowUp, error: !ok && !auto };
   }
 
-  var api = { calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
