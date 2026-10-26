@@ -140,6 +140,7 @@
 
   /* Corps défilant : accueil puis conversation */
   .body { flex: 1; overflow-y: auto; padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+  .body > div:empty { display: none; } /* emplacements vides : pas d'espace fantôme en haut */
   .hello { margin: var(--s3) 0 var(--s1); }
   .hello h2 { margin: 0 0 var(--s1); font-size: var(--fs-xl); font-weight: 600; line-height: 1.3; }
   .hello p { margin: 0; color: var(--muted); }
@@ -174,7 +175,7 @@
   .rich p { margin: 0; }
   .rich ul, .rich ol { margin: 0; padding-left: var(--s5); display: flex; flex-direction: column; gap: var(--s1); }
   /* Libellé d'Orca : serré, sinon il ouvre un blanc avant la virgule qui suit. */
-  .rich .ui { font-weight: 600; padding: 0 3px; margin: 0; border-radius: 4px; background: var(--raised); white-space: nowrap; }
+  .rich .ui { font-weight: 600; padding: 0 2px; margin: 0; border-radius: 4px; background: var(--raised); white-space: nowrap; }
   .caret::after { content: "▍"; color: var(--accent); animation: blink 1s infinite; }
   .questions { display: flex; flex-direction: column; gap: var(--s2); }
   .q { font-weight: 600; margin: 0; }
@@ -280,6 +281,7 @@
   .empty-state { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); padding: var(--s4); border: 1px dashed var(--border); border-radius: var(--r-md); }
   .empty-state > .ic { color: var(--accent-text); }
   .empty-state b { font-size: var(--fs-md); }
+  .empty-state p { margin: 0; }
   .gauge-big { display: flex; flex-direction: column; gap: var(--s2); }
   .gauge-big .bar { width: 100%; height: 8px; }
   .gauge-big .pct { font-size: var(--fs-xl); font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -302,7 +304,7 @@
   .journal-event .res.bad { color: var(--warn-text); }
   .journal-event .acts { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s1); }
   .journal-list { display: flex; flex-direction: column; gap: var(--s3); }
-  .outcome { border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--accent-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s3); }
+  .outcome { border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--accent-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .outcome header { display: flex; align-items: center; gap: var(--s2); font-weight: 600; }
   .outcome header .ic { color: var(--accent-text); }
   .outcome p { margin: 0; }
@@ -310,7 +312,7 @@
   .outcome .answers { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
   .outcome textarea { width: 100%; min-height: 40px; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px var(--s2); font: inherit; font-size: var(--fs-sm); background: var(--bg); color: var(--fg); }
   .outcome label { display: flex; gap: var(--s2); align-items: flex-start; font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
-  .preflight { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: var(--r-md); background: var(--warn-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s3); }
+  .preflight { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: var(--r-md); background: var(--warn-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .preflight header { display: flex; align-items: center; gap: var(--s2); font-weight: 600; }
   .preflight header .ic { color: var(--warn-text); }
   .preflight header .link { margin-left: auto; }
@@ -350,6 +352,9 @@
     <div id="outcome-slot"></div>
     <div id="preflight-slot"></div>
 
+    <!-- Conversation (avant l'accueil : des notes seules s'affichent au-dessus de lui) -->
+    <div class="thread hidden" id="thread"></div>
+
     <!-- Accueil (conversation vide) -->
     <div class="hidden" id="home">
       <div class="hello">
@@ -380,9 +385,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Conversation -->
-    <div class="thread hidden" id="thread"></div>
   </div>
 
   <div class="composer" id="composer">
@@ -559,14 +561,25 @@
     return wrap;
   }
 
+  // Note du fil, alignée à gauche comme une réponse. Elle ne cache pas l'accueil : une note seule
+  // (« Demande annulée. ») ne doit pas laisser un écran vide avec une ligne grise au milieu.
   function noteLine(text, tone, iconName) {
-    showConversation();
+    showThread();
     var line = el('div', 'note-line' + (tone ? ' ' + tone : ''));
-    if (iconName) line.appendChild(icon(iconName, 13));
-    line.appendChild(txt(text));
+    if (iconName) line.appendChild(icon(iconName, 14));
+    line.appendChild(el('span', 'note-text', text));
     thread.appendChild(line);
-    scrollDown();
+    if (home.classList.contains('hidden')) scrollDown(); else line.scrollIntoView({ block: 'nearest' });
     return line;
+  }
+  // État vide : ce qui manque, pourquoi, et l'action qui le remplit.
+  function emptyState(iconName, title, text, actionLabel, onAction) {
+    var box = el('div', 'empty-state');
+    box.appendChild(icon(iconName, 20));
+    box.appendChild(el('b', '', title));
+    if (text) box.appendChild(el('p', 'muted', text));
+    if (actionLabel) box.appendChild(button(actionLabel, onAction, 'btn sm'));
+    return box;
   }
 
   // window.orca est fourni par OrcaSlicer (pont JS <-> C++). Absent dans un navigateur.
@@ -587,6 +600,7 @@
     else thread.classList.remove('hidden');
   }
   function showConversation() { home.classList.add('hidden'); thread.classList.remove('hidden'); }
+  function showThread() { thread.classList.remove('hidden'); }
 
   // ---------- Conversations : gardées sur l'ordinateur par le slicer, rouvertes au lancement ----------
   var conv = null;           // { id, title, updated, entries: [...], history: [...] }
@@ -753,7 +767,7 @@
   function requireLogin(reason, retry) {
     if (session) return false;
     afterLogin = retry || null;
-    showConversation();
+    showThread();
     var card = alertBox('info', reason + ' Pour ça, connecte-toi : pas de mot de passe, tu reçois un code par e-mail.', 'info');
     card.body.appendChild(button('Me connecter', openLogin, 'btn sm'));
     thread.appendChild(card);
@@ -806,7 +820,11 @@
     if (!convListTarget || $('drawer').classList.contains('hidden')) return;
     var list = convListTarget;
     list.textContent = '';
-    if (!items.length) { list.appendChild(el('p', 'muted', 'Pas encore de conversation.')); return; }
+    if (!items.length) {
+      list.appendChild(emptyState('send', 'Pas encore de conversation', 'Pose ta première question ou envoie une photo : la conversation sera gardée ici.',
+        'Poser une question', function () { closeDrawer(); noteInput.focus(); }));
+      return;
+    }
     items.forEach(function (it) {
       var row = el('div', 'conv-item' + (conv && conv.id === it.id ? ' current' : ''));
       var open = el('button', 'open');
@@ -847,7 +865,11 @@
     var list = journalTarget;
     list.textContent = '';
     var groups = Logic.journalGroups(events);
-    if (!groups.length) { list.appendChild(el('p', 'muted', 'Pas encore de pièce : pose une question à l’assistant avec une pièce sur le plateau, elle apparaîtra ici.')); return; }
+    if (!groups.length) {
+      list.appendChild(emptyState('cube', 'Pas encore de pièce', 'Pose une question à l’assistant avec une pièce sur le plateau : elle apparaîtra ici, avec les réglages essayés et le résultat.',
+        'Poser une question', function () { closeDrawer(); noteInput.focus(); }));
+      return;
+    }
     var here = lastValues && lastValues.context;
     groups.forEach(function (g) {
       var card = el('div', 'journal-part');
@@ -1118,15 +1140,19 @@
   var plateWaiters = {};     // identifiant de la demande → rappel du résultat
   var plateRequest = 0;
   var plateUndoLinks = [];   // un seul « Annuler » actif : celui de la dernière action
-  function plateAction(kind, after, extra) {
+  var plateCounts = {};      // demande → nombre de pièces concernées (singulier ou pluriel du texte affiché)
+  function plateAction(kind, after, extra, count) {
     var id = ++plateRequest;
     plateWaiters[id] = after || null;
+    plateCounts[id] = count;
     window.orca.postMessage(Object.assign({ type: 'plate_action', kind: kind, request: id }, extra || {}));
   }
   function onPlateAction(msg) {
     var after = plateWaiters[msg.request];
     delete plateWaiters[msg.request];
-    var line = noteLine(msg.text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
+    var text = Logic.plateText(msg, plateCounts[msg.request]);
+    delete plateCounts[msg.request];
+    var line = noteLine(text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
     if (msg.ok && msg.kind !== 'undo') plateUndoLinks.forEach(function (b) { b.remove(); });
     if (msg.ok && msg.undo_token !== undefined) {
       var undo = button('Annuler', function () {
@@ -1136,7 +1162,7 @@
       plateUndoLinks = [undo];
       line.appendChild(undo);
     }
-    if (msg.kind !== 'undo') record({ kind: 'note', text: msg.text, tone: msg.ok ? 'ok' : 'error', icon: msg.ok ? 'check' : 'alert' });
+    if (msg.kind !== 'undo') record({ kind: 'note', text: text, tone: msg.ok ? 'ok' : 'error', icon: msg.ok ? 'check' : 'alert' });
     if (after) after(msg.ok);
   }
   function showMe(target) { window.orca.postMessage({ type: 'show_me', target: target }); }
@@ -1150,9 +1176,9 @@
   // Le slicer les exécute dès la réponse, en une seule étape annulable ; la conversation garde ce qui a été fait.
   var commandWaiters = {};
   function commandLine(text, tone, iconName) {
-    var line = el('div', 'note-line start' + (tone ? ' ' + tone : ''));
-    line.appendChild(icon(iconName, 13));
-    line.appendChild(txt(text));
+    var line = el('div', 'note-line' + (tone ? ' ' + tone : ''));
+    line.appendChild(icon(iconName, 14));
+    line.appendChild(el('span', 'note-text', text));
     return line;
   }
   function renderCommands(entry, archived) {
@@ -1252,9 +1278,9 @@
       return ask;
     }
     if (!said.warn) {
-      var ok = el('div', 'note-line ok start');
-      ok.appendChild(icon('check', 13));
-      ok.appendChild(txt(said.text));
+      var ok = el('div', 'note-line ok');
+      ok.appendChild(icon('check', 14));
+      ok.appendChild(el('span', 'note-text', said.text));
       box.appendChild(ok);
       if (!archived) box.appendChild(el('div', 'row-acts')).appendChild(adviceButton());
     } else {
@@ -1269,7 +1295,7 @@
             scheduleSave();
             acts.textContent = '';
             acts.appendChild(adviceButton());
-          });
+          }, null, msg.count);
         }, 'btn sm', 'wand');
         acts.appendChild(reduce);
         warn.body.appendChild(acts);
@@ -1940,11 +1966,37 @@
     var manual = preflightManual;
     preflightManual = false;
     var risks = window.PlyoPreflight.preflightRisks(data).filter(function (r) { return manual || !dismissedRisks[window.PlyoPreflight.riskKey(r)]; });
-    renderPreflight(risks);
+    renderPreflight(risks, data);
     if (!manual || risks.length) return;
-    if (!data || !data.objects || !data.objects.length) noteLine('Le plateau est vide : ajoute une pièce, puis vérifie-la.', '', 'info');
-    else if (!data.sliced) noteLine('Rien à signaler pour l’instant. Découpe la plaque pour que je vérifie aussi les parties dans le vide.', 'ok', 'check');
-    else noteLine('Rien à signaler : ta plaque est prête à imprimer.', 'ok', 'check');
+    var slot = $('preflight-slot');
+    var close = function () { slot.textContent = ''; };
+    if (!data || !data.objects || !data.objects.length) {
+      var empty = emptyState('cube', 'Ton plateau est vide', 'Ajoute une pièce : je la vérifie avant que tu lances l’impression.', 'Ajouter un modèle', function () { close(); pickFiles(); });
+      empty.appendChild(button('Fermer', close, 'link'));
+      slot.appendChild(empty);
+    } else if (!data.sliced) {
+      slot.appendChild(resultCard('info', 'Rien à signaler pour l’instant', 'Découpe la plaque pour que je vérifie aussi les parties dans le vide.',
+        button('Découper la plaque', function () { close(); plateAction('slice'); }, 'btn sm', 'wand'), close));
+    } else {
+      slot.appendChild(resultCard('check', 'Ta plaque est prête à imprimer', 'Rien à signaler : les pièces tiennent, collent bien au plateau et ne sont pas dans le vide.', null, close));
+    }
+  }
+  // Petite carte de résultat (vérification sans souci) : titre, phrase, action éventuelle, « Fermer ».
+  function resultCard(iconName, title, text, action, onClose) {
+    var box = el('div', 'card');
+    box.setAttribute('role', 'status');
+    var head = el('header');
+    head.appendChild(icon(iconName, 16));
+    head.appendChild(el('span', '', title));
+    var x = button('', onClose, 'icon-btn push');
+    x.setAttribute('aria-label', 'Fermer');
+    x.title = 'Fermer';
+    x.appendChild(icon('x', 14));
+    head.appendChild(x);
+    box.appendChild(head);
+    box.appendChild(el('p', 'muted', text));
+    if (action) box.appendChild(el('div', 'row-acts')).appendChild(action);
+    return box;
   }
   function renderPreflight(risks) {
     var slot = $('preflight-slot');

@@ -43,3 +43,13 @@ test('typographie française : apostrophe droite remplacée par l’apostrophe t
   assert.equal(L.fr("l'ordinateur d'Orca"), 'l’ordinateur d’Orca');
   assert.equal(L.fr("aujourd'hui"), 'aujourd’hui');
 });
+
+test('action sur le plateau : le texte du slicer passe au singulier pour une seule pièce', () => {
+  const plural = 'J\'ai réduit les pièces de cette plaque pour qu\'elles tiennent.';
+  assert.equal(L.plateText({ kind: 'scale_to_fit', ok: true, text: plural }, 1), 'J’ai réduit la pièce pour qu’elle tienne sur le plateau.');
+  assert.equal(L.plateText({ kind: 'scale_to_fit', ok: true, text: plural }, 3), plural);
+  assert.equal(L.plateText({ kind: 'scale_to_fit', ok: true, text: plural }, undefined), plural);
+  assert.equal(L.plateText({ kind: 'scale_to_fit', ok: false, text: 'Rien à réduire.' }, 1), 'Rien à réduire.');
+  assert.equal(L.plateText({ kind: 'arrange', ok: true, text: 'Je range les pièces sur le plateau.' }, 1), 'Je range la pièce sur le plateau.');
+  assert.equal(L.plateText({ kind: 'orient', ok: true, text: 'Orientée.' }, 1), 'Orientée.');
+});
