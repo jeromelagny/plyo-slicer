@@ -54,9 +54,12 @@
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  /* Le panneau d'Orca injecte des styles par défaut (orca-plugin-defaults : boutons en texte blanc, etc.) avant cette
+     feuille sous macOS, mais après elle sous Windows (WebView2), où ils l'emportaient : texte blanc sur fond clair.
+     Préfixées par « html », ces règles de base gagnent quel que soit l'ordre d'injection. */
   html, body { height: 100%; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: var(--fs-md); line-height: 1.5; display: flex; flex-direction: column; overflow: hidden; }
-  button { font: inherit; color: inherit; }
+  html body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: var(--fs-md); line-height: 1.5; display: flex; flex-direction: column; overflow: hidden; }
+  html button { font: inherit; color: inherit; }
   input[type="checkbox"], input[type="radio"] { accent-color: var(--accent-fill); }
   textarea { resize: none; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
