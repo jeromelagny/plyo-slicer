@@ -1353,7 +1353,7 @@ set (CPACK_PACKAGE_VENDOR "Codika")
 set (CPACK_PACKAGE_VERSION_MAJOR "${ORCA_VERSION_MAJOR}")
 set (CPACK_PACKAGE_VERSION_MINOR "${ORCA_VERSION_MINOR}")
 set (CPACK_PACKAGE_VERSION_PATCH "${ORCA_VERSION_PATCH}")
-set (CPACK_PACKAGE_FILE_NAME "OrcaSlicer_Windows_Installer_V${SoftFever_VERSION}")
+set (CPACK_PACKAGE_FILE_NAME "PlyoSlicer_Windows_Installer_V${SoftFever_VERSION}") # PLYO: nom du fichier téléchargé
 # Suffix the Windows installer with its target arch so the x64 and arm64 builds
 # produce distinct filenames (matches ARCH_SUFFIX in build_orca.yml). Same
 # CMAKE_SYSTEM_PROCESSOR mapping used by orcaslicer_copy_dlls() above.
@@ -1365,7 +1365,7 @@ if (WIN32)
     endif ()
 endif ()
 set (CPACK_PACKAGE_DESCRIPTION_SUMMARY "Plyo Slicer, based on Orca Slicer, an open source slicer for FDM printers") # PLYO
-set (CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/OrcaSlicer/OrcaSlicer")
+set (CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/jeromelagny/plyo-slicer") # PLYO
 set (CPACK_PACKAGE_INSTALL_DIRECTORY ${CPACK_PACKAGE_NAME})
 set (CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}/resources/images\\\\OrcaSlicer.ico")
 set (CPACK_NSIS_MUI_ICON "${CPACK_PACKAGE_ICON}")

@@ -16,7 +16,7 @@ Retrouver toutes les modifications : `git grep -n "PLYO:" -- src resources`.
 | `src/CMakeLists.txt` | `MACOSX_BUNDLE_BUNDLE_NAME "Plyo Slicer"` | Nom affiché par macOS (barre des menus, Dock). Le dossier compilé s'appelle encore `OrcaSlicer.app` : on le renomme `Plyo Slicer.app` au moment de le distribuer (renommer le dossier d'une app macOS est sans risque). |
 | `src/slic3r/GUI/GUI_App.cpp` | `init_app_config()` : `SetAppName("PlyoSlicer")` au lieu de `SLIC3R_APP_KEY` | Dossier de réglages propre à Plyo (`~/Library/Application Support/PlyoSlicer`, `%APPDATA%\PlyoSlicer`, `~/.config/PlyoSlicer`) : un OrcaSlicer installé à côté garde ses préréglages. `SLIC3R_APP_KEY` reste « OrcaSlicer » (nom de `OrcaSlicer.conf`, catalogue des traductions, métadonnées 3MF/G-code). |
 | `CMakeLists.txt` + `cmake/modules/MacOSXBundleInfo.plist.in` | Identifiant macOS `fr.codika.PlyoSlicer` | Sinon macOS confond Plyo Slicer et OrcaSlicer (même app pour le Dock, « Ouvrir avec », autorisations). |
-| `CMakeLists.txt` (CPack) | Nom « Plyo Slicer », éditeur « Codika », clé de registre `PlyoSlicer`, raccourci « Plyo Slicer » | Installateur Windows. Avec la clé « OrcaSlicer », l'option « désinstaller avant d'installer » supprimerait un OrcaSlicer déjà installé. Le nom du fichier `OrcaSlicer_Windows_Installer_…` ne change pas : la CI d'Orca l'attend. |
+| `CMakeLists.txt` (CPack) | Nom « Plyo Slicer », éditeur « Codika », clé de registre `PlyoSlicer`, raccourci « Plyo Slicer », fichier `PlyoSlicer_Windows_Installer_V….exe`, page du projet | Installateur Windows. Avec la clé « OrcaSlicer », l'option « désinstaller avant d'installer » supprimerait un OrcaSlicer déjà installé. Le nom du fichier `OrcaSlicer_Windows_Installer_…` ne change pas : la CI d'Orca l'attend. |
 | `src/dev-utils/platform/msw/OrcaSlicer.rc.in` | `FileDescription` et `ProductName` = « Plyo Slicer » | Nom affiché par Windows (Gestionnaire des tâches, propriétés du fichier). Le fichier reste `orca-slicer.exe`. |
 | `src/slic3r/GUI/MainFrame.cpp` | `Plyo::on_config_changed();` à la fin de `MainFrame::on_config_changed()` | Tenir à jour les valeurs du panneau. Tout changement de configuration passe par cette fonction : saisie manuelle, changement de préréglage, modification par Plyo. |
 
@@ -39,4 +39,4 @@ Les fichiers `.po` d'Orca ne sont pas modifiés. À chaque compilation, la cible
 
 - `src/plyo/` : code C++ du panneau (`PlyoAssistant.*`, `plyo.cmake`)
 - `resources/web/plyo/` : page web du panneau
-- `docs/plyo/` : documentation du projet
+- `docs/plyo/` : cette liste des modifications
