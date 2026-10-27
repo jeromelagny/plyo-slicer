@@ -105,8 +105,8 @@
 
 <script>
 (function () {
-  // Service Plyo (prototype local) — même valeur que dans resources/web/plyo/index.html.
-  var PLYO_API_URL = 'http://localhost:3000';
+  // Adresse du service Plyo, donnée par le slicer (Plyo::Config).
+  var PLYO_API_URL = window.PLYO_API_URL;
 
   var emailInput = document.getElementById('email');
   var codeInput = document.getElementById('code');

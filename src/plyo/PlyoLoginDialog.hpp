@@ -21,6 +21,7 @@ public:
     ~LoginDialog() override;
 
 private:
+    void add_user_scripts() override;
     void on_script_message(const nlohmann::json& payload) override;
     void handle_command(const nlohmann::json& payload);
 

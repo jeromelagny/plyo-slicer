@@ -420,6 +420,7 @@
     <div class="list" id="drawer-body"></div>
   </div>
 
+<!--plyo-config-->
 <!--plyo-include:fiches.js-->
 <!--plyo-include:premiers-pas.js-->
 <!--plyo-include:rich-text.js-->
@@ -427,8 +428,8 @@
 <!--plyo-include:preflight.js-->
 <script>
 (function () {
-  // Service Plyo (prototype local). Plus tard : l'URL du service hébergé.
-  var PLYO_API_URL = 'http://localhost:3000';
+  // Adresse du service Plyo, donnée par le slicer (Plyo::Config, variable d'environnement PLYO_API_URL en développement).
+  var PLYO_API_URL = window.PLYO_API_URL;
   var MAX_SIDE = 1600;
   var THUMB_SIDE = 160;
   var MAX_PHOTOS = 6;

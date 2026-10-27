@@ -3,6 +3,8 @@
 set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoAssistant.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoAssistant.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoConfig.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoConfig.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSettingsBridge.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSettingsBridge.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSession.cpp
@@ -43,6 +45,10 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPreflight.hpp
 )
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
+
+# Adresse du service Plyo compilée dans l'app (remplaçable au lancement par la variable d'environnement PLYO_API_URL).
+set(PLYO_API_URL "https://api.getplyo.app" CACHE STRING "Adresse du service Plyo")
+set_source_files_properties(${CMAKE_CURRENT_LIST_DIR}/PlyoConfig.cpp PROPERTIES COMPILE_DEFINITIONS "PLYO_API_URL_DEFAULT=\"${PLYO_API_URL}\"")
 source_group(TREE ${CMAKE_CURRENT_LIST_DIR} PREFIX plyo FILES ${PLYO_SOURCES})
 
 # Traductions renommées « Plyo Slicer » (les fichiers .po d'Orca ne sont pas modifiés) : voir rebrand_translations.py.

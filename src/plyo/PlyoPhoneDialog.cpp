@@ -1,4 +1,5 @@
 #include "PlyoPhoneDialog.hpp"
+#include "PlyoConfig.hpp"
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
 
@@ -33,6 +34,7 @@ void PhoneDialog::add_user_scripts()
                                   {"link", {{"id", Json::str(m_link, "id")}, {"qr_svg", Json::str(m_link, "qr_svg")}}}};
         const std::string script = "window.PLYO = " + plyo.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) + ";";
         view->AddUserScript(wxString::FromUTF8(script));
+        view->AddUserScript(wxString::FromUTF8(Config::api_url_script()));
     }
 }
 

@@ -10,6 +10,7 @@
 #include "PlyoLoginDialog.hpp"
 #include "PlyoMemory.hpp"
 #include "PlyoModelImport.hpp"
+#include "PlyoConfig.hpp"
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoPlateActions.hpp"
 #include "PlyoPreflight.hpp"
@@ -94,6 +95,9 @@ std::string load_page()
     std::string page = read_resource("index.html");
     if (page.empty())
         return "<h3>Assistant Plyo</h3><p>Page introuvable : resources/web/plyo/index.html</p>";
+    const std::string config_marker = "<!--plyo-config-->";
+    if (const size_t at = page.find(config_marker); at != std::string::npos)
+        page.replace(at, config_marker.size(), "<script>" + Config::api_url_script() + "</script>");
     for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js"}) {
         const std::string marker = std::string("<!--plyo-include:") + name + "-->";
         if (const size_t at = page.find(marker); at != std::string::npos)

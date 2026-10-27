@@ -69,8 +69,8 @@
 
 <script>
 (function () {
-  // Service Plyo (prototype local) — même valeur que dans resources/web/plyo/index.html.
-  var PLYO_API_URL = 'http://localhost:3000';
+  // Adresse du service Plyo, donnée par le slicer (Plyo::Config).
+  var PLYO_API_URL = window.PLYO_API_URL;
   var POLL_MS = 2000;
 
   // Transmis par Orca : jeton de connexion et lien téléphone de la conversation ({ id, qr_svg }).

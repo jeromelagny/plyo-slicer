@@ -19,6 +19,7 @@ Retrouver toutes les modifications : `git grep -n "PLYO:" -- src resources`.
 | `CMakeLists.txt` (CPack) | Nom « Plyo Slicer », éditeur « Codika », clé de registre `PlyoSlicer`, raccourci « Plyo Slicer », fichier `PlyoSlicer_Windows_Installer_V….exe`, page du projet | Installateur Windows. Avec la clé « OrcaSlicer », l'option « désinstaller avant d'installer » supprimerait un OrcaSlicer déjà installé. Le nom du fichier `OrcaSlicer_Windows_Installer_…` ne change pas : la CI d'Orca l'attend. |
 | `src/dev-utils/platform/msw/OrcaSlicer.rc.in` | `FileDescription` et `ProductName` = « Plyo Slicer » | Nom affiché par Windows (Gestionnaire des tâches, propriétés du fichier). Le fichier reste `orca-slicer.exe`. |
 | `src/slic3r/GUI/MainFrame.cpp` | `Plyo::on_config_changed();` à la fin de `MainFrame::on_config_changed()` | Tenir à jour les valeurs du panneau. Tout changement de configuration passe par cette fonction : saisie manuelle, changement de préréglage, modification par Plyo. |
+| `.github/workflows/build_orca.yml` | Artefact de l'installateur Windows : `*Slicer_Windows_Installer*.exe` au lieu de `OrcaSlicer*.exe` | Sinon l'installateur renommé n'est pas récupéré à la fin du run. La build Windows de Plyo se lance par `.github/workflows/plyo_windows.yml` (ajouté). |
 
 ## Marque (icônes et logos)
 
@@ -37,6 +38,7 @@ Les fichiers `.po` d'Orca ne sont pas modifiés. À chaque compilation, la cible
 
 ## Fichiers ajoutés (hors code d'Orca)
 
-- `src/plyo/` : code C++ du panneau (`PlyoAssistant.*`, `plyo.cmake`)
+- `src/plyo/` : code C++ du panneau (`PlyoAssistant.*`, `plyo.cmake`) ; adresse du service dans `PlyoConfig.*` (option CMake `PLYO_API_URL`, variable d'environnement `PLYO_API_URL` au lancement)
 - `resources/web/plyo/` : page web du panneau
 - `docs/plyo/` : cette liste des modifications
+- `.github/workflows/plyo_windows.yml` : installateur Windows, lancé à la main

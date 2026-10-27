@@ -1,0 +1,16 @@
+# Plyo : installateur Windows x64, lancé à la main (onglet Actions → « Plyo Windows » → Run workflow).
+# Réutilise la chaîne d'Orca : dépendances en cache, compilation, installateur NSIS dans les artefacts du run.
+name: Plyo Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_windows:
+    name: Build Windows x64
+    uses: ./.github/workflows/build_check_cache.yml
+    with:
+      os: windows-latest
+      arch: x64
+      compiler: clang
+    secrets: inherit

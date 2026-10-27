@@ -1,4 +1,5 @@
 #include "PlyoLoginDialog.hpp"
+#include "PlyoConfig.hpp"
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoSession.hpp"
@@ -7,6 +8,7 @@
 
 #include <wx/sizer.h>
 #include <wx/stattext.h>
+#include <wx/webview.h>
 
 namespace Plyo {
 
@@ -22,6 +24,12 @@ LoginDialog::LoginDialog(wxWindow* parent)
 }
 
 LoginDialog::~LoginDialog() { m_alive->store(false, std::memory_order_release); }
+
+void LoginDialog::add_user_scripts()
+{
+    if (wxWebView* view = browser())
+        view->AddUserScript(wxString::FromUTF8(Config::api_url_script()));
+}
 
 void LoginDialog::on_script_message(const nlohmann::json& payload)
 {
