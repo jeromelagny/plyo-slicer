@@ -4,6 +4,7 @@
 #include "PlyoCalibration.hpp"
 #include "PlyoCommands.hpp"
 #include "PlyoConversations.hpp"
+#include "PlyoDiscovery.hpp"
 #include "PlyoFirstSteps.hpp"
 #include "PlyoHighlight.hpp"
 #include "PlyoJournal.hpp"
@@ -281,6 +282,13 @@ void handle_page_message(const nlohmann::json& data)
             nlohmann::json fiche = FirstSteps::explain(Json::str(data, "key"));
             fiche["type"]        = "explain";
             send(fiche);
+        } else if (type == "printer_scan") {
+            // Les adresses trouvées restent dans le panneau (sur l'ordinateur) : jamais envoyées au service ni à l'IA.
+            const bool started = Discovery::start([](std::vector<Discovery::Printer> printers) {
+                send({{"type", "printer_scan_result"}, {"printers", Discovery::to_json(printers)}});
+            });
+            if (!started)
+                BOOST_LOG_TRIVIAL(info) << "Plyo: recherche d'imprimantes déjà en cours";
         } else if (type == "session_clear") {
             Session::clear();
             send({{"type", "session"}, {"session", nullptr}});

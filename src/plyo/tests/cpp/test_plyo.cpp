@@ -5,6 +5,7 @@
 #include "../../PlyoFiles.hpp"
 #include "../../PlyoJson.hpp"
 #include "../../PlyoSanitize.hpp"
+#include "../../PlyoDiscoveryLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -177,4 +178,68 @@ TEST_CASE("Sanitize::calibrations garde les tests valides de chaque machine")
     CHECK(h["PLA | A1"]["temperature"]["value"] == 215);
     CHECK_FALSE(h["PLA | A1"].contains("flow"));
     CHECK_FALSE(h.contains("autre"));
+}
+
+// --- Recherche d'imprimantes : adresses parcourues et lecture des réponses ---
+
+TEST_CASE("Discovery ne parcourt que le /24 privé de l'ordinateur")
+{
+    using namespace Plyo::Discovery;
+    CHECK(is_private_ipv4("192.168.1.20"));
+    CHECK(is_private_ipv4("10.0.0.5"));
+    CHECK(is_private_ipv4("172.20.3.4"));
+    CHECK_FALSE(is_private_ipv4("172.32.0.1"));
+    CHECK_FALSE(is_private_ipv4("8.8.8.8"));
+    CHECK_FALSE(is_private_ipv4("192.168.1"));
+    CHECK_FALSE(is_private_ipv4("192.168.1.300"));
+    const auto n = neighbours("192.168.1.20");
+    CHECK(n.size() == 253);
+    CHECK(n.front() == "192.168.1.1");
+    CHECK(n.back() == "192.168.1.254");
+    CHECK(std::find(n.begin(), n.end(), "192.168.1.20") == n.end());
+    CHECK(neighbours("8.8.8.8").empty());
+}
+
+TEST_CASE("Discovery reconnaît Moonraker et refuse les autres réponses")
+{
+    using namespace Plyo::Discovery;
+    const auto k1 = from_moonraker("192.168.1.42", R"({"result":{"state":"ready","hostname":"K1C-1A2B","software_version":"v0.12"}})");
+    REQUIRE(k1);
+    CHECK(k1->name == "K1C-1A2B");
+    CHECK(k1->brand == "Creality");
+    CHECK(k1->host_type == "moonraker");
+    CHECK(k1->host == "192.168.1.42:7125");
+    const auto anon = from_moonraker("192.168.1.43", R"({"result":{"state":"ready"}})");
+    REQUIRE(anon);
+    CHECK(anon->name == "Imprimante Klipper");
+    CHECK(anon->brand.empty());
+    CHECK_FALSE(from_moonraker("192.168.1.44", "<html>box</html>"));
+    CHECK_FALSE(from_moonraker("192.168.1.44", R"({"result":{"foo":1}})"));
+}
+
+TEST_CASE("Discovery lit la réponse SDCP d'une Elegoo")
+{
+    using namespace Plyo::Discovery;
+    const auto cc = from_elegoo_sdcp(R"({"Id":"x","Data":{"Name":"CC","MachineName":"Centauri Carbon","BrandName":"ELEGOO","MainboardIP":"192.168.1.50"}})");
+    REQUIRE(cc);
+    CHECK(cc->name == "Centauri Carbon");
+    CHECK(cc->host_type == "elegoolink");
+    CHECK(cc->host == "192.168.1.50");
+    CHECK_FALSE(from_elegoo_sdcp(R"({"Data":{"MainboardIP":"pas une ip"}})"));
+    CHECK_FALSE(from_elegoo_sdcp("M99999"));
+}
+
+TEST_CASE("Discovery garde une entrée par IP, la source la plus précise")
+{
+    using namespace Plyo::Discovery;
+    Printer a{"192.168.1.42", "K1C-1A2B", "Creality", "moonraker", "192.168.1.42:7125", 1};
+    Printer b{"192.168.1.42", "", "", "crealityprint", "192.168.1.42", 3};
+    Printer c{"192.168.1.7", "Adventurer 5M", "Flashforge", "flashforge", "192.168.1.7", 3};
+    const auto m = merge({a, b, c});
+    REQUIRE(m.size() == 2);
+    CHECK(m[0].name == "Adventurer 5M");
+    CHECK(m[1].host_type == "crealityprint");
+    CHECK(m[1].name == "K1C-1A2B");
+    CHECK(m[1].brand == "Creality");
+    CHECK(to_json(m).size() == 2);
 }

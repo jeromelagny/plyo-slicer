@@ -19,7 +19,7 @@ if [ ! -f "$OUT/catch_amalgamated.o" ]; then
 fi
 
 "$CXX" "${FLAGS[@]}" \
-    "$HERE/test_plyo.cpp" "$ROOT/src/plyo/PlyoFiles.cpp" "$ROOT/src/plyo/PlyoSanitize.cpp" \
+    "$HERE/test_plyo.cpp" "$ROOT/src/plyo/PlyoFiles.cpp" "$ROOT/src/plyo/PlyoSanitize.cpp" "$ROOT/src/plyo/PlyoDiscoveryLogic.cpp" \
     "$OUT/catch_amalgamated.o" \
     -L"$DEPS/lib" -lboost_filesystem -lboost_nowide \
     -o "$OUT/plyo_tests"

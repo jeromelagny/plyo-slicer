@@ -310,6 +310,10 @@
   .drawer h3 { margin: var(--s2) 0 0; font-size: var(--fs-md); font-weight: 600; }
   .drawer p { margin: 0; }
   .conv-list { display: flex; flex-direction: column; gap: var(--s2); }
+  .printer-list { display: flex; flex-direction: column; gap: var(--s2); align-items: flex-start; }
+  .printer-list > p { margin: 0; }
+  .printer-item { align-self: stretch; display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); color: var(--accent-text); }
+  .printer-info { display: flex; flex-direction: column; color: var(--fg); min-width: 0; }
   .conv-item { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) 10px; border: 1px solid var(--border); border-radius: var(--r-sm); }
   .conv-item.current { border-color: var(--accent); }
   .conv-item button.open { flex: 1; border: 0; background: none; text-align: left; cursor: pointer; padding: 0; min-width: 0; }
@@ -350,6 +354,9 @@
       <button type="button" id="m-parts" role="menuitem" data-icon="cube">Mes pièces</button>
       <button type="button" id="m-undo" role="menuitem" data-icon="undo" disabled title="Rien à annuler pour l’instant">Annuler les derniers réglages appliqués</button>
       <button type="button" id="m-values" role="menuitem" data-icon="eye">Voir les réglages lus par l’assistant</button>
+      <hr>
+      <div class="group" role="presentation">Imprimante</div>
+      <button type="button" id="m-printer" role="menuitem" data-icon="wifi">Relier mon imprimante</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
       <div class="who" id="m-email"></div>
@@ -478,6 +485,7 @@
     bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
     target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+    wifi: '<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>',
     pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
     folder: '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/>',
     palette: '<path d="M12 3a9 9 0 0 0 0 18c1 0 1.5-.7 1.5-1.5 0-1.2-1-1.5-1-2.5s.8-1.5 1.8-1.5H17a4 4 0 0 0 4-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/>',
@@ -881,6 +889,59 @@
     });
   }
 
+  // ---------- Relier l'imprimante : recherche sur le réseau de la maison ----------
+  // Les adresses trouvées restent dans ce panneau, sur l'ordinateur : elles ne partent jamais vers le service ni l'IA.
+  var printerTarget = null;
+  var printerRetried = false;
+  function openPrinters() {
+    printerRetried = false;
+    openDrawer('Relier mon imprimante', function (body) {
+      body.appendChild(el('p', 'muted', 'Plyo cherche les imprimantes allumées sur le Wi-Fi ou le réseau de ta maison. Rien ne sort de chez toi.'));
+      var list = el('div', 'printer-list');
+      body.appendChild(list);
+      printerTarget = list;
+      scanPrinters();
+    });
+  }
+  function scanPrinters(again) {
+    if (!printerTarget) return;
+    printerTarget.textContent = '';
+    var wait = el('p', 'muted');
+    wait.appendChild(icon('search', 14));
+    wait.appendChild(txt(again === true ? ' Je vérifie une seconde fois…' : ' Je cherche ton imprimante… (une dizaine de secondes)'));
+    printerTarget.appendChild(wait);
+    window.orca.postMessage({ type: 'printer_scan' });
+  }
+  function fillPrinters(printers) {
+    if (!printerTarget || $('drawer').classList.contains('hidden')) return;
+    var list = printerTarget;
+    list.textContent = '';
+    // La première recherche tombe souvent pendant la demande d'autorisation (réseau local sur macOS, pare-feu sur
+    // Windows) et ne voit rien : on relance une fois tout seul avant d'annoncer « aucune imprimante ».
+    if (!printers.length && !printerRetried) {
+      printerRetried = true;
+      scanPrinters(true);
+      return;
+    }
+    if (!printers.length) {
+      list.appendChild(emptyState('wifi', 'Aucune imprimante trouvée',
+        'Vérifie qu’elle est allumée et reliée au même Wi-Fi que cet ordinateur. Beaucoup d’imprimantes n’ont pas de Wi-Fi : dans ce cas, on passe par la clé USB ou la carte SD.',
+        'Chercher encore', scanPrinters));
+      return;
+    }
+    list.appendChild(el('p', '', printers.length > 1 ? 'J’ai trouvé ' + printers.length + ' imprimantes :' : 'J’ai trouvé ton imprimante :'));
+    printers.forEach(function (p) {
+      var row = el('div', 'printer-item');
+      row.appendChild(icon('wifi', 16));
+      var info = el('div', 'printer-info');
+      info.appendChild(el('b', '', p.name || 'Imprimante'));
+      info.appendChild(el('span', 'muted small', (p.brand ? p.brand + ' · ' : '') + p.ip));
+      row.appendChild(info);
+      list.appendChild(row);
+    });
+    list.appendChild(button('Chercher encore', scanPrinters, 'btn ghost sm', 'search'));
+  }
+
   // ---------- Journal des pièces ----------
   var journalTarget = null;
   function openJournal() {
@@ -1031,6 +1092,7 @@
   $('m-convs').addEventListener('click', openConversations);
   $('m-usage').addEventListener('click', openUsage);
   $('m-parts').addEventListener('click', function () { menu.classList.add('hidden'); openJournal(); });
+  $('m-printer').addEventListener('click', function () { menu.classList.add('hidden'); openPrinters(); });
   $('m-check').addEventListener('click', function () { menu.classList.add('hidden'); checkPlate(); });
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
@@ -2669,6 +2731,8 @@
       if (contextWaiter) contextWaiter(msg);
     } else if (msg.type === 'journal') {
       fillJournal(msg.events || []);
+    } else if (msg.type === 'printer_scan_result') {
+      fillPrinters(Array.isArray(msg.printers) ? msg.printers : []);
     } else if (msg.type === 'outcome_pending') {
       onOutcomePending(msg.items);
     } else if (msg.type === 'preflight') {

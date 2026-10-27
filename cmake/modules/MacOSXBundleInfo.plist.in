@@ -140,5 +140,14 @@
 		<key>NSAllowsArbitraryLoadsInWebContent</key>
 		<true/>
 	</dict>
+	<!-- PLYO: texte de la demande d'accès au réseau local (recherche d'imprimantes) et services mDNS recherchés -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Plyo Slicer cherche ton imprimante 3D sur le réseau de ta maison pour l'y relier. Rien ne sort de chez toi.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_octoprint._tcp</string>
+		<string>_moonraker._tcp</string>
+		<string>_services._dns-sd._udp</string>
+	</array>
 </dict>
 </plist>
