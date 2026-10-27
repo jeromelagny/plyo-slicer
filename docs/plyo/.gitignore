@@ -1,0 +1,4 @@
+# Documents internes de Plyo (specs, plans, journal) : gardés hors du dépôt, dans Plyo/docs-internes/.
+*
+!.gitignore
+!FICHIERS-MODIFIES.md
