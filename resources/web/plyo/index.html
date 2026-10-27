@@ -185,7 +185,8 @@
   .me { align-self: flex-end; max-width: 86%; display: flex; flex-direction: column; gap: var(--s1); align-items: flex-end; }
   .me .text { background: var(--accent-soft); padding: var(--s2) var(--s3); border-radius: var(--r-md) var(--r-md) 2px var(--r-md); white-space: pre-wrap; overflow-wrap: anywhere; }
   .me .from { font-size: var(--fs-xs); color: var(--muted); display: inline-flex; gap: var(--s1); align-items: center; }
-  .thumbs { display: grid; grid-template-columns: repeat(3, 64px); gap: var(--s1); justify-content: end; }
+  /* Photos alignées à droite, comme le texte de la demande : 3 par ligne au plus, les dernières se calent à droite. */
+  .thumbs { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s1); max-width: calc(3 * 64px + 2 * var(--s1)); }
   .thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: var(--r-sm); display: block; }
   .ai { display: flex; flex-direction: column; gap: var(--s2); }
   .ai .who { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-sm); color: var(--muted); }
@@ -1060,16 +1061,34 @@
   }
 
   // ---------- Photos : réduites à 1 600 px, JPEG 85 % (vignette de 160 px gardée dans la conversation) ----------
+  // La vue web peut signaler l'image chargée avant de l'avoir décodée : le dessin reste alors vide, et un canevas
+  // vide exporté en JPEG donne une image noire. On attend donc le décodage, on peint un fond blanc, et on vérifie
+  // que l'image a bien été dessinée (un second essai, puis abandon plutôt qu'une photo noire).
+  function drawn(ctx, w, h) {
+    var px = ctx.getImageData(0, 0, w, h).data;
+    var step = Math.max(4, Math.floor(px.length / 4 / 400) * 4);
+    for (var i = 0; i < px.length; i += step) if (px[i] < 250 || px[i + 1] < 250 || px[i + 2] < 250) return true;
+    return false;
+  }
   function scaled(src, side, quality) {
     return new Promise(function (resolve, reject) {
       var img = new Image();
-      img.onload = function () {
+      function render(retry) {
         var scale = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
         var canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.naturalWidth * scale);
-        canvas.height = Math.round(img.naturalHeight * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        if (drawn(ctx, canvas.width, canvas.height)) return resolve(canvas.toDataURL('image/jpeg', quality));
+        if (retry) return setTimeout(function () { render(false); }, 150);
+        reject(new Error('blank'));
+      }
+      img.onload = function () {
+        var ready = img.decode ? img.decode().catch(function () {}) : Promise.resolve();
+        ready.then(function () { render(true); });
       };
       img.onerror = function () { reject(new Error('unreadable')); };
       img.src = src;
