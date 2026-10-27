@@ -58,8 +58,12 @@ Slic3r::GUI::GuideFrame* visible_guide()
 void open_panel_at_startup()
 {
     auto* frame = wxGetApp().mainframe;
-    if (frame != nullptr && !is_assistant_shown())
-        toggle_assistant(wxGetApp().plater());
+    if (frame == nullptr || is_assistant_shown())
+        return;
+    // Le panneau vit dans le plateau : Orca démarre sur l'Accueil, où il resterait caché. On passe sur « Préparer ».
+    if (!frame->is_prepare_or_preview_tab())
+        frame->select_tab(TAB_ID_PREPARE);
+    toggle_assistant(wxGetApp().plater());
 }
 
 void show_welcome(wxWindow* parent, bool with_setup_tips)
