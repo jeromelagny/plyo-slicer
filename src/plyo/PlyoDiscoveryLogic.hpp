@@ -38,6 +38,17 @@ std::optional<Printer> from_elegoo_sdcp(const std::string& datagram);
 // Marque devinée d'après un nom d'imprimante (« K1C-1A2B » → Creality) ; vide si rien ne correspond.
 std::string brand_from_name(const std::string& name);
 
+// Modèle d'après le nom trouvé, en minuscules et sans la marque : « K2-DD52 » → « k2 », « Creality K2 Plus » → « k2 plus ».
+// Vide si le nom ne dit rien du modèle (« Imprimante Klipper »).
+std::string model_hint(const Printer& p);
+
+// Le profil d'imprimante (`printer_model` d'Orca, ex. « Creality K2 ») correspond-il au modèle trouvé ?
+bool profile_matches(const std::string& printer_model, const std::string& hint);
+
+// Types de connexion que le panneau peut demander (liste blanche), et forme d'une adresse « ip » ou « ip:port ».
+bool allowed_host_type(const std::string& host_type);
+bool valid_host(const std::string& host);
+
 // Fusionne les résultats de toutes les sources : une entrée par IP (la plus prioritaire), triées par nom.
 std::vector<Printer> merge(std::vector<Printer> found);
 

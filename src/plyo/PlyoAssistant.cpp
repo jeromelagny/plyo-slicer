@@ -15,6 +15,7 @@
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoPlateActions.hpp"
 #include "PlyoPreflight.hpp"
+#include "PlyoPrinterLink.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
 
@@ -289,6 +290,29 @@ void handle_page_message(const nlohmann::json& data)
             });
             if (!started)
                 BOOST_LOG_TRIVIAL(info) << "Plyo: recherche d'imprimantes déjà en cours";
+        } else if (type == "printer_link_check") {
+            nlohmann::json state = PrinterLink::check(data.contains("printer") ? data["printer"] : nlohmann::json());
+            state["type"]        = "printer_link_state";
+            send(state);
+        } else if (type == "printer_select_profile") {
+            nlohmann::json r = PrinterLink::select_profile(Json::str(data, "name"));
+            r["type"]        = "printer_profile_selected";
+            send(r);
+        } else if (type == "printer_link_test") {
+            PrinterLink::test(data.contains("printer") ? data["printer"] : nlohmann::json(), [](nlohmann::json r) {
+                r["type"] = "printer_link_tested";
+                send(r);
+            });
+        } else if (type == "printer_link_save") {
+            nlohmann::json r = PrinterLink::save(data.contains("printer") ? data["printer"] : nlohmann::json(), Json::str(data, "webui"));
+            r["type"]        = "printer_link_saved";
+            send(r);
+        } else if (type == "printer_link_dialog") {
+            nlohmann::json r = PrinterLink::open_dialog(data.contains("printer") ? data["printer"] : nlohmann::json());
+            r["type"]        = "printer_link_dialog_closed";
+            send(r);
+        } else if (type == "printer_wizard") {
+            PrinterLink::open_printer_wizard();
         } else if (type == "session_clear") {
             Session::clear();
             send({{"type", "session"}, {"session", nullptr}});

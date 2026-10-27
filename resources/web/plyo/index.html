@@ -312,8 +312,17 @@
   .conv-list { display: flex; flex-direction: column; gap: var(--s2); }
   .printer-list { display: flex; flex-direction: column; gap: var(--s2); align-items: flex-start; }
   .printer-list > p { margin: 0; }
-  .printer-item { align-self: stretch; display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); color: var(--accent-text); }
-  .printer-info { display: flex; flex-direction: column; color: var(--fg); min-width: 0; }
+  .printer-item { align-self: stretch; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2) var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); }
+  .printer-row { display: flex; align-items: center; gap: var(--s3); color: var(--accent-text); }
+  .printer-info { display: flex; flex-direction: column; color: var(--fg); min-width: 0; flex: 1; }
+  .printer-status { display: flex; flex-direction: column; gap: var(--s2); border-top: 1px solid var(--border); padding-top: var(--s2); }
+  .printer-step { display: flex; gap: var(--s2); align-items: flex-start; margin: 0; }
+  .printer-step .ic { margin-top: 3px; }
+  .printer-step .rich p { margin: 0; }
+  .printer-step.ok .ic { color: var(--accent-text); }
+  .printer-step.warn .ic { color: var(--warn-text); }
+  .printer-step.error .ic { color: var(--danger-text); }
+  .printer-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
   .conv-item { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) 10px; border: 1px solid var(--border); border-radius: var(--r-sm); }
   .conv-item.current { border-color: var(--accent); }
   .conv-item button.open { flex: 1; border: 0; background: none; text-align: left; cursor: pointer; padding: 0; min-width: 0; }
@@ -931,15 +940,105 @@
     }
     list.appendChild(el('p', '', printers.length > 1 ? 'J’ai trouvé ' + printers.length + ' imprimantes :' : 'J’ai trouvé ton imprimante :'));
     printers.forEach(function (p) {
-      var row = el('div', 'printer-item');
+      var item = el('div', 'printer-item');
+      var row = el('div', 'printer-row');
       row.appendChild(icon('wifi', 16));
       var info = el('div', 'printer-info');
       info.appendChild(el('b', '', p.name || 'Imprimante'));
       info.appendChild(el('span', 'muted small', (p.brand ? p.brand + ' · ' : '') + p.ip));
       row.appendChild(info);
-      list.appendChild(row);
+      var status = el('div', 'printer-status hidden');
+      row.appendChild(button('Relier', function () { startLink(p, status); }, 'btn sm'));
+      item.appendChild(row);
+      item.appendChild(status);
+      list.appendChild(item);
     });
     list.appendChild(button('Chercher encore', scanPrinters, 'btn ghost sm', 'search'));
+  }
+
+  // Relier : vérifier le profil, tester la connexion, puis la fenêtre « Connexion » d'Orca préremplie (OK = enregistré).
+  var link = null; // { printer, box } en cours
+  function linkStep(text, tone, iconName) {
+    if (!link) return null;
+    var box = link.box;
+    box.textContent = '';
+    box.classList.remove('hidden');
+    var line = el('div', 'printer-step' + (tone ? ' ' + tone : ''));
+    if (iconName) line.appendChild(icon(iconName, 14));
+    line.appendChild(rich(text));
+    box.appendChild(line);
+    return box;
+  }
+  function startLink(printer, box) {
+    link = { printer: printer, box: box };
+    linkStep('Je vérifie ton profil d’imprimante…', '', 'search');
+    window.orca.postMessage({ type: 'printer_link_check', printer: printer });
+  }
+  function onLinkState(msg) {
+    if (!link) return;
+    var name = link.printer.name || 'ton imprimante';
+    if (!msg.ok) { linkStep('Je ne peux pas relier cette imprimante.', 'error', 'alert'); return; }
+    if (msg.linked) { linkStep('Déjà reliée à ton profil « ' + msg.current + ' ».', 'ok', 'check'); return; }
+    if (msg.matches) { testLink(); return; }
+    var candidates = Array.isArray(msg.candidates) ? msg.candidates : [];
+    var box = linkStep('Ton profil actuel est « ' + msg.current + ' », mais l’imprimante trouvée est **' + name + '**. ' +
+      (candidates.length ? 'Choisis le profil qui lui correspond :' : 'Je n’ai pas encore son profil : ajoute-la dans la liste des imprimantes, puis reviens ici.'), 'warn', 'alert');
+    var acts = el('div', 'printer-actions');
+    candidates.forEach(function (c) {
+      acts.appendChild(button('Utiliser « ' + c + ' »', function () {
+        linkStep('Je change de profil…', '', 'search');
+        window.orca.postMessage({ type: 'printer_select_profile', name: c });
+      }, 'btn ghost sm'));
+    });
+    if (!candidates.length) acts.appendChild(button('Ajouter mon imprimante', function () { window.orca.postMessage({ type: 'printer_wizard' }); }, 'btn sm', 'plus'));
+    box.appendChild(acts);
+  }
+  function onProfileSelected(msg) {
+    if (!link) return;
+    if (!msg.ok) { linkStep('Je n’ai pas pu changer de profil. Choisis-le à la main sous « Imprimante », puis réessaie.', 'error', 'alert'); return; }
+    startLink(link.printer, link.box);
+  }
+  function testLink() {
+    linkStep('Je teste la connexion avec ' + (link.printer.name || 'ton imprimante') + '…', '', 'wifi');
+    window.orca.postMessage({ type: 'printer_link_test', printer: link.printer });
+  }
+  // Ce qu'il faut faire quand le test échoue, selon le type de connexion.
+  var LINK_HELP = {
+    octoprint: 'OctoPrint demande une **clé API** : dans OctoPrint, ouvre Paramètres, puis Clé API, et copie-la dans la fenêtre « Connexion ».',
+    flashforge: 'Flashforge demande le **numéro de série** et le **code de vérification** : tu les trouves sur l’écran de l’imprimante, dans Réglages, puis Réseau.',
+    elegoolink: 'Vérifie que le mode réseau local est activé sur l’écran de l’imprimante.'
+  };
+  function onLinkTested(msg) {
+    if (!link) return;
+    if (msg.ok) {
+      var okBox = linkStep('La connexion fonctionne. Enregistre-la dans ton profil d’imprimante pour envoyer tes impressions directement.', 'ok', 'check');
+      var webui = typeof msg.webui === 'string' ? msg.webui : '';
+      okBox.appendChild(button('Enregistrer la connexion', function () {
+        linkStep('J’enregistre…', '', 'search');
+        window.orca.postMessage({ type: 'printer_link_save', printer: link.printer, webui: webui });
+      }, 'btn sm', 'check'));
+      return;
+    }
+    var box = linkStep('Je n’arrive pas à joindre ' + (link.printer.name || 'l’imprimante') + '. ' +
+      (LINK_HELP[link.printer.host_type] || 'Vérifie qu’elle est allumée et sur le même Wi-Fi, puis réessaie.'), 'error', 'alert');
+    if (msg.message) box.appendChild(el('p', 'muted small', msg.message));
+    var acts = el('div', 'printer-actions');
+    acts.appendChild(button('Réessayer', testLink, 'btn sm'));
+    acts.appendChild(button('Ouvrir la fenêtre Connexion', function () { window.orca.postMessage({ type: 'printer_link_dialog', printer: link.printer }); }, 'btn ghost sm'));
+    box.appendChild(acts);
+  }
+  function onLinkSaved(msg) {
+    if (!link) return;
+    if (msg.ok) linkStep('C’est relié ! Ton profil d’imprimante s’appelle maintenant « ' + msg.profile + ' ». `Imprimer la plaque` enverra tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+    else linkStep('Je n’ai pas pu enregistrer la connexion. Réessaie, ou ouvre la fenêtre « Connexion » depuis le bouton Wi-Fi à côté de « Imprimante ».', 'error', 'alert');
+  }
+  function onLinkDialogClosed(msg) {
+    if (!link) return;
+    if (msg.saved) linkStep('C’est relié ! `Imprimer la plaque` enverra maintenant tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+    else {
+      var box = linkStep('Rien n’a été enregistré. Tu peux recommencer quand tu veux.', '', 'info');
+      box.appendChild(button('Relier', function () { startLink(link.printer, link.box); }, 'btn sm'));
+    }
   }
 
   // ---------- Journal des pièces ----------
@@ -2733,6 +2832,16 @@
       fillJournal(msg.events || []);
     } else if (msg.type === 'printer_scan_result') {
       fillPrinters(Array.isArray(msg.printers) ? msg.printers : []);
+    } else if (msg.type === 'printer_link_state') {
+      onLinkState(msg);
+    } else if (msg.type === 'printer_profile_selected') {
+      onProfileSelected(msg);
+    } else if (msg.type === 'printer_link_tested') {
+      onLinkTested(msg);
+    } else if (msg.type === 'printer_link_saved') {
+      onLinkSaved(msg);
+    } else if (msg.type === 'printer_link_dialog_closed') {
+      onLinkDialogClosed(msg);
     } else if (msg.type === 'outcome_pending') {
       onOutcomePending(msg.items);
     } else if (msg.type === 'preflight') {

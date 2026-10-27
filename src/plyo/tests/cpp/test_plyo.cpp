@@ -243,3 +243,35 @@ TEST_CASE("Discovery garde une entrée par IP, la source la plus précise")
     CHECK(m[1].brand == "Creality");
     CHECK(to_json(m).size() == 2);
 }
+
+TEST_CASE("Discovery reconnaît le modèle et le compare au profil")
+{
+    using namespace Plyo::Discovery;
+    Printer k2{"192.168.1.21", "K2-DD52", "Creality", "moonraker", "192.168.1.21:7125", 1};
+    CHECK(model_hint(k2) == "k2");
+    Printer k2plus{"192.168.1.22", "Creality K2 Plus", "Creality", "crealityprint", "192.168.1.22", 3};
+    CHECK(model_hint(k2plus) == "k2 plus");
+    Printer ke{"192.168.1.23", "Ender-3 V3 KE-A1B2C3", "Creality", "moonraker", "192.168.1.23:7125", 1};
+    CHECK(model_hint(ke) == "ender 3 v3 ke");
+    Printer anon{"192.168.1.24", "Imprimante Klipper", "", "moonraker", "192.168.1.24:7125", 1};
+    CHECK(model_hint(anon).empty());
+    CHECK(profile_matches("Creality K2", "k2"));
+    CHECK(profile_matches("Creality Ender-3 V3 KE", "ender 3 v3 ke"));
+    CHECK_FALSE(profile_matches("Creality K2 Plus", "k2"));
+    CHECK_FALSE(profile_matches("Creality CR-10 SE", "k2"));
+    CHECK_FALSE(profile_matches("Creality K2", ""));
+}
+
+TEST_CASE("Discovery n'accepte que des connexions locales connues")
+{
+    using namespace Plyo::Discovery;
+    CHECK(allowed_host_type("crealityprint"));
+    CHECK_FALSE(allowed_host_type("prusaconnect"));
+    CHECK(valid_host("192.168.1.21"));
+    CHECK(valid_host("192.168.1.21:7125"));
+    CHECK_FALSE(valid_host("8.8.8.8"));
+    CHECK_FALSE(valid_host("192.168.1.21:"));
+    CHECK_FALSE(valid_host("192.168.1.21:99999"));
+    CHECK_FALSE(valid_host("192.168.1.21:80/../x"));
+    CHECK_FALSE(valid_host("exemple.com"));
+}

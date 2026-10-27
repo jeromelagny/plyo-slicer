@@ -47,6 +47,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPlateActions.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPreflight.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPreflight.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterLink.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterLink.hpp
 )
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
 
