@@ -171,9 +171,10 @@ void show_setting(const std::string& key, std::function<void(const nlohmann::jso
     wxGetApp().CallAfter([key, type, done]() { guarded("le surlignage d'un réglage", [&] {
         Slic3r::GUI::Tab* t     = wxGetApp().get_tab(type);
         Slic3r::GUI::Field* field = t != nullptr ? t->get_field(key) : nullptr;
-        const int first_extruder = 0; // une variable : le littéral 0 serait aussi un pointeur (surcharge ambiguë)
+        // Réglage par extrudeur (ex. température de buse). Appel sur un Tab const : seule la surcharge
+        // get_field(key, index) reste candidate (clang-cl voit sinon dans 0 un Page** possible).
         if (field == nullptr && t != nullptr)
-            field = t->get_field(key, first_extruder); // réglage par extrudeur (ex. température de buse)
+            field = static_cast<const Slic3r::GUI::Tab*>(t)->get_field(key, 0);
         const bool framed = field != nullptr && frame_window(field->getWindow());
         done({{"ok", true}, {"hidden", !framed}});
     }); });
