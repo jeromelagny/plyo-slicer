@@ -41,6 +41,10 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscoveryLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJournal.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJournal.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalog.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalog.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalogPolicy.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalogPolicy.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoLimits.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoLimits.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoLimitsLogic.hpp

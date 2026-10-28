@@ -163,6 +163,14 @@ def generate(root):
     return {"entries": entries, "report": {"read": read, "writable": len(entries), "excluded": excluded}}
 
 
+def catalog_keys(entries):
+    """{portée: {clé: type}} : la liste que le slicer charge (ce que l'assistant peut lire et écrire)."""
+    out = {"print": {}, "filament": {}}
+    for e in entries:
+        out[e["scope"]][e["key"]] = e["kind"]
+    return {scope: dict(sorted(keys.items())) for scope, keys in out.items()}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out")
@@ -172,6 +180,7 @@ def main():
     print(json.dumps(result["report"], ensure_ascii=False, indent=2))
     if args.out:
         Path(args.out).write_text(json.dumps(result["entries"], ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    (root / "resources/plyo/catalog-keys.json").write_text(json.dumps(catalog_keys(result["entries"]), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     return 0
 
 

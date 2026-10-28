@@ -2597,6 +2597,8 @@
       if (ctx && ctx.plate) body.plate = ctx.plate;
       if (ctx && ctx.memory && ctx.memory.length) body.memory = ctx.memory;
       if (ctx && ctx.limits && Object.keys(ctx.limits).length) body.filament_limits = ctx.limits;
+      // Mode catalogue : toutes les valeurs Filament + Impression, pour que l'assistant puisse proposer n'importe quel réglage.
+      if (ctx && ctx.snapshot && Object.keys(ctx.snapshot).length) body.snapshot = ctx.snapshot;
       return apiFetch('/api/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify(body), signal: controller.signal });
     }).then(function (response) {
       if (response.status === 401) return { error: 'unauthorized' };

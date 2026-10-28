@@ -164,7 +164,7 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "ai_context")
             // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
             send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()},
-                  {"limits", Limits::to_json(Limits::current())}});
+                  {"limits", Limits::to_json(Limits::current())}, {"snapshot", SettingsBridge::read_snapshot()}});
         else if (type == "limits_get")
             send({{"type", "limits"}, {"limits", Limits::to_json(Limits::current())}});
         else if (type == "limits_set") {

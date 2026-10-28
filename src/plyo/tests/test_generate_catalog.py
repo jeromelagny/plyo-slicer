@@ -78,6 +78,19 @@ void TabFilament::update_x() { "other_key"; }
         )
 
 
+class KeysFileTest(unittest.TestCase):
+    def test_keys_file_lists_each_scope_with_kinds(self):
+        keys = g.catalog_keys(CATALOG["entries"])
+        self.assertEqual(keys["filament"]["fan_cooling_layer_time"], "float")
+        self.assertEqual(keys["print"]["ironing_type"], "enum")
+        self.assertNotIn("machine_start_gcode", keys["print"])
+        self.assertEqual(sum(len(v) for v in keys.values()), len(CATALOG["entries"]))
+
+    def test_committed_keys_file_is_up_to_date(self):
+        committed = json.loads((ROOT / "resources" / "plyo" / "catalog-keys.json").read_text(encoding="utf-8"))
+        self.assertEqual(committed, g.catalog_keys(CATALOG["entries"]), "relancer generate_catalog.py")
+
+
 class CatalogTest(unittest.TestCase):
     def test_cooling_layer_time_is_proposable_with_french_label(self):
         e = BY_KEY["fan_cooling_layer_time"]

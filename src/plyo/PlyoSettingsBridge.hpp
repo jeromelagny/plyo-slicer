@@ -30,6 +30,10 @@ void set_memory_key(int undo_id, const std::string& key);
 // Renvoie {ok, text, undone_id, memory_key}.
 nlohmann::json undo_last(int expected_id = 0);
 
+// Valeurs actuelles de tous les réglages Filament + Impression du catalogue (mode catalogue) :
+// { "<clé>": nombre | booléen | texte | null, ... }. Première valeur des options « tableau », null pour « nil ».
+nlohmann::json read_snapshot();
+
 // Plage Plyo d'une clé de configuration de la liste blanche : {min, max, unit}, ou null hors liste blanche.
 nlohmann::json whitelist_range(const std::string& key);
 

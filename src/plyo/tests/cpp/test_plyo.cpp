@@ -7,6 +7,7 @@
 #include "../../PlyoSanitize.hpp"
 #include "../../PlyoDiscoveryLogic.hpp"
 #include "../../PlyoLimitsLogic.hpp"
+#include "../../PlyoCatalogPolicy.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -317,4 +318,52 @@ TEST_CASE("Limits::from_json et to_json font l'aller-retour")
     CHECK(r.nozzle_min.value() == 225);
     CHECK_FALSE(r.nozzle_max.has_value());
     CHECK(Plyo::Limits::to_json(r) == json{{"nozzle_min", 225}, {"bed_max", 80}});
+}
+
+// --- Politique du catalogue : ce que l'assistant peut lire et écrire ---
+namespace {
+Plyo::Catalog::Policy sample_policy()
+{
+    const json policy = {{"forbidden_patterns", {"gcode", "post_process"}}, {"forbidden_keys", {"filament_type"}},
+                         {"confirm_patterns", {"temperature"}}, {"confirm_keys", {"outer_wall_speed"}}};
+    const json keys   = {{"print", {{"layer_height", "float"}, {"outer_wall_speed", "float"}}},
+                         {"filament", {{"fan_cooling_layer_time", "float"}, {"nozzle_temperature", "int"}, {"filament_start_gcode", "enum"}}}};
+    return Plyo::Catalog::Policy::from_json(policy, keys);
+}
+} // namespace
+
+TEST_CASE("Catalog::Policy refuse G-code et identité, même présents dans les clés du catalogue")
+{
+    const auto p = sample_policy();
+    CHECK(p.is_forbidden("machine_start_gcode"));
+    CHECK(p.is_forbidden("layer_change_gcode"));
+    CHECK(p.is_forbidden("filament_type"));
+    CHECK_FALSE(p.is_forbidden("fan_cooling_layer_time"));
+    CHECK_FALSE(p.allows("filament", "filament_start_gcode"));
+}
+
+TEST_CASE("Catalog::Policy::allows exige la bonne portée et la présence dans le catalogue")
+{
+    const auto p = sample_policy();
+    CHECK(p.allows("filament", "fan_cooling_layer_time"));
+    CHECK_FALSE(p.allows("print", "fan_cooling_layer_time"));
+    CHECK_FALSE(p.allows("print", "nozzle_diameter"));
+    CHECK(p.needs_confirmation("nozzle_temperature"));
+    CHECK(p.needs_confirmation("outer_wall_speed"));
+    CHECK_FALSE(p.needs_confirmation("layer_height"));
+    CHECK(p.keys("filament").size() == 2); // sans la clé G-code
+}
+
+TEST_CASE("Catalog::typed_value rend le nombre, le booléen, le texte ou null")
+{
+    using Plyo::Catalog::typed_value;
+    CHECK(typed_value("int", "230") == json(230));
+    CHECK(typed_value("float", "0.95") == json(0.95));
+    CHECK(typed_value("percent", "15%") == json("15%"));
+    CHECK(typed_value("percent", "15") == json(15));
+    CHECK(typed_value("bool", "1") == json(true));
+    CHECK(typed_value("bool", "0") == json(false));
+    CHECK(typed_value("enum", "top") == json("top"));
+    CHECK(typed_value("float", "nil").is_null());
+    CHECK(typed_value("float", "abc").is_null());
 }

@@ -1,4 +1,5 @@
 #include "PlyoSettingsBridge.hpp"
+#include "PlyoCatalog.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoLimits.hpp"
 
@@ -410,6 +411,27 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
     s_undo_stack.push_back({id, std::move(saved), std::string()});
     BOOST_LOG_TRIVIAL(info) << "Plyo: modifications appliquées : " << summary;
     return {{"ok", true}, {"text", "Appliqué : " + summary + "."}, {"undo_id", id}};
+}
+
+nlohmann::json read_snapshot()
+{
+    const Catalog::Policy& policy = Catalog::policy();
+    nlohmann::json         snapshot = nlohmann::json::object();
+    for (const char* scope : {"print", "filament"}) {
+        const DynamicPrintConfig& config = edited_config(std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT);
+        for (const std::string& key : policy.keys(scope)) {
+            const Slic3r::ConfigOption* opt = config.option(key);
+            if (opt == nullptr)
+                continue;
+            std::string text = opt->serialize();
+            if (opt->is_vector()) {
+                const auto* vec = static_cast<const Slic3r::ConfigOptionVectorBase*>(opt);
+                text            = vec->size() == 0 || vec->is_nil(0) ? std::string("nil") : vec->vserialize().front();
+            }
+            snapshot[key] = Catalog::typed_value(policy.kind(scope, key), text);
+        }
+    }
+    return snapshot;
 }
 
 void set_memory_key(int undo_id, const std::string& key)
