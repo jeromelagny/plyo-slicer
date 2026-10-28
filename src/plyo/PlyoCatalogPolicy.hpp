@@ -27,12 +27,15 @@ public:
     bool needs_confirmation(const std::string& key) const;
     // Type de la clé (« float », « enum »…), vide si elle n'est pas autorisée.
     std::string kind(const std::string& scope, const std::string& key) const;
+    // Nom français du réglage (vide si inconnu).
+    std::string title(const std::string& key) const;
     // Clés autorisées de la portée, dans l'ordre alphabétique.
     std::vector<std::string> keys(const std::string& scope) const;
 
 private:
     std::vector<std::string>                           m_forbidden_patterns, m_forbidden_keys, m_confirm_patterns, m_confirm_keys;
     std::map<std::string, std::map<std::string, std::string>> m_keys;
+    std::map<std::string, std::string>                        m_titles;
 };
 
 // Valeur d'une option d'Orca sérialisée en texte → JSON (nombre, booléen, texte), ou null si illisible ou « nil ».

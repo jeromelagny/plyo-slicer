@@ -27,6 +27,9 @@ nlohmann::json for_current();
 // ancienne : [{machine, printer, filament, at, date, why, defect, conv, changes}].
 nlohmann::json pending();
 
+// Profil copié par l'assistant : l'historique de l'ancien couple imprimante + filament passe au nouveau.
+void carry_over(const std::string& old_key, const std::string& new_key);
+
 // Résultat déclaré pour l'entrée `at` de `machine` : "ok", "bad", ou "later" (redemander plus tard ; après
 // 3 reports, le résultat devient « inconnu » et on ne demande plus). Faux si l'entrée n'existe plus.
 // `note` : mot facultatif de l'utilisateur (200 caractères au plus), gardé avec le résultat et lu par l'IA.

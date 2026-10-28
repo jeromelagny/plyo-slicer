@@ -166,9 +166,13 @@ def generate(root):
 def catalog_keys(entries):
     """{portée: {clé: type}} : la liste que le slicer charge (ce que l'assistant peut lire et écrire)."""
     out = {"print": {}, "filament": {}}
+    titles = {}
     for e in entries:
         out[e["scope"]][e["key"]] = e["kind"]
-    return {scope: dict(sorted(keys.items())) for scope, keys in out.items()}
+        titles[e["key"]] = e["title_fr"]
+    result = {scope: dict(sorted(keys.items())) for scope, keys in out.items()}
+    result["titles"] = dict(sorted(titles.items()))  # pour nommer un réglage en français dans le panneau
+    return result
 
 
 def main():

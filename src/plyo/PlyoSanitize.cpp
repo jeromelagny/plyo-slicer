@@ -67,6 +67,23 @@ json limits(const json& stored)
     return out;
 }
 
+json reliable(const json& stored)
+{
+    if (!stored.is_object() || Json::str(stored, "machine").empty())
+        return json::object();
+    json values = json::object();
+    const json src = Json::obj(stored, "values");
+    for (const char* scope : {"print", "filament"}) {
+        json       kept   = json::object();
+        const json scoped = Json::obj(src, scope); // copie nommée : items() d'un temporaire pointerait dans le vide
+        for (const auto& [key, value] : scoped.items())
+            if (value.is_string())
+                kept[key] = value;
+        values[scope] = kept;
+    }
+    return {{"machine", Json::str(stored, "machine")}, {"date", Json::str(stored, "date", 40)}, {"values", values}};
+}
+
 json journal(const json& stored)
 {
     json out = json::array();

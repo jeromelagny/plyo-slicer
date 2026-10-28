@@ -347,7 +347,26 @@
     return groups;
   }
 
-  var api = { catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  // Modifications manuelles non enregistrées, enregistrées avec le lot de l'assistant : phrase de la fiche.
+  function plainValue(v) { return typeof v === 'boolean' ? (v ? 'oui' : 'non') : v === null || v === undefined ? '—' : String(v); }
+  function manualEditsText(list) {
+    if (!Array.isArray(list) || !list.length) return '';
+    var shown = list.slice(0, 6).map(function (e) { return (e.title || e.key || '?') + ' (' + plainValue(e.before) + ' → ' + plainValue(e.after) + ')'; });
+    var more = list.length - shown.length;
+    return 'J’enregistre aussi tes modifications manuelles : ' + shown.join(', ') + (more > 0 ? ' et ' + more + ' autre' + (more > 1 ? 's' : '') : '') + '.';
+  }
+  // Ce que l'assistant dit après avoir enregistré (ou tenté d'enregistrer) le profil.
+  function savedText(result) {
+    var r = result || {};
+    if (r.save_error) return 'Appliqué, mais je n’ai pas pu enregistrer le profil (' + r.save_error + '). Enregistre-le toi-même si tu veux le garder.';
+    var saved = Array.isArray(r.saved) ? r.saved : [];
+    if (!saved.length) return '';
+    return saved.map(function (s) {
+      return s.created ? 'Enregistré dans une copie à toi, « ' + s.name + ' » : « ' + s.from + ' » est un profil d’Orca, qui ne se modifie pas.' : 'Enregistré dans le profil « ' + s.name + ' ».';
+    }).join(' ');
+  }
+
+  var api = { manualEditsText: manualEditsText, savedText: savedText, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -863,6 +863,20 @@
     });
   }
 
+  // Modifications manuelles non enregistrées (profils impression et filament), demandées au slicer.
+  var manualWaiter = null;
+  function askManualEdits(callback) {
+    manualWaiter = callback;
+    window.orca.postMessage({ type: 'manual_edits_get' });
+  }
+
+  // Version fiable (réglages de la dernière impression réussie) : le slicer dit s'il y en a une, puis la remet à la demande.
+  var reliableWaiter = null, reliableResult = null;
+  function askReliable(callback) {
+    reliableWaiter = callback;
+    window.orca.postMessage({ type: 'reliable_get' });
+  }
+
   // « Limites du fabricant » : les températures de la fiche technique du filament, bornes strictes pour l'assistant.
   var limitsView = null;
   function openLimits() {
@@ -2221,6 +2235,24 @@
       }, 'btn', 'undo');
       acts.appendChild(undo);
     }
+    // Version fiable : les réglages d'une impression qui avait marché, gardés par Plyo pour cette imprimante + ce filament.
+    var reliableSlot = el('div');
+    acts.appendChild(reliableSlot);
+    askReliable(function (info) {
+      if (!info.available) return;
+      var back = button('Revenir à ma dernière version fiable', function () {
+        back.disabled = true;
+        status.classList.add('hidden');
+        reliableResult = function (res) {
+          if (!res.ok) { back.disabled = false; status.textContent = fr(res.text); status.classList.remove('hidden'); return; }
+          var done = el('div', 'undo-row');
+          done.appendChild(doneLabel(Logic.savedText(res) || res.text, 'undo'));
+          back.replaceWith(done);
+        };
+        window.orca.postMessage({ type: 'restore_reliable' });
+      }, 'btn', 'undo');
+      reliableSlot.appendChild(back);
+    });
     acts.appendChild(button('Chercher une autre piste', function () {
       var followUp = function () {
         noteInput.value = Logic.retryPrompt(item, note);
@@ -2828,6 +2860,13 @@
     footer.appendChild(apply);
     footer.appendChild(ignore);
     sheet.appendChild(footer);
+    // Modifications manuelles non enregistrées : elles partent avec le lot, on le dit avant d'appliquer.
+    var manualNote = el('div', 'status hidden');
+    sheet.insertBefore(manualNote, footer);
+    askManualEdits(function (items) {
+      var line = Logic.manualEditsText(items);
+      if (line) { manualNote.textContent = fr(line); manualNote.classList.remove('hidden'); }
+    });
     var fail = el('div', 'fail hidden');
     sheet.appendChild(fail);
 
@@ -2863,7 +2902,9 @@
         footer.classList.add('undo-row');
         var preset = lastValues && lastValues.context ? lastValues.context.process : '';
         footer.appendChild(doneLabel('Appliqué'));
-        if (preset) footer.appendChild(el('p', 'muted small footnote', 'Le préréglage « ' + preset + ' » est marqué modifié : enregistre-le si tu veux garder ces réglages.'));
+        var savedLine = Logic.savedText(result);
+        if (savedLine) footer.appendChild(el('p', 'muted small footnote', fr(savedLine)));
+        else if (preset) footer.appendChild(el('p', 'muted small footnote', 'Le préréglage « ' + preset + ' » est marqué modifié : enregistre-le si tu veux garder ces réglages.'));
         function showUndone() {
           entry.applied = false;
           scheduleSave();
@@ -3057,6 +3098,12 @@
       $('focus-chip').classList.remove('hidden');
     } else if (msg.type === 'ai_context') {
       if (contextWaiter) contextWaiter(msg);
+    } else if (msg.type === 'reliable') {
+      if (reliableWaiter) { var rw = reliableWaiter; reliableWaiter = null; rw(msg); }
+    } else if (msg.type === 'restore_reliable_result') {
+      if (reliableResult) { var rr = reliableResult; reliableResult = null; rr(msg); }
+    } else if (msg.type === 'manual_edits') {
+      if (manualWaiter) { var waiter = manualWaiter; manualWaiter = null; waiter(msg.items || []); }
     } else if (msg.type === 'limits') {
       onLimits(msg);
     } else if (msg.type === 'journal') {

@@ -59,4 +59,14 @@ bool set(const nlohmann::json& limits)
     return Store::write(file(), all);
 }
 
+void carry_over(const std::string& old_key)
+{
+    nlohmann::json all = Sanitize::limits(Store::read(file()));
+    const std::string now = machine_key();
+    if (now == old_key || !all.contains(old_key) || all.contains(now))
+        return;
+    all[now] = all[old_key];
+    Store::write(file(), all);
+}
+
 }} // namespace Plyo::Limits

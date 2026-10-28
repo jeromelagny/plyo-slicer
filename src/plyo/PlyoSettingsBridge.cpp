@@ -413,10 +413,7 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
     return {{"ok", true}, {"text", "Appliqué : " + summary + "."}, {"undo_id", id}};
 }
 
-namespace {
-
-// Valeur actuelle d'une option du catalogue, typée : première valeur des options « tableau », null pour « nil ».
-nlohmann::json typed_current(const DynamicPrintConfig& config, const std::string& key, const std::string& kind)
+nlohmann::json typed_value_of(const DynamicPrintConfig& config, const std::string& key, const std::string& kind)
 {
     const Slic3r::ConfigOption* opt = config.option(key);
     if (opt == nullptr)
@@ -429,7 +426,14 @@ nlohmann::json typed_current(const DynamicPrintConfig& config, const std::string
     return Catalog::typed_value(kind, text);
 }
 
-} // namespace
+void retarget_undo(bool print, const std::string& from, const std::string& to)
+{
+    const Preset::Type type = print ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
+    for (UndoEntry& e : s_undo_stack)
+        for (SavedValue& v : e.saved)
+            if (v.preset == type && v.preset_name == from)
+                v.preset_name = to;
+}
 
 nlohmann::json read_snapshot()
 {
@@ -439,9 +443,55 @@ nlohmann::json read_snapshot()
         const DynamicPrintConfig& config = edited_config(std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT);
         for (const std::string& key : policy.keys(scope))
             if (config.option(key) != nullptr)
-                snapshot[key] = typed_current(config, key, policy.kind(scope, key));
+                snapshot[key] = typed_value_of(config, key, policy.kind(scope, key));
     }
     return snapshot;
+}
+
+nlohmann::json snapshot_raw()
+{
+    const Catalog::Policy& policy = Catalog::policy();
+    nlohmann::json         out    = {{"print", nlohmann::json::object()}, {"filament", nlohmann::json::object()}};
+    for (const char* scope : {"print", "filament"}) {
+        const Preset::Type        type   = std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
+        const DynamicPrintConfig& config = edited_config(type);
+        for (const std::string& key : policy.keys(scope))
+            if (config.option(key) != nullptr)
+                out[scope][key] = config.opt_serialize(key);
+    }
+    return out;
+}
+
+nlohmann::json restore_values(const nlohmann::json& values)
+{
+    const Catalog::Policy&                     policy = Catalog::policy();
+    std::vector<SavedValue>                     saved;
+    std::map<Preset::Type, DynamicPrintConfig> configs;
+    for (const char* scope : {"print", "filament"}) {
+        const Preset::Type type = std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
+        const nlohmann::json one = Json::obj(values, scope);
+        for (const auto& [key, value] : one.items()) {
+            if (!value.is_string() || !policy.allows(scope, key) || edited_config(type).option(key) == nullptr)
+                continue;
+            if (edited_config(type).opt_serialize(key) == value.get<std::string>())
+                continue;
+            if (!configs.count(type))
+                configs.emplace(type, edited_config(type));
+            try {
+                configs[type].set_deserialize_strict(key, value.get<std::string>());
+            } catch (const std::exception&) {
+                return {{"ok", false}, {"text", "Je n'ai pas pu relire « " + key + " » dans la version fiable : rien n'a été remis."}};
+            }
+            saved.push_back({type, key, edited_config(type).opt_serialize(key), edited_name(type)});
+        }
+    }
+    if (saved.empty())
+        return {{"ok", true}, {"text", "Tes réglages sont déjà ceux de ta dernière version fiable."}};
+    const size_t count = saved.size();
+    load_into_tabs(configs);
+    const int id = s_next_undo_id++;
+    s_undo_stack.push_back({id, std::move(saved), std::string()});
+    return {{"ok", true}, {"text", std::to_string(count) + (count > 1 ? " réglages remis" : " réglage remis") + " comme dans ta dernière version fiable."}, {"undo_id", id}};
 }
 
 nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::string& print_name, const std::string& filament_name)
@@ -504,7 +554,7 @@ nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::s
         if (!configs.count(p.type))
             configs.emplace(p.type, edited_config(p.type));
         saved.push_back({p.type, p.key, edited_config(p.type).opt_serialize(p.key), edited_name(p.type)});
-        applied.push_back({{"id", p.key}, {"label", p.label}, {"before", typed_current(edited_config(p.type), p.key, p.kind)}, {"after", p.value}});
+        applied.push_back({{"id", p.key}, {"label", p.label}, {"before", typed_value_of(edited_config(p.type), p.key, p.kind)}, {"after", p.value}});
         set_value(configs[p.type], p.key, p.text);
         summary += std::string(summary.empty() ? "" : ", ") + p.label + " → " + p.text;
     }

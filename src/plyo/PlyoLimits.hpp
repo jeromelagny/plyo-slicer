@@ -18,4 +18,7 @@ Range current();
 // Enregistre les limites saisies pour la machine en cours ({} les efface). false si la plage n'est pas valable.
 bool set(const nlohmann::json& limits);
 
+// Reprend pour la machine en cours les limites saisies sous `old_key` (profil copié par l'assistant), si elle n'en a pas.
+void carry_over(const std::string& old_key);
+
 }} // namespace Plyo::Limits

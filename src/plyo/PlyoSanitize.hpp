@@ -23,4 +23,7 @@ nlohmann::json calibrations(const nlohmann::json& stored);
 // buse 0–400 °C, plateau 0–150 °C, min ≤ max).
 nlohmann::json limits(const nlohmann::json& stored);
 
+// fiable/<empreinte>.json : { machine, date, values : { print|filament : { clé : valeur en texte } } }. Vide si illisible.
+nlohmann::json reliable(const nlohmann::json& stored);
+
 }} // namespace Plyo::Sanitize

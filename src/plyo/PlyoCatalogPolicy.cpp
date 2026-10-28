@@ -36,11 +36,19 @@ Policy Policy::from_json(const nlohmann::json& policy, const nlohmann::json& key
     p.m_confirm_patterns   = strings(policy, "confirm_patterns");
     p.m_confirm_keys       = strings(policy, "confirm_keys");
     if (keys.is_object())
-        for (const auto& [scope, items] : keys.items())
+        for (const auto& [scope, items] : keys.items()) {
+            if (scope == "titles") {
+                if (items.is_object())
+                    for (const auto& [key, title] : items.items())
+                        if (title.is_string())
+                            p.m_titles[key] = title.get<std::string>();
+                continue;
+            }
             if (items.is_object())
                 for (const auto& [key, kind] : items.items())
                     if (kind.is_string())
                         p.m_keys[scope][key] = kind.get<std::string>();
+        }
     return p;
 }
 
@@ -60,6 +68,12 @@ bool Policy::allows(const std::string& scope, const std::string& key) const
 bool Policy::needs_confirmation(const std::string& key) const
 {
     return std::find(m_confirm_keys.begin(), m_confirm_keys.end(), key) != m_confirm_keys.end() || contains_any(key, m_confirm_patterns);
+}
+
+std::string Policy::title(const std::string& key) const
+{
+    const auto it = m_titles.find(key);
+    return it == m_titles.end() ? std::string() : it->second;
 }
 
 std::string Policy::kind(const std::string& scope, const std::string& key) const

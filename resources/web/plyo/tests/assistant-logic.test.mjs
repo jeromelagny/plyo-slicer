@@ -259,3 +259,22 @@ test('réglages groupés par onglet, dans l’ordre où ils apparaissent', () =>
   const groups = L.groupByTab(list.concat([{ id: 'nozzle_temp', delta: -5, value: null }]));
   assert.deepEqual(groups.map((g) => [g.tab, g.items.map((s) => s.id)]), [['Refroidissement', ['a', 'c']], ['Qualité', ['b']], ['', ['nozzle_temp']]]);
 });
+
+test('modifications manuelles enregistrées avec le lot : liste courte et lisible', () => {
+  assert.equal(L.manualEditsText([]), '');
+  assert.equal(L.manualEditsText(null), '');
+  assert.equal(L.manualEditsText([{ title: 'Densité de remplissage', before: '15%', after: '20%' }]), 'J’enregistre aussi tes modifications manuelles : Densité de remplissage (15% → 20%).');
+  const many = Array.from({ length: 8 }, (_, i) => ({ title: 'R' + i, before: i, after: i + 1 }));
+  const text = L.manualEditsText(many);
+  assert.ok(text.includes('R0 (0 → 1)') && text.includes('R5 (5 → 6)'));
+  assert.ok(!text.includes('R6'));
+  assert.ok(text.endsWith('et 2 autres.'));
+  assert.equal(L.manualEditsText([{ key: 'x_y', before: true, after: false }]).includes('x_y (oui → non)'), true);
+});
+
+test('texte après l’enregistrement du profil par l’assistant', () => {
+  assert.equal(L.savedText({ saved: [{ type: 'print', name: 'Mon profil', created: false }] }), 'Enregistré dans le profil « Mon profil ».');
+  assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Generic TPU (Plyo)', created: true, from: 'Generic TPU' }] }), 'Enregistré dans une copie à toi, « Generic TPU (Plyo) » : « Generic TPU » est un profil d’Orca, qui ne se modifie pas.');
+  assert.equal(L.savedText({ saved: [], save_error: 'disque plein' }), 'Appliqué, mais je n’ai pas pu enregistrer le profil (disque plein). Enregistre-le toi-même si tu veux le garder.');
+  assert.equal(L.savedText({}), '');
+});

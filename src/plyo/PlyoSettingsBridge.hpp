@@ -34,6 +34,18 @@ nlohmann::json undo_last(int expected_id = 0);
 // { "<clé>": nombre | booléen | texte | null, ... }. Première valeur des options « tableau », null pour « nil ».
 nlohmann::json read_snapshot();
 
+// Valeur d'une option du catalogue, typée (première valeur des options « tableau », null pour « nil »).
+nlohmann::json typed_value_of(const Slic3r::DynamicPrintConfig& config, const std::string& key, const std::string& kind);
+
+// Valeurs actuelles du catalogue, en texte d'Orca : { "print": {clé: texte}, "filament": {...} } (version fiable).
+nlohmann::json snapshot_raw();
+
+// Remet ces valeurs (clés du catalogue seulement, celles qui diffèrent), comme un lot annulable. {ok, text, undo_id?}
+nlohmann::json restore_values(const nlohmann::json& values);
+
+// Après l'enregistrement d'un profil sous un autre nom (copie d'un profil d'Orca) : l'annulation vise le nouveau nom.
+void retarget_undo(bool print, const std::string& from, const std::string& to);
+
 // Changements du mode catalogue : [{"key", "value", "confirmed_outside_range"?, "label"?}, ...]. Tout ou rien, vérifiés
 // par Catalog::check_change ; refusés si le profil impression ou filament n'est plus celui de la proposition.
 // Renvoie {ok, text, undo_id, applied: [{id, label, before, after}]}.

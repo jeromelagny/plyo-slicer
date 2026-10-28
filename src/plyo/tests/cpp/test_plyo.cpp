@@ -8,6 +8,7 @@
 #include "../../PlyoDiscoveryLogic.hpp"
 #include "../../PlyoLimitsLogic.hpp"
 #include "../../PlyoCatalogPolicy.hpp"
+#include "../../PlyoProfilesLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -327,7 +328,8 @@ Plyo::Catalog::Policy sample_policy()
     const json policy = {{"forbidden_patterns", {"gcode", "post_process"}}, {"forbidden_keys", {"filament_type"}},
                          {"confirm_patterns", {"temperature"}}, {"confirm_keys", {"outer_wall_speed"}}};
     const json keys   = {{"print", {{"layer_height", "float"}, {"outer_wall_speed", "float"}}},
-                         {"filament", {{"fan_cooling_layer_time", "float"}, {"nozzle_temperature", "int"}, {"filament_start_gcode", "enum"}}}};
+                         {"filament", {{"fan_cooling_layer_time", "float"}, {"nozzle_temperature", "int"}, {"filament_start_gcode", "enum"}}},
+                         {"titles", {{"layer_height", "Hauteur de couche"}}}};
     return Plyo::Catalog::Policy::from_json(policy, keys);
 }
 } // namespace
@@ -352,6 +354,9 @@ TEST_CASE("Catalog::Policy::allows exige la bonne portée et la présence dans l
     CHECK(p.needs_confirmation("outer_wall_speed"));
     CHECK_FALSE(p.needs_confirmation("layer_height"));
     CHECK(p.keys("filament").size() == 2); // sans la clé G-code
+    CHECK(p.title("layer_height") == "Hauteur de couche");
+    CHECK(p.title("inconnu").empty());
+    CHECK_FALSE(p.allows("titles", "layer_height")); // « titles » n'est pas une portée
 }
 
 TEST_CASE("Catalog::typed_value rend le nombre, le booléen, le texte ou null")
@@ -426,4 +431,47 @@ TEST_CASE("Catalog::limit_id_of relie les clés de température aux limites du f
     CHECK(limit_id_of("textured_plate_temp") == "bed_temp");
     CHECK(limit_id_of("hot_plate_temp_initial_layer") == "bed_temp_initial");
     CHECK(limit_id_of("layer_height").empty());
+}
+
+// --- Profils enregistrés par l'assistant ---
+TEST_CASE("Profiles::copy_name : copie utilisateur d'un profil système, sans doublon ni nom trop long")
+{
+    using Plyo::Profiles::copy_name;
+    CHECK(copy_name("Generic TPU @K2", {}) == "Generic TPU @K2 (Plyo)");
+    CHECK(copy_name("Generic TPU @K2", {"Generic TPU @K2 (Plyo)"}) == "Generic TPU @K2 (Plyo 2)");
+    CHECK(copy_name("Generic TPU @K2", {"Generic TPU @K2 (Plyo)", "Generic TPU @K2 (Plyo 2)"}) == "Generic TPU @K2 (Plyo 3)");
+    const std::string longest = copy_name(std::string(300, 'a'), {});
+    CHECK(longest.size() <= 100);
+    CHECK(longest.size() > 60);
+    CHECK(longest.substr(longest.size() - 7) == " (Plyo)");
+    std::string accents;
+    for (int i = 0; i < 80; ++i)
+        accents += "é"; // 2 octets chacun : la coupe ne doit jamais tomber au milieu d'un caractère
+    const std::string cut = copy_name(accents, {});
+    CHECK(cut.size() <= 100);
+    CHECK(cut.substr(0, cut.size() - 7).size() % 2 == 0);
+}
+
+TEST_CASE("Profiles::file_stem : nom de fichier stable et sûr pour un couple imprimante + filament")
+{
+    using Plyo::Profiles::file_stem;
+    const std::string a = file_stem("Creality K2 0.4 | Generic TPU @K2-all");
+    CHECK(a == file_stem("Creality K2 0.4 | Generic TPU @K2-all"));
+    CHECK(a != file_stem("Creality K2 0.4 | Generic PLA @K2-all"));
+    CHECK(a.size() == 16);
+    CHECK(a.find_first_not_of("0123456789abcdef") == std::string::npos);
+    CHECK(file_stem("../../etc/passwd").find('/') == std::string::npos);
+}
+
+TEST_CASE("Sanitize::reliable ne garde que des réglages sous forme de texte, par portée connue")
+{
+    const json stored = {{"machine", "K2 | TPU"}, {"date", "2026-10-28"},
+                         {"values", {{"print", {{"layer_height", "0.2"}, {"bad", 3}}}, {"filament", {{"fan_max_speed", "100"}}}, {"autre", {{"x", "y"}}}}}};
+    const json out = Plyo::Sanitize::reliable(stored);
+    CHECK(out["machine"] == "K2 | TPU");
+    CHECK(out["values"]["print"] == json{{"layer_height", "0.2"}});
+    CHECK(out["values"]["filament"] == json{{"fan_max_speed", "100"}});
+    CHECK_FALSE(out["values"].contains("autre"));
+    CHECK(Plyo::Sanitize::reliable(json("n'importe quoi")).empty());
+    CHECK(Plyo::Sanitize::reliable(json{{"machine", 3}}).empty());
 }

@@ -105,6 +105,22 @@ nlohmann::json for_current()
     return it != all.end() && it->is_array() ? *it : nlohmann::json::array();
 }
 
+void carry_over(const std::string& old_key, const std::string& new_key)
+{
+    if (old_key == new_key)
+        return;
+    nlohmann::json all = load_all();
+    if (!all.contains(old_key) || !all[old_key].is_array() || all[old_key].empty())
+        return;
+    nlohmann::json merged = all.contains(new_key) && all[new_key].is_array() ? all[new_key] : nlohmann::json::array();
+    for (const nlohmann::json& e : all[old_key])
+        merged.push_back(e);
+    if (merged.size() > MAX_PER_MACHINE)
+        merged.erase(merged.begin() + MAX_PER_MACHINE, merged.end());
+    all[new_key] = merged;
+    Store::write(file(), all);
+}
+
 nlohmann::json pending()
 {
     const nlohmann::json all    = load_all();

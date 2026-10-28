@@ -16,6 +16,7 @@
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoPlateActions.hpp"
 #include "PlyoPreflight.hpp"
+#include "PlyoProfiles.hpp"
 #include "PlyoPrinterLink.hpp"
 #include "PlyoPrinterSetup.hpp"
 #include "PlyoSession.hpp"
@@ -144,12 +145,18 @@ void handle_page_message(const nlohmann::json& data)
         else if (type == "apply") {
             // Chaque application réussie est notée dans la mémoire de la machine (imprimante + filament).
             nlohmann::json       before = SettingsBridge::read_values();
+            const nlohmann::json manual = Profiles::manual_edits(); // enregistrées avec le lot
             const nlohmann::json changes = data.contains("changes") ? data["changes"] : nlohmann::json();
             // Mode catalogue : les changements portent une « key » (clé d'Orca) au lieu d'un « id » de la liste d'origine.
             const bool           catalog = changes.is_array() && !changes.empty() && changes[0].is_object() && changes[0].contains("key");
-            const nlohmann::json result = catalog ? SettingsBridge::apply_catalog_changes(changes, Json::str(data, "print_name"), Json::str(data, "filament_name"))
-                                                  : SettingsBridge::apply_changes(changes);
+            nlohmann::json result = catalog ? SettingsBridge::apply_catalog_changes(changes, Json::str(data, "print_name"), Json::str(data, "filament_name"))
+                                            : SettingsBridge::apply_changes(changes);
             if (Json::boolean(result, "ok", false)) {
+                // Les profils sont enregistrés avant la mémoire : si Orca en crée une copie, le couple imprimante + filament change de nom.
+                const nlohmann::json saved = Profiles::save_applied();
+                result["saved"]            = saved["saved"];
+                result["save_error"]       = saved["save_error"];
+                result["manual_saved"]     = manual;
                 const nlohmann::json ask = data.contains("ask") ? data["ask"] : nlohmann::json();
                 nlohmann::json       after = SettingsBridge::read_values();
                 if (catalog) {
@@ -170,14 +177,29 @@ void handle_page_message(const nlohmann::json& data)
             send_result(result);
         } else if (type == "undo") {
             // `undo_id` : l'annulation d'une fiche précise ; sans, le dernier lot (menu « ⋯ »).
-            const nlohmann::json result = SettingsBridge::undo_last(Json::integer(data, "undo_id", 0));
-            if (Json::boolean(result, "ok", false))
+            nlohmann::json result = SettingsBridge::undo_last(Json::integer(data, "undo_id", 0));
+            if (Json::boolean(result, "ok", false)) {
                 Journal::clear_changes(Memory::forget(Json::str(result, "memory_key")));
+                // Les valeurs d'avant sont remises : le profil est réenregistré, comme après l'application.
+                const nlohmann::json saved = Profiles::save_applied();
+                result["saved"]            = saved["saved"];
+                result["save_error"]       = saved["save_error"];
+            }
             send_result(result);
         } else if (type == "ai_context")
             // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
             send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()},
                   {"limits", Limits::to_json(Limits::current())}, {"snapshot", SettingsBridge::read_snapshot()}});
+        else if (type == "reliable_get") {
+            nlohmann::json info = Profiles::reliable_info();
+            info["type"]        = "reliable";
+            send(info);
+        } else if (type == "restore_reliable") {
+            nlohmann::json result = Profiles::restore_reliable();
+            result["type"]        = "restore_reliable_result";
+            send(result);
+        } else if (type == "manual_edits_get")
+            send({{"type", "manual_edits"}, {"items", Profiles::manual_edits()}});
         else if (type == "limits_get")
             send({{"type", "limits"}, {"limits", Limits::to_json(Limits::current())}});
         else if (type == "limits_set") {
@@ -189,8 +211,11 @@ void handle_page_message(const nlohmann::json& data)
         else if (type == "outcome_set") {
             const std::string note = Json::str(data, "note");
             Journal::set_outcome(Json::str(data, "conv"), Json::str(data, "outcome"), note);
-            send({{"type", "outcome_saved"},
-                  {"ok", Memory::set_outcome(Json::str(data, "machine"), Json::str(data, "at"), Json::str(data, "outcome"), note)}});
+            const bool saved_outcome = Memory::set_outcome(Json::str(data, "machine"), Json::str(data, "at"), Json::str(data, "outcome"), note);
+            // « Ça a marché » : ces réglages deviennent la version fiable de cette imprimante + filament (si c'est bien le couple en cours).
+            if (saved_outcome && Json::str(data, "outcome") == "ok" && Json::str(data, "machine") == Limits::machine_key())
+                Profiles::mark_reliable();
+            send({{"type", "outcome_saved"}, {"ok", saved_outcome}});
         } else if (type == "journal_add")
             Journal::record(data);
         else if (type == "journal_list")

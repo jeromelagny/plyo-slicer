@@ -84,7 +84,12 @@ class KeysFileTest(unittest.TestCase):
         self.assertEqual(keys["filament"]["fan_cooling_layer_time"], "float")
         self.assertEqual(keys["print"]["ironing_type"], "enum")
         self.assertNotIn("machine_start_gcode", keys["print"])
-        self.assertEqual(sum(len(v) for v in keys.values()), len(CATALOG["entries"]))
+        self.assertEqual(len(keys["print"]) + len(keys["filament"]), len(CATALOG["entries"]))
+
+    def test_keys_file_carries_french_titles(self):
+        keys = g.catalog_keys(CATALOG["entries"])
+        self.assertEqual(keys["titles"]["slow_down_layer_time"], "Seuil de vitesse maximale du ventilateur · Temps de couche")
+        self.assertEqual(set(keys["titles"]), set(keys["print"]) | set(keys["filament"]))
 
     def test_committed_keys_file_is_up_to_date(self):
         committed = json.loads((ROOT / "resources" / "plyo" / "catalog-keys.json").read_text(encoding="utf-8"))
