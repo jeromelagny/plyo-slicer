@@ -295,3 +295,10 @@ test('réglages appliqués sur les profils de la demande, pas sur ceux d’aujou
   assert.deepEqual(L.namesForApply({}, last), last);
   assert.deepEqual(L.namesForApply(null, null), { process: '', filament: '', printer: '' });
 });
+
+test('réglages écartés par les contrôles : une phrase honnête, seulement en mode catalogue', () => {
+  assert.equal(L.rejectedNote({ changes: [], rejected_count: 0 }), '');
+  assert.equal(L.rejectedNote({ rejected_count: 2 }), '', 'ancien mode : rien à dire');
+  assert.equal(L.rejectedNote({ changes: [], rejected_count: 1 }), 'J’ai écarté 1 réglage que j’avais envisagé : il s’éloignait trop de ta valeur actuelle ou sortait des limites. Ce que le message annonce peut donc ne pas être dans la fiche ; redemande-moi par petites étapes si besoin.');
+  assert.ok(L.rejectedNote({ changes: [{}], rejected_count: 3 }).startsWith('J’ai écarté 3 réglages que j’avais envisagés'));
+});

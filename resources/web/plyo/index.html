@@ -3032,6 +3032,8 @@
     } else if (a.message) {
       box.appendChild(rich(a.message));
     }
+    var dropped = Logic.rejectedNote(a);
+    if (dropped) box.appendChild(el('p', 'muted small', fr(dropped)));
 
     if (a.commands && a.commands.length) box.appendChild(renderCommands(entry, archived));
     var actions = renderActions(a.actions, archived);
