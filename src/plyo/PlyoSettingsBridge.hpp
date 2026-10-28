@@ -34,6 +34,10 @@ nlohmann::json undo_last(int expected_id = 0);
 // { "<clé>": nombre | booléen | texte | null, ... }. Première valeur des options « tableau », null pour « nil ».
 nlohmann::json read_snapshot();
 
+// Les profils imprimante, impression et filament en cours sont-ils ceux de la demande ? Les noms vides ne sont pas
+// comparés. null si oui, sinon {ok: false, text} (aucune modification ne doit alors être écrite).
+nlohmann::json check_profiles(const std::string& printer_name, const std::string& print_name, const std::string& filament_name);
+
 // Valeur d'une option du catalogue, typée (première valeur des options « tableau », null pour « nil »).
 nlohmann::json typed_value_of(const Slic3r::DynamicPrintConfig& config, const std::string& key, const std::string& kind);
 

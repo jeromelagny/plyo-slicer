@@ -16,6 +16,8 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/log/trivial.hpp>
 
+#include <ctime>
+
 namespace Plyo { namespace Profiles {
 
 using Slic3r::Preset;
@@ -29,6 +31,7 @@ Slic3r::PresetCollection& collection(Preset::Type type)
 }
 
 boost::filesystem::path reliable_file() { return Store::dir("fiable") / (file_stem(Limits::machine_key()) + ".json"); }
+boost::filesystem::path trial_file() { return Store::dir("essai") / (file_stem(Limits::machine_key()) + ".json"); }
 
 const char* scope_of(Preset::Type type) { return type == Preset::TYPE_PRINT ? "print" : "filament"; }
 
@@ -67,6 +70,7 @@ nlohmann::json save_applied()
     nlohmann::json    saved = nlohmann::json::array();
     std::string       error;
     const std::string old_machine = Limits::machine_key();
+    const std::time_t started     = std::time(nullptr);
     for (const Preset::Type type : {Preset::TYPE_PRINT, Preset::TYPE_FILAMENT}) {
         Slic3r::PresetCollection& col = collection(type);
         if (!col.current_is_dirty())
@@ -92,6 +96,12 @@ nlohmann::json save_applied()
             error = "Orca a refusé l'enregistrement";
             break;
         }
+        // Orca ne signale pas un disque qui refuse d'écrire : on vérifie que le fichier du profil a bien été écrit.
+        if (!written_since(col.get_selected_preset().file, started - 2)) {
+            BOOST_LOG_TRIVIAL(error) << "Plyo: le fichier du profil « " << name << " » n'a pas été écrit : " << col.get_selected_preset().file;
+            error = "Orca n'a pas pu écrire le fichier";
+            break;
+        }
         SettingsBridge::retarget_undo(type == Preset::TYPE_PRINT, from, name);
         saved.push_back({{"type", scope_of(type)}, {"name", name}, {"created", created}, {"from", from}});
     }
@@ -103,10 +113,21 @@ nlohmann::json save_applied()
     return {{"saved", saved}, {"save_error", error}};
 }
 
-bool mark_reliable()
+bool note_trial(const std::string& at)
 {
+    if (at.empty())
+        return false;
     const std::string date = boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time()).substr(0, 10);
-    return Store::write(reliable_file(), {{"machine", Limits::machine_key()}, {"date", date}, {"values", SettingsBridge::snapshot_raw()}});
+    return Store::write(trial_file(), {{"machine", Limits::machine_key()}, {"date", date}, {"at", at}, {"values", SettingsBridge::snapshot_raw()}});
+}
+
+bool mark_reliable(const std::string& at)
+{
+    // Les réglages qui ont marché sont ceux d'alors (pris juste après l'enregistrement du lot), pas ceux d'aujourd'hui.
+    const nlohmann::json trial = Sanitize::reliable(Store::read(trial_file()));
+    if (at.empty() || trial.empty() || trial["machine"] != Limits::machine_key() || trial["at"] != at)
+        return false;
+    return Store::write(reliable_file(), {{"machine", trial["machine"]}, {"date", trial["date"]}, {"at", trial["at"]}, {"values", trial["values"]}});
 }
 
 nlohmann::json reliable_info()

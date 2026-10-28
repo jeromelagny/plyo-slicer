@@ -288,3 +288,10 @@ test('collage : seules les images du presse-papier sont gardées', () => {
   assert.deepEqual(L.imageFilesFromClipboard(null), []);
   assert.deepEqual(L.imageFilesFromClipboard(undefined), []);
 });
+
+test('réglages appliqués sur les profils de la demande, pas sur ceux d’aujourd’hui', () => {
+  const last = { process: 'Profil B', filament: 'Filament B', printer: 'Imprimante B' };
+  assert.deepEqual(L.namesForApply({ names: { process: 'Profil A', filament: 'Filament A', printer: 'Imprimante A' } }, last), { process: 'Profil A', filament: 'Filament A', printer: 'Imprimante A' });
+  assert.deepEqual(L.namesForApply({}, last), last);
+  assert.deepEqual(L.namesForApply(null, null), { process: '', filament: '', printer: '' });
+});

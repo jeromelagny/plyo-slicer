@@ -81,7 +81,7 @@ json reliable(const json& stored)
                 kept[key] = value;
         values[scope] = kept;
     }
-    return {{"machine", Json::str(stored, "machine")}, {"date", Json::str(stored, "date", 40)}, {"values", values}};
+    return {{"machine", Json::str(stored, "machine")}, {"date", Json::str(stored, "date", 40)}, {"at", Json::str(stored, "at", 40)}, {"values", values}};
 }
 
 json journal(const json& stored)

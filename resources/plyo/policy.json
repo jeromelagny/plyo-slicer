@@ -1,8 +1,67 @@
 {
-  "forbidden_patterns": ["gcode", "post_process", "_notes", "compatible_", "_settings_id", "inherits", "_template", "gcode_substitutions", "filename_format", "thumbnails", "host_", "printhost", "authorization", "apikey", "cert"],
-  "forbidden_keys": ["name", "filament_type", "filament_vendor", "filament_id", "setting_id", "filament_colour", "default_filament_colour", "notes", "wipe_tower_x", "wipe_tower_y"],
-  "writable_kinds": ["int", "float", "percent", "float_or_percent", "bool", "enum"],
-  "confirm_patterns": ["temperature", "plate_temp", "_acceleration", "_jerk", "max_volumetric_speed", "pressure_advance", "retract_length", "z_hop"],
-  "confirm_keys": ["outer_wall_speed", "inner_wall_speed", "sparse_infill_speed", "internal_solid_infill_speed", "top_surface_speed", "initial_layer_speed", "travel_speed", "bridge_speed", "small_perimeter_speed", "gap_infill_speed", "enable_overhang_speed"],
+  "forbidden_patterns": [
+    "gcode",
+    "post_process",
+    "_notes",
+    "compatible_",
+    "_settings_id",
+    "inherits",
+    "_template",
+    "gcode_substitutions",
+    "filename_format",
+    "thumbnails",
+    "host_",
+    "printhost",
+    "authorization",
+    "apikey",
+    "cert"
+  ],
+  "forbidden_keys": [
+    "name",
+    "filament_type",
+    "filament_vendor",
+    "filament_id",
+    "setting_id",
+    "filament_colour",
+    "default_filament_colour",
+    "notes",
+    "wipe_tower_x",
+    "wipe_tower_y",
+    "nozzle_temperature_range_low",
+    "nozzle_temperature_range_high"
+  ],
+  "writable_kinds": [
+    "int",
+    "float",
+    "percent",
+    "float_or_percent",
+    "bool",
+    "enum"
+  ],
+  "confirm_patterns": [
+    "temperature",
+    "plate_temp",
+    "_acceleration",
+    "_jerk",
+    "max_volumetric_speed",
+    "pressure_advance",
+    "retract_length",
+    "z_hop",
+    "retraction_length",
+    "retraction_speed"
+  ],
+  "confirm_keys": [
+    "outer_wall_speed",
+    "inner_wall_speed",
+    "sparse_infill_speed",
+    "internal_solid_infill_speed",
+    "top_surface_speed",
+    "initial_layer_speed",
+    "travel_speed",
+    "bridge_speed",
+    "small_perimeter_speed",
+    "gap_infill_speed",
+    "enable_overhang_speed"
+  ],
   "delta_exceptions": {}
 }

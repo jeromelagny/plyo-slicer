@@ -2,6 +2,10 @@
 
 #include "PlyoJson.hpp"
 
+#include <boost/filesystem.hpp>
+
+#include <ctime>
+
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -37,6 +41,20 @@ inline std::string file_stem(const std::string& machine_key)
     for (int i = 15; i >= 0; --i, hash >>= 4)
         out[i] = digits[hash & 0xF];
     return out;
+}
+
+// Orca écrit un profil sans lever d'erreur même si le disque refuse (il se contente d'une ligne de journal) : on vérifie
+// donc que le fichier existe, n'est pas vide, et a été écrit depuis `since`.
+inline bool written_since(const boost::filesystem::path& path, std::time_t since)
+{
+    boost::system::error_code ec;
+    if (!boost::filesystem::is_regular_file(path, ec) || ec)
+        return false;
+    const auto size = boost::filesystem::file_size(path, ec);
+    if (ec || size == 0)
+        return false;
+    const std::time_t modified = boost::filesystem::last_write_time(path, ec);
+    return !ec && modified >= since;
 }
 
 }} // namespace Plyo::Profiles

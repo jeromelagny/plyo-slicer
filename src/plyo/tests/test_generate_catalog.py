@@ -122,6 +122,13 @@ class CatalogTest(unittest.TestCase):
         for k in ("machine_start_gcode", "layer_change_gcode", "filament_start_gcode", "filament_end_gcode", "post_process"):
             self.assertNotIn(k, BY_KEY)
 
+    def test_manufacturer_limits_are_not_writable_by_the_assistant(self):
+        for k in ("nozzle_temperature_range_low", "nozzle_temperature_range_high"):
+            self.assertNotIn(k, BY_KEY)
+
+    def test_retraction_length_needs_confirmation(self):
+        self.assertEqual(BY_KEY["filament_retraction_length"]["risk"], "confirm")
+
     def test_no_printer_preset_key(self):
         for k in ("nozzle_diameter", "machine_max_acceleration_x", "printable_area", "gcode_flavor", "retraction_length"):
             self.assertNotIn(k, BY_KEY)

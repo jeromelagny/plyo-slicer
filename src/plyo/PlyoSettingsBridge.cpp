@@ -442,10 +442,26 @@ nlohmann::json read_snapshot()
     for (const char* scope : {"print", "filament"}) {
         const DynamicPrintConfig& config = edited_config(std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT);
         for (const std::string& key : policy.keys(scope))
-            if (config.option(key) != nullptr)
-                snapshot[key] = typed_value_of(config, key, policy.kind(scope, key));
+            if (config.option(key) != nullptr) {
+                nlohmann::json value = typed_value_of(config, key, policy.kind(scope, key));
+                // Surcharge du filament « nil » (ex. rétraction) : la valeur qui compte est celle de l'imprimante.
+                if (value.is_null() && key.rfind("filament_", 0) == 0)
+                    value = typed_value_of(edited_configs().printer, key.substr(9), policy.kind(scope, key));
+                snapshot[key] = value;
+            }
     }
     return snapshot;
+}
+
+nlohmann::json check_profiles(const std::string& printer_name, const std::string& print_name, const std::string& filament_name)
+{
+    const bool same = (printer_name.empty() || printer_name == bundle().printers.get_edited_preset().name) &&
+                      (print_name.empty() || print_name == edited_name(Preset::TYPE_PRINT)) &&
+                      (filament_name.empty() || filament_name == edited_name(Preset::TYPE_FILAMENT));
+    if (same)
+        return nullptr;
+    return {{"ok", false},
+            {"text", "Tu as changé d'imprimante ou de profil depuis la proposition : redemande-moi, je regarde les réglages d'aujourd'hui. Aucune modification appliquée."}};
 }
 
 nlohmann::json snapshot_raw()

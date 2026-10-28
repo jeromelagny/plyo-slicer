@@ -2623,6 +2623,8 @@
       showError(code, function () { ask(note, photos); }, data);
     }
 
+    // Profils au moment de la question : les réglages proposés ne s'appliquent qu'à eux (le slicer refuse sinon).
+    var sentNames = lastValues && lastValues.context ? Logic.namesForApply(null, lastValues.context) : null;
     var plateParts = [];       // pièces sur le plateau au moment de la question (journal des pièces)
     aiContext().then(function (ctx) {
       if (ctx && ctx.plate && ctx.plate.objects) plateParts = ctx.plate.objects.map(function (o) { return o.name; });
@@ -2687,6 +2689,7 @@
       if (a.credits) setGauge(a.credits.gauge);
       // Mode catalogue : les réglages de n'importe quel onglet arrivent dans « changes » ; la fiche les montre comme les autres.
       a.suggestions = (a.suggestions || []).concat(Logic.catalogToSuggestions(a.changes));
+      if (sentNames) a.names = sentNames;
       // 2 000 caractères au plus : au-delà, l'API refuserait toutes les demandes suivantes de la conversation.
       target.history.push({ role: 'user', text: ((photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note).slice(0, 2000) });
       var hist = { role: 'assistant', text: summaryForHistory(a) };
@@ -2931,8 +2934,8 @@
         }));
       } };
       // `ask` : ces réglages viennent de l'IA, Plyo demandera plus tard si l'impression a marché.
-      var names = (lastValues && lastValues.context) || {};
-      window.orca.postMessage({ type: 'apply', changes: changes, print_name: names.process || '', filament_name: names.filament || '', why: (entry.data.defect && entry.data.defect.name) || '',
+      var names = Logic.namesForApply(entry.data, lastValues && lastValues.context);
+      window.orca.postMessage({ type: 'apply', changes: changes, print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: (entry.data.defect && entry.data.defect.name) || '',
         ask: { conv: conv ? conv.id : '', defect: (entry.data.defect && entry.data.defect.key) || '' } });
     });
     ignore.addEventListener('click', function () { sheet.remove(); });

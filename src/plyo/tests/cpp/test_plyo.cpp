@@ -475,3 +475,27 @@ TEST_CASE("Sanitize::reliable ne garde que des réglages sous forme de texte, pa
     CHECK(Plyo::Sanitize::reliable(json("n'importe quoi")).empty());
     CHECK(Plyo::Sanitize::reliable(json{{"machine", 3}}).empty());
 }
+
+// --- Revue finale : enregistrement vérifié, version fiable prise au bon moment ---
+TEST_CASE("Profiles::written_since : un fichier absent, vide ou ancien n'est pas un enregistrement réussi")
+{
+    using Plyo::Profiles::written_since;
+    const fs::path dir = fresh_dir();
+    const std::time_t now = std::time(nullptr);
+    CHECK_FALSE(written_since(dir / "absent.json", now - 5));
+    write_raw(dir / "vide.json", "");
+    CHECK_FALSE(written_since(dir / "vide.json", now - 5));
+    write_raw(dir / "frais.json", "{}");
+    CHECK(written_since(dir / "frais.json", now - 5));
+    write_raw(dir / "ancien.json", "{}");
+    fs::last_write_time(dir / "ancien.json", now - 3600);
+    CHECK_FALSE(written_since(dir / "ancien.json", now - 5));
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Sanitize::reliable garde l'instant du lot (at) quand il est donné")
+{
+    const json stored = {{"machine", "K2 | TPU"}, {"date", "2026-10-28"}, {"at", "2026-10-28T11:14:03"}, {"values", {{"print", {{"layer_height", "0.2"}}}}}};
+    CHECK(Plyo::Sanitize::reliable(stored)["at"] == "2026-10-28T11:14:03");
+    CHECK(Plyo::Sanitize::reliable(json{{"machine", "K2 | TPU"}})["at"] == "");
+}

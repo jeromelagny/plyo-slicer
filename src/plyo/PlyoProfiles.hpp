@@ -18,7 +18,10 @@ nlohmann::json save_applied();
 // Version fiable de l'imprimante + filament en cours : copie des réglages du catalogue, gardée par Plyo (dossier
 // plyo/fiable, invisible dans la liste des profils d'Orca), au moment où l'utilisateur dit « ça a marché ».
 // Remplacée seulement par un nouveau « ça a marché ».
-bool           mark_reliable();
+// Juste après l'enregistrement d'un lot (`at` : l'instant de son entrée dans la mémoire) : copie de ce que l'assistant
+// a appliqué, mise à l'essai. Elle devient la version fiable seulement si l'utilisateur répond « ça a marché » pour ce lot.
+bool           note_trial(const std::string& at);
+bool           mark_reliable(const std::string& at);
 nlohmann::json reliable_info(); // {"available": bool, "date": "2026-10-28"}
 // Remet la version fiable (annulable) puis enregistre les profils. Refuse si l'imprimante ou le filament ne sont plus
 // ceux de la version fiable. {ok, text, undo_id?, saved, save_error}

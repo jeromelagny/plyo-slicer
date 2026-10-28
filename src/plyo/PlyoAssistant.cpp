@@ -146,6 +146,12 @@ void handle_page_message(const nlohmann::json& data)
             // Chaque application réussie est notée dans la mémoire de la machine (imprimante + filament).
             nlohmann::json       before = SettingsBridge::read_values();
             const nlohmann::json manual = Profiles::manual_edits(); // enregistrées avec le lot
+            // Le lot a été proposé pour des profils précis : s'ils ont changé depuis, rien n'est écrit.
+            if (const nlohmann::json stale = SettingsBridge::check_profiles(Json::str(data, "printer_name"), Json::str(data, "print_name"), Json::str(data, "filament_name"));
+                !stale.is_null()) {
+                send_result(stale);
+                return;
+            }
             const nlohmann::json changes = data.contains("changes") ? data["changes"] : nlohmann::json();
             // Mode catalogue : les changements portent une « key » (clé d'Orca) au lieu d'un « id » de la liste d'origine.
             const bool           catalog = changes.is_array() && !changes.empty() && changes[0].is_object() && changes[0].contains("key");
@@ -171,8 +177,10 @@ void handle_page_message(const nlohmann::json& data)
                 SettingsBridge::set_memory_key(Json::integer(result, "undo_id", 0), key);
                 // Réglages venus d'une réponse de l'IA : notés aussi dans le journal de la pièce.
                 const nlohmann::json noted = Memory::for_current();
-                if (ask.is_object() && !key.empty() && !noted.empty())
+                if (ask.is_object() && !key.empty() && !noted.empty()) {
                     Journal::set_changes(Json::str(ask, "conv"), Json::arr(noted[0], "changes"));
+                    Profiles::note_trial(Json::str(noted[0], "at")); // devient la version fiable si l'impression réussit
+                }
             }
             send_result(result);
         } else if (type == "undo") {
@@ -214,7 +222,7 @@ void handle_page_message(const nlohmann::json& data)
             const bool saved_outcome = Memory::set_outcome(Json::str(data, "machine"), Json::str(data, "at"), Json::str(data, "outcome"), note);
             // « Ça a marché » : ces réglages deviennent la version fiable de cette imprimante + filament (si c'est bien le couple en cours).
             if (saved_outcome && Json::str(data, "outcome") == "ok" && Json::str(data, "machine") == Limits::machine_key())
-                Profiles::mark_reliable();
+                Profiles::mark_reliable(Json::str(data, "at"));
             send({{"type", "outcome_saved"}, {"ok", saved_outcome}});
         } else if (type == "journal_add")
             Journal::record(data);
