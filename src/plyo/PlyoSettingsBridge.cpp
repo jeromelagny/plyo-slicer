@@ -1,5 +1,6 @@
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoLimits.hpp"
 
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
@@ -374,6 +375,14 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
             return {{"ok", false},
                     {"text", std::string("Refusé : ") + param->label + " à " + format_number(value, param->kind) + " " + param->unit +
                                  " est trop haute pour ta buse (" + format_number(max, param->kind) + " " + param->unit + " au plus). Aucune modification appliquée."}};
+
+        // Limites du fabricant : refus, sauf si l'utilisateur a coché la ligne lui-même (sortie de plage confirmée).
+        const Limits::Verdict verdict = Limits::check(id, value, Limits::current());
+        if (verdict != Limits::Verdict::Ok && !(change.contains("confirmed_outside_range") && change["confirmed_outside_range"] == true))
+            return {{"ok", false},
+                    {"text", std::string("Refusé : ") + param->label + " à " + format_number(value, param->kind) + " " + param->unit +
+                                 (verdict == Limits::Verdict::Below ? " est sous" : " est au-dessus de") +
+                                 " la plage du fabricant de ton filament. Aucune modification appliquée."}};
 
         const auto [type, key] = target(*param, edited_configs());
         planned.push_back({param, key, value, to_config_string(value, param->kind), type});

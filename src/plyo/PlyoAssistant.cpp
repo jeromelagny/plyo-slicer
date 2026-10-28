@@ -8,6 +8,7 @@
 #include "PlyoFirstSteps.hpp"
 #include "PlyoHighlight.hpp"
 #include "PlyoJournal.hpp"
+#include "PlyoLimits.hpp"
 #include "PlyoLoginDialog.hpp"
 #include "PlyoMemory.hpp"
 #include "PlyoModelImport.hpp"
@@ -162,7 +163,14 @@ void handle_page_message(const nlohmann::json& data)
             send_result(result);
         } else if (type == "ai_context")
             // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
-            send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()}});
+            send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()},
+                  {"limits", Limits::to_json(Limits::current())}});
+        else if (type == "limits_get")
+            send({{"type", "limits"}, {"limits", Limits::to_json(Limits::current())}});
+        else if (type == "limits_set") {
+            const bool ok = Limits::set(data.contains("limits") ? data["limits"] : nlohmann::json::object());
+            send({{"type", "limits"}, {"ok", ok}, {"limits", Limits::to_json(Limits::current())}});
+        }
         else if (type == "outcome_pending")
             send({{"type", "outcome_pending"}, {"items", Memory::pending()}});
         else if (type == "outcome_set") {

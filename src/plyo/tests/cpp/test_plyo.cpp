@@ -6,6 +6,7 @@
 #include "../../PlyoJson.hpp"
 #include "../../PlyoSanitize.hpp"
 #include "../../PlyoDiscoveryLogic.hpp"
+#include "../../PlyoLimitsLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -274,4 +275,46 @@ TEST_CASE("Discovery n'accepte que des connexions locales connues")
     CHECK_FALSE(valid_host("192.168.1.21:99999"));
     CHECK_FALSE(valid_host("192.168.1.21:80/../x"));
     CHECK_FALSE(valid_host("exemple.com"));
+}
+
+// --- Limites du fabricant : bornes strictes sur les températures ---
+TEST_CASE("Limits::check : bornes incluses, dehors refusé, autres réglages ignorés")
+{
+    Plyo::Limits::Range r;
+    r.nozzle_min = 225;
+    r.nozzle_max = 245;
+    r.bed_min    = 60;
+    r.bed_max    = 80;
+    using V = Plyo::Limits::Verdict;
+    CHECK(Plyo::Limits::check("nozzle_temp", 225, r) == V::Ok);
+    CHECK(Plyo::Limits::check("nozzle_temp", 245, r) == V::Ok);
+    CHECK(Plyo::Limits::check("nozzle_temp", 215, r) == V::Below);
+    CHECK(Plyo::Limits::check("nozzle_temp_initial", 250, r) == V::Above);
+    CHECK(Plyo::Limits::check("bed_temp", 55, r) == V::Below);
+    CHECK(Plyo::Limits::check("bed_temp_initial", 85, r) == V::Above);
+    CHECK(Plyo::Limits::check("layer_height", 0.2, r) == V::Ok);
+    CHECK(Plyo::Limits::check("nozzle_temp", 100, Plyo::Limits::Range{}) == V::Ok);
+}
+
+TEST_CASE("Sanitize::limits garde les plages valides et jette le reste")
+{
+    const json stored = {{"K2 | TPU", {{"nozzle_min", 225}, {"nozzle_max", 245}, {"bed_min", "chaud"}}},
+                         {"inversé", {{"nozzle_min", 245}, {"nozzle_max", 225}}},
+                         {"absurde", {{"nozzle_max", 900}}},
+                         {"pas un objet", 3}};
+    const json out = Plyo::Sanitize::limits(stored);
+    REQUIRE(out.contains("K2 | TPU"));
+    CHECK(out["K2 | TPU"] == json{{"nozzle_min", 225}, {"nozzle_max", 245}});
+    CHECK_FALSE(out.contains("inversé"));
+    CHECK_FALSE(out.contains("absurde"));
+    CHECK_FALSE(out.contains("pas un objet"));
+    CHECK(Plyo::Sanitize::limits(json("n'importe quoi")) == json::object());
+}
+
+TEST_CASE("Limits::from_json et to_json font l'aller-retour")
+{
+    const auto r = Plyo::Limits::from_json(json{{"nozzle_min", 225}, {"bed_max", 80}});
+    CHECK(r.nozzle_min.value() == 225);
+    CHECK_FALSE(r.nozzle_max.has_value());
+    CHECK(Plyo::Limits::to_json(r) == json{{"nozzle_min", 225}, {"bed_max", 80}});
 }

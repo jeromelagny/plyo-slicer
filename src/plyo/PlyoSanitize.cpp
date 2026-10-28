@@ -36,6 +36,37 @@ json memory(const json& stored)
     return out;
 }
 
+json limits(const json& stored)
+{
+    json out = json::object();
+    if (!stored.is_object())
+        return out;
+    for (const auto& [machine, item] : stored.items()) {
+        if (!item.is_object())
+            continue;
+        json   kept = json::object();
+        double v[4] = {0, 400, 0, 150};
+        bool   ok   = true;
+        const char* keys[4] = {"nozzle_min", "nozzle_max", "bed_min", "bed_max"};
+        const double top[4] = {400, 400, 150, 150};
+        for (int i = 0; i < 4; ++i) {
+            const auto it = item.find(keys[i]);
+            if (it == item.end() || !it->is_number())
+                continue;
+            const double x = it->get<double>();
+            if (!(x >= 0 && x <= top[i])) {
+                ok = false;
+                break;
+            }
+            v[i]       = x;
+            kept[keys[i]] = x;
+        }
+        if (ok && v[0] <= v[1] && v[2] <= v[3] && !kept.empty())
+            out[machine] = kept;
+    }
+    return out;
+}
+
 json journal(const json& stored)
 {
     json out = json::array();

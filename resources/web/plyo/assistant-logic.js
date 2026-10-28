@@ -307,7 +307,28 @@
     return { restore: ok, followUp: ok && !!hasFollowUp, error: !ok && !auto };
   }
 
-  var api = { gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  // Limites du fabricant (fiche technique du filament) : phrase d'état, et lecture des quatre champs de saisie.
+  function limitsLine(l) {
+    var has = function (a, b) { return l && typeof l[a] === 'number' && typeof l[b] === 'number'; };
+    var nozzle = has('nozzle_min', 'nozzle_max'), bed = has('bed_min', 'bed_max');
+    if (!nozzle && !bed) return 'Limites du fabricant à renseigner';
+    return 'Fabricant : buse ' + (nozzle ? l.nozzle_min + '–' + l.nozzle_max + ' °C' : 'à renseigner') + ', plateau ' + (bed ? l.bed_min + '–' + l.bed_max + ' °C' : 'à renseigner');
+  }
+  var LIMIT_TOP = { nozzle_min: 400, nozzle_max: 400, bed_min: 150, bed_max: 150 };
+  function parseLimits(raw) {
+    var limits = {};
+    for (var key in LIMIT_TOP) {
+      var text = raw && raw[key] != null ? String(raw[key]).trim() : '';
+      if (!text) continue;
+      var n = Number(text.replace(',', '.'));
+      if (!isFinite(n) || n < 0 || n > LIMIT_TOP[key]) return { ok: false, text: 'Une température n’est pas valable (0 à ' + LIMIT_TOP[key] + ' °C).' };
+      limits[key] = n;
+    }
+    if (limits.nozzle_min > limits.nozzle_max || limits.bed_min > limits.bed_max) return { ok: false, text: 'Le minimum doit rester sous le maximum.' };
+    return { ok: true, limits: limits };
+  }
+
+  var api = { limitsLine: limitsLine, parseLimits: parseLimits, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

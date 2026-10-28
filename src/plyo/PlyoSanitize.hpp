@@ -19,4 +19,8 @@ nlohmann::json journal(const nlohmann::json& stored);
 // calibrations.json : { machine : { test : {value (nombre), date, preset} } }.
 nlohmann::json calibrations(const nlohmann::json& stored);
 
+// limites.json : { machine : {nozzle_min, nozzle_max, bed_min, bed_max} } ; plages valides seulement (nombres,
+// buse 0–400 °C, plateau 0–150 °C, min ≤ max).
+nlohmann::json limits(const nlohmann::json& stored);
+
 }} // namespace Plyo::Sanitize

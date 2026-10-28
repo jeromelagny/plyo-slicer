@@ -222,3 +222,17 @@ test('gaugeResetText : la part incluse se renouvelle, les crédits ajoutés rest
   assert.match(L.gaugeResetText({ ...base, extra_pct: 0 }), /^Se recharge le 1er novembre/);
   assert.match(L.gaugeResetText({ ...base, extra_pct: 40 }), /^La part incluse dans ta formule se renouvelle le 1er novembre/);
 });
+
+test('ligne des limites du fabricant', () => {
+  assert.equal(L.limitsLine({ nozzle_min: 225, nozzle_max: 245, bed_min: 60, bed_max: 80 }), 'Fabricant : buse 225–245 °C, plateau 60–80 °C');
+  assert.equal(L.limitsLine({ nozzle_min: 225, nozzle_max: 245 }), 'Fabricant : buse 225–245 °C, plateau à renseigner');
+  assert.equal(L.limitsLine({}), 'Limites du fabricant à renseigner');
+  assert.equal(L.limitsLine(null), 'Limites du fabricant à renseigner');
+});
+
+test('saisie des limites : vides ignorés, min plus grand que max refusé', () => {
+  assert.deepEqual(L.parseLimits({ nozzle_min: '225', nozzle_max: '245', bed_min: '', bed_max: ' ' }), { ok: true, limits: { nozzle_min: 225, nozzle_max: 245 } });
+  assert.equal(L.parseLimits({ nozzle_min: '250', nozzle_max: '245' }).ok, false);
+  assert.equal(L.parseLimits({ nozzle_max: 'abc' }).ok, false);
+  assert.equal(L.parseLimits({ nozzle_max: '900' }).ok, false);
+});

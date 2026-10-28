@@ -371,6 +371,7 @@
       <hr>
       <div class="group" role="presentation">Imprimante</div>
       <button type="button" id="m-setup" role="menuitem" data-icon="plus">Ajouter une imprimante</button>
+      <button type="button" id="m-limits" role="menuitem" data-icon="bars">Limites du fabricant du filament</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
       <div class="who" id="m-email"></div>
@@ -861,6 +862,41 @@
     });
   }
 
+  // « Limites du fabricant » : les températures de la fiche technique du filament, bornes strictes pour l'assistant.
+  var limitsView = null;
+  function openLimits() {
+    openDrawer('Limites du fabricant', function (body) {
+      body.appendChild(el('p', 'muted', 'Les températures conseillées par le fabricant de ton filament (sur la bobine ou la fiche technique). L’assistant ne propose jamais de sortir de cette plage sans te le dire.'));
+      var status = el('p', '', 'Lecture…');
+      var inputs = {};
+      [['nozzle_min', 'Buse, minimum (°C)'], ['nozzle_max', 'Buse, maximum (°C)'], ['bed_min', 'Plateau, minimum (°C)'], ['bed_max', 'Plateau, maximum (°C)']].forEach(function (f) {
+        var wrap = el('label', 'temp-field', f[1]);
+        var input = el('input', 'field');
+        input.type = 'text';
+        input.inputMode = 'decimal';
+        inputs[f[0]] = input;
+        wrap.appendChild(input);
+        body.appendChild(wrap);
+      });
+      body.appendChild(status);
+      body.appendChild(button('Enregistrer', function () {
+        var raw = {};
+        Object.keys(inputs).forEach(function (k) { raw[k] = inputs[k].value; });
+        var parsed = window.PlyoLogic.parseLimits(raw);
+        if (!parsed.ok) { status.textContent = parsed.text; return; }
+        window.orca.postMessage({ type: 'limits_set', limits: parsed.limits });
+      }, 'btn primary'));
+      limitsView = { status: status, inputs: inputs };
+      window.orca.postMessage({ type: 'limits_get' });
+    });
+  }
+  function onLimits(msg) {
+    if (!limitsView) return;
+    var l = msg.limits || {};
+    Object.keys(limitsView.inputs).forEach(function (k) { limitsView.inputs[k].value = typeof l[k] === 'number' ? String(l[k]) : ''; });
+    limitsView.status.textContent = msg.ok === false ? 'Ces températures ne sont pas valables : rien n’a été enregistré.' : window.PlyoLogic.limitsLine(l);
+  }
+
   function openConversations() {
     openDrawer('Mes conversations', function (body) {
       body.appendChild(el('p', 'muted', 'Tes 30 dernières conversations restent sur cet ordinateur.'));
@@ -1287,6 +1323,7 @@
   $('m-convs').addEventListener('click', openConversations);
   $('m-usage').addEventListener('click', openUsage);
   $('m-parts').addEventListener('click', function () { menu.classList.add('hidden'); openJournal(); });
+  $('m-limits').addEventListener('click', openLimits);
   $('m-setup').addEventListener('click', function () { menu.classList.add('hidden'); startSetup(); renderTour(); });
   $('m-check').addEventListener('click', function () { menu.classList.add('hidden'); checkPlate(); });
   $('gauge').addEventListener('click', openUsage);
@@ -2559,6 +2596,7 @@
       if (calibHistory.length) body.calibrations = calibHistory;
       if (ctx && ctx.plate) body.plate = ctx.plate;
       if (ctx && ctx.memory && ctx.memory.length) body.memory = ctx.memory;
+      if (ctx && ctx.limits && Object.keys(ctx.limits).length) body.filament_limits = ctx.limits;
       return apiFetch('/api/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify(body), signal: controller.signal });
     }).then(function (response) {
       if (response.status === 401) return { error: 'unauthorized' };
@@ -3000,6 +3038,8 @@
       $('focus-chip').classList.remove('hidden');
     } else if (msg.type === 'ai_context') {
       if (contextWaiter) contextWaiter(msg);
+    } else if (msg.type === 'limits') {
+      onLimits(msg);
     } else if (msg.type === 'journal') {
       fillJournal(msg.events || []);
     } else if (msg.type === 'printer_scan_result') {
