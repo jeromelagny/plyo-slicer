@@ -278,3 +278,13 @@ test('texte après l’enregistrement du profil par l’assistant', () => {
   assert.equal(L.savedText({ saved: [], save_error: 'disque plein' }), 'Appliqué, mais je n’ai pas pu enregistrer le profil (disque plein). Enregistre-le toi-même si tu veux le garder.');
   assert.equal(L.savedText({}), '');
 });
+
+test('collage : seules les images du presse-papier sont gardées', () => {
+  const item = (kind, type, file) => ({ kind, type, getAsFile: () => file });
+  const a = { name: 'a.png' }, b = { name: 'b.jpg' };
+  const items = [item('string', 'text/plain', null), item('file', 'image/png', a), item('file', 'application/pdf', { name: 'x.pdf' }), item('file', 'image/jpeg', b), item('file', 'image/png', null)];
+  assert.deepEqual(L.imageFilesFromClipboard(items), [a, b]);
+  assert.deepEqual(L.imageFilesFromClipboard([]), []);
+  assert.deepEqual(L.imageFilesFromClipboard(null), []);
+  assert.deepEqual(L.imageFilesFromClipboard(undefined), []);
+});

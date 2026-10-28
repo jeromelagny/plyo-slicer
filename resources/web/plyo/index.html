@@ -1476,6 +1476,14 @@
 
   // Glisser-déposer sur le panneau : mêmes règles que le trombone.
   document.addEventListener('dragover', function (e) { e.preventDefault(); });
+  // Coller une image (capture d'écran, copie d'image) dans le champ de saisie la joint à la demande, comme le glisser-déposer.
+  noteInput.addEventListener('paste', function (e) {
+    var files = Logic.imageFilesFromClipboard(e.clipboardData && e.clipboardData.items);
+    if (!files.length) return; // du texte : le collage normal continue
+    e.preventDefault();
+    addFiles(files);
+  });
+
   document.addEventListener('drop', function (e) {
     e.preventDefault();
     var files = Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []);
