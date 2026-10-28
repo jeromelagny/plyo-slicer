@@ -1,8 +1,11 @@
 #pragma once
 
+#include "PlyoLimitsLogic.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -35,5 +38,30 @@ private:
 // Valeur d'une option d'Orca sérialisée en texte → JSON (nombre, booléen, texte), ou null si illisible ou « nil ».
 // Un pourcentage écrit « 15% » reste un texte ; sans « % » c'est un nombre.
 nlohmann::json typed_value(const std::string& kind, const std::string& text);
+
+// Ce que le slicer sait d'une option d'Orca (ConfigOptionDef) pour vérifier un changement.
+struct OptionInfo
+{
+    std::string                 kind; // int, float, percent, float_or_percent, bool, enum
+    std::optional<double>       min, max;
+    std::vector<std::string>    enum_values;
+};
+
+struct CheckResult
+{
+    bool        ok = true;
+    std::string text; // « Refusé : … » (français) quand !ok
+};
+
+// Le slicer fait autorité : type, bornes d'Orca, puis limites du fabricant pour les températures (`limit_id` non vide).
+// `confirmed_outside` : l'utilisateur a coché lui-même une ligne hors plage du fabricant.
+CheckResult check_change(const std::string& label, const OptionInfo& info, const nlohmann::json& value, const Limits::Range& limits,
+                         const std::string& limit_id, bool confirmed_outside);
+
+// Valeur comme Orca la relit (point décimal, « 15% » pour un pourcentage, 1/0 pour un booléen). Vide si le type ne convient pas.
+std::string to_serialized(const OptionInfo& info, const nlohmann::json& value);
+
+// Identifiant des limites du fabricant pour une clé de température (nozzle_temp, bed_temp…), vide pour les autres.
+std::string limit_id_of(const std::string& key);
 
 }} // namespace Plyo::Catalog

@@ -34,6 +34,11 @@ nlohmann::json undo_last(int expected_id = 0);
 // { "<clé>": nombre | booléen | texte | null, ... }. Première valeur des options « tableau », null pour « nil ».
 nlohmann::json read_snapshot();
 
+// Changements du mode catalogue : [{"key", "value", "confirmed_outside_range"?, "label"?}, ...]. Tout ou rien, vérifiés
+// par Catalog::check_change ; refusés si le profil impression ou filament n'est plus celui de la proposition.
+// Renvoie {ok, text, undo_id, applied: [{id, label, before, after}]}.
+nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::string& print_name, const std::string& filament_name);
+
 // Plage Plyo d'une clé de configuration de la liste blanche : {min, max, unit}, ou null hors liste blanche.
 nlohmann::json whitelist_range(const std::string& key);
 

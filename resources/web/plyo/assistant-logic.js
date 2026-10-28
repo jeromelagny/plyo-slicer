@@ -328,7 +328,26 @@
     return { ok: true, limits: limits };
   }
 
-  var api = { limitsLine: limitsLine, parseLimits: parseLimits, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  // Réglages du catalogue (mode catalogue de l'API) : ils prennent la forme des propositions de la fiche, avec de quoi
+  // les afficher sans dépendre de la liste des réglages lus. `confirm` : réglage sensible ; `beyond` : hors plage du fabricant.
+  function catalogToSuggestions(changes) {
+    if (!Array.isArray(changes)) return [];
+    return changes.filter(function (c) { return c && typeof c.key === 'string'; }).map(function (c) {
+      return { id: c.key, delta: null, value: c.value, reason: c.reason || '', catalog: true, label: c.title_fr || c.key, tab: c.tab_fr || '', unit: c.unit || '', before: c.before === undefined ? null : c.before, beforeText: c.before_fr || '', valueText: c.value_fr || '', confirm: !!c.needs_confirmation, beyond: !!c.beyond_manufacturer };
+    });
+  }
+  function defaultChecked(s) { return !(s && (s.confirm || s.beyond)); }
+  function groupByTab(list) {
+    var groups = [], index = {};
+    (list || []).forEach(function (s) {
+      var tab = s.tab || '';
+      if (!(tab in index)) { index[tab] = groups.length; groups.push({ tab: tab, items: [] }); }
+      groups[index[tab]].items.push(s);
+    });
+    return groups;
+  }
+
+  var api = { catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

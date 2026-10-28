@@ -236,3 +236,26 @@ test('saisie des limites : vides ignorés, min plus grand que max refusé', () =
   assert.equal(L.parseLimits({ nozzle_max: 'abc' }).ok, false);
   assert.equal(L.parseLimits({ nozzle_max: '900' }).ok, false);
 });
+
+const catalogChange = (over) => ({ key: 'slow_down_layer_time', title_fr: 'Seuil de vitesse maximale du ventilateur · Temps de couche', tab_fr: 'Refroidissement', unit: 's', before: 8, value: 20, before_fr: '', value_fr: '', reason: 'r', risk: 'free', beyond_manufacturer: false, needs_confirmation: false, ...over });
+
+test('réglages du catalogue : ils prennent la forme des propositions de la fiche', () => {
+  const [s] = L.catalogToSuggestions([catalogChange({})]);
+  assert.deepEqual(s, { id: 'slow_down_layer_time', delta: null, value: 20, reason: 'r', catalog: true, label: 'Seuil de vitesse maximale du ventilateur · Temps de couche', tab: 'Refroidissement', unit: 's', before: 8, beforeText: '', valueText: '', confirm: false, beyond: false });
+  assert.deepEqual(L.catalogToSuggestions(undefined), []);
+  assert.deepEqual(L.catalogToSuggestions('nimporte quoi'), []);
+});
+
+test('réglages du catalogue : cochés par défaut sauf les réglages sensibles ou hors plage du fabricant', () => {
+  const [calm, risky, beyond] = L.catalogToSuggestions([catalogChange({}), catalogChange({ key: 'nozzle_temperature', needs_confirmation: true }), catalogChange({ key: 'a', beyond_manufacturer: true, needs_confirmation: true })]);
+  assert.equal(L.defaultChecked(calm), true);
+  assert.equal(L.defaultChecked(risky), false);
+  assert.equal(L.defaultChecked(beyond), false);
+  assert.equal(L.defaultChecked({ id: 'nozzle_temp', delta: -5, value: null }), true);
+});
+
+test('réglages groupés par onglet, dans l’ordre où ils apparaissent', () => {
+  const list = L.catalogToSuggestions([catalogChange({ key: 'a', tab_fr: 'Refroidissement' }), catalogChange({ key: 'b', tab_fr: 'Qualité' }), catalogChange({ key: 'c', tab_fr: 'Refroidissement' })]);
+  const groups = L.groupByTab(list.concat([{ id: 'nozzle_temp', delta: -5, value: null }]));
+  assert.deepEqual(groups.map((g) => [g.tab, g.items.map((s) => s.id)]), [['Refroidissement', ['a', 'c']], ['Qualité', ['b']], ['', ['nozzle_temp']]]);
+});

@@ -367,3 +367,63 @@ TEST_CASE("Catalog::typed_value rend le nombre, le booléen, le texte ou null")
     CHECK(typed_value("float", "nil").is_null());
     CHECK(typed_value("float", "abc").is_null());
 }
+
+// --- Vérification d'un changement du catalogue, côté slicer (il fait autorité) ---
+namespace {
+Plyo::Catalog::OptionInfo info(const std::string& kind, std::optional<double> lo = std::nullopt, std::optional<double> hi = std::nullopt,
+                               std::vector<std::string> values = {})
+{
+    return {kind, lo, hi, std::move(values)};
+}
+const Plyo::Limits::Range no_limits;
+} // namespace
+
+TEST_CASE("Catalog::check_change : type et bornes d'Orca")
+{
+    using Plyo::Catalog::check_change;
+    CHECK(check_change("Temps de couche", info("float", 0, 1000), 20, no_limits, "", false).ok);
+    CHECK_FALSE(check_change("Temps de couche", info("float", 0, 1000), 1000000, no_limits, "", false).ok);
+    CHECK_FALSE(check_change("Couches", info("int", 1, 10), 4.5, no_limits, "", false).ok);
+    CHECK_FALSE(check_change("Couches", info("int", 1, 10), "4", no_limits, "", false).ok);
+    CHECK_FALSE(check_change("Pression", info("bool"), "oui", no_limits, "", false).ok);
+    CHECK(check_change("Pression", info("bool"), true, no_limits, "", false).ok);
+    CHECK(check_change("Lissage", info("enum", {}, {}, {"no ironing", "top"}), "top", no_limits, "", false).ok);
+    CHECK_FALSE(check_change("Lissage", info("enum", {}, {}, {"no ironing", "top"}), "partout", no_limits, "", false).ok);
+    CHECK_FALSE(check_change("Débit", info("float"), std::nan(""), no_limits, "", false).ok);
+}
+
+TEST_CASE("Catalog::check_change : limites du fabricant, avec confirmation explicite")
+{
+    using Plyo::Catalog::check_change;
+    Plyo::Limits::Range r;
+    r.nozzle_min = 225;
+    r.nozzle_max = 245;
+    CHECK_FALSE(check_change("Température de buse", info("int", 0), 215, r, "nozzle_temp", false).ok);
+    CHECK(check_change("Température de buse", info("int", 0), 215, r, "nozzle_temp", true).ok);
+    CHECK(check_change("Température de buse", info("int", 0), 225, r, "nozzle_temp", false).ok);
+    CHECK(check_change("Autre", info("int", 0), 215, r, "", false).ok);
+}
+
+TEST_CASE("Catalog::to_serialized écrit la valeur comme Orca la relit")
+{
+    using Plyo::Catalog::to_serialized;
+    CHECK(to_serialized(info("int"), 230) == "230");
+    CHECK(to_serialized(info("float"), 0.95) == "0.95");
+    CHECK(to_serialized(info("bool"), true) == "1");
+    CHECK(to_serialized(info("bool"), false) == "0");
+    CHECK(to_serialized(info("percent"), 15) == "15%");
+    CHECK(to_serialized(info("percent"), "15%") == "15%");
+    CHECK(to_serialized(info("float_or_percent"), 0.4) == "0.4");
+    CHECK(to_serialized(info("float_or_percent"), "120%") == "120%");
+    CHECK(to_serialized(info("enum"), "top") == "top");
+}
+
+TEST_CASE("Catalog::limit_id_of relie les clés de température aux limites du fabricant")
+{
+    using Plyo::Catalog::limit_id_of;
+    CHECK(limit_id_of("nozzle_temperature") == "nozzle_temp");
+    CHECK(limit_id_of("nozzle_temperature_initial_layer") == "nozzle_temp_initial");
+    CHECK(limit_id_of("textured_plate_temp") == "bed_temp");
+    CHECK(limit_id_of("hot_plate_temp_initial_layer") == "bed_temp_initial");
+    CHECK(limit_id_of("layer_height").empty());
+}

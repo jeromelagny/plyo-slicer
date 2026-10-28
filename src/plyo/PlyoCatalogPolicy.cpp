@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <locale>
 #include <sstream>
 
@@ -91,6 +92,100 @@ nlohmann::json typed_value(const std::string& kind, const std::string& text)
     if (!(in >> value) || !std::isfinite(value) || !in.eof())
         return nullptr;
     return kind == "int" ? nlohmann::json(static_cast<long long>(std::llround(value))) : nlohmann::json(value);
+}
+
+namespace {
+
+bool is_percent_text(const nlohmann::json& v) { return v.is_string() && !v.get<std::string>().empty() && v.get<std::string>().back() == '%'; }
+
+// Nombre d'une valeur JSON : nombre, ou texte « 15% » (pourcentage).
+std::optional<double> number_of(const nlohmann::json& v)
+{
+    if (v.is_number())
+        return v.get<double>();
+    if (is_percent_text(v)) {
+        std::istringstream in(v.get<std::string>().substr(0, v.get<std::string>().size() - 1));
+        in.imbue(std::locale::classic());
+        double x = 0;
+        if (in >> x && in.eof())
+            return x;
+    }
+    return std::nullopt;
+}
+
+std::string plain(double value)
+{
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out << std::setprecision(6) << std::round(value * 1000.) / 1000.;
+    return out.str();
+}
+
+CheckResult refuse(const std::string& label, const std::string& why) { return {false, "Refusé : " + label + " " + why + " Aucune modification appliquée."}; }
+
+} // namespace
+
+CheckResult check_change(const std::string& label, const OptionInfo& info, const nlohmann::json& value, const Limits::Range& limits,
+                         const std::string& limit_id, bool confirmed_outside)
+{
+    if (info.kind == "bool")
+        return value.is_boolean() ? CheckResult{} : refuse(label, "attend oui ou non.");
+    if (info.kind == "enum") {
+        const bool known = value.is_string() && std::find(info.enum_values.begin(), info.enum_values.end(), value.get<std::string>()) != info.enum_values.end();
+        return known ? CheckResult{} : refuse(label, "n'accepte pas ce choix.");
+    }
+    if (info.kind != "int" && info.kind != "float" && info.kind != "percent" && info.kind != "float_or_percent")
+        return refuse(label, "n'est pas un réglage que l'assistant peut modifier.");
+    if (info.kind != "percent" && info.kind != "float_or_percent" && !value.is_number())
+        return refuse(label, "attend un nombre.");
+    const std::optional<double> number = number_of(value);
+    if (!number || !std::isfinite(*number))
+        return refuse(label, "attend un nombre.");
+    if (info.kind == "int" && std::abs(*number - std::round(*number)) > 1e-9)
+        return refuse(label, "attend un nombre entier.");
+    if ((info.min && *number < *info.min - 1e-9) || (info.max && *number > *info.max + 1e-9))
+        return refuse(label, "à " + plain(*number) + " est hors de la plage autorisée par Orca.");
+    if (!limit_id.empty() && !confirmed_outside) {
+        const Limits::Verdict verdict = Limits::check(limit_id, *number, limits);
+        if (verdict != Limits::Verdict::Ok)
+            return refuse(label, "à " + plain(*number) + (verdict == Limits::Verdict::Below ? " est sous" : " est au-dessus de") + " la plage du fabricant de ton filament.");
+    }
+    return {};
+}
+
+std::string to_serialized(const OptionInfo& info, const nlohmann::json& value)
+{
+    if (info.kind == "enum")
+        return value.is_string() ? value.get<std::string>() : std::string();
+    if (info.kind == "bool")
+        return value.is_boolean() ? (value.get<bool>() ? "1" : "0") : std::string();
+    const std::optional<double> number = number_of(value);
+    if (!number)
+        return std::string();
+    if (info.kind == "int")
+        return std::to_string(static_cast<long long>(std::llround(*number)));
+    if (info.kind == "percent")
+        return plain(*number) + "%";
+    if (info.kind == "float_or_percent" && is_percent_text(value))
+        return plain(*number) + "%";
+    return plain(*number);
+}
+
+std::string limit_id_of(const std::string& key)
+{
+    if (key == "nozzle_temperature")
+        return "nozzle_temp";
+    if (key == "nozzle_temperature_initial_layer")
+        return "nozzle_temp_initial";
+    const auto ends_with = [&](const char* suffix) {
+        const std::string s(suffix);
+        return key.size() >= s.size() && key.compare(key.size() - s.size(), s.size(), s) == 0;
+    };
+    if (ends_with("_plate_temp"))
+        return "bed_temp";
+    if (ends_with("_plate_temp_initial_layer"))
+        return "bed_temp_initial";
+    return std::string();
 }
 
 }} // namespace Plyo::Catalog

@@ -143,11 +143,24 @@ void handle_page_message(const nlohmann::json& data)
             send_values();
         else if (type == "apply") {
             // Chaque application réussie est notée dans la mémoire de la machine (imprimante + filament).
-            const nlohmann::json before = SettingsBridge::read_values();
-            const nlohmann::json result = SettingsBridge::apply_changes(data.contains("changes") ? data["changes"] : nlohmann::json());
+            nlohmann::json       before = SettingsBridge::read_values();
+            const nlohmann::json changes = data.contains("changes") ? data["changes"] : nlohmann::json();
+            // Mode catalogue : les changements portent une « key » (clé d'Orca) au lieu d'un « id » de la liste d'origine.
+            const bool           catalog = changes.is_array() && !changes.empty() && changes[0].is_object() && changes[0].contains("key");
+            const nlohmann::json result = catalog ? SettingsBridge::apply_catalog_changes(changes, Json::str(data, "print_name"), Json::str(data, "filament_name"))
+                                                  : SettingsBridge::apply_changes(changes);
             if (Json::boolean(result, "ok", false)) {
                 const nlohmann::json ask = data.contains("ask") ? data["ask"] : nlohmann::json();
-                const std::string    key = Memory::note_applied(before, SettingsBridge::read_values(), Json::str(data, "why"), ask);
+                nlohmann::json       after = SettingsBridge::read_values();
+                if (catalog) {
+                    after["params"] = nlohmann::json::array();
+                    for (const nlohmann::json& a : Json::arr(result, "applied"))
+                        after["params"].push_back({{"id", a["id"]}, {"value", a["after"]}});
+                    before["params"] = nlohmann::json::array();
+                    for (const nlohmann::json& a : Json::arr(result, "applied"))
+                        before["params"].push_back({{"id", a["id"]}, {"value", a["before"]}});
+                }
+                const std::string    key = Memory::note_applied(before, after, Json::str(data, "why"), ask);
                 SettingsBridge::set_memory_key(Json::integer(result, "undo_id", 0), key);
                 // Réglages venus d'une réponse de l'IA : notés aussi dans le journal de la pièce.
                 const nlohmann::json noted = Memory::for_current();

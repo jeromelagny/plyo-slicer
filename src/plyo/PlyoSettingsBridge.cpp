@@ -413,25 +413,108 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
     return {{"ok", true}, {"text", "Appliqué : " + summary + "."}, {"undo_id", id}};
 }
 
+namespace {
+
+// Valeur actuelle d'une option du catalogue, typée : première valeur des options « tableau », null pour « nil ».
+nlohmann::json typed_current(const DynamicPrintConfig& config, const std::string& key, const std::string& kind)
+{
+    const Slic3r::ConfigOption* opt = config.option(key);
+    if (opt == nullptr)
+        return nullptr;
+    std::string text = opt->serialize();
+    if (opt->is_vector()) {
+        const auto* vec = static_cast<const Slic3r::ConfigOptionVectorBase*>(opt);
+        text            = vec->size() == 0 || vec->is_nil(0) ? std::string("nil") : vec->vserialize().front();
+    }
+    return Catalog::typed_value(kind, text);
+}
+
+} // namespace
+
 nlohmann::json read_snapshot()
 {
-    const Catalog::Policy& policy = Catalog::policy();
+    const Catalog::Policy& policy   = Catalog::policy();
     nlohmann::json         snapshot = nlohmann::json::object();
     for (const char* scope : {"print", "filament"}) {
         const DynamicPrintConfig& config = edited_config(std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT);
-        for (const std::string& key : policy.keys(scope)) {
-            const Slic3r::ConfigOption* opt = config.option(key);
-            if (opt == nullptr)
-                continue;
-            std::string text = opt->serialize();
-            if (opt->is_vector()) {
-                const auto* vec = static_cast<const Slic3r::ConfigOptionVectorBase*>(opt);
-                text            = vec->size() == 0 || vec->is_nil(0) ? std::string("nil") : vec->vserialize().front();
-            }
-            snapshot[key] = Catalog::typed_value(policy.kind(scope, key), text);
-        }
+        for (const std::string& key : policy.keys(scope))
+            if (config.option(key) != nullptr)
+                snapshot[key] = typed_current(config, key, policy.kind(scope, key));
     }
     return snapshot;
+}
+
+nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::string& print_name, const std::string& filament_name)
+{
+    const auto refused = [](const std::string& text) { return nlohmann::json{{"ok", false}, {"text", text}}; };
+    if (!changes.is_array() || changes.empty())
+        return refused("Refusé : aucune modification reçue.");
+    // Un autre profil que celui de la proposition : les valeurs d'avant ne seraient plus les bonnes.
+    if (print_name != edited_name(Preset::TYPE_PRINT) || filament_name != edited_name(Preset::TYPE_FILAMENT))
+        return refused("Tu as changé de profil depuis la proposition : redemande-moi, je regarde les réglages d'aujourd'hui. Aucune modification appliquée.");
+
+    const Catalog::Policy&   policy = Catalog::policy();
+    const Limits::Range      limits = Limits::current();
+    struct Planned { std::string key, label, text, kind; Preset::Type type; nlohmann::json value; };
+    std::vector<Planned>     planned;
+    std::vector<std::string> seen;
+
+    // 1. Validation complète avant toute écriture (tout ou rien).
+    for (const nlohmann::json& change : changes) {
+        const std::string key = change.is_object() ? Json::str(change, "key") : std::string();
+        const char*       scope = policy.allows("print", key) ? "print" : policy.allows("filament", key) ? "filament" : "";
+        if (*scope == '\0')
+            return refused("Refusé : « " + key + " » ne fait pas partie des réglages que l'assistant peut modifier. Aucune modification appliquée.");
+        if (std::find(seen.begin(), seen.end(), key) != seen.end())
+            return refused("Refusé : « " + key + " » est demandé deux fois. Aucune modification appliquée.");
+        seen.push_back(key);
+
+        const Preset::Type        type   = std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
+        const DynamicPrintConfig& config = edited_config(type);
+        const Slic3r::ConfigOptionDef* def = config.def() ? config.def()->get(key) : nullptr;
+        if (def == nullptr || config.option(key) == nullptr)
+            return refused("Refusé : « " + key + " » n'existe pas dans ce profil. Aucune modification appliquée.");
+
+        Catalog::OptionInfo info{policy.kind(scope, key), std::nullopt, std::nullopt, def->enum_values};
+        if (def->min > -1e9f) info.min = def->min;
+        if (def->max < 1e9f) info.max = def->max;
+        // La hauteur de couche reste sous 75 % de la buse (comme pour les réglages d'origine).
+        if (key == "layer_height")
+            if (const std::optional<double> nozzle = first_value(edited_configs().printer, "nozzle_diameter"); nozzle && *nozzle > 0)
+                info.max = std::min(info.max.value_or(1e9), std::floor(*nozzle * 0.75 * 100 + 1e-6) / 100);
+
+        const std::string label = Json::str(change, "label").empty() ? key : Json::str(change, "label");
+        const nlohmann::json value = change.contains("value") ? change["value"] : nlohmann::json();
+        const bool confirmed = change.contains("confirmed_outside_range") && change["confirmed_outside_range"] == true;
+        const Catalog::CheckResult checked = Catalog::check_change(label, info, value, limits, Catalog::limit_id_of(key), confirmed);
+        if (!checked.ok)
+            return refused(checked.text);
+        const std::string text = Catalog::to_serialized(info, value);
+        if (text.empty())
+            return refused("Refusé : valeur illisible pour « " + label + " ». Aucune modification appliquée.");
+        planned.push_back({key, label, text, info.kind, type, value});
+    }
+
+    // 2. Valeurs d'avant (annulation), nouvelles configs.
+    std::vector<SavedValue>                     saved;
+    std::map<Preset::Type, DynamicPrintConfig> configs;
+    nlohmann::json                              applied = nlohmann::json::array();
+    std::string                                 summary;
+    for (const Planned& p : planned) {
+        if (!configs.count(p.type))
+            configs.emplace(p.type, edited_config(p.type));
+        saved.push_back({p.type, p.key, edited_config(p.type).opt_serialize(p.key), edited_name(p.type)});
+        applied.push_back({{"id", p.key}, {"label", p.label}, {"before", typed_current(edited_config(p.type), p.key, p.kind)}, {"after", p.value}});
+        set_value(configs[p.type], p.key, p.text);
+        summary += std::string(summary.empty() ? "" : ", ") + p.label + " → " + p.text;
+    }
+
+    // 3. Écriture (le profil est marqué « modifié » ; l'enregistrement vient après).
+    load_into_tabs(configs);
+    const int id = s_next_undo_id++;
+    s_undo_stack.push_back({id, std::move(saved), std::string()});
+    BOOST_LOG_TRIVIAL(info) << "Plyo: réglages du catalogue appliqués : " << summary;
+    return {{"ok", true}, {"text", "Appliqué : " + summary + "."}, {"undo_id", id}, {"applied", applied}};
 }
 
 void set_memory_key(int undo_id, const std::string& key)

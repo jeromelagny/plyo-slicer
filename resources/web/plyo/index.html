@@ -227,6 +227,7 @@
 
   /* Fiche de réglages : ancien → nouveau */
   .sheet { border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; background: var(--surface); }
+  .sheet .group-title { padding: var(--s2) var(--s3) 0; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
   .sheet header { padding: var(--s2) var(--s3); font-size: var(--fs-sm); font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); }
   .row { display: grid; grid-template-columns: 18px 1fr; align-items: start; gap: var(--s2) var(--s3); padding: var(--s3); border-bottom: 1px solid var(--border); cursor: pointer; }
   .row:last-of-type { border-bottom: 0; }
@@ -2644,6 +2645,8 @@
     function done(a) {
       finish();
       if (a.credits) setGauge(a.credits.gauge);
+      // Mode catalogue : les réglages de n'importe quel onglet arrivent dans « changes » ; la fiche les montre comme les autres.
+      a.suggestions = (a.suggestions || []).concat(Logic.catalogToSuggestions(a.changes));
       // 2 000 caractères au plus : au-delà, l'API refuserait toutes les demandes suivantes de la conversation.
       target.history.push({ role: 'user', text: ((photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note).slice(0, 2000) });
       var hist = { role: 'assistant', text: summaryForHistory(a) };
@@ -2756,6 +2759,7 @@
 
   // Valeur avant et après pour la fiche de réglages.
   function change(s) {
+    if (s.catalog) return { label: s.label, key: s.id, before: s.beforeText || formatValue(s.before, s.unit), after: s.valueText || formatValue(s.value, s.unit) };
     var p = paramOf(s.id);
     var after = s.delta !== null && typeof p.value === 'number' ? p.value + s.delta : s.value;
     return { label: p.label, key: p.key, before: formatValue(p.value, p.unit), after: formatValue(after, p.unit) };
@@ -2779,12 +2783,18 @@
     var sheet = el('div', 'sheet');
     var day = entry.date ? dayOf(entry.date) : '';
     sheet.appendChild(el('header', '', archived ? (entry.applied ? 'Réglages appliqués le ' + day : 'Réglages proposés le ' + day) : 'Réglages proposés'));
-    var rows = suggestions.map(function (s) {
+    var rows = [];
+    // Réglages du catalogue groupés par onglet d'Orca (Refroidissement, Qualité…) ; les autres restent en tête, sans titre.
+    Logic.groupByTab(suggestions).forEach(function (g) {
+      if (g.tab) sheet.appendChild(el('div', 'group-title', g.tab));
+      g.items.forEach(function (s) { rows.push(buildRow(s)); });
+    });
+    function buildRow(s) {
       var c = archived && entry.changes && entry.changes[s.id] ? entry.changes[s.id] : change(s);
       var row = el(archived ? 'div' : 'label', 'row' + (archived ? ' static' : ''));
       var box = null;
       if (archived) row.appendChild(entry.applied ? markCell() : el('span', 'mark', '•'));
-      else { box = el('input'); box.type = 'checkbox'; box.checked = true; row.appendChild(box); }
+      else { box = el('input'); box.type = 'checkbox'; box.checked = Logic.defaultChecked(s); row.classList.toggle('off', !box.checked); row.appendChild(box); }
       var info = el('div');
       info.appendChild(settingName(c.label, c.key));
       var delta = el('div', 'delta');
@@ -2793,11 +2803,13 @@
       delta.appendChild(el('span', 'new', c.after));
       info.appendChild(delta);
       if (s.reason) info.appendChild(el('div', 'why', s.reason));
+      if (!archived && s.beyond) info.appendChild(el('div', 'why', '⚠ Hors de la plage conseillée par le fabricant de ton filament : à toi de décider.'));
+      else if (!archived && s.confirm) info.appendChild(el('div', 'why', '⚠ Réglage sensible : vérifie-le avant de l’appliquer.'));
       row.appendChild(info);
       sheet.appendChild(row);
       if (box) box.addEventListener('change', function () { row.classList.toggle('off', !box.checked); updateCount(); });
       return { box: box, s: s, row: row, c: c };
-    });
+    }
     if (!archived) {
       // Libellés et valeurs gardés tels qu'affichés : une conversation rouverte ne dépend pas des réglages du moment.
       entry.changes = {};
@@ -2831,7 +2843,11 @@
 
     apply.addEventListener('click', function () {
       var picked = checked();
-      var changes = picked.map(function (r) { return r.s.delta !== null ? { id: r.s.id, delta: r.s.delta } : { id: r.s.id, value: r.s.value }; });
+      var changes = picked.map(function (r) {
+        // Réglage du catalogue : la case cochée à la main vaut confirmation s'il sort de la plage du fabricant.
+        if (r.s.catalog) return { key: r.s.id, value: r.s.value, label: r.s.label, confirmed_outside_range: !!r.s.beyond };
+        return r.s.delta !== null ? { id: r.s.id, delta: r.s.delta } : { id: r.s.id, value: r.s.value };
+      });
       fail.classList.add('hidden');
       lock(true);
       pendingSheet = { kind: 'apply', onResult: function (ok, text, result) {
@@ -2866,7 +2882,8 @@
         }));
       } };
       // `ask` : ces réglages viennent de l'IA, Plyo demandera plus tard si l'impression a marché.
-      window.orca.postMessage({ type: 'apply', changes: changes, why: (entry.data.defect && entry.data.defect.name) || '',
+      var names = (lastValues && lastValues.context) || {};
+      window.orca.postMessage({ type: 'apply', changes: changes, print_name: names.process || '', filament_name: names.filament || '', why: (entry.data.defect && entry.data.defect.name) || '',
         ask: { conv: conv ? conv.id : '', defect: (entry.data.defect && entry.data.defect.key) || '' } });
     });
     ignore.addEventListener('click', function () { sheet.remove(); });
