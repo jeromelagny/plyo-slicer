@@ -68,11 +68,11 @@
         <div class="avatar" aria-hidden="true">P</div>
         <h1>D’abord, présentons ton imprimante</h1>
       </div>
-      <p>Juste après, une fenêtre te demande ta machine. Trois repères pour bien la remplir&nbsp;:</p>
+      <p>Juste après, dans le panneau à droite, je cherche ton imprimante sur le Wi-Fi de ta maison. Pour que je la trouve&nbsp;:</p>
       <ol class="tips">
-        <li><b>1</b><div><strong>Ton imprimante</strong><span class="soft">Son nom est écrit dessus, souvent à l’avant (par exemple «&nbsp;Bambu Lab A1&nbsp;» ou «&nbsp;Creality Ender-3 V3&nbsp;»).</span></div></li>
-        <li><b>2</b><div><strong>La taille de buse</strong><span class="soft">Si tu ne sais pas, c’est presque toujours 0,4 mm&nbsp;: c’est la taille livrée avec l’imprimante.</span></div></li>
-        <li><b>3</b><div><strong>Tes filaments</strong><span class="soft">Coche ceux que tu as. Si tu ne sais pas, prends PLA&nbsp;: c’est le plus courant et le plus facile.</span></div></li>
+        <li><b>1</b><div><strong>Allume-la</strong><span class="soft">L’écran de l’imprimante doit être actif.</span></div></li>
+        <li><b>2</b><div><strong>Connecte-la au Wi-Fi</strong><span class="soft">Sur son écran&nbsp;: Réglages, puis Réseau ou Wi-Fi. Choisis ta box et entre le mot de passe du Wi-Fi.</span></div></li>
+        <li><b>3</b><div><strong>Pas de Wi-Fi&nbsp;?</strong><span class="soft">Aucun souci&nbsp;: tu la choisiras dans la liste, et tu imprimeras avec une clé USB ou une carte SD.</span></div></li>
       </ol>
       <p class="soft" style="margin-top:16px">Ensuite, je te guide pour ta première impression, dans le panneau à droite.</p>
     </section>
@@ -101,7 +101,7 @@
   }
   function done(choice) { toSlicer({ command: 'welcome_choice', choice: choice }); }
 
-  // Appelé par Plyo une fois la page chargée : true quand l'écran de configuration d'Orca suit.
+  // Appelé par Plyo une fois la page chargée : true quand aucune imprimante n'est installée (le panneau la cherche ensuite).
   window.plyoWelcomeSetup = function (setup) { withSetup = !!setup; };
 
   document.getElementById('beginner').addEventListener('click', function () { show(withSetup ? 'setup' : 'tour'); });

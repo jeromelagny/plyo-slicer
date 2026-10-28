@@ -63,6 +63,15 @@ test('le parcours avance tout seul quand l’étape est faite', () => {
   assert.equal(nextTourStep('print', { objects: 3, sliced: true }), 'print');
 });
 
+test('le parcours revient en arrière quand le plateau ne suit plus', () => {
+  assert.equal(nextTourStep('presets', { objects: 0, sliced: false }), 'model');
+  assert.equal(nextTourStep('slice', { objects: 0, sliced: false }), 'model');
+  assert.equal(nextTourStep('print', { objects: 0, sliced: false }), 'model');
+  assert.equal(nextTourStep('print', { objects: 2, sliced: false }), 'slice');
+  assert.equal(nextTourStep('after', { objects: 0, sliced: false }), 'after');
+  assert.equal(nextTourStep('presets', null), 'presets');
+});
+
 const { isModelFile, modelAddedText } = require('../premiers-pas.js');
 
 test('reconnaît un modèle 3D à son extension', () => {

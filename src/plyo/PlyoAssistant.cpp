@@ -16,6 +16,7 @@
 #include "PlyoPlateActions.hpp"
 #include "PlyoPreflight.hpp"
 #include "PlyoPrinterLink.hpp"
+#include "PlyoPrinterSetup.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
 
@@ -260,8 +261,11 @@ void handle_page_message(const nlohmann::json& data)
             send_result(Calibration::restore());
         else if (type == "calib_history")
             send({{"type", "calib_history"}, {"items", Calibration::history_for_current()}});
-        else if (type == "firststeps_state")
-            send({{"type", "firststeps"}, {"state", FirstSteps::state()}});
+        else if (type == "firststeps_state") {
+            nlohmann::json state   = FirstSteps::state();
+            state["needs_printer"] = PrinterSetup::needs_printer(); // premier lancement : l'assistant installe l'imprimante
+            send({{"type", "firststeps"}, {"state", state}});
+        }
         else if (type == "firststeps_set") {
             FirstSteps::set_state(Json::obj(data, "patch"));
             send({{"type", "firststeps"}, {"state", FirstSteps::state()}});
@@ -286,7 +290,10 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "printer_scan") {
             // Les adresses trouvées restent dans le panneau (sur l'ordinateur) : jamais envoyées au service ni à l'IA.
             const bool started = Discovery::start([](std::vector<Discovery::Printer> printers) {
-                send({{"type", "printer_scan_result"}, {"printers", Discovery::to_json(printers)}});
+                nlohmann::json list = Discovery::to_json(printers);
+                for (nlohmann::json& p : list)
+                    p["match"] = PrinterSetup::identify(p); // modèle du catalogue reconnu, pour « C'est la tienne ? »
+                send({{"type", "printer_scan_result"}, {"printers", list}});
             });
             if (!started)
                 BOOST_LOG_TRIVIAL(info) << "Plyo: recherche d'imprimantes déjà en cours";
@@ -311,6 +318,22 @@ void handle_page_message(const nlohmann::json& data)
             nlohmann::json r = PrinterLink::open_dialog(data.contains("printer") ? data["printer"] : nlohmann::json());
             r["type"]        = "printer_link_dialog_closed";
             send(r);
+        } else if (type == "filament_choose") {
+            nlohmann::json r = FirstSteps::choose_filament(Json::str(data, "material"));
+            r["type"]        = "filament_chosen";
+            send(r);
+            send_values();
+        } else if (type == "print_start") {
+            nlohmann::json r = FirstSteps::start_print(Json::boolean(data, "export", false));
+            r["type"]        = "print_started";
+            send(r);
+        } else if (type == "setup_catalog") {
+            send({{"type", "setup_catalog"}, {"catalog", PrinterSetup::catalog()}});
+        } else if (type == "setup_install") {
+            nlohmann::json r = PrinterSetup::install(Json::str(data, "vendor"), Json::str(data, "model"), Json::str(data, "nozzle"));
+            r["type"]        = "setup_installed";
+            send(r);
+            send_values();
         } else if (type == "printer_wizard") {
             PrinterLink::open_printer_wizard();
         } else if (type == "session_clear") {
@@ -400,6 +423,11 @@ wxWindow* create_topbar_button(wxWindow* parent)
     s_topbar_button = button;
     refresh_topbar_button();
     return holder;
+}
+
+void on_project_changed()
+{
+    send({{"type", "project_changed"}});
 }
 
 void on_config_changed()

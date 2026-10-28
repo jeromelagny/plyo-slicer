@@ -1,4 +1,5 @@
 #include "Plater.hpp"
+#include "plyo/PlyoAssistant.hpp" // PLYO: prévenir le panneau Assistant d'un nouveau projet
 #include "../Utils/NetworkAgent.hpp"
 #include "IPrinterAgent.hpp"
 #include "CalibUtils.hpp"
@@ -16131,6 +16132,7 @@ int Plater::new_project(bool skip_confirm, bool silent, const wxString& project_
 
     up_to_date(true, false);
     up_to_date(true, true);
+    Plyo::on_project_changed(); // PLYO: nouveau projet, le panneau Assistant revient à son accueil
     return wxID_YES;
 }
 
@@ -16286,6 +16288,7 @@ void Plater::load_project(wxString const& filename2,
     sidebar().set_flushing_volume_warning(has_modify);
 
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " load project done";
+    Plyo::on_project_changed(); // PLYO: projet ouvert, le panneau Assistant revient à son accueil
 }
 
 // BBS: save logic

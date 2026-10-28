@@ -310,9 +310,6 @@
   .drawer h3 { margin: var(--s2) 0 0; font-size: var(--fs-md); font-weight: 600; }
   .drawer p { margin: 0; }
   .conv-list { display: flex; flex-direction: column; gap: var(--s2); }
-  .printer-list { display: flex; flex-direction: column; gap: var(--s2); align-items: flex-start; }
-  .printer-list > p { margin: 0; }
-  .printer-item { align-self: stretch; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2) var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); }
   .printer-row { display: flex; align-items: center; gap: var(--s3); color: var(--accent-text); }
   .printer-info { display: flex; flex-direction: column; color: var(--fg); min-width: 0; flex: 1; }
   .printer-status { display: flex; flex-direction: column; gap: var(--s2); border-top: 1px solid var(--border); padding-top: var(--s2); }
@@ -323,6 +320,14 @@
   .printer-step.warn .ic { color: var(--warn-text); }
   .printer-step.error .ic { color: var(--danger-text); }
   .printer-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+  .setup-found { padding: var(--s2) 0; border-top: 1px solid var(--border); }
+  .setup-checks { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: var(--s1); }
+  .setup-checks .rich p { margin: 0; }
+  .setup-search { min-height: 36px; }
+  .setup-results { display: flex; flex-wrap: wrap; gap: var(--s2); }
+  .temp-row { display: flex; gap: var(--s2); }
+  .temp-field { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+  .temp-field .field { min-height: 32px; }
   .conv-item { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) 10px; border: 1px solid var(--border); border-radius: var(--r-sm); }
   .conv-item.current { border-color: var(--accent); }
   .conv-item button.open { flex: 1; border: 0; background: none; text-align: left; cursor: pointer; padding: 0; min-width: 0; }
@@ -365,7 +370,7 @@
       <button type="button" id="m-values" role="menuitem" data-icon="eye">Voir les réglages lus par l’assistant</button>
       <hr>
       <div class="group" role="presentation">Imprimante</div>
-      <button type="button" id="m-printer" role="menuitem" data-icon="wifi">Relier mon imprimante</button>
+      <button type="button" id="m-setup" role="menuitem" data-icon="plus">Ajouter une imprimante</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
       <div class="who" id="m-email"></div>
@@ -898,64 +903,6 @@
     });
   }
 
-  // ---------- Relier l'imprimante : recherche sur le réseau de la maison ----------
-  // Les adresses trouvées restent dans ce panneau, sur l'ordinateur : elles ne partent jamais vers le service ni l'IA.
-  var printerTarget = null;
-  var printerRetried = false;
-  function openPrinters() {
-    printerRetried = false;
-    openDrawer('Relier mon imprimante', function (body) {
-      body.appendChild(el('p', 'muted', 'Plyo cherche les imprimantes allumées sur le Wi-Fi ou le réseau de ta maison. Rien ne sort de chez toi.'));
-      var list = el('div', 'printer-list');
-      body.appendChild(list);
-      printerTarget = list;
-      scanPrinters();
-    });
-  }
-  function scanPrinters(again) {
-    if (!printerTarget) return;
-    printerTarget.textContent = '';
-    var wait = el('p', 'muted');
-    wait.appendChild(icon('search', 14));
-    wait.appendChild(txt(again === true ? ' Je vérifie une seconde fois…' : ' Je cherche ton imprimante… (une dizaine de secondes)'));
-    printerTarget.appendChild(wait);
-    window.orca.postMessage({ type: 'printer_scan' });
-  }
-  function fillPrinters(printers) {
-    if (!printerTarget || $('drawer').classList.contains('hidden')) return;
-    var list = printerTarget;
-    list.textContent = '';
-    // La première recherche tombe souvent pendant la demande d'autorisation (réseau local sur macOS, pare-feu sur
-    // Windows) et ne voit rien : on relance une fois tout seul avant d'annoncer « aucune imprimante ».
-    if (!printers.length && !printerRetried) {
-      printerRetried = true;
-      scanPrinters(true);
-      return;
-    }
-    if (!printers.length) {
-      list.appendChild(emptyState('wifi', 'Aucune imprimante trouvée',
-        'Vérifie qu’elle est allumée et reliée au même Wi-Fi que cet ordinateur. Beaucoup d’imprimantes n’ont pas de Wi-Fi : dans ce cas, on passe par la clé USB ou la carte SD.',
-        'Chercher encore', scanPrinters));
-      return;
-    }
-    list.appendChild(el('p', '', printers.length > 1 ? 'J’ai trouvé ' + printers.length + ' imprimantes :' : 'J’ai trouvé ton imprimante :'));
-    printers.forEach(function (p) {
-      var item = el('div', 'printer-item');
-      var row = el('div', 'printer-row');
-      row.appendChild(icon('wifi', 16));
-      var info = el('div', 'printer-info');
-      info.appendChild(el('b', '', p.name || 'Imprimante'));
-      info.appendChild(el('span', 'muted small', (p.brand ? p.brand + ' · ' : '') + p.ip));
-      row.appendChild(info);
-      var status = el('div', 'printer-status hidden');
-      row.appendChild(button('Relier', function () { startLink(p, status); }, 'btn sm'));
-      item.appendChild(row);
-      item.appendChild(status);
-      list.appendChild(item);
-    });
-    list.appendChild(button('Chercher encore', scanPrinters, 'btn ghost sm', 'search'));
-  }
-
   // Relier : vérifier le profil, tester la connexion, puis la fenêtre « Connexion » d'Orca préremplie (OK = enregistré).
   var link = null; // { printer, box } en cours
   function linkStep(text, tone, iconName) {
@@ -969,8 +916,8 @@
     box.appendChild(line);
     return box;
   }
-  function startLink(printer, box) {
-    link = { printer: printer, box: box };
+  function startLink(printer, box, onDone) {
+    link = { printer: printer, box: box, onDone: onDone || null };
     linkStep('Je vérifie ton profil d’imprimante…', '', 'search');
     window.orca.postMessage({ type: 'printer_link_check', printer: printer });
   }
@@ -1029,16 +976,165 @@
   }
   function onLinkSaved(msg) {
     if (!link) return;
-    if (msg.ok) linkStep('C’est relié ! Ton profil d’imprimante s’appelle maintenant « ' + msg.profile + ' ». `Imprimer la plaque` enverra tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+    if (msg.ok) {
+      linkStep('C’est relié ! Ton profil d’imprimante s’appelle maintenant « ' + msg.profile + ' ». `Imprimer la plaque` enverra tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+      if (link.onDone) link.onDone();
+    }
     else linkStep('Je n’ai pas pu enregistrer la connexion. Réessaie, ou ouvre la fenêtre « Connexion » depuis le bouton Wi-Fi à côté de « Imprimante ».', 'error', 'alert');
   }
   function onLinkDialogClosed(msg) {
     if (!link) return;
-    if (msg.saved) linkStep('C’est relié ! `Imprimer la plaque` enverra maintenant tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
-    else {
+    if (msg.saved) {
+      linkStep('C’est relié ! `Imprimer la plaque` enverra maintenant tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+      if (link.onDone) link.onDone();
+    } else {
       var box = linkStep('Rien n’a été enregistré. Tu peux recommencer quand tu veux.', '', 'info');
       box.appendChild(button('Relier', function () { startLink(link.printer, link.box); }, 'btn sm'));
     }
+  }
+
+  // ---------- Configurer l'imprimante (remplace l'assistant de configuration d'Orca) ----------
+  // Recherche sur le réseau, « C'est la tienne ? », installation du profil, puis liaison. Sans Wi-Fi : recherche
+  // dans le catalogue des imprimantes fournies. Les adresses restent dans ce panneau, jamais envoyées au service.
+  var setup = { phase: null, offered: false, printers: [], catalog: null, query: '', pick: null, found: null };
+  function startSetup() {
+    setup = { phase: 'scan', offered: true, printers: [], catalog: setup.catalog, query: '', pick: null, found: null, retried: false };
+    window.orca.postMessage({ type: 'printer_scan' });
+  }
+  function setupPhase(phase) { setup.phase = phase; renderTour(); }
+  function endSetup() { setup.phase = null; renderTour(); }
+  function onSetupScan(printers) {
+    // La première recherche tombe souvent pendant la demande d'autorisation (réseau local sur macOS, pare-feu sur
+    // Windows) et ne voit rien : on relance une fois tout seul avant d'annoncer « aucune imprimante ».
+    if (!printers.length && !setup.retried) { setup.retried = true; window.orca.postMessage({ type: 'printer_scan' }); return; }
+    setup.printers = printers;
+    setupPhase(printers.length ? 'found' : 'none');
+  }
+  function onSetupCatalog(catalog) { setup.catalog = catalog; if (setup.phase === 'search') renderTour(); }
+  function openSearch() {
+    if (!setup.catalog) window.orca.postMessage({ type: 'setup_catalog' });
+    setupPhase('search');
+  }
+  // Choix d'un modèle (trouvé ou cherché) : la buse 0,4 mm (livrée avec presque toutes les imprimantes) d'office.
+  function chooseModel(match, printer) {
+    setup.pick = match;
+    setup.found = printer || null;
+    setup.linkBox = null;
+    var nozzles = match.nozzles || [];
+    if (nozzles.length === 1 || nozzles.indexOf('0.4') >= 0) installModel(nozzles.indexOf('0.4') >= 0 ? '0.4' : nozzles[0]);
+    else setupPhase('nozzle');
+  }
+  function installModel(nozzle) {
+    setup.nozzle = nozzle;
+    setupPhase('installing');
+    window.orca.postMessage({ type: 'setup_install', vendor: setup.pick.vendor, model: setup.pick.model, nozzle: nozzle });
+  }
+  function onSetupInstalled(msg) {
+    if (msg.cancelled) { setupPhase(setup.found ? 'found' : 'search'); return; }
+    if (!msg.ok) { setup.error = true; setupPhase(setup.found ? 'found' : 'search'); return; }
+    setup.error = false;
+    setup.preset = msg.preset;
+    window.orca.postMessage({ type: 'get_values' });
+    setupPhase(setup.found ? 'link' : 'done');
+  }
+  function searchMatches(catalog, query) {
+    var words = String(query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[\s\-_]+/).filter(Boolean);
+    if (!words.length) return [];
+    return catalog.filter(function (m) {
+      var hay = (m.vendor + ' ' + m.model).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\-_]+/g, ' ');
+      return words.every(function (w) { return hay.indexOf(w) >= 0; });
+    }).slice(0, 8);
+  }
+  function renderSetup(slot) {
+    var box = el('div', 'tour setup');
+    box.appendChild(el('div', 'step', 'Ton imprimante'));
+    var acts = el('div', 'row-acts');
+    var later = button('Plus tard', endSetup, 'link');
+    if (setup.phase === 'scan') {
+      box.appendChild(el('h3', '', 'Je cherche ton imprimante…'));
+      box.appendChild(el('p', '', 'Allume-la si ce n’est pas déjà fait : je regarde sur le Wi-Fi de ta maison. Ça prend une dizaine de secondes.'));
+      acts.appendChild(button('Je préfère la choisir dans la liste', openSearch, 'btn ghost sm', 'search'));
+    } else if (setup.phase === 'found') {
+      var known = setup.printers.filter(function (p) { return p.match; });
+      box.appendChild(el('h3', '', known.length === 1 ? 'J’ai trouvé une imprimante' : 'J’ai trouvé des imprimantes'));
+      if (setup.error) box.appendChild(alertBox('error', 'Je n’ai pas pu installer ce profil. Réessaie, ou choisis ton imprimante dans la liste.'));
+      setup.printers.forEach(function (p) {
+        var row = el('div', 'printer-row setup-found');
+        row.appendChild(icon('wifi', 16));
+        var info = el('div', 'printer-info');
+        info.appendChild(el('b', '', p.match ? p.match.model : (p.name || 'Imprimante')));
+        info.appendChild(el('span', 'muted small', p.ip + (p.match ? '' : ' · modèle inconnu')));
+        row.appendChild(info);
+        if (p.match) row.appendChild(button('C’est la mienne', function () { chooseModel(p.match, p); }, 'btn sm'));
+        else row.appendChild(button('Choisir son modèle', function () { setup.found = p; openSearch(); }, 'btn ghost sm'));
+        box.appendChild(row);
+      });
+      acts.appendChild(button('Ce n’est pas la mienne', openSearch, 'btn ghost sm', 'search'));
+    } else if (setup.phase === 'none') {
+      box.appendChild(el('h3', '', 'Je n’ai pas trouvé d’imprimante'));
+      box.appendChild(el('p', '', 'Trois choses à vérifier :'));
+      var list = el('ol', 'setup-checks');
+      ['Elle est **allumée**, avec son écran actif.',
+       'Elle est **connectée au Wi-Fi** : sur son écran, va dans Réglages, puis Réseau ou Wi-Fi, choisis ta box et entre le **mot de passe du Wi-Fi** (souvent écrit sous la box ou sur une étiquette).',
+       'Elle est sur **le même Wi-Fi que cet ordinateur** (pas le Wi-Fi « invités » de la box).'].forEach(function (t) {
+        var li = el('li'); li.appendChild(rich(t)); list.appendChild(li);
+      });
+      box.appendChild(list);
+      box.appendChild(el('p', 'muted small', 'Beaucoup d’imprimantes n’ont pas de Wi-Fi : ce n’est pas grave, on passera par la clé USB ou la carte SD.'));
+      acts.appendChild(button('Chercher encore', function () { startSetup(); renderTour(); }, 'btn sm', 'search'));
+      acts.appendChild(button('Elle n’a pas de Wi-Fi : la choisir dans la liste', openSearch, 'btn ghost sm'));
+    } else if (setup.phase === 'search') {
+      box.appendChild(el('h3', '', 'Quelle imprimante as-tu ?'));
+      box.appendChild(el('p', '', 'Son nom est écrit dessus, souvent à l’avant : par exemple « Ender 3 V3 », « K1C » ou « A1 mini ».'));
+      if (setup.error) box.appendChild(alertBox('error', 'Je n’ai pas pu installer ce profil. Réessaie ou choisis-en un autre.'));
+      var input = el('input', 'field setup-search');
+      input.type = 'search';
+      input.placeholder = 'Tape le nom de ton imprimante';
+      input.setAttribute('aria-label', 'Nom de ton imprimante');
+      input.value = setup.query;
+      var results = el('div', 'setup-results');
+      function refresh() {
+        setup.query = input.value;
+        results.textContent = '';
+        if (!setup.catalog) { results.appendChild(el('p', 'muted small', 'Chargement de la liste…')); return; }
+        var found = searchMatches(setup.catalog, setup.query);
+        if (setup.query && !found.length) results.appendChild(el('p', 'muted small', 'Aucune imprimante ne correspond. Essaie avec moins de mots, par exemple juste « Ender ».'));
+        found.forEach(function (m) { results.appendChild(button(m.model, function () { chooseModel(m, setup.found); }, 'btn ghost sm setup-pick')); });
+      }
+      input.addEventListener('input', refresh);
+      box.appendChild(input);
+      box.appendChild(results);
+      refresh();
+      setTimeout(function () { input.focus(); }, 0);
+      acts.appendChild(button('Chercher sur le Wi-Fi', function () { startSetup(); renderTour(); }, 'btn ghost sm', 'wifi'));
+    } else if (setup.phase === 'nozzle') {
+      box.appendChild(el('h3', '', 'Quelle taille de buse ?'));
+      box.appendChild(el('p', '', 'Si tu ne sais pas, garde celle livrée avec l’imprimante. Tu pourras la changer plus tard.'));
+      (setup.pick.nozzles || []).forEach(function (n) { acts.appendChild(button(n.replace('.', ',') + ' mm', function () { installModel(n); }, 'btn ghost sm')); });
+    } else if (setup.phase === 'installing') {
+      box.appendChild(el('h3', '', 'J’installe ' + setup.pick.model + '…'));
+      box.appendChild(el('p', '', 'Profil de l’imprimante, qualités d’impression et filaments conseillés.'));
+      later = null;
+    } else if (setup.phase === 'link') {
+      box.appendChild(el('h3', '', setup.pick.model + ' est installée'));
+      box.appendChild(el('p', '', 'Dernière étape : je la relie pour que tes impressions partent directement dessus.'));
+      // La liaison écrit dans son propre bloc : gardé d'un affichage à l'autre, et lancée une seule fois.
+      if (!setup.linkBox) {
+        setup.linkBox = el('div', 'printer-status');
+        startLink(setup.found, setup.linkBox, function () { setup.phase = 'done'; setTimeout(renderTour, 1500); });
+      }
+      box.appendChild(setup.linkBox);
+      later = button('Passer cette étape', function () { setupPhase('done'); }, 'link');
+    } else if (setup.phase === 'done') {
+      box.appendChild(el('h3', '', 'Ton imprimante est prête'));
+      box.appendChild(el('p', '', setup.found ? 'Elle est installée et reliée : `Imprimer la plaque` lui enverra tes impressions.' :
+        'Elle est installée. Pour imprimer : `Exporter le fichier G-code`, puis copie-le sur la clé USB ou la carte SD de ton imprimante.'));
+      acts.appendChild(button('Continuer', endSetup, 'btn sm', 'check'));
+      later = null;
+    }
+    if (acts.children.length) box.appendChild(acts);
+    if (later) { var foot = el('div', 'row-acts'); foot.appendChild(later); box.appendChild(foot); }
+    slot.appendChild(box);
   }
 
   // ---------- Journal des pièces ----------
@@ -1191,7 +1287,7 @@
   $('m-convs').addEventListener('click', openConversations);
   $('m-usage').addEventListener('click', openUsage);
   $('m-parts').addEventListener('click', function () { menu.classList.add('hidden'); openJournal(); });
-  $('m-printer').addEventListener('click', function () { menu.classList.add('hidden'); openPrinters(); });
+  $('m-setup').addEventListener('click', function () { menu.classList.add('hidden'); startSetup(); renderTour(); });
   $('m-check').addEventListener('click', function () { menu.classList.add('hidden'); checkPlate(); });
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
@@ -1834,12 +1930,72 @@
     var grams = tourSignals.weight_g ? ' et ' + Math.round(tourSignals.weight_g) + ' g de filament' : '';
     return 'Ton impression prendra ' + durationText(tourSignals.time_s) + grams + '.';
   }
+  // Étape « Ton filament » : la matière écrite sur la bobine, puis les températures de son étiquette.
+  var filamentStep = { name: '' };
+  // « 205 », « 205 °C » ou une fourchette « 190-220 » (on prend le milieu, arrondi à 5 °C) ; null si illisible.
+  function labelTemp(text) {
+    var nums = String(text || '').match(/\d+/g);
+    if (!nums) return null;
+    var a = +nums[0], b = nums.length > 1 ? +nums[1] : a;
+    return Math.round((a + b) / 2 / 5) * 5;
+  }
+  function renderFilamentStep(box, acts, next) {
+    box.appendChild(el('h3', '', 'Ton filament'));
+    box.appendChild(el('p', '', 'Regarde ta bobine : la matière est écrite dessus. Laquelle as-tu ?'));
+    var kinds = el('div', 'row-acts');
+    ['PLA', 'PETG', 'ABS', 'ASA', 'TPU'].forEach(function (k) {
+      kinds.appendChild(button(k, function () { filamentStep.pending = k; window.orca.postMessage({ type: 'filament_choose', material: k }); }, filamentStep.material === k ? 'btn sm' : 'btn ghost sm'));
+    });
+    box.appendChild(kinds);
+    box.appendChild(el('p', 'muted small', 'Pas sûr ? C’est presque toujours du PLA : le plus courant et le plus facile.'));
+    if (filamentStep.error) box.appendChild(alertBox('error', 'Je n’ai pas trouvé de profil ' + filamentStep.error + ' pour ton imprimante. Choisis-le dans la liste « Filament » à gauche, ou demande-moi.'));
+    if (filamentStep.name) {
+      var nozzle = paramOf('nozzle_temp').value, bed = paramOf('bed_temp').value;
+      var chosen = el('p', 'done');
+      chosen.appendChild(icon('check', 13));
+      chosen.appendChild(txt('Profil « ' + filamentStep.name + ' »' + (nozzle ? ' : buse ' + nozzle + ' °C' : '') + (bed !== null && bed !== undefined ? ', plateau ' + bed + ' °C' : '') + '.'));
+      box.appendChild(chosen);
+      box.appendChild(rich('Sur l’étiquette de la bobine, il y a souvent les **températures conseillées** (par exemple « 190–220 °C » pour la buse et « 50–60 °C » pour le plateau). Recopie-les : je prends le milieu de la fourchette.'));
+      var row = el('div', 'temp-row');
+      function field(label, value) {
+        var wrap = el('label', 'temp-field');
+        wrap.appendChild(el('span', 'muted small', label));
+        var input = el('input', 'field');
+        input.type = 'text';
+        input.inputMode = 'numeric';
+        input.placeholder = value ? String(value) : '';
+        wrap.appendChild(input);
+        row.appendChild(wrap);
+        return input;
+      }
+      var nozzleIn = field('Buse (°C)', nozzle), bedIn = field('Plateau (°C)', bed);
+      box.appendChild(row);
+      var applyBtn = button('Utiliser ces températures', function () {
+        var n = labelTemp(nozzleIn.value), b = labelTemp(bedIn.value), changes = [];
+        if (n !== null) changes.push({ id: 'nozzle_temp', value: n }, { id: 'nozzle_temp_initial', value: n });
+        if (b !== null) changes.push({ id: 'bed_temp', value: b }, { id: 'bed_temp_initial', value: b });
+        if (!changes.length) { nozzleIn.focus(); return; }
+        window.orca.postMessage({ type: 'apply', changes: changes, why: 'Étiquette de la bobine' });
+      }, 'btn ghost sm');
+      box.appendChild(applyBtn);
+      box.appendChild(el('p', 'muted small', 'Pas d’étiquette ? Garde les valeurs du profil : elles conviennent à la plupart des bobines.'));
+    }
+    acts.appendChild(button('Montre-moi le filament', function () { showMe('filament'); }, 'btn ghost sm', 'eye'));
+    acts.appendChild(button('C’est bon, suivant', next, 'btn sm'));
+  }
+  function onFilamentChosen(msg) {
+    filamentStep.error = msg.ok ? '' : filamentStep.pending;
+    if (msg.ok) { filamentStep.name = msg.name; filamentStep.material = filamentStep.pending; }
+    renderTour();
+  }
+
   function setTourStep(step) { window.orca.postMessage({ type: 'firststeps_set', patch: { tour_step: step } }); }
 
   function renderTour() {
     var slot = $('tour-slot');
     slot.textContent = '';
     tourCard = null;
+    if (setup.phase) { document.body.classList.add('touring'); renderSetup(slot); return; }
     var step = fsState.level === 'beginner' ? fsState.tour_step : null;
     var active = !!step && FS.TOUR_STEPS.indexOf(step) >= 0;
     document.body.classList.toggle('touring', active);
@@ -1860,11 +2016,7 @@
         showMe('plate');
       }, 'btn ghost sm'));
     } else if (step === 'presets') {
-      box.appendChild(el('h3', '', 'Ton imprimante et ton filament'));
-      box.appendChild(el('p', '', 'Vérifie juste que c’est bien ta machine et la bobine que tu vas utiliser. Si c’est bon, tu n’as rien d’autre à régler : le profil s’occupe du reste.'));
-      acts.appendChild(button('Montre-moi l’imprimante', function () { showMe('printer'); }, 'btn ghost sm', 'eye'));
-      acts.appendChild(button('Montre-moi le filament', function () { showMe('filament'); }, 'btn ghost sm', 'eye'));
-      acts.appendChild(button('C’est bon, suivant', next, 'btn sm'));
+      renderFilamentStep(box, acts, next);
     } else if (step === 'slice') {
       box.appendChild(el('h3', '', 'Découper'));
       box.appendChild(el('p', '', '« Découper », c’est transformer ton modèle en trajets pour la buse, couche par couche. Clique sur « Découper la plaque » : je te dirai combien de temps ça prendra.'));
@@ -1874,9 +2026,26 @@
       box.appendChild(el('h3', '', 'Imprimer'));
       var summary = printSummary();
       if (summary) { var s = el('p', 'done'); s.appendChild(icon('check', 13)); s.appendChild(txt(summary)); box.appendChild(s); }
-      box.appendChild(el('p', '', 'Si ton imprimante est reliée, « Imprimer la plaque » l’envoie directement. Sinon, ouvre la petite flèche de ce bouton, choisis « Exporter le fichier G-code », puis copie le fichier sur la clé USB ou la carte SD de ton imprimante.'));
-      acts.appendChild(button('Montre-moi', function () { showMe('print'); }, 'btn ghost sm', 'eye'));
-      acts.appendChild(button('C’est lancé, suivant', next, 'btn sm'));
+      // Les gestes concrets, selon que l'imprimante est reliée ou non (clé USB, carte SD).
+      var linked = !!(tourSignals && tourSignals.linked);
+      var how = el('ol', 'setup-checks');
+      (linked ? [
+        'Vérifie que le **plateau est vide et propre**, et que le **filament est chargé**.',
+        'Clique sur `Imprimer la plaque`, en haut à droite. Dans la petite fenêtre qui s’ouvre, confirme l’envoi : l’impression démarre toute seule sur ton imprimante.'
+      ] : [
+        'Ouvre la petite flèche à côté de `Imprimer la plaque` et choisis `Exporter le fichier G-code`.',
+        'Enregistre le fichier sur la **clé USB** ou la **carte SD** de ton imprimante.',
+        'Mets-la dans l’imprimante, puis lance le fichier depuis son écran (menu Imprimer).'
+      ]).forEach(function (t) { var li = el('li'); li.appendChild(rich(t)); how.appendChild(li); });
+      box.appendChild(how);
+      if (!linked) box.appendChild(el('p', 'muted small', 'Ton imprimante a le Wi-Fi ? Relie-la : « Imprimer la plaque » l’enverra directement.'));
+      box.appendChild(el('p', 'muted small', 'Quand l’impression a démarré, clique sur « L’impression a démarré » : je te dirai quoi faire une fois qu’elle sera finie.'));
+      // Le bouton fait la même chose que « Imprimer la plaque » (ou l'export du fichier) : Orca demande confirmation.
+      acts.appendChild(button(linked ? 'Lancer l’impression' : 'Exporter le fichier', function () {
+        window.orca.postMessage({ type: 'print_start', export: !linked });
+      }, 'btn sm', linked ? 'send' : 'folder'));
+      if (!linked) acts.appendChild(button('Relier mon imprimante', function () { startSetup(); renderTour(); }, 'btn ghost sm', 'wifi'));
+      acts.appendChild(button('L’impression a démarré', next, 'btn ghost sm', 'check'));
     } else if (step === 'after') {
       box.appendChild(el('h3', '', 'Après l’impression'));
       box.appendChild(el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer.'));
@@ -2218,17 +2387,20 @@
   function onTourSignals(signals) {
     watchSlice(signals);
     var hadSummary = !!printSummary();
+    var wasLinked = !!(tourSignals && tourSignals.linked);
     tourSignals = signals;
     var step = fsState.level === 'beginner' ? fsState.tour_step : null;
     if (!step) return;
     var nextStep = FS.nextTourStep(step, signals);
     if (nextStep !== step) setTourStep(nextStep);
-    else if (step === 'print' && !hadSummary && printSummary()) renderTour();
+    else if (step === 'print' && ((!hadSummary && printSummary()) || wasLinked !== !!signals.linked)) renderTour();
   }
 
   function onFirstSteps(state) {
     var first = !fsState.hasOwnProperty('seen');
     fsState = state;
+    // Aucune imprimante installée (premier lancement) : l'assistant commence par elle, une fois par session.
+    if (state.needs_printer && !setup.phase && !setup.offered) startSetup();
     renderTour();
     if (first && state.level === 'expert' && !state.greeted) {
       $('hello-text').textContent = fr('Je suis là si tu as besoin : pose ta question en bas, ou clique dans un réglage du slicer pour que je te l’explique.');
@@ -2781,8 +2953,7 @@
   $('goals').querySelectorAll('.chip').forEach(function (chip) { chip.addEventListener('click', function () { send(chip.textContent); }); });
 
   // ---------- Messages du slicer ----------
-  var restored = false;
-  var autoOpening = null;     // conversation rouverte d'office au lancement (son échec ne s'affiche pas)
+  var autoOpening = null;     // plus de réouverture d'office au lancement : reste à null
   var saveFailedShown = false; // « conversation trop longue » : dit une seule fois
   window.orca.onMessage(function (msg) {
     if (!msg || !msg.type) return;
@@ -2796,6 +2967,7 @@
     } else if (msg.type === 'values') {
       var firstValues = !lastValues;
       renderValues(msg);
+      if (filamentStep.name && fsState.tour_step === 'presets') renderTour(); // températures du filament choisi
       if (firstValues) askOutcome(); // au démarrage, une fois les libellés des réglages connus
       window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
       drainPhoneQueue();
@@ -2831,7 +3003,20 @@
     } else if (msg.type === 'journal') {
       fillJournal(msg.events || []);
     } else if (msg.type === 'printer_scan_result') {
-      fillPrinters(Array.isArray(msg.printers) ? msg.printers : []);
+      var found = Array.isArray(msg.printers) ? msg.printers : [];
+      if (setup.phase === 'scan') onSetupScan(found);
+    } else if (msg.type === 'project_changed') {
+      // Nouveau projet ou projet ouvert : retour à l'accueil (la conversation précédente reste dans « Mes conversations »).
+      if (!busy) { closeDrawer(); newConversation(); }
+    } else if (msg.type === 'filament_chosen') {
+      onFilamentChosen(msg);
+    } else if (msg.type === 'print_started') {
+      if (tourCard && !msg.ok) tourCard.tell('alert', msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque (étape 3) : clique sur « Découper la plaque » en haut à droite.' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.');
+      else if (tourCard) tourCard.tell('info', 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.');
+    } else if (msg.type === 'setup_catalog') {
+      onSetupCatalog(Array.isArray(msg.catalog) ? msg.catalog : []);
+    } else if (msg.type === 'setup_installed') {
+      onSetupInstalled(msg);
     } else if (msg.type === 'printer_link_state') {
       onLinkState(msg);
     } else if (msg.type === 'printer_profile_selected') {
@@ -2855,9 +3040,8 @@
     } else if (msg.type === 'open_tool') {
       noteLine(msg.text, msg.ok ? '' : 'error', msg.ok ? 'eye' : 'alert');
     } else if (msg.type === 'conv_list') {
-      // Au lancement : la dernière conversation est rouverte ; ensuite, la liste remplit le volet.
-      if (!restored) { restored = true; if (msg.items && msg.items.length && !(conv && conv.entries.length)) { autoOpening = msg.items[0].id; openConversation(msg.items[0].id); } }
-      else fillConversations(msg.items || []);
+      // Au lancement, le panneau reste sur son accueil (plus de réouverture d'office) : la liste ne sert qu'au volet.
+      fillConversations(msg.items || []);
     } else if (msg.type === 'conv_save_failed') {
       if (!saveFailedShown) { saveFailedShown = true; noteLine('Cette conversation est devenue trop longue pour être gardée : commence-en une nouvelle depuis le menu « ⋯ ».', 'error', 'alert'); }
     } else if (msg.type === 'conv_loaded') {
@@ -2876,7 +3060,6 @@
   window.orca.postMessage({ type: 'ready' });
   window.orca.postMessage({ type: 'session_load' });
   window.orca.postMessage({ type: 'firststeps_state' });
-  window.orca.postMessage({ type: 'conv_list' });
 })();
 </script>
 </body>

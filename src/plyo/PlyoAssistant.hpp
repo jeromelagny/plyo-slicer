@@ -23,4 +23,7 @@ wxWindow* create_topbar_button(wxWindow* parent);
 // (saisie manuelle, changement de préréglage, modification par Plyo).
 void on_config_changed();
 
+// Appelé par Plater::new_project() et Plater::load_project() : le panneau revient à son accueil.
+void on_project_changed();
+
 } // namespace Plyo

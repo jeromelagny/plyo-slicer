@@ -54,8 +54,13 @@
 
   // Avance automatique quand l'étape est faite ; les autres étapes avancent au clic « Suivant ».
   function nextTourStep(step, signals) {
-    if (step === 'model' && signals && signals.objects > 0) return 'presets';
-    if (step === 'slice' && signals && signals.sliced) return 'print';
+    if (!signals) return step;
+    // Plateau vide (relance de l'app, nouveau projet, pièce supprimée) : on reprend au modèle à imprimer.
+    if ((step === 'presets' || step === 'slice' || step === 'print') && !signals.objects) return 'model';
+    // Découpe périmée (réglage changé) : on redécoupe avant d'imprimer.
+    if (step === 'print' && !signals.sliced) return 'slice';
+    if (step === 'model' && signals.objects > 0) return 'presets';
+    if (step === 'slice' && signals.sliced) return 'print';
     return step;
   }
 

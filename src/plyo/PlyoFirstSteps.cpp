@@ -6,6 +6,7 @@
 #include "PlyoAssistant.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoWelcomeDialog.hpp"
+#include "PlyoPrinterSetup.hpp"
 
 #include "libslic3r/Print.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -13,6 +14,7 @@
 #include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/Field.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/GLToolbar.hpp"
 #include "slic3r/GUI/GUI_Factories.hpp"
 #include "slic3r/GUI/I18N.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
@@ -27,9 +29,11 @@
 #include <wx/timer.h>
 #include <wx/toplevel.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <set>
+#include <vector>
 
 namespace Plyo { namespace FirstSteps {
 
@@ -144,7 +148,8 @@ public:
     {
         // L'écran de configuration d'Orca va s'ouvrir quand il n'y a encore que les imprimantes par défaut
         // (même condition que GUI_App::config_wizard_startup).
-        m_expect_guide = first_run && wxGetApp().preset_bundle != nullptr && wxGetApp().preset_bundle->printers.only_default_printers();
+        // L'assistant de configuration d'Orca n'est plus lancé au démarrage : l'accueil n'a pas à l'attendre.
+        m_expect_guide = false;
         Start(300);
     }
 
@@ -171,7 +176,7 @@ public:
                 return;
             m_welcomed = true;
             wxGetApp().CallAfter([this] {
-                guarded("l'accueil", [] { show_welcome(wxGetApp().mainframe, false); });
+                guarded("l'accueil", [] { show_welcome(wxGetApp().mainframe, PrinterSetup::needs_printer()); });
                 finish();
             });
             return;
@@ -253,7 +258,12 @@ void set_state(const nlohmann::json& patch)
 
 nlohmann::json tour_signals()
 {
-    nlohmann::json      signals = {{"objects", 0}, {"sliced", false}, {"time_s", 0}, {"weight_g", 0}};
+    nlohmann::json      signals = {{"objects", 0}, {"sliced", false}, {"time_s", 0}, {"weight_g", 0}, {"linked", false}};
+    // Imprimante reliée (adresse de connexion dans le profil) : l'étape « Imprimer » n'est pas la même.
+    if (wxGetApp().preset_bundle != nullptr) {
+        const Slic3r::DynamicPrintConfig& printer = wxGetApp().preset_bundle->printers.get_edited_preset().config;
+        signals["linked"] = printer.has("print_host") && !printer.opt_string("print_host").empty();
+    }
     Slic3r::GUI::Plater* plater = wxGetApp().plater();
     if (plater == nullptr)
         return signals;
@@ -279,6 +289,68 @@ nlohmann::json add_benchy()
             return {{"ok", true}, {"text", "Le petit bateau est sur le plateau."}};
         }
     return {{"ok", false}, {"text", "Le petit bateau est introuvable dans Orca."}};
+}
+
+nlohmann::json choose_filament(const std::string& type)
+{
+    static const std::vector<std::string> TYPES = {"PLA", "PETG", "ABS", "ASA", "TPU"};
+    if (std::find(TYPES.begin(), TYPES.end(), type) == TYPES.end() || wxGetApp().preset_bundle == nullptr)
+        return {{"ok", false}};
+    Slic3r::PresetBundle& bundle = *wxGetApp().preset_bundle;
+    // Le plus simple d'abord : « Generic PLA @… » plutôt que « Generic PLA Silk » ou une marque.
+    const Slic3r::Preset* best       = nullptr;
+    int                   best_score = -1;
+    for (const Slic3r::Preset& p : bundle.filaments.get_presets()) {
+        if (!p.is_visible || !p.is_compatible || p.is_default)
+            continue;
+        const auto* t = p.config.option<Slic3r::ConfigOptionStrings>("filament_type");
+        if (t == nullptr || t->values.empty() || t->values.front() != type)
+            continue;
+        int score = p.is_system ? 1 : 0;
+        if (p.name.rfind("Generic " + type, 0) == 0)
+            score += 2;
+        if (p.name.rfind("Generic " + type + " @", 0) == 0 || p.name == "Generic " + type)
+            score += 4;
+        if (score > best_score) {
+            best       = &p;
+            best_score = score;
+        }
+    }
+    if (best == nullptr)
+        return {{"ok", false}};
+    const std::string name = best->name;
+    // Comme un choix dans la liste du plateau (Plater::priv::on_select_preset), pour le premier filament.
+    bundle.set_filament_preset(0, name);
+    if (Slic3r::GUI::Tab* tab = wxGetApp().get_tab(Slic3r::Preset::TYPE_FILAMENT))
+        tab->select_preset(name);
+    if (Slic3r::GUI::Plater* plater = wxGetApp().plater()) {
+        plater->update_project_dirty_from_presets();
+        plater->sidebar().update_dynamic_filament_list();
+        plater->on_filament_change(0);
+    }
+    bundle.export_selections(*wxGetApp().app_config);
+    return {{"ok", true}, {"name", name}};
+}
+
+nlohmann::json start_print(bool export_file)
+{
+    auto* frame  = wxGetApp().mainframe;
+    auto* plater = wxGetApp().plater();
+    if (frame == nullptr || plater == nullptr)
+        return {{"ok", false}};
+    Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
+    if (plate == nullptr || !plate->is_slice_result_valid())
+        return {{"ok", false}, {"reason", "not_sliced"}};
+    if (export_file) {
+        wxPostEvent(plater, Slic3r::GUI::SimpleEvent(Slic3r::GUI::EVT_GLTOOLBAR_EXPORT_GCODE));
+        return {{"ok", true}};
+    }
+    // Même chemin que le bouton « Imprimer la plaque » (MainFrame) : Orca vérifie la plaque et ouvre sa confirmation.
+    plater->apply_background_progress();
+    if (!frame->get_enable_print_status())
+        return {{"ok", false}, {"reason", "not_ready"}};
+    wxPostEvent(plater, Slic3r::GUI::SimpleEvent(Slic3r::GUI::EVT_GLTOOLBAR_PRINT_PLATE));
+    return {{"ok", true}};
 }
 
 nlohmann::json explain(const std::string& key)
