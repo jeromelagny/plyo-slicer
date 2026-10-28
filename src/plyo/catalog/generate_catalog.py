@@ -154,7 +154,7 @@ def generate(root):
             source = d["full_label"] or d["label"]
             label = t(source) if source else key
             entries.append({
-                "key": key, "scope": scope, "tab": tab, "tab_fr": t(tab), "group": group, "group_fr": t(group) if group else "", "line_fr": t(line) if line else "", "label_fr": label,
+                "key": key, "scope": scope, "label_en": d["full_label"] or d["label"], "tooltip_en": d["tooltip"], "sidetext_en": d["sidetext"] if d["sidetext"] and d["sidetext"].isascii() else "", "tab": tab, "tab_fr": t(tab), "group": group, "group_fr": t(group) if group else "", "line_fr": t(line) if line else "", "label_fr": label,
                 "title_fr": (t(line) + " · " + label) if line else label, "tooltip": t(d["tooltip"]),
                 "kind": kind, "min": d["min"], "max": d["max"], "values": d["values"] or None,
                 "values_fr": [t(v) for v in d["value_labels"]] or None, "unit": UNITS.get(d["sidetext"], d["sidetext"]),

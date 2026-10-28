@@ -129,6 +129,12 @@ class CatalogTest(unittest.TestCase):
     def test_retraction_length_needs_confirmation(self):
         self.assertEqual(BY_KEY["filament_retraction_length"]["risk"], "confirm")
 
+    def test_english_source_texts_are_kept_for_search(self):
+        e = BY_KEY["close_fan_the_first_x_layers"]
+        self.assertEqual(e["label_en"], "No cooling for the first")
+        self.assertIn("Turn off all cooling fans", e["tooltip_en"])
+        self.assertEqual(e["sidetext_en"], "layers")
+
     def test_no_printer_preset_key(self):
         for k in ("nozzle_diameter", "machine_max_acceleration_x", "printable_area", "gcode_flavor", "retraction_length"):
             self.assertNotIn(k, BY_KEY)
