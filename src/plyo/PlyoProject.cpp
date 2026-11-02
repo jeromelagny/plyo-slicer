@@ -135,16 +135,18 @@ void reachable(const std::string& preset, std::function<void(bool)> done)
 nlohmann::json restore(const nlohmann::json& project, bool discard_unsaved)
 {
     const std::vector<std::string> todo = ProjectLogic::missing(project);
-    if (!todo.empty() && (std::find(todo.begin(), todo.end(), "printer") != todo.end() || std::find(todo.begin(), todo.end(), "filament") != todo.end()))
-        return {{"ok", false}, {"text", "Le projet n'a pas encore d'imprimante ou de filament."}};
+    // La machine suffit (le projet peut être arrêté avant le choix du filament) ; le filament est remis s'il est déjà choisi.
+    if (std::find(todo.begin(), todo.end(), "printer") != todo.end())
+        return {{"ok", false}, {"text", "Le projet n'a pas encore d'imprimante."}};
+    const bool has_filament = std::find(todo.begin(), todo.end(), "filament") == todo.end();
 
     const std::string printer  = Json::str(*Json::field(project, "printer"), "preset");
-    const std::string filament = Json::str(*Json::field(project, "filament"), "preset");
+    const std::string filament = has_filament ? Json::str(*Json::field(project, "filament"), "preset") : std::string();
     if (bundle().printers.find_preset(printer, false) == nullptr)
         return {{"ok", false}, {"text", "L'imprimante de ce projet n'existe plus dans Orca. Choisis-en une dans la fiche."}};
 
     const nlohmann::json now      = state();
-    const bool           changing = Json::str(now, "printer_preset") != printer || !ProjectLogic::same_filament(filament, Json::str(now, "filament_preset"));
+    const bool           changing = Json::str(now, "printer_preset") != printer || (has_filament && !ProjectLogic::same_filament(filament, Json::str(now, "filament_preset")));
     const bool           dirty    = bundle().printers.current_is_dirty() || bundle().prints.current_is_dirty() || bundle().filaments.current_is_dirty();
     if (changing && dirty && !discard_unsaved)
         return {{"ok", false}, {"needs_confirmation", true}, {"text", "Tu as des réglages non enregistrés dans Orca."}};
@@ -158,15 +160,19 @@ nlohmann::json restore(const nlohmann::json& project, bool discard_unsaved)
         // L'imprimante d'abord : même si le filament a disparu, Orca revient sur la machine du projet.
         if (Json::str(now, "printer_preset") != printer && !select(Preset::TYPE_PRINTER, printer))
             return {{"ok", false}, {"text", "Je n'ai pas pu sélectionner l'imprimante de ce projet."}};
-        if (bundle().filaments.find_preset(filament, false) == nullptr)
-            return {{"ok", false}, {"text", "Le filament de ce projet n'existe plus dans Orca. Choisis-le à nouveau dans la fiche."}};
-        if (!ProjectLogic::same_filament(filament, Json::str(state(), "filament_preset")))
-            FirstSteps::select_filament(filament);
-        if (!ProjectLogic::same_filament(filament, Json::str(state(), "filament_preset")))
-            return {{"ok", false}, {"text", "Je n'ai pas pu sélectionner le filament de ce projet."}};
+        if (has_filament) {
+            if (bundle().filaments.find_preset(filament, false) == nullptr)
+                return {{"ok", false}, {"text", "Le filament de ce projet n'existe plus dans Orca. Choisis-le à nouveau dans la fiche."}};
+            if (!ProjectLogic::same_filament(filament, Json::str(state(), "filament_preset")))
+                FirstSteps::select_filament(filament);
+            if (!ProjectLogic::same_filament(filament, Json::str(state(), "filament_preset")))
+                return {{"ok", false}, {"text", "Je n'ai pas pu sélectionner le filament de ce projet."}};
+        }
     }
 
     // Températures de la fiche, seulement si elles diffèrent de celles du profil (un lot annulable par Plyo).
+    if (!has_filament)
+        return {{"ok", true}, {"text", "Machine du projet remise dans Orca."}};
     const nlohmann::json after = state();
     const nlohmann::json& f    = *Json::field(project, "filament");
     nlohmann::json        changes = nlohmann::json::array();

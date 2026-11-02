@@ -53,14 +53,18 @@
     return typeof signals.part_name === 'string' && signals.part_name ? signals.part_name : 'Pièce posée sur le plateau';
   }
 
-  // Un 3MF posé reprend ses réglages d'impression adaptés au projet, quand machine, pièce et filament sont choisis ; une fois par pièce.
-  function needsAdaptation(project, adaptedFor) {
+  // Un 3MF posé reprend ses réglages d'impression adaptés au projet, quand machine, pièce et filament sont choisis ; une fois par
+  // pièce et par machine (`project.adapted` = nom de la pièce déjà adaptée, effacé quand la machine change).
+  function needsAdaptation(project) {
     if (nextStep(project) !== 'ready') return false;
     var name = project.part && project.part.name;
-    return /\.3mf$/i.test(String(name || '')) && adaptedFor !== name;
+    return /\.3mf$/i.test(String(name || '')) && project.adapted !== name;
   }
 
-  var api = { needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  // Remettre le projet dans Orca ne demande que la machine ; le filament est remis aussi s'il est déjà choisi.
+  function restorable(project) { return !!project && typeof project === 'object' && chosen(project.printer, 'preset'); }
+
+  var api = { restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

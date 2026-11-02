@@ -64,10 +64,13 @@
   // Machine ou filament changé après la découpe : la découpe est périmée, on repasse à Préparer.
   function resetStepOnChange(before, after) {
     if (!after) return after;
-    var changed = before && (presetOf(before, 'printer') !== presetOf(after, 'printer') || presetOf(before, 'filament') !== presetOf(after, 'filament'));
-    if (!changed || (after.step !== 'print' && after.step !== 'after')) return after;
+    var printerChanged = !!before && presetOf(before, 'printer') !== presetOf(after, 'printer');
+    var changed = printerChanged || (!!before && presetOf(before, 'filament') !== presetOf(after, 'filament'));
+    var resetStep = changed && (after.step === 'print' || after.step === 'after');
+    if (!resetStep && !(printerChanged && after.adapted)) return after;
     var out = JSON.parse(JSON.stringify(after));
-    out.step = 'slice';
+    if (resetStep) out.step = 'slice';
+    if (printerChanged) delete out.adapted; // un autre profil de machine : les réglages du 3MF sont à adapter de nouveau
     return out;
   }
 

@@ -134,3 +134,13 @@ test('confirmation en un toucher : la machine et le filament proposés deviennen
   assert.match(J.prompt('filament', { proposal: { name: 'PLA' } }), /PLA, comme la dernière fois \?/);
   assert.match(J.prompt('filament', {}), /filament/i);
 });
+
+test('resetStepOnChange : changer de machine oublie l’adaptation du 3MF, changer de filament la garde', () => {
+  const base = full({ step: 'print', adapted: 'flexyring.stl' });
+  const otherPrinter = full({ step: 'print', adapted: 'flexyring.stl', printer: { preset: 'Autre', name: 'Autre' } });
+  assert.equal(J.resetStepOnChange(base, otherPrinter).adapted, undefined);
+  const otherFilament = full({ step: 'print', adapted: 'flexyring.stl', filament: Object.assign({}, filament, { preset: 'Generic PETG @ECC2' }) });
+  assert.equal(J.resetStepOnChange(base, otherFilament).adapted, 'flexyring.stl');
+  const early = full({ adapted: 'flexyring.stl', printer: { preset: 'Autre', name: 'Autre' } });
+  assert.equal(J.resetStepOnChange(full({ adapted: 'flexyring.stl' }), early).adapted, undefined); // même avant la découpe
+});

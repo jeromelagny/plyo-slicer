@@ -799,7 +799,7 @@
   // Remet l'imprimante et le filament du projet dans Orca (seulement si ces deux choix sont faits).
   function restoreProjectInOrca(discardUnsaved) {
     var p = conv && conv.project;
-    if (!p || PlyoProject.nextStep(p) === 'printer' || PlyoProject.nextStep(p) === 'filament') return;
+    if (!PlyoProject.restorable(p)) return;
     projectUI.restoringUntil = Date.now() + 4000; // Orca change de profil : pas d'alerte de divergence pendant ce temps
     window.orca.postMessage({ type: 'project_restore', project: p, discard_unsaved: !!discardUnsaved });
   }
@@ -828,8 +828,8 @@
     proposeFilamentFromHabit();
     conv.seenProject = JSON.parse(JSON.stringify(conv.project));
     // Un 3MF : ses réglages sont adaptés dès que le filament est choisi (la pièce vient avant le filament).
-    if (PlyoProject.needsAdaptation(conv.project, conv.adaptedFor)) {
-      conv.adaptedFor = conv.project.part.name;
+    if (PlyoProject.needsAdaptation(conv.project)) {
+      conv.project.adapted = conv.project.part.name;
       window.orca.postMessage({ type: 'model_adapt', project: conv.project });
     }
     scheduleSave();
@@ -938,7 +938,10 @@
       handlers: { add: function () { $('project-alert').textContent = ''; startSetup(); renderSetupFlow(); }, dismiss: function () { $('project-alert').textContent = ''; } } });
   }
   // Orca a changé de profil d'imprimante sans passer par Plyo : on le dit, sans rien décider à la place de l'utilisateur.
-  function checkDivergence() {
+  var divergenceTimer = null;
+  function checkDivergence() { clearTimeout(divergenceTimer); divergenceTimer = setTimeout(doCheckDivergence, 1500); } // laisse passer un changement de profil en cours (installation, liaison, remise du projet)
+  function doCheckDivergence() {
+    if (setup.phase || projectUI.adopt) return;
     var p = conv && conv.project, orca = lastValues && lastValues.context ? lastValues.context.printer : '';
     var alert = $('project-alert');
     if (!p || !p.printer || p.printer.proposed || !orca || projectUI.pending || Date.now() < (projectUI.restoringUntil || 0)) return;
@@ -1091,6 +1094,7 @@
     clearThread();
     conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [],
       project: c.project && typeof c.project === 'object' ? c.project : PlyoProject.emptyProject() };
+    if (PlyoProject.nextStep(conv.project) === 'ready' && conv.project.part && !conv.project.adapted) conv.project.adapted = conv.project.part.name; // ancienne conversation : jamais réadaptée
     openRisks = 0;
     applyTab('reset');
     $('guide-notes').textContent = '';
@@ -2047,7 +2051,8 @@
   // ---------- Modèle 3D joint : posé sur le plateau, conseils sur clic seulement ----------
   function onModelAdded(msg) {
     if (!msg.ok) { noteLine(msg.text, 'error', 'alert'); return; }
-    if (msg.adaptation) syncProjectNames(msg.adaptation.saved);
+    if (msg.adaptation) { syncProjectNames(msg.adaptation.saved); if (msg.name) conv.project.adapted = msg.name; } // adapté dès l'import : pas une deuxième fois
+    if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
     if (msg.ok && msg.fits === false && conv.project.printer) {
       var other = PlyoMachines.machineThatFits(projectUI.printers, conv.project.printer.preset, msg.size_mm);
       if (other) {
@@ -2055,7 +2060,6 @@
         tip.appendChild(button('Refaire la préparation sur ' + other.label, function () { projectHandlers.pickPrinter(other.preset, other.label); }, 'link'));
       }
     }
-    if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
     if (projectUI.newProjectFile) {
       projectUI.newProjectFile = false;
       noteLine('L’ancienne pièce est toujours sur le plateau d’Orca : supprime-la avant de découper, un projet = une pièce.', 'warn', 'alert', 'guide');
@@ -3493,7 +3497,9 @@
     } else if (msg.type === 'journal') {
       fillJournal(msg.events || []);
     } else if (msg.type === 'printer_scan_result' && projectUI.bgScan) {
+      var asked = setup.phase === 'scan'; // l'installation a demandé la même recherche pendant celle d'arrière-plan : le résultat sert aux deux
       onBackgroundScan(msg.printers);
+      if (asked) onSetupScan(msg.printers || []);
     } else if (msg.type === 'printer_scan_result') {
       var found = Array.isArray(msg.printers) ? msg.printers : [];
       if (setup.phase === 'scan') onSetupScan(found);

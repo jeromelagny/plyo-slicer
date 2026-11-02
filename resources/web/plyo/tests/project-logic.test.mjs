@@ -53,12 +53,21 @@ test('partFromPlate prend la pièce posée sur le plateau quand la fiche attend 
   assert.equal(P.partFromPlate(ready, null), null);
 });
 
-test('needsAdaptation : un 3MF se règle sur le projet une fois machine, pièce et filament choisis, une seule fois', () => {
+test('needsAdaptation : un 3MF se règle sur le projet une fois machine, pièce et filament choisis, une seule fois par pièce et par machine', () => {
   const ready = { printer: printer, filament: filament, part: { name: 'bague.3mf' } };
-  assert.equal(P.needsAdaptation(ready, ''), true);
-  assert.equal(P.needsAdaptation(ready, 'bague.3mf'), false);
-  assert.equal(P.needsAdaptation({ printer: printer, filament: filament, part: { name: 'bague.stl' } }, ''), false);
-  assert.equal(P.needsAdaptation({ printer: printer, filament: null, part: { name: 'bague.3mf' } }, ''), false);
-  assert.equal(P.needsAdaptation({ printer: printer, filament: Object.assign({ proposed: true }, filament), part: { name: 'bague.3mf' } }, ''), false);
-  assert.equal(P.needsAdaptation(null, ''), false);
+  assert.equal(P.needsAdaptation(ready), true);
+  assert.equal(P.needsAdaptation(Object.assign({ adapted: 'bague.3mf' }, ready)), false);
+  assert.equal(P.needsAdaptation(Object.assign({ adapted: 'autre.3mf' }, ready)), true);
+  assert.equal(P.needsAdaptation({ printer: printer, filament: filament, part: { name: 'bague.stl' } }), false);
+  assert.equal(P.needsAdaptation({ printer: printer, filament: null, part: { name: 'bague.3mf' } }), false);
+  assert.equal(P.needsAdaptation({ printer: printer, filament: Object.assign({ proposed: true }, filament), part: { name: 'bague.3mf' } }), false);
+  assert.equal(P.needsAdaptation(null), false);
+});
+
+test('restorable : remettre le projet dans Orca ne demande que la machine, le filament est facultatif', () => {
+  assert.equal(P.restorable({ printer: printer }), true);
+  assert.equal(P.restorable({ printer: printer, part: { name: 'a.stl' } }), true);
+  assert.equal(P.restorable({ printer: Object.assign({ proposed: true }, printer) }), false);
+  assert.equal(P.restorable(P.emptyProject()), false);
+  assert.equal(P.restorable(null), false);
 });

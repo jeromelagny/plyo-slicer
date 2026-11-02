@@ -138,6 +138,8 @@ nlohmann::json sanitize(const nlohmann::json& project)
         text(*a, o, "name");
         out["part"] = o;
     }
+    if (const std::string adapted = Json::str(project, "adapted", 200); !adapted.empty())
+        out["adapted"] = adapted;
     const std::string step = Json::str(project, "step");
     if (step == "slice" || step == "print" || step == "after" || step == "done")
         out["step"] = step;
