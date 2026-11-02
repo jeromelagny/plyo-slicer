@@ -14,6 +14,10 @@ bool has_object(const nlohmann::json& project, const char* key, const char* requ
     const nlohmann::json* part = Json::field(project, key);
     if (part == nullptr || !part->is_object())
         return false;
+    // Valeur reprise du projet précédent et pas encore confirmée : comme si elle manquait.
+    const nlohmann::json* proposed = Json::field(*part, "proposed");
+    if (proposed != nullptr && proposed->is_boolean() && proposed->get<bool>())
+        return false;
     const nlohmann::json* value = Json::field(*part, required);
     return value != nullptr && value->is_string() && !value->get_ref<const std::string&>().empty();
 }

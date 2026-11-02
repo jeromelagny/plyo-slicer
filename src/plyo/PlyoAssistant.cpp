@@ -19,6 +19,7 @@
 #include "PlyoProfiles.hpp"
 #include "PlyoPrinterLink.hpp"
 #include "PlyoProject.hpp"
+#include "PlyoProjectLogic.hpp"
 #include "PlyoPrinterSetup.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
@@ -134,6 +135,20 @@ void send_result(const nlohmann::json& result)
     send(message);
 }
 
+// Refus (à envoyer tel quel) si une modification ne doit pas être faite : fiche du projet incomplète, ou Orca qui n'est
+// plus sur l'imprimante ou le filament du projet. null si elle est permise. Un retour arrière (`revert`) n'est jamais refusé.
+nlohmann::json project_refusal(const nlohmann::json& data)
+{
+    if (Json::boolean(data, "revert", false))
+        return nullptr;
+    const nlohmann::json state = Project::state();
+    const std::string    text  = ProjectLogic::refusal(data.contains("project") ? data["project"] : nlohmann::json(),
+                                                    Json::str(state, "printer_preset"), Json::str(state, "filament_preset"));
+    if (text.empty())
+        return nullptr;
+    return {{"ok", false}, {"text", text}};
+}
+
 void handle_page_message(const nlohmann::json& data)
 {
     const std::string type = data.is_object() ? Json::str(data, "type") : std::string();
@@ -144,6 +159,10 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "get_values")
             send_values();
         else if (type == "apply") {
+            if (const nlohmann::json refused = project_refusal(data); !refused.is_null()) {
+                send_result(refused);
+                return;
+            }
             // Chaque application réussie est notée dans la mémoire de la machine (imprimante + filament).
             nlohmann::json       before = SettingsBridge::read_values();
             const nlohmann::json manual = Profiles::manual_edits(); // enregistrées avec le lot
@@ -241,6 +260,13 @@ void handle_page_message(const nlohmann::json& data)
             send(done);
         } else if (type == "commands") {
             // Ordres de l'IA (« penche la pièce de 20° ») : exécutés aussitôt, annulables d'un clic (plate_action « undo »).
+            if (const nlohmann::json refused = project_refusal(data); !refused.is_null()) {
+                nlohmann::json done = refused;
+                done["type"]        = "commands";
+                done["request"]     = Json::integer(data, "request", 0);
+                send(done);
+                return;
+            }
             nlohmann::json done = Commands::run(data.contains("commands") ? data["commands"] : nlohmann::json());
             done["type"]        = "commands";
             done["request"]     = Json::integer(data, "request", 0);

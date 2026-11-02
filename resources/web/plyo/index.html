@@ -474,6 +474,16 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var Logic = window.PlyoLogic, FS = window.PlyoFirstSteps, fr = Logic.fr;
+  // Chaque modification (apply, commands) part avec le projet de la conversation : le slicer la refuse si la fiche est
+  // incomplète ou si Orca n'est plus sur l'imprimante et le filament du projet (PlyoAssistant.cpp, project_refusal).
+  (function () {
+    var host = window.orca, raw = host && host.postMessage ? host.postMessage.bind(host) : null;
+    if (!raw) return;
+    host.postMessage = function (m) {
+      if (m && (m.type === 'apply' || m.type === 'commands') && !m.project) m.project = conv ? conv.project : null;
+      raw(m);
+    };
+  })();
   var bodyEl = $('body'), thread = $('thread'), home = $('home');
   var noteInput = $('note'), sendButton = $('btn-send'), fileInput = $('file-input'), attachedEl = $('attached');
   var menu = $('menu');
@@ -2292,7 +2302,7 @@
           undo.replaceWith(done);
         } };
         // Sans « ask » : un retour en arrière ne doit pas reposer la question « Ça a marché ? ».
-        window.orca.postMessage({ type: 'apply', changes: revert, why: 'Retour aux réglages d’avant' + (item.why ? ' (' + item.why + ')' : '') });
+        window.orca.postMessage({ type: 'apply', revert: true, changes: revert, why: 'Retour aux réglages d’avant' + (item.why ? ' (' + item.why + ')' : '') });
       }, 'btn', 'undo');
       acts.appendChild(undo);
     }

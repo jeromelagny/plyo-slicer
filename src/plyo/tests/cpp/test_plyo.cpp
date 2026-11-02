@@ -605,3 +605,11 @@ TEST_CASE("Project: sanitize ne garde que les clés connues du projet")
     CHECK(clean["step"] == "print");
     CHECK(sanitize(nlohmann::json("x")).is_null());
 }
+
+TEST_CASE("Project: une valeur seulement proposée compte comme non choisie")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json p = {{"printer", {{"preset", "A"}, {"proposed", true}}}, {"filament", {{"preset", "F"}}}, {"part", {{"name", "p.stl"}}}};
+    CHECK(missing(p) == std::vector<std::string>{"printer"});
+    CHECK_FALSE(refusal(p, "A", "F").empty());
+}
