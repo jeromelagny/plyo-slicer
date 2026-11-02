@@ -165,6 +165,25 @@
   .menu .who { padding: 0 var(--s2) var(--s1); color: var(--muted); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .menu hr { border: 0; border-top: 1px solid var(--border); margin: var(--s1) 0; }
 
+  /* Zone fixe du haut : fiche du projet, barre des six étapes, prochaine action. Ne défile jamais. */
+  .journey { flex: none; max-height: 33vh; overflow-y: auto; background: var(--surface); border-bottom: 1px solid var(--border); padding: var(--s2) var(--s3) var(--s2); display: flex; flex-direction: column; gap: var(--s2); }
+  .journey .project { border: 0; background: transparent; padding: 0; margin: 0; gap: var(--s1); }
+  .journey .project.compact { flex-direction: row; }
+  .project-summary { font-weight: 600; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .journey-bar { display: flex; gap: 3px; }
+  .journey-seg { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; align-items: stretch; }
+  .journey-fill { display: block; height: 5px; border-radius: 3px; background: var(--border); }
+  .journey-seg.done .journey-fill { background: var(--accent); }
+  .journey-seg.current .journey-fill { background: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+  .journey-name { font-size: 10px; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .journey-seg.current .journey-name { color: var(--accent-text); font-weight: 700; }
+  .journey-bar.pills .journey-name { font-size: var(--fs-xs); }
+  .journey-action { display: flex; align-items: center; gap: var(--s2); }
+  .journey-prompt { flex: 1; min-width: 0; font-weight: 600; }
+  .journey-fold .ic { transition: transform var(--motion); }
+  .journey-fold[aria-expanded="true"] .ic { transform: rotate(90deg); }
+  .btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+
   /* Corps défilant : accueil puis conversation */
   .body { flex: 1; overflow-y: auto; padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
   .body > div:empty { display: none; } /* emplacements vides : pas d'espace fantôme en haut */
@@ -397,6 +416,8 @@
     </div>
   </div>
 
+  <div class="journey" id="journey"><div id="journey-fiche"></div><div id="journey-bar"></div><div id="journey-action"></div></div>
+
   <div class="body" id="body">
     <!-- Premiers pas : étape du parcours en cours -->
     <div id="project-slot"><div id="project-alert"></div><div id="project-card"></div></div>
@@ -455,6 +476,7 @@
 <!--plyo-include:preflight.js-->
 <!--plyo-include:project-logic.js-->
 <!--plyo-include:journey-logic.js-->
+<!--plyo-include:journey-view.js-->
 <!--plyo-include:project-card.js-->
 <script>
 (function () {
@@ -758,18 +780,43 @@
       importModel(file);
     }
   }
+  // Zone fixe (fiche, barre, ligne d'action) + contenu de l'étape en cours (premier bloc du corps qui défile).
+  var journeyUI = { folded: false, ficheOpen: false };
+  var openRisks = 0; // risques de la vérification non ignorés
+  function journeyCtx() { return { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks }; }
   function renderProject() {
     if (!conv) return;
-    PlyoProjectCard.render($('project-card'), { el: el, button: button, icon: icon }, {
-      project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable, error: projectUI.error,
-      editing: projectUI.editing, handlers: projectHandlers });
-    var step = PlyoProject.nextStep(conv.project);
-    $('hello-text').textContent = fr({ printer: 'Je prépare ton projet : choisis d’abord ton imprimante.',
-      filament: 'Maintenant, ton filament et ses températures.', part: 'Dernière chose : ta pièce.',
-      ready: 'Tout est prêt. Dis-moi ce que tu veux obtenir, ou pose-moi une question.' }[step]);
-    $('goals-wrap').classList.toggle('hidden', step !== 'ready');
+    var ui = { el: el, button: button, icon: icon };
+    var step = PlyoJourney.currentStep(conv.project);
+    var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: journeyUI.folded, heightPx: window.innerHeight });
+    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, handlers: projectHandlers });
+    PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
+    PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), folded: journeyUI.folded, handlers: journeyHandlers });
+    PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable,
+      error: projectUI.error, editing: projectUI.editing, handlers: projectHandlers });
+    $('project-card').classList.toggle('hidden', journeyUI.folded);
+    $('hello-text').textContent = fr({ machine: 'Je prépare ton projet : choisis d’abord ton imprimante.',
+      filament: 'Maintenant, ton filament et ses températures.', piece: 'Dernière chose : ta pièce.',
+      preparer: 'Tout est prêt. Dis-moi ce que tu veux obtenir, ou pose-moi une question.',
+      imprimer: 'Tout est prêt. Dis-moi ce que tu veux obtenir, ou pose-moi une question.',
+      resultat: 'Dis-moi comment s’est passée ton impression.' }[step]);
+    $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
     renderTour();
   }
+  var journeyHandlers = {
+    toggleFold: function () { journeyUI.folded = !journeyUI.folded; journeyUI.ficheOpen = false; renderProject(); },
+    run: function (kind) { runAction(kind); }
+  };
+  // Le bouton plein de la ligne d'action.
+  function runAction(kind) {
+    if (kind === 'slice') plateAction('slice');
+    else if (kind === 'photo') openPhone();
+    else if (kind === 'send') window.orca.postMessage({ type: 'print_start', export: false });
+    else if (kind === 'export') window.orca.postMessage({ type: 'print_start', export: true });
+    else if (kind === 'advance') setTourStep('print');
+    else if (kind === 'fix') { var fix = document.querySelector('#preflight-slot .btn:not(.ghost)'); if (fix) fix.click(); }
+  }
+  window.addEventListener('resize', function () { if (conv) renderProject(); });
   function askProjectPrinters() { window.orca.postMessage({ type: 'project_printers' }); }
   var projectHandlers = {
     pickPrinter: function (preset, name) {
@@ -796,6 +843,7 @@
       window.orca.postMessage({ type: 'project_state' });
     },
     importPart: function () { pickFiles(); },
+    expand: function () { journeyUI.ficheOpen = true; renderProject(); },
     change: function (line) {
       projectUI.error = {};
       if (line === 'printer') { conv.project.printer = null; conv.project.filament = null; }
@@ -2517,7 +2565,9 @@
     // Une carte ignorée ne revient pas d'elle-même tant que ses risques restent les mêmes ; « Vérifier » la remontre.
     var risks = window.PlyoPreflight.preflightRisks(data);
     var fresh = risks.filter(function (r) { return !dismissedRisks[window.PlyoPreflight.riskKey(r)]; });
+    openRisks = fresh.length;
     renderPreflight(manual || fresh.length ? risks : [], data);
+    renderProject();
     if (!manual || risks.length) return;
     var slot = $('preflight-slot');
     var close = function () { slot.textContent = ''; };
