@@ -181,10 +181,9 @@
   .journey-name { font-size: 10px; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .journey-seg.current .journey-name { color: var(--accent-text); font-weight: 700; }
   .journey-bar.pills .journey-name { font-size: var(--fs-xs); }
-  .journey-action { display: flex; align-items: center; gap: var(--s2); }
-  .journey-prompt { flex: 1; min-width: 0; font-weight: 600; }
-  .journey-fold .ic { transition: transform var(--motion); }
-  .journey-fold[aria-expanded="true"] .ic { transform: rotate(90deg); }
+  .step-card { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
+  .journey-action { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+  .journey-prompt { flex: 1; min-width: 12ch; font-weight: 600; font-size: var(--fs-lg); }
   .suggestions { display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s2); }
   .suggestions:empty { display: none; }
   .btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
@@ -421,7 +420,7 @@
     </div>
   </div>
 
-  <div class="journey" id="journey"><div id="journey-fiche"></div><div id="journey-bar"></div><div id="journey-action"></div></div>
+  <div class="journey" id="journey"><div id="journey-fiche"></div><div id="journey-bar"></div></div>
 
   <div class="tabs" role="tablist" id="tabs">
     <button class="tab on" id="tab-guide" role="tab" aria-selected="true" type="button">Guide</button>
@@ -431,7 +430,7 @@
   <div class="body" id="body">
     <!-- Premiers pas : étape du parcours en cours -->
     <div class="view" id="view-guide" role="tabpanel" aria-labelledby="tab-guide">
-    <div id="project-slot"><div id="project-alert"></div><div id="project-card"></div></div>
+    <section class="step-card"><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="project-card"></div></div></section>
     <div id="tour-slot"></div>
     <div id="outcome-slot"></div>
     <div id="preflight-slot"></div>
@@ -638,6 +637,8 @@
     $('tab-dot').classList.toggle('hidden', !viewUI.unread);
     if (event === 'show-chat' || event === 'send') scrollDown(); else if (event === 'show-guide' || event === 'reset') bodyEl.scrollTop = 0;
     updateMoreBadge();
+    journeyUI.ficheOpen = false;
+    if (conv) renderProject(); // la fiche se réduit dans la Discussion et reprend sa place dans le Guide
   }
   $('tab-guide').addEventListener('click', function () { applyTab('show-guide'); });
   $('tab-chat').addEventListener('click', function () { applyTab('show-chat'); });
@@ -831,7 +832,7 @@
     }
   }
   // Zone fixe (fiche, barre, ligne d'action) + contenu de l'étape en cours (premier bloc du corps qui défile).
-  var journeyUI = { folded: false, ficheOpen: false, lastStep: null };
+  var journeyUI = { ficheOpen: false, lastStep: null };
   var openRisks = 0; // risques de la vérification non ignorés
   var preflightFix = null; // lance « Tout corriger » de la carte de vérification affichée (rend faux s'il n'y a rien à faire)
   function journeyCtx() { return { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks }; }
@@ -839,17 +840,16 @@
     if (!conv) return;
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
-    if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI = Object.assign(PlyoJourney.toggleFold(journeyUI, 'stepChange'), { lastStep: step }); }
-    var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: journeyUI.folded, heightPx: window.innerHeight });
+    if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; }
+    var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight });
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
-    PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), folded: journeyUI.folded, handlers: journeyHandlers,
+    PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
       extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'wifi', onClick: projectHandlers.setupPrinter } : null });
     if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable,
         error: projectUI.error, editing: projectUI.editing, showOthers: projectUI.showOthers, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers });
-    $('project-card').classList.toggle('hidden', journeyUI.folded);
     $('hello-text').textContent = fr({ machine: 'Je prépare ton projet : choisis d’abord ton imprimante.',
       filament: 'Maintenant, ton filament et ses températures.', piece: 'Dernière chose : ta pièce.',
       preparer: 'Tout est prêt. Dis-moi ce que tu veux obtenir, ou pose-moi une question.',
@@ -860,7 +860,6 @@
     renderSetupFlow();
   }
   var journeyHandlers = {
-    toggleFold: function () { journeyUI = Object.assign(PlyoJourney.toggleFold(journeyUI, 'toggle'), { lastStep: journeyUI.lastStep }); renderProject(); },
     run: function (kind) { applyTab('show-guide'); runAction(kind); } // les retours de l'action arrivent dans le Guide
   };
   var suggestionHandlers = {
@@ -2837,7 +2836,6 @@
     var photos = opts.photos || attachments.slice();
     if (!note && !photos.length) { noteInput.focus(); return; }
     applyTab('send'); // envoyer un message ouvre la Discussion
-    journeyUI = Object.assign(PlyoJourney.toggleFold(journeyUI, 'send'), { lastStep: journeyUI.lastStep }); // le contenu d'étape se replie quand on discute
     renderProject();
     if (!lastValues) { noteLine('Je lis encore les réglages du slicer : réessaie dans une seconde.', '', 'info'); return; }
     // « C'est quoi la rétraction ? » : la fiche du réglage répond, gratuitement et sans compte.

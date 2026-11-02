@@ -73,3 +73,13 @@ test('le panneau a deux onglets, et les messages d’étape vont dans le Guide',
   for (const text of ['Je pose « \' + file.name', 'Pas de risque détecté', 'Orca te demande de confirmer'])
     assert.ok(new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^\\n]*\'guide\'').test(page), text + ' dans le Guide');
 });
+
+test('la question de l’étape et ses choix sont dans la même carte, à l’intérieur du Guide', () => {
+  const page = read('index.html');
+  const guide = page.slice(page.indexOf('id="view-guide"'), page.indexOf('id="view-chat"'));
+  assert.ok(guide.includes('id="journey-action"'), 'la ligne d’action est dans le Guide');
+  assert.ok(guide.indexOf('id="journey-action"') < guide.indexOf('id="project-card"'), 'la question vient avant ses choix');
+  const fixedZone = page.slice(page.indexOf('id="journey"'), page.indexOf('id="tabs"'));
+  assert.ok(!fixedZone.includes('journey-action'), 'plus de ligne d’action dans la zone fixe, au-dessus des onglets');
+  assert.ok(!/journey-fold|toggleFold/.test(read('journey-view.js') + page), 'plus de flèche de repli');
+});

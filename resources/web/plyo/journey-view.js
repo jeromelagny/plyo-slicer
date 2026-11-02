@@ -20,16 +20,11 @@
     slot.appendChild(bar);
   }
 
-  // handlers : { run(kind), toggleFold() }. `folded` : le contenu de l'étape est replié.
+  // handlers : { run(kind) }.
   function renderActionLine(slot, ui, opts) {
     var J = root.PlyoJourney, action = J.primaryAction(opts.step, opts.ctx);
     slot.textContent = '';
     var line = ui.el('div', 'journey-action');
-    var arrow = ui.button('', opts.handlers.toggleFold, 'link journey-fold');
-    arrow.appendChild(ui.icon('chevron', 14));
-    arrow.setAttribute('aria-expanded', opts.folded ? 'false' : 'true');
-    arrow.setAttribute('aria-label', opts.folded ? 'Afficher l’étape' : 'Replier l’étape');
-    line.appendChild(arrow);
     line.appendChild(ui.el('span', 'journey-prompt', J.prompt(opts.step, opts.ctx)));
     // Un lien toujours visible à côté de la consigne (hors du contenu qui défile), jamais un bouton plein.
     if (opts.extra) line.appendChild(ui.button(opts.extra.label, opts.extra.onClick, 'link journey-extra', opts.extra.icon));

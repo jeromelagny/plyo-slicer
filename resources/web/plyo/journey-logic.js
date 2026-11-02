@@ -69,6 +69,7 @@
   }
 
   function barMode(widthPx) { return widthPx < 340 ? 'pills' : 'names'; }
+  // `folded` : l'utilisateur est dans la Discussion, qui a besoin de la place ; sinon seulement si la fenêtre est basse.
   function compactFiche(o) { return !!(o && (o.folded || o.heightPx < 760)); }
 
   // Ce qui occupe le premier bloc du corps : les choix (étapes 1 à 3, ou « changer » le filament) ou le contenu des étapes 4 à 6.
@@ -130,16 +131,6 @@
     return out;
   }
 
-  // État d'interface du repli : { folded, ficheOpen }. `send` (l'utilisateur écrit) replie, `toggle` bascule (la flèche),
-  // `stepChange` déplie. Un autre événement ne change rien.
-  function toggleFold(state, event) {
-    var st = { folded: !!(state && state.folded), ficheOpen: !!(state && state.ficheOpen) };
-    if (event === 'send') return { folded: true, ficheOpen: false };
-    if (event === 'toggle') return { folded: !st.folded, ficheOpen: false };
-    if (event === 'stepChange') return { folded: false, ficheOpen: st.ficheOpen };
-    return st;
-  }
-
   // Onglets Guide / Discussion : { tab: 'guide'|'chat', unread }. `send` ouvre la Discussion ; `answer` (une réponse arrive)
   // allume le point rouge si on est sur le Guide ; `show-chat` l'éteint ; `reset` (nouvelle conversation) revient au Guide.
   function tabAfter(state, event) {
@@ -154,7 +145,7 @@
     }
   }
 
-  var api = { tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, toggleFold: toggleFold, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
+  var api = { tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
