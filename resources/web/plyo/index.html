@@ -166,7 +166,8 @@
   .menu hr { border: 0; border-top: 1px solid var(--border); margin: var(--s1) 0; }
 
   /* Zone fixe du haut : fiche du projet, barre des six étapes, prochaine action. Ne défile jamais. */
-  .journey { flex: none; max-height: 33vh; overflow-y: auto; background: var(--surface); border-bottom: 1px solid var(--border); padding: var(--s2) var(--s3) var(--s2); display: flex; flex-direction: column; gap: var(--s2); }
+  #journey-fiche { max-height: 22vh; overflow-y: auto; }
+  .journey { flex: none; background: var(--surface); border-bottom: 1px solid var(--border); padding: var(--s2) var(--s3) var(--s2); display: flex; flex-direction: column; gap: var(--s2); }
   .journey .project { border: 0; background: transparent; padding: 0; margin: 0; gap: var(--s1); }
   .journey .project.compact { flex-direction: row; }
   .project-summary { font-weight: 600; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
@@ -688,6 +689,7 @@
   var saveTimer = null;
   function newId() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6); }
   function startConversation(project) {
+    openRisks = 0;
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
     if (typeof renderProject === 'function') renderProject();
   }
@@ -765,6 +767,9 @@
   // Le projet est gardé avec la conversation (conv.project) ; PlyoProject (project-logic.js) dit quelle étape manque.
   var projectUI = { keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
   function projectChanged() {
+    // Machine ou filament changé après la découpe : la découpe est périmée, on repasse à « Préparer ».
+    conv.project = PlyoJourney.resetStepOnChange(conv.seenProject || null, conv.project);
+    conv.seenProject = JSON.parse(JSON.stringify(conv.project));
     scheduleSave();
     renderProject();
     // Un fichier en attente (déposé avant que la fiche soit prête) est posé dès que la pièce est la prochaine étape.
@@ -777,6 +782,7 @@
   // Zone fixe (fiche, barre, ligne d'action) + contenu de l'étape en cours (premier bloc du corps qui défile).
   var journeyUI = { folded: false, ficheOpen: false, lastStep: null };
   var openRisks = 0; // risques de la vérification non ignorés
+  var preflightFix = null; // lance « Tout corriger » de la carte de vérification affichée (rend faux s'il n'y a rien à faire)
   function journeyCtx() { return { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks }; }
   function renderProject() {
     if (!conv) return;
@@ -787,10 +793,10 @@
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), folded: journeyUI.folded, handlers: journeyHandlers });
-    PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable,
-      error: projectUI.error, editing: projectUI.editing, handlers: projectHandlers });
-    if (step === 'preparer' || step === 'imprimer' || step === 'resultat')
-      PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers });
+    if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
+      PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable,
+        error: projectUI.error, editing: projectUI.editing, handlers: projectHandlers });
+    else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers });
     $('project-card').classList.toggle('hidden', journeyUI.folded);
     $('hello-text').textContent = fr({ machine: 'Je prépare ton projet : choisis d’abord ton imprimante.',
       filament: 'Maintenant, ton filament et ses températures.', piece: 'Dernière chose : ta pièce.',
@@ -827,7 +833,7 @@
     else if (kind === 'send') window.orca.postMessage({ type: 'print_start', export: false });
     else if (kind === 'export') window.orca.postMessage({ type: 'print_start', export: true });
     else if (kind === 'advance') setTourStep('print');
-    else if (kind === 'fix') { var fix = document.querySelector('#preflight-slot .btn:not(.ghost)'); if (fix) fix.click(); }
+    else if (kind === 'fix') { if (!(preflightFix && preflightFix())) noteLine('Coche d’abord au moins une correction dans la carte, ou ignore-la.', '', 'info'); }
   }
   window.addEventListener('resize', function () { if (conv) renderProject(); });
   function askProjectPrinters() { window.orca.postMessage({ type: 'project_printers' }); }
@@ -949,6 +955,7 @@
     clearThread();
     conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [],
       project: c.project && typeof c.project === 'object' ? c.project : PlyoProject.emptyProject() };
+    openRisks = 0;
     restoreProjectInOrca(false);
     renderProject();
     if (!conv.entries.length) return;
@@ -2549,6 +2556,7 @@
     var PF = window.PlyoPreflight;
     var slot = $('preflight-slot');
     slot.textContent = '';
+    preflightFix = null;
     if (!risks.length) return;
     var plan = PF.preflightPlan(data);
     var plateCount = data && data.objects ? data.objects.length : undefined;
@@ -2564,7 +2572,7 @@
     head.appendChild(el('span', 'badge-pill warn', plan.count > 1 ? plan.count + ' pièces' : '1 pièce'));
     var dismiss = button('', function () {
       risks.forEach(function (r) { dismissedRisks[PF.riskKey(r)] = true; });
-      slot.textContent = '';
+      closeCard();
     }, 'icon-btn push');
     dismiss.title = 'Ignorer pour cette plaque';
     dismiss.setAttribute('aria-label', 'Ignorer pour cette plaque');
@@ -2602,16 +2610,19 @@
 
     var fail = el('p', 'fail-text hidden');
     var acts = el('div', 'stack');
-    var fixAll = button('', null, 'btn');
+    var fixAll = button('', null, 'btn ghost');
     acts.appendChild(fixAll);
     box.appendChild(acts);
     box.appendChild(fail);
     var talk = button('En parler à l’assistant', function () {
-      slot.textContent = '';
+      closeCard();
       send('Avant d’imprimer, Plyo me signale : ' + risks.map(function (r) { return r.text; }).join(' ') + ' Que me conseilles-tu ?');
     }, 'link');
     box.appendChild(talk);
 
+    // Carte fermée : plus de risque ouvert, donc plus de bouton « Appliquer les correctifs » dans la ligne d'action.
+    function closeCard() { slot.textContent = ''; preflightFix = null; openRisks = 0; renderProject(); }
+    preflightFix = function () { if (fixAll.disabled) return false; fixAll.click(); return true; };
     function picked() { return rows.filter(function (r) { return r.check.checked; }); }
     // « Tout corriger » tant que la sélection est celle conseillée ; sinon « Corriger » ce qui est coché.
     function update() {
@@ -2645,7 +2656,7 @@
         box.appendChild(h);
         box.appendChild(el('p', 'muted', 'Découpe à nouveau la plaque : je revérifie tout de suite après.'));
         var row = el('div', 'row-acts');
-        row.appendChild(button('Découper la plaque', function () { slot.textContent = ''; plateAction('slice'); }, 'btn sm', 'wand'));
+        row.appendChild(button('Découper la plaque', function () { closeCard(); plateAction('slice'); }, 'btn ghost sm', 'wand'));
         // « Annuler » au bout de la ligne « fait », comme partout ailleurs.
         if (undoId) h.appendChild(undoButton('Annuler', function (b) {
           pendingSheet = { kind: 'undo', onResult: function (ok, t) {

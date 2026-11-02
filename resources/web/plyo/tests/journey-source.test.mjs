@@ -44,3 +44,11 @@ test('le menu ne garde que l’essentiel', () => {
   assert.deepEqual(ids, ['m-account-sep', 'm-convs', 'm-email', 'm-help', 'm-login', 'm-logout', 'm-new', 'm-undo', 'm-usage']);
   for (const gone of ['m-check', 'm-parts', 'm-values', 'm-setup', 'm-limits', 'm-tour']) assert.ok(!page.includes("$('" + gone + "')"), gone + ' encore écouté');
 });
+
+test('la carte de vérification n’a pas de bouton plein : le bouton de l’étape est celui de la ligne d’action', () => {
+  const page = read('index.html');
+  const start = page.indexOf('function renderPreflight');
+  const card = page.slice(start, page.indexOf('function onPreflight', start) > start ? page.indexOf('function onPreflight', start) : start + 9000);
+  // Création d'un bouton plein (classe passée en argument) ; `classList.contains('btn')` n'en crée pas.
+  assert.ok(!/,\s*['"]btn(?: sm)?['"]/.test(card), 'renderPreflight');
+});

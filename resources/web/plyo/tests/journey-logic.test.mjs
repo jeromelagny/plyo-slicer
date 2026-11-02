@@ -78,6 +78,8 @@ test('la barre passe en pastilles sous 340 px et la fiche se réduit sur fenêtr
   assert.equal(J.barMode(380), 'names');
   assert.equal(J.compactFiche({ folded: false, heightPx: 500 }), true);
   assert.equal(J.compactFiche({ folded: true, heightPx: 900 }), true);
+  assert.equal(J.compactFiche({ folded: false, heightPx: 759 }), true);
+  assert.equal(J.compactFiche({ folded: false, heightPx: 760 }), false);
   assert.equal(J.compactFiche({ folded: false, heightPx: 900 }), false);
 });
 
@@ -107,4 +109,15 @@ test('toggleFold : écrire replie, la flèche bascule, changer d’étape dépli
   assert.deepEqual(J.toggleFold({ folded: false, ficheOpen: false }, 'toggle'), { folded: true, ficheOpen: false });
   assert.deepEqual(J.toggleFold({ folded: true, ficheOpen: true }, 'stepChange'), { folded: false, ficheOpen: true });
   assert.deepEqual(J.toggleFold({ folded: true, ficheOpen: false }, 'inconnu'), { folded: true, ficheOpen: false });
+});
+
+test('contentFor : « changer » le filament rouvre les choix même après la découpe', () => {
+  assert.equal(J.contentFor('machine', null), 'choices');
+  assert.equal(J.contentFor('filament', null), 'choices');
+  assert.equal(J.contentFor('piece', null), 'choices');
+  assert.equal(J.contentFor('preparer', null), 'steps');
+  assert.equal(J.contentFor('imprimer', null), 'steps');
+  assert.equal(J.contentFor('resultat', null), 'steps');
+  assert.equal(J.contentFor('imprimer', 'filament'), 'choices');
+  assert.equal(J.contentFor('machine', 'filament'), 'choices');
 });

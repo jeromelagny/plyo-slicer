@@ -69,7 +69,13 @@
   }
 
   function barMode(widthPx) { return widthPx < 340 ? 'pills' : 'names'; }
-  function compactFiche(o) { return !!(o && (o.folded || o.heightPx < 600)); }
+  function compactFiche(o) { return !!(o && (o.folded || o.heightPx < 760)); }
+
+  // Ce qui occupe le premier bloc du corps : les choix (étapes 1 à 3, ou « changer » le filament) ou le contenu des étapes 4 à 6.
+  function contentFor(step, editing) {
+    if (editing === 'filament') return 'choices';
+    return step === 'machine' || step === 'filament' || step === 'piece' ? 'choices' : 'steps';
+  }
 
   function ficheSummary(project) {
     var p = project || {}, parts = [];
@@ -105,7 +111,7 @@
     return st;
   }
 
-  var api = { toggleFold: toggleFold, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
+  var api = { contentFor: contentFor, toggleFold: toggleFold, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
