@@ -36,3 +36,11 @@ test('la visite guidée a disparu : plus de renderTour ni de carte de visite dan
   assert.ok(/function renderSetupFlow\b/.test(page), 'renderSetupFlow');
   assert.ok(!/Passer la visite|Terminer la visite/.test(page), 'plus de « Passer la visite »');
 });
+
+test('le menu ne garde que l’essentiel', () => {
+  const page = read('index.html');
+  const menu = page.slice(page.indexOf('id="menu"'), page.indexOf('</div>\n  </div>', page.indexOf('id="menu"')));
+  const ids = [...menu.matchAll(/id="(m-[a-z-]+)"/g)].map((m) => m[1]).sort();
+  assert.deepEqual(ids, ['m-account-sep', 'm-convs', 'm-email', 'm-help', 'm-login', 'm-logout', 'm-new', 'm-undo', 'm-usage']);
+  for (const gone of ['m-check', 'm-parts', 'm-values', 'm-setup', 'm-limits', 'm-tour']) assert.ok(!page.includes("$('" + gone + "')"), gone + ' encore écouté');
+});

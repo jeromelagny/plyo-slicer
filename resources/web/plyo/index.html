@@ -396,16 +396,7 @@
       <div class="group" role="presentation">Conversation</div>
       <button type="button" id="m-new" role="menuitem" data-icon="plus">Nouvelle conversation</button>
       <button type="button" id="m-convs" role="menuitem" data-icon="chat">Mes conversations</button>
-      <hr>
-      <div class="group" role="presentation">Plaque</div>
-      <button type="button" id="m-check" role="menuitem" data-icon="search">Vérifier ma plaque avant d’imprimer</button>
-      <button type="button" id="m-parts" role="menuitem" data-icon="cube">Mes pièces</button>
       <button type="button" id="m-undo" role="menuitem" data-icon="undo" disabled title="Rien à annuler pour l’instant">Annuler les derniers réglages appliqués</button>
-      <button type="button" id="m-values" role="menuitem" data-icon="eye">Voir les réglages lus par l’assistant</button>
-      <hr>
-      <div class="group" role="presentation">Imprimante</div>
-      <button type="button" id="m-setup" role="menuitem" data-icon="plus">Ajouter une imprimante</button>
-      <button type="button" id="m-limits" role="menuitem" data-icon="bars">Limites du fabricant du filament</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
       <div class="who" id="m-email"></div>
@@ -413,7 +404,6 @@
       <button type="button" id="m-logout" role="menuitem" data-icon="logout">Me déconnecter</button>
       <button type="button" id="m-login" role="menuitem" data-icon="login">Me connecter</button>
       <hr>
-      <button type="button" id="m-tour" role="menuitem" data-icon="flag">Refaire la visite guidée</button>
       <button type="button" id="m-help" role="menuitem" data-icon="help">Aide</button>
     </div>
   </div>
@@ -1613,23 +1603,13 @@
   $('m-new').addEventListener('click', function () { menu.classList.add('hidden'); newConversation(); });
   $('m-convs').addEventListener('click', openConversations);
   $('m-usage').addEventListener('click', openUsage);
-  $('m-parts').addEventListener('click', function () { menu.classList.add('hidden'); openJournal(); });
-  $('m-limits').addEventListener('click', openLimits);
-  $('m-setup').addEventListener('click', function () { menu.classList.add('hidden'); startSetup(); renderSetupFlow(); });
-  $('m-check').addEventListener('click', function () { menu.classList.add('hidden'); checkPlate(); });
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
-  $('m-values').addEventListener('click', openValues);
   $('m-help').addEventListener('click', openHelp);
   $('btn-ai-info').addEventListener('click', openHelp);
   $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
   $('m-login').addEventListener('click', function () { menu.classList.add('hidden'); openLogin(); });
   $('btn-login').addEventListener('click', openLogin);
-  $('m-tour').addEventListener('click', function () {
-    menu.classList.add('hidden');
-    if (conv && PlyoProject.nextStep(conv.project) === 'ready') setTourStep('slice');
-    else noteLine('Le parcours guidé commence quand ton projet est complet : imprimante, filament, puis pièce.', '', 'info');
-  });
 
   // ---------- Réglages lus par le slicer ----------
   function formatValue(value, unit) {
