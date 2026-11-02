@@ -191,9 +191,9 @@
   /* Corps défilant : accueil puis conversation */
   .body { flex: 1; overflow-y: auto; padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
   .tabs { flex: none; display: flex; border-bottom: 1px solid var(--border); }
-  .tab { flex: 1; background: transparent; border: 0; border-bottom: 2px solid transparent; padding: var(--s2) var(--s1); color: var(--muted); font: inherit; cursor: pointer; }
+  .tab { flex: 1; background: transparent; border: 0; border-bottom: 3px solid transparent; padding: var(--s3) var(--s2); color: var(--muted); font: inherit; font-size: var(--fs-lg); cursor: pointer; }
   .tab.on { color: var(--accent-text); font-weight: 700; border-bottom-color: var(--accent); }
-  .tab-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-left: 6px; vertical-align: middle; }
+  .tab-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); margin-left: 6px; vertical-align: middle; }
   .view { display: flex; flex-direction: column; gap: var(--s3); }
   .view.hidden { display: none; }
   #guide-notes { display: flex; flex-direction: column; gap: var(--s2); }
@@ -423,8 +423,8 @@
   <div class="journey" id="journey"><div id="journey-fiche"></div><div id="journey-bar"></div></div>
 
   <div class="tabs" role="tablist" id="tabs">
-    <button class="tab on" id="tab-guide" role="tab" aria-selected="true" type="button">Guide</button>
-    <button class="tab" id="tab-chat" role="tab" aria-selected="false" type="button">Discussion<span class="tab-dot hidden" id="tab-dot" aria-label="Nouvelle réponse"></span></button>
+    <button class="tab on" id="tab-guide" role="tab" aria-selected="true" type="button">Étapes</button>
+    <button class="tab" id="tab-chat" role="tab" aria-selected="false" type="button">Poser une question<span class="tab-dot hidden" id="tab-dot" aria-label="Nouvelle réponse"></span></button>
   </div>
 
   <div class="body" id="body">
