@@ -1653,7 +1653,7 @@
   });
 
   // Photos → pièces jointes de la demande ; modèles 3D → posés sur le plateau par Plyo (gratuit).
-  var MAX_MODEL_BYTES = 50 * 1024 * 1024;
+  var MAX_MODEL_BYTES = 150 * 1024 * 1024;
   function addFiles(all) {
     var models = all.filter(function (f) { return FS.isModelFile(f.name); });
     var files = all.filter(function (f) { return !FS.isModelFile(f.name); });
@@ -1698,7 +1698,7 @@
     slot.appendChild(box);
   }
   function importModel(file) {
-    if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd : 50 Mo au plus.', 'error', 'alert'); return; }
+    if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd pour passer par ce panneau (150 Mo au plus). Importe-le plutôt par Fichier › Importer dans Orca : je verrai la pièce arriver.', 'error', 'alert'); return; }
     var reader = new FileReader();
     reader.onload = function () {
       var data = String(reader.result || '');
@@ -2680,6 +2680,9 @@
     var hadSummary = !!printSummary();
     var wasLinked = !!(tourSignals && tourSignals.linked);
     tourSignals = signals;
+    // Pièce posée sur le plateau autrement que par ce panneau (Fichier › Importer d'Orca, glisser-déposer) : elle remplit la fiche.
+    var plated = PlyoProject.partFromPlate(conv && conv.project, signals);
+    if (plated) { conv.project.part = { name: plated }; projectChanged(); }
     var step = currentTourStep();
     if (!step) return;
     var nextStep = FS.nextTourStep(step, signals);

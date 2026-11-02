@@ -53,7 +53,7 @@ nlohmann::json add(const std::string& name, const std::string& base64, const nlo
     if (file.empty())
         return {{"ok", false}, {"text", "Ce type de fichier n'est pas un modèle 3D (STL, 3MF, OBJ, STEP ou AMF)."}};
     if (base64.empty() || boost::beast::detail::base64::decoded_size(base64.size()) > MAX_BYTES)
-        return {{"ok", false}, {"text", "Fichier vide ou trop lourd (50 Mo au plus)."}};
+        return {{"ok", false}, {"text", "Fichier vide ou trop lourd (150 Mo au plus). Importe-le plutôt par Fichier › Importer d'Orca : je verrai la pièce arriver."}};
 
     std::string bytes(boost::beast::detail::base64::decoded_size(base64.size()), '\0');
     bytes.resize(boost::beast::detail::base64::decode(bytes.data(), base64.data(), base64.size()).first);

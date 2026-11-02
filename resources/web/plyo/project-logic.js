@@ -44,7 +44,14 @@
     return i >= 0 && i + 1 < GUIDED_STEPS.length ? GUIDED_STEPS[i + 1] : null;
   }
 
-  var api = { emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  // Pièce déjà posée sur le plateau d'Orca (import par le menu d'Orca, glisser-déposer sur le plateau…) alors que la fiche
+  // attend la pièce : son nom, sinon null. `signals` : {objects, part_name} (tour_signals du slicer).
+  function partFromPlate(project, signals) {
+    if (nextStep(project) !== 'part' || !signals || !(signals.objects > 0)) return null;
+    return typeof signals.part_name === 'string' && signals.part_name ? signals.part_name : 'Pièce posée sur le plateau';
+  }
+
+  var api = { partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

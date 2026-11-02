@@ -9,7 +9,7 @@
 namespace Plyo { namespace ModelImport {
 
 // Taille maximale d'un fichier reçu du panneau.
-constexpr size_t MAX_BYTES = 50 * 1024 * 1024;
+constexpr size_t MAX_BYTES = 150 * 1024 * 1024;
 
 // `name` : nom du fichier d'origine (STL, 3MF, OBJ, STEP, AMF) ; `base64` : son contenu.
 // Renvoie {ok, name, size_mm:[x,y,z], fits, bed_mm:[x,y,z]} ou {ok:false, text}.

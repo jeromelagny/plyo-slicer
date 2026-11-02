@@ -268,6 +268,15 @@ nlohmann::json tour_signals()
     if (plater == nullptr)
         return signals;
     signals["objects"]            = plater->model().objects.size();
+    // Nom de la première pièce (fichier d'origine si l'objet n'a pas de nom) : la fiche du projet s'en sert quand la pièce
+    // vient du menu d'Orca et non du panneau.
+    if (!plater->model().objects.empty()) {
+        const Slic3r::ModelObject* first = plater->model().objects.front();
+        std::string                name  = first->name;
+        if (name.empty())
+            name = boost::filesystem::path(first->input_file).filename().string();
+        signals["part_name"] = name.substr(0, 120);
+    }
     Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
     if (plate != nullptr && plate->is_slice_result_valid()) {
         signals["sliced"] = true;

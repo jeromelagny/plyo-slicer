@@ -40,3 +40,13 @@ test('nextGuidedStep va de slice à after puis null', () => {
   assert.equal(P.nextGuidedStep('slice'), 'print');
   assert.equal(P.nextGuidedStep('after'), null);
 });
+
+test('partFromPlate prend la pièce posée sur le plateau quand la fiche attend la pièce', () => {
+  const ready = { printer: printer, filament: filament, part: null };
+  assert.equal(P.partFromPlate(ready, { objects: 1, part_name: 'bague.3mf' }), 'bague.3mf');
+  assert.equal(P.partFromPlate(ready, { objects: 2, part_name: '' }), 'Pièce posée sur le plateau');
+  assert.equal(P.partFromPlate(ready, { objects: 0, part_name: '' }), null);
+  assert.equal(P.partFromPlate({ printer: printer, filament: filament, part: { name: 'a.stl' } }, { objects: 1, part_name: 'b.stl' }), null);
+  assert.equal(P.partFromPlate({ printer: printer, filament: null, part: null }, { objects: 1, part_name: 'b.stl' }), null);
+  assert.equal(P.partFromPlate(ready, null), null);
+});
