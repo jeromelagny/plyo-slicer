@@ -136,10 +136,11 @@ void send_result(const nlohmann::json& result)
 }
 
 // Refus (à envoyer tel quel) si une modification ne doit pas être faite : fiche du projet incomplète, ou Orca qui n'est
-// plus sur l'imprimante ou le filament du projet. null si elle est permise. Un retour arrière (`revert`) n'est jamais refusé.
+// plus sur l'imprimante ou le filament du projet. null si elle est permise. Ne sont jamais refusés : un retour arrière
+// (`revert`) et un réglage fait par l'utilisateur dans la fiche elle-même (`project_edit`, ex. les températures).
 nlohmann::json project_refusal(const nlohmann::json& data)
 {
-    if (Json::boolean(data, "revert", false))
+    if (Json::boolean(data, "revert", false) || Json::boolean(data, "project_edit", false))
         return nullptr;
     const nlohmann::json state = Project::state();
     const std::string    text  = ProjectLogic::refusal(data.contains("project") ? data["project"] : nlohmann::json(),

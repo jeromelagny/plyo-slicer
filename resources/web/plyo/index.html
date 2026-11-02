@@ -286,6 +286,18 @@
   .disclaimer .link { font-size: var(--fs-xs); min-height: 0; flex: none; }
 
   /* Premiers pas : carte du parcours, puce « Tu regardes », fiche d'un réglage */
+  .project { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s3); }
+  .project-title { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .project-row { display: flex; justify-content: space-between; align-items: center; gap: var(--s2); padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .project-row:last-of-type { border-bottom: 0; }
+  .project-row.current .project-label { font-weight: 600; }
+  .project-label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .project-missing { color: var(--warn-text); font-style: italic; }
+  .project-ok { color: var(--accent-text); font-size: var(--fs-sm); margin-left: var(--s1); }
+  .project-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s1); }
+  .project-body p, .project-hint { margin: 0; }
+  .project-error { color: var(--danger-text); margin: 0; }
+  .project-temps { padding-left: 20px; }
   .tour { border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--accent-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .tour .step { font-size: var(--fs-xs); font-weight: 600; color: var(--accent-text); text-transform: uppercase; letter-spacing: .04em; }
   .tour h3 { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
@@ -387,7 +399,7 @@
 
   <div class="body" id="body">
     <!-- Premiers pas : étape du parcours en cours -->
-    <div id="project-slot"></div>
+    <div id="project-slot"><div id="project-alert"></div><div id="project-card"></div></div>
     <div id="tour-slot"></div>
     <div id="outcome-slot"></div>
     <div id="preflight-slot"></div>
@@ -399,22 +411,9 @@
     <div class="hidden" id="home">
       <div class="hello">
         <h2>Bonjour !</h2>
-        <p id="hello-text">Montre-moi une impression ratée ou dis-moi ce que tu veux obtenir. Je propose les réglages, tu choisis ce qu’on applique.</p>
+        <p id="hello-text">Je prépare ton projet : choisis d’abord ton imprimante.</p>
       </div>
-      <p class="home-mini">Une question pendant la visite ? Écris-la en bas, je réponds.</p>
-      <div class="home-more">
-        <button class="action" type="button" data-action="phone">
-          <span class="badge" data-icon="phone"></span>
-          <span><b>Prendre des photos avec mon téléphone</b><span class="sub">Scanne un QR code, les photos arrivent ici</span></span>
-        </button>
-        <button class="action" type="button" data-action="files">
-          <span class="badge" data-icon="camera"></span>
-          <span><b>Ajouter une photo depuis l’ordinateur</b><span class="sub">JPEG ou PNG, une ou plusieurs</span></span>
-        </button>
-        <button class="action" type="button" data-action="model">
-          <span class="badge" data-icon="cube"></span>
-          <span><b>Ajouter un modèle 3D</b><span class="sub">STL, 3MF, OBJ ou STEP : je le pose sur le plateau (ou glisse-le ici)</span></span>
-        </button>
+      <div class="home-more hidden" id="goals-wrap">
         <p class="label">Ou pars d’un objectif</p>
         <div class="chips" id="goals">
           <button class="chip" type="button">Je veux une surface du dessus bien lisse</button>
@@ -455,6 +454,7 @@
 <!--plyo-include:assistant-logic.js-->
 <!--plyo-include:preflight.js-->
 <!--plyo-include:project-logic.js-->
+<!--plyo-include:project-card.js-->
 <script>
 (function () {
   // Adresse du service Plyo, donnée par le slicer (Plyo::Config, variable d'environnement PLYO_API_URL en développement).
@@ -670,8 +670,9 @@
   var conv = null;           // { id, title, updated, entries: [...], history: [...] }
   var saveTimer = null;
   function newId() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6); }
-  function startConversation() {
-    conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: PlyoProject.emptyProject() };
+  function startConversation(project) {
+    conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
+    if (typeof renderProject === 'function') renderProject();
   }
   // Une conversation vaut d'être gardée dès qu'elle a des échanges ou un début de projet (imprimante choisie…).
   function worthSaving(c) { return !!c && (c.entries.length > 0 || PlyoProject.nextStep(c.project) !== 'printer'); }
@@ -718,7 +719,8 @@
     attachments = [];
     renderAttachments();
     noteInput.value = '';
-    startConversation();
+    // Nouveau projet : imprimante et filament du précédent proposés, jamais appliqués sans confirmation.
+    startConversation(conv && PlyoProject.nextStep(conv.project) !== 'printer' ? PlyoProject.proposeFrom(conv.project) : null);
   }
   // Remet l'imprimante et le filament du projet dans Orca (seulement si ces deux choix sont faits).
   function restoreProjectInOrca(discardUnsaved) {
@@ -727,7 +729,7 @@
     window.orca.postMessage({ type: 'project_restore', project: p, discard_unsaved: !!discardUnsaved });
   }
   function onProjectRestored(msg) {
-    var slot = $('project-slot');
+    var slot = $('project-alert');
     slot.textContent = '';
     if (msg.ok) return;
     if (msg.needs_confirmation) {
@@ -740,6 +742,103 @@
       return;
     }
     slot.appendChild(alertBox('error', msg.text || 'Je n’ai pas pu remettre ce projet dans Orca.', 'alert'));
+  }
+
+  // ---------- Fiche « Mon projet » : imprimante, filament (buse et plateau), pièce ----------
+  // Le projet est gardé avec la conversation (conv.project) ; PlyoProject (project-logic.js) dit quelle étape manque.
+  var projectUI = { printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
+  function projectChanged() { scheduleSave(); renderProject(); }
+  function renderProject() {
+    if (!conv) return;
+    PlyoProjectCard.render($('project-card'), { el: el, button: button, icon: icon }, {
+      project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable, error: projectUI.error,
+      editing: projectUI.editing, handlers: projectHandlers });
+    var step = PlyoProject.nextStep(conv.project);
+    $('hello-text').textContent = fr({ printer: 'Je prépare ton projet : choisis d’abord ton imprimante.',
+      filament: 'Maintenant, ton filament et ses températures.', part: 'Dernière chose : ta pièce.',
+      ready: 'Tout est prêt. Dis-moi ce que tu veux obtenir, ou pose-moi une question.' }[step]);
+    $('goals-wrap').classList.toggle('hidden', step !== 'ready');
+  }
+  function askProjectPrinters() { window.orca.postMessage({ type: 'project_printers' }); }
+  var projectHandlers = {
+    pickPrinter: function (preset, name) {
+      projectUI.error = {};
+      projectUI.pending = { kind: 'printer', preset: preset, name: name || preset };
+      window.orca.postMessage({ type: 'printer_select_profile', name: preset });
+    },
+    keepProposed: function () { var p = conv.project.printer; if (p) projectHandlers.pickPrinter(p.preset, p.name); },
+    setupPrinter: function () { startSetup(); renderTour(); },
+    pickFilament: function (type) {
+      projectUI.error = {};
+      projectUI.pending = { kind: 'filament', type: type };
+      window.orca.postMessage({ type: 'filament_choose', material: type });
+    },
+    setTemps: function (nozzle, bed) {
+      var f = conv.project.filament;
+      if (!f) return;
+      var n = labelTemp(nozzle), b = labelTemp(bed), changes = [];
+      if (n !== null) changes.push({ id: 'nozzle_temp', value: n }, { id: 'nozzle_temp_initial', value: n });
+      if (b !== null) changes.push({ id: 'bed_temp', value: b }, { id: 'bed_temp_initial', value: b });
+      if (!changes.length) { renderProject(); return; }
+      window.orca.postMessage({ type: 'apply', project_edit: true, changes: changes, why: 'Étiquette de la bobine' });
+      projectUI.pending = { kind: 'temps' };
+      window.orca.postMessage({ type: 'project_state' });
+    },
+    importPart: function () { pickFiles(); },
+    change: function (line) {
+      projectUI.error = {};
+      if (line === 'printer') { conv.project.printer = null; conv.project.filament = null; }
+      if (line === 'filament') projectUI.editing = 'filament';
+      projectChanged();
+    }
+  };
+  function onProjectPrinters(msg) {
+    projectUI.printers = Array.isArray(msg.printers) ? msg.printers : [];
+    projectUI.printers.forEach(function (p) { if (p.linked) window.orca.postMessage({ type: 'project_reachable', preset: p.preset }); });
+    // Une seule imprimante configurée et reliée : proposée d'office, à confirmer.
+    if (!conv.project.printer && projectUI.printers.length === 1 && projectUI.printers[0].linked)
+      conv.project.printer = { preset: projectUI.printers[0].preset, name: projectUI.printers[0].name, proposed: true };
+    renderProject();
+  }
+  function onProjectState(msg) {
+    var pend = projectUI.pending;
+    projectUI.pending = null;
+    if (projectUI.adopt && setup.preset && msg.printer_preset) {
+      projectUI.adopt = false;
+      conv.project.printer = { preset: msg.printer_preset, name: msg.printer_preset };
+      conv.project.filament = null;
+      projectChanged();
+      return;
+    }
+    if (!pend) return;
+    if (pend.kind === 'filament') {
+      conv.project.filament = { type: pend.type, preset: msg.filament_preset, nozzle_temp: msg.nozzle_temp, bed_temp: msg.bed_temp };
+      projectUI.editing = null;
+    } else if (pend.kind === 'temps' && conv.project.filament) {
+      conv.project.filament.nozzle_temp = msg.nozzle_temp;
+      conv.project.filament.bed_temp = msg.bed_temp;
+    }
+    projectChanged();
+  }
+  function onProjectPrinterSelected(msg) {
+    var pend = projectUI.pending;
+    projectUI.pending = null;
+    if (!msg.ok) { projectUI.error = { printer: 'Je n’ai pas pu sélectionner cette imprimante dans Orca.' }; renderProject(); return; }
+    var proposedFilament = conv.project.filament && conv.project.filament.proposed ? conv.project.filament : null;
+    conv.project.printer = { preset: pend.preset, name: pend.name };
+    conv.project.filament = null;
+    projectChanged();
+    if (proposedFilament && proposedFilament.type) projectHandlers.pickFilament(proposedFilament.type);
+  }
+  function onProjectFilamentChosen(msg) {
+    var pend = projectUI.pending;
+    if (!msg.ok) {
+      projectUI.pending = null;
+      projectUI.error = { filament: 'Je n’ai pas trouvé de profil ' + pend.type + ' pour cette imprimante. Choisis un autre filament.' };
+      renderProject();
+      return;
+    }
+    window.orca.postMessage({ type: 'project_state' }); // lit le profil choisi et ses températures (projectUI.pending reste « filament »)
   }
   function openConversation(id) {
     if (blockedWhileBusy()) return;
@@ -754,6 +853,7 @@
     conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [],
       project: c.project && typeof c.project === 'object' ? c.project : PlyoProject.emptyProject() };
     restoreProjectInOrca(false);
+    renderProject();
     if (!conv.entries.length) return;
     showConversation();
     conv.entries.forEach(function (entry) { try { renderEntry(entry, true); } catch (e) { /* élément abîmé : ignoré */ } });
@@ -1112,11 +1212,17 @@
   // dans le catalogue des imprimantes fournies. Les adresses restent dans ce panneau, jamais envoyées au service.
   var setup = { phase: null, offered: false, printers: [], catalog: null, query: '', pick: null, found: null };
   function startSetup() {
+    projectUI.adopt = true;
     setup = { phase: 'scan', offered: true, printers: [], catalog: setup.catalog, query: '', pick: null, found: null, retried: false };
     window.orca.postMessage({ type: 'printer_scan' });
   }
   function setupPhase(phase) { setup.phase = phase; renderTour(); }
-  function endSetup() { setup.phase = null; renderTour(); }
+  function endSetup() {
+    setup.phase = null;
+    renderTour();
+    // Une imprimante vient d'être installée et sélectionnée dans Orca : elle devient celle du projet.
+    if (projectUI.adopt && setup.preset) { window.orca.postMessage({ type: 'project_state' }); window.orca.postMessage({ type: 'project_printers' }); }
+  }
   function onSetupScan(printers) {
     // La première recherche tombe souvent pendant la demande d'autorisation (réseau local sur macOS, pare-feu sur
     // Windows) et ne voit rien : on relance une fois tout seul avant d'annoncer « aucune imprimante ».
@@ -3121,9 +3227,6 @@
   $('btn-files').addEventListener('click', pickFiles);
   $('btn-phone').addEventListener('click', openPhone);
   $('phone-linked').addEventListener('click', openPhone);
-  document.querySelector('[data-action="files"]').addEventListener('click', pickFiles);
-  document.querySelector('[data-action="model"]').addEventListener('click', pickFiles);
-  document.querySelector('[data-action="phone"]').addEventListener('click', openPhone);
   $('goals').querySelectorAll('.chip').forEach(function (chip) { chip.addEventListener('click', function () { send(chip.textContent); }); });
 
   // ---------- Messages du slicer ----------
@@ -3191,6 +3294,7 @@
       // Nouveau projet ou projet ouvert : retour à l'accueil (la conversation précédente reste dans « Mes conversations »).
       if (!busy) { closeDrawer(); newConversation(); }
     } else if (msg.type === 'filament_chosen') {
+      if (projectUI.pending && projectUI.pending.kind === 'filament') { onProjectFilamentChosen(msg); return; }
       onFilamentChosen(msg);
     } else if (msg.type === 'print_started') {
       if (tourCard && !msg.ok) tourCard.tell('alert', msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque (étape 3) : clique sur « Découper la plaque » en haut à droite.' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.');
@@ -3202,7 +3306,7 @@
     } else if (msg.type === 'printer_link_state') {
       onLinkState(msg);
     } else if (msg.type === 'printer_profile_selected') {
-      onProfileSelected(msg);
+      if (projectUI.pending && projectUI.pending.kind === 'printer') onProjectPrinterSelected(msg); else onProfileSelected(msg);
     } else if (msg.type === 'printer_link_tested') {
       onLinkTested(msg);
     } else if (msg.type === 'printer_link_saved') {
@@ -3228,6 +3332,13 @@
       if (!saveFailedShown) { saveFailedShown = true; noteLine('Cette conversation est devenue trop longue pour être gardée : commence-en une nouvelle depuis le menu « ⋯ ».', 'error', 'alert'); }
     } else if (msg.type === 'project_restored') {
       onProjectRestored(msg);
+    } else if (msg.type === 'project_printers') {
+      onProjectPrinters(msg);
+    } else if (msg.type === 'project_state') {
+      onProjectState(msg);
+    } else if (msg.type === 'project_reachable') {
+      projectUI.reachable[msg.preset] = !!msg.ok;
+      renderProject();
     } else if (msg.type === 'conv_loaded') {
       var then = afterConvLoaded, auto = autoOpening === msg.id;
       afterConvLoaded = null;
@@ -3240,6 +3351,7 @@
   });
 
   startConversation();
+  askProjectPrinters();
   showLoggedIn(false);
   window.orca.postMessage({ type: 'ready' });
   window.orca.postMessage({ type: 'session_load' });
