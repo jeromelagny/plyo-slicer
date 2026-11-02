@@ -7,6 +7,7 @@
 #include "../../PlyoSanitize.hpp"
 #include "../../PlyoDiscoveryLogic.hpp"
 #include "../../PlyoProjectLogic.hpp"
+#include "../../PlyoCC2Logic.hpp"
 #include "../../PlyoLimitsLogic.hpp"
 #include "../../PlyoCatalogPolicy.hpp"
 #include "../../PlyoProfilesLogic.hpp"
@@ -683,4 +684,64 @@ TEST_CASE("Project: la remise du projet n'est proposée que s'il y a quelque cho
     CHECK(can_restore(p, "A", "G"));
     CHECK_FALSE(can_restore(nlohmann::json(), "A", "F"));
     CHECK_FALSE(can_restore(nlohmann::json{{"printer", {{"preset", "A"}}}}, "B", "F")); // pas de filament à remettre
+}
+
+TEST_CASE("CC2: les paquets MQTT font l'aller-retour")
+{
+    using namespace Plyo::CC2Logic;
+    const std::string connect = connect_packet("1_PC_1234", "elegoo", "123456");
+    Plyo::CC2Logic::Packet p;
+    size_t consumed = 0;
+    REQUIRE(parse_packet(connect, consumed, p));
+    CHECK(consumed == connect.size());
+    CHECK(p.type == 1);
+    CHECK(p.body.substr(0, 8) == std::string("\x00\x04MQTT\x04\xC2", 8));
+
+    const std::string long_payload(300, 'x'); // longueur sur deux octets
+    const std::string pub = publish_packet("elegoo/SN/api_register", long_payload);
+    REQUIRE(parse_packet(pub, consumed, p));
+    CHECK(p.type == 3);
+    std::string topic, payload;
+    REQUIRE(publish_fields(p, topic, payload));
+    CHECK(topic == "elegoo/SN/api_register");
+    CHECK(payload == long_payload);
+
+    CHECK_FALSE(parse_packet(pub.substr(0, pub.size() - 1), consumed, p)); // paquet incomplet
+    CHECK_FALSE(parse_packet("", consumed, p));
+
+    const std::string sub = subscribe_packet(1, {"a/b", "c/d"});
+    REQUIRE(parse_packet(sub, consumed, p));
+    CHECK(p.type == 8);
+    CHECK(static_cast<unsigned char>(sub[0]) == 0x82);
+}
+
+TEST_CASE("CC2: les messages de démarrage d'impression")
+{
+    using namespace Plyo::CC2Logic;
+    CHECK(topic_api_request("SN1", "1_PC_1") == "elegoo/SN1/1_PC_1/api_request");
+    CHECK(topic_api_response("SN1", "1_PC_1") == "elegoo/SN1/1_PC_1/api_response");
+    CHECK(topic_register_response("SN1", "1_PC_1") == "elegoo/SN1/1_PC_1_req/register_response");
+    CHECK(topic_api_register("SN1") == "elegoo/SN1/api_register");
+
+    const nlohmann::json reg = nlohmann::json::parse(register_payload("1_PC_1"));
+    CHECK(reg["client_id"] == "1_PC_1");
+    CHECK(reg["request_id"] == "1_PC_1_req");
+    CHECK(is_register_ok(R"({"client_id":"1_PC_1","error":"ok"})"));
+    CHECK_FALSE(is_register_ok(R"({"client_id":"1_PC_1","error":"too many clients"})"));
+    CHECK_FALSE(is_register_ok("pas du json"));
+
+    const nlohmann::json start = nlohmann::json::parse(start_print_payload(7, "bague.gcode"));
+    CHECK(start["id"] == 7);
+    CHECK(start["method"] == 1020);
+    CHECK(start["params"]["filename"] == "bague.gcode");
+    CHECK(start["params"]["storage_media"] == "local");
+
+    CHECK(parse_start_reply(R"({"id":7,"method":1020,"result":{"error_code":0}})", 7).matched);
+    CHECK(parse_start_reply(R"({"id":7,"method":1020,"result":{"error_code":0}})", 7).error_code == 0);
+    CHECK(parse_start_reply(R"({"id":7,"method":1020,"result":{"error_code":1009}})", 7).error_code == 1009);
+    CHECK_FALSE(parse_start_reply(R"({"id":8,"method":1020,"result":{"error_code":0}})", 7).matched); // autre demande
+    CHECK_FALSE(parse_start_reply(R"({"id":7,"method":6000,"result":{}})", 7).matched);               // autre méthode
+    CHECK(error_text(1009).find("occupée") != std::string::npos);
+    CHECK(error_text(1021).find("introuvable") != std::string::npos);
+    CHECK_FALSE(error_text(99999).empty());
 }

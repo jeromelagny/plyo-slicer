@@ -39,6 +39,7 @@
 
 #include "OctoPrint.hpp"
 #include "PrintHost.hpp"
+#include "plyo/PlyoCC2.hpp" // PLYO: démarrage d'impression du CC2 (Orca ne sait qu'envoyer le fichier)
 #include "WebSocketClient.hpp"
 #include "slic3r/GUI/GUI.hpp"
 #include "slic3r/GUI/I18N.hpp"
@@ -411,11 +412,8 @@ namespace Slic3r {
     const char* ElegooLink::get_name() const { return "ElegooLink"; }
     PrintHostPostUploadActions ElegooLink::get_post_upload_actions() const
     {
-        if (classify_printer_model(m_printerModel) == ElegooPrinterType::CC2) {
-            return PrintHostPostUploadAction::None;
-        } else {
-            return PrintHostPostUploadAction::StartPrint;
-        }
+        // PLYO: le CC2 aussi propose « envoyer et imprimer » (démarrage par Plyo::CC2::start_print, après l'envoi)
+        return PrintHostPostUploadAction::StartPrint;
     }
 
     std::string ElegooLink::get_sn() const
@@ -1022,8 +1020,17 @@ namespace Slic3r {
                 break;
         }
 
-        if (res && upload_data.post_action == PrintHostPostUploadAction::StartPrint)
-            BOOST_LOG_TRIVIAL(info) << get_name() << ": CC2 upload completed; start print is not supported.";
+        // PLYO: démarre l'impression du fichier qui vient d'être envoyé (canal MQTT local du CC2, voir src/plyo/PlyoCC2.hpp)
+        if (res && upload_data.post_action == PrintHostPostUploadAction::StartPrint) {
+            std::string start_error;
+            std::string host = Http::get_host_header_value(m_host);
+            if (const size_t colon = host.find(':'); colon != std::string::npos)
+                host.resize(colon);
+            if (!Plyo::CC2::start_print(host, token, get_sn(), upload_filename, start_error)) {
+                error_fn(GUI::from_u8("Fichier envoyé, mais l'impression n'a pas démarré : " + start_error));
+                return false;
+            }
+        }
 
         (void) info_fn;
         return res;

@@ -24,6 +24,7 @@ Retrouver toutes les modifications : `git grep -n "PLYO:" -- src resources`.
 | `src/dev-utils/platform/msw/OrcaSlicer.rc.in` | `FileDescription` et `ProductName` = « Plyo Slicer » | Nom affiché par Windows (Gestionnaire des tâches, propriétés du fichier). Le fichier reste `orca-slicer.exe`. |
 | `src/slic3r/GUI/MainFrame.cpp` | `Plyo::on_config_changed();` à la fin de `MainFrame::on_config_changed()` | Tenir à jour les valeurs du panneau. Tout changement de configuration passe par cette fonction : saisie manuelle, changement de préréglage, modification par Plyo. |
 | `.github/workflows/build_orca.yml` | Artefact de l'installateur Windows : `*Slicer_Windows_Installer*.exe` au lieu de `OrcaSlicer*.exe` | Sinon l'installateur renommé n'est pas récupéré à la fin du run. La build Windows de Plyo se lance par `.github/workflows/plyo_windows.yml` (ajouté). |
+| `src/slic3r/Utils/ElegooLink.cpp` | `#include "plyo/PlyoCC2.hpp"` ; `get_post_upload_actions()` rend `StartPrint` aussi pour le CC2 ; dans `loopUploadCC2()`, appel de `Plyo::CC2::start_print()` après l'envoi à la place du message « start print is not supported » | Orca envoie le fichier à une Elegoo Centauri Carbon 2 mais ne sait pas la démarrer. Plyo ajoute la commande par le canal MQTT local de l'imprimante (`src/plyo/PlyoCC2*.cpp`) : « Envoyer et imprimer » fonctionne comme sur les autres Elegoo. |
 
 ## Marque (icônes et logos)
 
