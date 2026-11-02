@@ -84,3 +84,9 @@ test('la question de l’étape et ses choix sont dans la même carte, à l’in
   assert.ok(!fixedZone.includes('journey-action'), 'plus de ligne d’action dans la zone fixe, au-dessus des onglets');
   assert.ok(!/journey-fold|toggleFold/.test(read('journey-view.js') + page), 'plus de flèche de repli');
 });
+
+test('une machine qui ne répond pas : on peut revérifier, et on ne promet pas un envoi différé qui n’existe pas', () => {
+  const steps = read('journey-steps.js');
+  assert.ok(/Vérifier à nouveau/.test(steps), 'lien « Vérifier à nouveau »');
+  assert.ok(!/partira|quand elle sera prête/.test(steps), 'pas de promesse d’envoi différé');
+});

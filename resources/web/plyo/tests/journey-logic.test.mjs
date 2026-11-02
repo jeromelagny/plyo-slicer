@@ -144,3 +144,10 @@ test('resetStepOnChange : changer de machine oublie l’adaptation du 3MF, chang
   const early = full({ adapted: 'flexyring.stl', printer: { preset: 'Autre', name: 'Autre' } });
   assert.equal(J.resetStepOnChange(full({ adapted: 'flexyring.stl' }), early).adapted, undefined); // même avant la découpe
 });
+
+test('shouldRecheck : on revérifie une machine qui ne répondait pas, seulement à l’étape Imprimer', () => {
+  assert.equal(J.shouldRecheck('imprimer', false), true);
+  assert.equal(J.shouldRecheck('imprimer', true), false);
+  assert.equal(J.shouldRecheck('imprimer', null), false);
+  assert.equal(J.shouldRecheck('preparer', false), false);
+});

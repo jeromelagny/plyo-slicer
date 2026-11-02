@@ -867,6 +867,7 @@
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
+    ensureRecheck(step);
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
     PlyoJourneyView.renderSuggestions($('suggestions'), ui, { step: step, handlers: suggestionHandlers });
     renderSetupFlow();
@@ -888,8 +889,23 @@
     exportFile: function () { runAction('export'); },
     started: function () { rememberHabit(); setTourStep('after'); },
     photo: function () { pickFiles(); },
-    changeMachine: function () { projectHandlers.change('printer'); }
+    changeMachine: function () { projectHandlers.change('printer'); },
+    recheck: function () { recheckMachine(); }
   };
+  // Machine qui ne répond pas : « Vérifier à nouveau » et revérification automatique toutes les 8 s à l'étape Imprimer.
+  var recheckTimer = null;
+  function recheckMachine() {
+    var p = conv && conv.project.printer;
+    if (!p) return;
+    delete projectUI.reachable[p.preset]; // « inconnu » le temps du test
+    renderProject();
+    window.orca.postMessage({ type: 'project_reachable', preset: p.preset });
+  }
+  function ensureRecheck(step) {
+    var p = conv && conv.project.printer, off = p && PlyoJourney.shouldRecheck(step, projectUI.reachable[p.preset]);
+    if (off && !recheckTimer) recheckTimer = setInterval(function () { var q = conv && conv.project.printer; if (q) window.orca.postMessage({ type: 'project_reachable', preset: q.preset }); }, 8000);
+    else if (!off && recheckTimer) { clearInterval(recheckTimer); recheckTimer = null; }
+  }
   // Le bouton plein de la ligne d'action.
   function runAction(kind) {
     if (kind === 'slice') plateAction('slice');

@@ -160,7 +160,10 @@
     return ready ? base : base + ' Pour avancer pas à pas, passe par l’onglet « Étapes ».';
   }
 
-  var api = { machineLabel: machineLabel, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
+  // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
+  function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
+
+  var api = { shouldRecheck: shouldRecheck, machineLabel: machineLabel, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
