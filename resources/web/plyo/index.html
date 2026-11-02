@@ -1012,6 +1012,26 @@
       }
     }
   };
+  // Questions encore sans réponse, au format attendu par le service (les choix de « pref » dépendent de l'usage déjà choisi).
+  function intentPending() {
+    var p = conv && conv.project, st = p ? intentState(PlyoJourney.currentStep(p), !!(tourSignals && tourSignals.sliced)) : null;
+    if (!st || st.mode !== 'asking') return null;
+    var a = st.answers, out = [], Q = PlyoIntent.QUESTIONS;
+    var add = function (q) { out.push({ id: q.id, text: q.text, choices: q.choices.map(function (c) { return { id: c.id, label: c.label }; }) }); };
+    if (!a.use) add(Q.use);
+    else if (!a.pref && Q.pref[a.use]) add(Q.pref[a.use]);
+    if (!a.speed && a.use !== 'test') add(Q.speed);
+    return out.length ? out : null;
+  }
+  // Réponses comprises par l'IA dans une phrase libre : elles remplissent les questions, le reste continue normalement.
+  function applyIntentAnswers(list) {
+    var p = conv.project, r = PlyoIntent.mergeAnswers(intentAnswers(p), list);
+    if (!r.labels.length) return;
+    p.intent = Object.assign(p.intent || {}, r.answers);
+    intentUI.idk = false;
+    projectChanged();
+    noteLine('J’ai noté pour ta pièce : ' + r.labels.join(', ') + '.', 'ok', 'check', 'guide');
+  }
   // Applique les réglages de l'intention (un lot annulable, comme ceux de l'assistant), puis lance la découpe.
   function applyIntent(again) {
     var p = conv.project, st = intentState(PlyoJourney.currentStep(p), false);
@@ -3096,6 +3116,7 @@
 
     // Profils au moment de la question : les réglages proposés ne s'appliquent qu'à eux (le slicer refuse sinon).
     var sentNames = lastValues && lastValues.context ? Logic.namesForApply(null, lastValues.context) : null;
+    var pendingIntent = intentPending(); // questions d'intention affichées : l'IA peut y répondre d'après la phrase
     var plateParts = [];       // pièces sur le plateau au moment de la question (journal des pièces)
     aiContext().then(function (ctx) {
       if (ctx && ctx.plate && ctx.plate.objects) plateParts = ctx.plate.objects.map(function (o) { return o.name; });
@@ -3113,6 +3134,8 @@
       if (ctx && ctx.limits && Object.keys(ctx.limits).length) body.filament_limits = ctx.limits;
       // Mode catalogue : toutes les valeurs Filament + Impression, pour que l'assistant puisse proposer n'importe quel réglage.
       if (ctx && ctx.snapshot && Object.keys(ctx.snapshot).length) body.snapshot = ctx.snapshot;
+      body.explanation_level = PlyoMachines.levelOf(habits);
+      if (pendingIntent) body.intent_questions = pendingIntent;
       return apiFetch('/api/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify(body), signal: controller.signal });
     }).then(function (response) {
       if (response.status === 401) return { error: 'unauthorized' };
@@ -3170,6 +3193,7 @@
       // Ce que les ordres ont réellement fait remplacera « demandé » dans l'historique (non enregistré avec l'entrée).
       Object.defineProperty(entry, 'hist', { value: hist, enumerable: false, writable: true });
       journalAnswer(a, target, plateParts, photos);
+      if (pendingIntent && Array.isArray(a.intent_answers) && a.intent_answers.length && target === conv) applyIntentAnswers(a.intent_answers);
       // Un souci d'affichage n'est pas une erreur réseau : la réponse est gardée, rien n'est redemandé.
       if (target !== conv) return;
       try { renderAnswer(entry, false); }

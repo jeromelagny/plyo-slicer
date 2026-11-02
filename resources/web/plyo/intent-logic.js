@@ -118,7 +118,24 @@
     return (all.match(TECH) || []).length >= 2 ? 'short' : 'detailed';
   }
 
-  var api = { detectLevel: detectLevel, QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
+  // Réponses comprises par l'IA dans une phrase libre ([{question, choice}]) ajoutées aux réponses existantes. L'usage passe en
+  // premier (les choix de « pref » en dépendent), dans l'ordre des questions ; un identifiant inconnu est ignoré. Rend { answers, labels }.
+  function mergeAnswers(answers, list) {
+    var out = {}, labels = [];
+    Object.keys(answers || {}).forEach(function (k) { out[k] = answers[k]; });
+    var rank = { use: 0, pref: 1, speed: 2 };
+    var items = (Array.isArray(list) ? list : []).filter(function (x) { return x && rank[x.question] !== undefined; }).sort(function (x, y) { return rank[x.question] - rank[y.question]; });
+    items.forEach(function (x) {
+      var q = x && x.question === 'use' ? USE : x && x.question === 'pref' ? PREF[out.use] : x && x.question === 'speed' ? SPEED : null;
+      var c = q && q.choices.filter(function (k) { return k.id === x.choice; })[0];
+      if (!c || out[x.question]) return;
+      out[x.question] = c.id;
+      labels.push(c.label.toLowerCase());
+    });
+    return { answers: out, labels: labels };
+  }
+
+  var api = { mergeAnswers: mergeAnswers, detectLevel: detectLevel, QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
     settingsFor: settingsFor, keepManual: keepManual, summary: summary, MANAGED_KEYS: Object.keys(LABELS) };
   root.PlyoIntent = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

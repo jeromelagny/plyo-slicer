@@ -90,3 +90,12 @@ test('settingsFor : la hauteur de couche reste sous 75 % de la buse', () => {
   assert.equal(layer({ use: 'daily', pref: 'balanced', speed: 'fine' }, 0.2), 0.12);
   assert.equal(layer({ use: 'test' }, undefined), 0.28);
 });
+
+test('mergeAnswers : les réponses comprises par l’IA remplissent les questions, dans n’importe quel ordre, sans choix inventé', () => {
+  const r = I.mergeAnswers({}, [{ question: 'speed', choice: 'normal' }, { question: 'use', choice: 'flex' }, { question: 'pref', choice: 'balanced' }]);
+  assert.deepEqual(r.answers, { use: 'flex', pref: 'balanced', speed: 'normal' });
+  assert.deepEqual(r.labels, ['souple / à plier', 'équilibrée', 'normal']);
+  assert.deepEqual(I.mergeAnswers({}, [{ question: 'use', choice: 'solide' }, { question: 'color', choice: 'red' }]).answers, {});
+  assert.deepEqual(I.mergeAnswers({ use: 'deco' }, [{ question: 'pref', choice: 'balanced' }]).answers, { use: 'deco' }); // « équilibrée » n'existe pas pour la déco
+  assert.deepEqual(I.mergeAnswers({ use: 'flex' }, null).answers, { use: 'flex' });
+});
