@@ -477,6 +477,7 @@
 <!--plyo-include:project-logic.js-->
 <!--plyo-include:journey-logic.js-->
 <!--plyo-include:journey-view.js-->
+<!--plyo-include:journey-steps.js-->
 <!--plyo-include:project-card.js-->
 <script>
 (function () {
@@ -794,6 +795,8 @@
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), folded: journeyUI.folded, handlers: journeyHandlers });
     PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable,
       error: projectUI.error, editing: projectUI.editing, handlers: projectHandlers });
+    if (step === 'preparer' || step === 'imprimer' || step === 'resultat')
+      PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers });
     $('project-card').classList.toggle('hidden', journeyUI.folded);
     $('hello-text').textContent = fr({ machine: 'Je prépare ton projet : choisis d’abord ton imprimante.',
       filament: 'Maintenant, ton filament et ses températures.', piece: 'Dernière chose : ta pièce.',
@@ -801,11 +804,17 @@
       imprimer: 'Tout est prêt. Dis-moi ce que tu veux obtenir, ou pose-moi une question.',
       resultat: 'Dis-moi comment s’est passée ton impression.' }[step]);
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
-    renderTour();
+    renderSetupFlow();
   }
   var journeyHandlers = {
     toggleFold: function () { journeyUI.folded = !journeyUI.folded; journeyUI.ficheOpen = false; renderProject(); },
     run: function (kind) { runAction(kind); }
+  };
+  var stepHandlers = {
+    skip: function () { setTourStep('print'); },
+    exportFile: function () { runAction('export'); },
+    started: function () { setTourStep('after'); },
+    photo: function () { pickFiles(); }
   };
   // Le bouton plein de la ligne d'action.
   function runAction(kind) {
@@ -825,7 +834,7 @@
       window.orca.postMessage({ type: 'printer_select_profile', name: preset });
     },
     keepProposed: function () { var p = conv.project.printer; if (p) projectHandlers.pickPrinter(p.preset, p.name); },
-    setupPrinter: function () { startSetup(); renderTour(); },
+    setupPrinter: function () { startSetup(); renderSetupFlow(); },
     pickFilament: function (type) {
       projectUI.error = {};
       projectUI.pending = { kind: 'filament', type: type };
@@ -1300,10 +1309,10 @@
     setup = { phase: 'scan', offered: true, printers: [], catalog: setup.catalog, query: '', pick: null, found: null, retried: false };
     window.orca.postMessage({ type: 'printer_scan' });
   }
-  function setupPhase(phase) { setup.phase = phase; renderTour(); }
+  function setupPhase(phase) { setup.phase = phase; renderSetupFlow(); }
   function endSetup() {
     setup.phase = null;
-    renderTour();
+    renderSetupFlow();
     // Une imprimante vient d'être installée et sélectionnée dans Orca : elle devient celle du projet.
     if (projectUI.adopt && setup.preset) { window.orca.postMessage({ type: 'project_state' }); window.orca.postMessage({ type: 'project_printers' }); }
   }
@@ -1314,7 +1323,7 @@
     setup.printers = printers;
     setupPhase(printers.length ? 'found' : 'none');
   }
-  function onSetupCatalog(catalog) { setup.catalog = catalog; if (setup.phase === 'search') renderTour(); }
+  function onSetupCatalog(catalog) { setup.catalog = catalog; if (setup.phase === 'search') renderSetupFlow(); }
   function openSearch() {
     if (!setup.catalog) window.orca.postMessage({ type: 'setup_catalog' });
     setupPhase('search');
@@ -1385,7 +1394,7 @@
       });
       box.appendChild(list);
       box.appendChild(el('p', 'muted small', 'Beaucoup d’imprimantes n’ont pas de Wi-Fi : ce n’est pas grave, on passera par la clé USB ou la carte SD.'));
-      acts.appendChild(button('Chercher encore', function () { startSetup(); renderTour(); }, 'btn sm', 'search'));
+      acts.appendChild(button('Chercher encore', function () { startSetup(); renderSetupFlow(); }, 'btn sm', 'search'));
       acts.appendChild(button('Elle n’a pas de Wi-Fi : la choisir dans la liste', openSearch, 'btn ghost sm'));
     } else if (setup.phase === 'search') {
       box.appendChild(el('h3', '', 'Quelle imprimante as-tu ?'));
@@ -1410,7 +1419,7 @@
       box.appendChild(results);
       refresh();
       setTimeout(function () { input.focus(); }, 0);
-      acts.appendChild(button('Chercher sur le Wi-Fi', function () { startSetup(); renderTour(); }, 'btn ghost sm', 'wifi'));
+      acts.appendChild(button('Chercher sur le Wi-Fi', function () { startSetup(); renderSetupFlow(); }, 'btn ghost sm', 'wifi'));
     } else if (setup.phase === 'nozzle') {
       box.appendChild(el('h3', '', 'Quelle taille de buse ?'));
       box.appendChild(el('p', '', 'Si tu ne sais pas, garde celle livrée avec l’imprimante. Tu pourras la changer plus tard.'));
@@ -1425,7 +1434,7 @@
       // La liaison écrit dans son propre bloc : gardé d'un affichage à l'autre, et lancée une seule fois.
       if (!setup.linkBox) {
         setup.linkBox = el('div', 'printer-status');
-        startLink(setup.found, setup.linkBox, function () { setup.phase = 'done'; setTimeout(renderTour, 1500); });
+        startLink(setup.found, setup.linkBox, function () { setup.phase = 'done'; setTimeout(renderSetupFlow, 1500); });
       }
       box.appendChild(setup.linkBox);
       later = button('Passer cette étape', function () { setupPhase('done'); }, 'link');
@@ -1592,7 +1601,7 @@
   $('m-usage').addEventListener('click', openUsage);
   $('m-parts').addEventListener('click', function () { menu.classList.add('hidden'); openJournal(); });
   $('m-limits').addEventListener('click', openLimits);
-  $('m-setup').addEventListener('click', function () { menu.classList.add('hidden'); startSetup(); renderTour(); });
+  $('m-setup').addEventListener('click', function () { menu.classList.add('hidden'); startSetup(); renderSetupFlow(); });
   $('m-check').addEventListener('click', function () { menu.classList.add('hidden'); checkPlate(); });
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
@@ -2280,8 +2289,6 @@
 
   // ---------- Premiers pas : parcours « Ma première impression », « Tu regardes », fiches ----------
   var fsState = {};
-  var tourCard = null;     // { box, where } de l'étape affichée
-  var tourTimer = null;
   var tourSignals = null;  // derniers signaux : objets, découpage, temps, poids
   var focusKey = null;
   // Repli de « Montre-moi » quand la zone n'a pas pu être encadrée.
@@ -2319,78 +2326,16 @@
   }
   function setTourStep(step) {
     conv.project.step = step || 'done';
-    scheduleSave();
-    renderTour();
+    projectChanged();
   }
 
-  function renderTour() {
+  // Parcours d'installation d'une imprimante (recherche réseau, installation, liaison) : seule chose qui reste dans cet emplacement.
+  function renderSetupFlow() {
     var slot = $('tour-slot');
     slot.textContent = '';
-    tourCard = null;
-    if (setup.phase) { document.body.classList.add('touring'); renderSetup(slot); return; }
-    var step = currentTourStep();
-    var active = !!step;
-    document.body.classList.toggle('touring', active);
-    if (!active) { stopTourTimer(); return; }
-    var n = FS.TOUR_STEPS.indexOf(step) + 1;
-    var box = el('div', 'tour');
-    box.appendChild(el('div', 'step', 'Ton impression · étape ' + n + ' sur ' + FS.TOUR_STEPS.length));
-    var acts = el('div', 'row-acts');
-    var where = el('div', 'where');
-    function next() { setTourStep(FS.TOUR_STEPS[n] || null); }
-    function tell(iconName, text) { where.textContent = ''; where.appendChild(icon(iconName, 14)); where.appendChild(txt(text)); }
-    if (step === 'slice') {
-      box.appendChild(el('h3', '', 'Découper'));
-      box.appendChild(el('p', '', '« Découper », c’est transformer ton modèle en trajets pour la buse, couche par couche. Clique sur « Découper la plaque » : je te dirai combien de temps ça prendra.'));
-      acts.appendChild(button('Montre-moi', function () { showMe('slice'); }, 'btn ghost sm', 'eye'));
-      acts.appendChild(button('Découpe pour moi', function () { plateAction('slice'); }, 'btn sm', 'wand'));
-    } else if (step === 'print') {
-      box.appendChild(el('h3', '', 'Imprimer'));
-      var summary = printSummary();
-      if (summary) { var s = el('p', 'done'); s.appendChild(icon('check', 13)); s.appendChild(txt(summary)); box.appendChild(s); }
-      // Les gestes concrets, selon que l'imprimante est reliée ou non (clé USB, carte SD).
-      var linked = !!(tourSignals && tourSignals.linked);
-      var how = el('ol', 'setup-checks');
-      (linked ? [
-        'Vérifie que le **plateau est vide et propre**, et que le **filament est chargé**.',
-        'Clique sur `Imprimer la plaque`, en haut à droite. Dans la petite fenêtre qui s’ouvre, confirme l’envoi : l’impression démarre toute seule sur ton imprimante.'
-      ] : [
-        'Ouvre la petite flèche à côté de `Imprimer la plaque` et choisis `Exporter le fichier G-code`.',
-        'Enregistre le fichier sur la **clé USB** ou la **carte SD** de ton imprimante.',
-        'Mets-la dans l’imprimante, puis lance le fichier depuis son écran (menu Imprimer).'
-      ]).forEach(function (t) { var li = el('li'); li.appendChild(rich(t)); how.appendChild(li); });
-      box.appendChild(how);
-      if (!linked) box.appendChild(el('p', 'muted small', 'Ton imprimante a le Wi-Fi ? Relie-la : « Imprimer la plaque » l’enverra directement.'));
-      box.appendChild(el('p', 'muted small', 'Quand l’impression a démarré, clique sur « L’impression a démarré » : je te dirai quoi faire une fois qu’elle sera finie.'));
-      // Le bouton fait la même chose que « Imprimer la plaque » (ou l'export du fichier) : Orca demande confirmation.
-      acts.appendChild(button(linked ? 'Lancer l’impression' : 'Exporter le fichier', function () {
-        window.orca.postMessage({ type: 'print_start', export: !linked });
-      }, 'btn sm', linked ? 'send' : 'folder'));
-      if (!linked) acts.appendChild(button('Relier mon imprimante', function () { startSetup(); renderTour(); }, 'btn ghost sm', 'wifi'));
-      acts.appendChild(button('L’impression a démarré', next, 'btn ghost sm', 'check'));
-    } else if (step === 'after') {
-      box.appendChild(el('h3', '', 'Après l’impression'));
-      box.appendChild(el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer.'));
-      acts.appendChild(button('Téléphone', openPhone, 'btn sm', 'phone'));
-      acts.appendChild(button('Ajouter une photo', pickFiles, 'btn ghost sm', 'camera'));
-    }
-    box.appendChild(acts);
-    box.appendChild(where);
-    var bottom = el('div', 'bottom');
-    bottom.appendChild(button(step === 'after' ? 'Terminer la visite' : 'Passer la visite', function () { setTourStep(null); }, 'link'));
-    if (step === 'slice') bottom.appendChild(button('Passer cette étape', next, 'link'));
-    box.appendChild(bottom);
-    slot.appendChild(box);
-    tourCard = { box: box, where: where, tell: tell };
-    startTourTimer();
+    document.body.classList.toggle('touring', !!setup.phase);
+    if (setup.phase) renderSetup(slot);
   }
-
-  function startTourTimer() {
-    if (tourTimer) return;
-    tourTimer = setInterval(function () { window.orca.postMessage({ type: 'tour_signals' }); }, 2000);
-    window.orca.postMessage({ type: 'tour_signals' });
-  }
-  function stopTourTimer() { if (tourTimer) { clearInterval(tourTimer); tourTimer = null; } }
 
   // ---------- « Ça a marché ? » ----------
   // Des réglages proposés par l'IA ont été appliqués : au moins 30 minutes plus tard (au démarrage, puis toutes
@@ -2548,7 +2493,7 @@
   var sliceSig = null;        // signature du dernier découpage vu (null : pas encore de signal)
   var preflightManual = false;
   var dismissedRisks = {};    // risques ignorés pendant cette session
-  setInterval(function () { if (!tourTimer) window.orca.postMessage({ type: 'tour_signals' }); }, 2500);
+  setInterval(function () { window.orca.postMessage({ type: 'tour_signals' }); }, 2000);
   function watchSlice(signals) {
     var r = Logic.newSlice(sliceSig, signals);
     sliceSig = r.sig;
@@ -2567,7 +2512,11 @@
     var fresh = risks.filter(function (r) { return !dismissedRisks[window.PlyoPreflight.riskKey(r)]; });
     openRisks = fresh.length;
     renderPreflight(manual || fresh.length ? risks : [], data);
-    renderProject();
+    // Découpe faite et aucun risque : on passe à l'impression sans demander.
+    if (!manual && currentTourStep() === 'slice' && data && data.sliced && data.objects && data.objects.length && PlyoJourney.afterPreflight(openRisks) === 'advance') {
+      noteLine('Pas de risque détecté : on passe à l’impression.', 'ok', 'check');
+      setTourStep('print');
+    } else renderProject();
     if (!manual || risks.length) return;
     var slot = $('preflight-slot');
     var close = function () { slot.textContent = ''; };
@@ -2735,10 +2684,11 @@
     var plated = PlyoProject.partFromPlate(conv && conv.project, signals);
     if (plated) { conv.project.part = { name: plated }; projectChanged(); }
     var step = currentTourStep();
-    if (!step) return;
-    var nextStep = FS.nextTourStep(step, signals);
-    if (nextStep !== step) setTourStep(nextStep);
-    else if (step === 'print' && ((!hadSummary && printSummary()) || wasLinked !== !!signals.linked)) renderTour();
+    // La découpe est périmée (un réglage a changé) : on redécoupe avant d'imprimer.
+    if (step === 'print' && FS.nextTourStep(step, signals) === 'slice') { setTourStep('slice'); return; }
+    // Le contenu des étapes 4 et 5 (temps, poids, machine reliée) dépend de ces signaux.
+    var sig = JSON.stringify([signals.sliced, signals.linked, signals.time_s]);
+    if (sig !== onTourSignals.last) { onTourSignals.last = sig; renderProject(); }
   }
 
   function onFirstSteps(state) {
@@ -2746,7 +2696,7 @@
     fsState = state;
     // Aucune imprimante installée (premier lancement) : l'assistant commence par elle, une fois par session.
     if (state.needs_printer && !setup.phase && !setup.offered) startSetup();
-    renderTour();
+    renderSetupFlow();
     if (first && state.level === 'expert' && !state.greeted) window.orca.postMessage({ type: 'firststeps_set', patch: { greeted: true } });
   }
 
@@ -3361,8 +3311,7 @@
     } else if (msg.type === 'tour_signals') {
       onTourSignals(msg);
     } else if (msg.type === 'show_me') {
-      if (!msg.ok && tourCard && WHERE[msg.target]) tourCard.tell('pin', WHERE[msg.target]);
-      else if (!msg.ok && WHERE[msg.target]) noteLine(WHERE[msg.target], '', 'pin');
+      if (!msg.ok && WHERE[msg.target]) noteLine(WHERE[msg.target], '', 'pin');
     } else if (msg.type === 'show_setting') {
       onShowSetting(msg);
     } else if (msg.type === 'explain') {
@@ -3392,8 +3341,8 @@
     } else if (msg.type === 'filament_chosen') {
       if (projectUI.pending && projectUI.pending.kind === 'filament') onProjectFilamentChosen(msg);
     } else if (msg.type === 'print_started') {
-      if (tourCard && !msg.ok) tourCard.tell('alert', msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque (étape 3) : clique sur « Découper la plaque » en haut à droite.' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.');
-      else if (tourCard) tourCard.tell('info', 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.');
+      if (!msg.ok) noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque (étape 3) : clique sur « Découper la plaque » en haut à droite.' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert');
+      else noteLine('Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info');
     } else if (msg.type === 'setup_catalog') {
       onSetupCatalog(Array.isArray(msg.catalog) ? msg.catalog : []);
     } else if (msg.type === 'setup_installed') {

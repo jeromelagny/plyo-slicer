@@ -26,4 +26,13 @@ test('le contenu des étapes n’a aucun bouton plein : seule la ligne d’actio
   assert.ok(!FULL_BUTTON.test(read('project-card.js')), 'project-card.js');
   assert.ok(!FULL_BUTTON.test(withoutFunction(read('journey-view.js'), 'renderActionLine')), 'journey-view.js hors renderActionLine');
   assert.ok(FULL_BUTTON.test(read('journey-view.js')), 'la ligne d’action porte le bouton plein');
+  assert.ok(!FULL_BUTTON.test(read('journey-steps.js')), 'journey-steps.js');
+});
+
+test('la visite guidée a disparu : plus de renderTour ni de carte de visite dans le panneau', () => {
+  const page = read('index.html');
+  assert.ok(!/function renderTour\b/.test(page), 'renderTour');
+  assert.ok(!/id="tour-slot"[^>]*>\s*<\/div>\s*<div id="outcome-slot"/.test(page) || /renderSetupFlow/.test(page));
+  assert.ok(/function renderSetupFlow\b/.test(page), 'renderSetupFlow');
+  assert.ok(!/Passer la visite|Terminer la visite/.test(page), 'plus de « Passer la visite »');
 });
