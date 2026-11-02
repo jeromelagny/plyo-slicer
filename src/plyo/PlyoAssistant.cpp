@@ -18,6 +18,7 @@
 #include "PlyoPreflight.hpp"
 #include "PlyoProfiles.hpp"
 #include "PlyoPrinterLink.hpp"
+#include "PlyoHabits.hpp"
 #include "PlyoProject.hpp"
 #include "PlyoProjectLogic.hpp"
 #include "PlyoPrinterSetup.hpp"
@@ -383,6 +384,10 @@ void handle_page_message(const nlohmann::json& data)
             });
             if (!started)
                 BOOST_LOG_TRIVIAL(info) << "Plyo: recherche d'imprimantes déjà en cours";
+        } else if (type == "habits_get") {
+            send({{"type", "habits"}, {"habits", Habits::load()}});
+        } else if (type == "habits_set") {
+            Habits::save(data.contains("habits") ? data["habits"] : nlohmann::json());
         } else if (type == "project_state") {
             nlohmann::json state = Project::state();
             state["type"]        = "project_state";

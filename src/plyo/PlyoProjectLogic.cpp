@@ -158,6 +158,36 @@ nlohmann::json first_values(const nlohmann::json& settings)
     return out;
 }
 
+nlohmann::json sanitize_habits(const nlohmann::json& habits)
+{
+    nlohmann::json out = {{"machines", nlohmann::json::object()}, {"hidden", nlohmann::json::array()}, {"last", ""}};
+    if (!habits.is_object())
+        return out;
+    if (const nlohmann::json* machines = Json::field(habits, "machines"); machines != nullptr && machines->is_object()) {
+        for (auto it = machines->begin(); it != machines->end() && out["machines"].size() < 50; ++it) {
+            const nlohmann::json* filament = it.value().is_object() ? Json::field(it.value(), "filament") : nullptr;
+            if (filament == nullptr || !filament->is_object() || it.key().empty() || it.key().size() > 200)
+                continue;
+            const std::string type = Json::str(*filament, "type", 20);
+            if (type.empty())
+                continue;
+            nlohmann::json f = {{"type", type}};
+            for (const char* key : {"nozzle_temp", "bed_temp"}) {
+                const nlohmann::json* v = Json::field(*filament, key);
+                if (v != nullptr && v->is_number() && std::isfinite(v->get<double>()) && v->get<double>() >= 0 && v->get<double>() <= 400)
+                    f[key] = *v;
+            }
+            out["machines"][it.key()] = {{"filament", f}};
+        }
+    }
+    if (const nlohmann::json* hidden = Json::field(habits, "hidden"); hidden != nullptr && hidden->is_array())
+        for (const nlohmann::json& h : *hidden)
+            if (h.is_string() && !h.get_ref<const std::string&>().empty() && h.get_ref<const std::string&>().size() <= 200 && out["hidden"].size() < 50)
+                out["hidden"].push_back(h);
+    out["last"] = Json::str(habits, "last", 200);
+    return out;
+}
+
 Adaptation adapt_3mf(const nlohmann::json& file_values, const nlohmann::json& project,
                      const std::function<nlohmann::json(const std::string&)>& range_of)
 {

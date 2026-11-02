@@ -40,6 +40,10 @@ std::string edit_refusal(const nlohmann::json& project, const std::string& curre
 // Le projet a une imprimante et un filament choisis, et Orca n'est plus dessus : « Remettre le projet » a un sens.
 bool can_restore(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament);
 
+// Habitudes enregistrées localement : { machines: {profil: {filament: {type, nozzle_temp, bed_temp}}}, hidden: [profil], last }.
+// Ne garde que ces clés (50 machines et 50 machines masquées au plus, températures entre 0 et 400 °C).
+nlohmann::json sanitize_habits(const nlohmann::json& habits);
+
 struct Adaptation
 {
     nlohmann::json apply   = nlohmann::json::array(); // [{key, value}]

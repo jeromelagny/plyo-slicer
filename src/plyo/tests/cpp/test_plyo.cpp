@@ -745,3 +745,33 @@ TEST_CASE("CC2: les messages de démarrage d'impression")
     CHECK(error_text(1021).find("introuvable") != std::string::npos);
     CHECK_FALSE(error_text(99999).empty());
 }
+
+TEST_CASE("Habits: sanitize_habits garde les machines, les habitudes de filament et les machines masquées")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json raw = {{"machines", {{"Ma CC2", {{"filament", {{"type", "PLA"}, {"nozzle_temp", 215}, {"bed_temp", 60}, {"secret", "x"}}}, {"printhost_apikey", "SECRET"}}}}},
+                                {"hidden", {"Ma K2", 5}}, {"last", "Ma CC2"}, {"autre", "SECRET"}};
+    const nlohmann::json clean = sanitize_habits(raw);
+    CHECK(clean.dump().find("SECRET") == std::string::npos);
+    CHECK(clean["machines"]["Ma CC2"]["filament"]["type"] == "PLA");
+    CHECK(clean["machines"]["Ma CC2"]["filament"]["nozzle_temp"] == 215);
+    CHECK(clean["hidden"] == nlohmann::json::array({"Ma K2"}));
+    CHECK(clean["last"] == "Ma CC2");
+}
+
+TEST_CASE("Habits: sanitize_habits plafonne les listes et refuse les températures impossibles")
+{
+    using namespace Plyo::ProjectLogic;
+    nlohmann::json machines = nlohmann::json::object(), hidden = nlohmann::json::array();
+    for (int i = 0; i < 80; ++i) {
+        machines["m" + std::to_string(i)] = {{"filament", {{"type", "PLA"}, {"nozzle_temp", 215}, {"bed_temp", 60}}}};
+        hidden.push_back("h" + std::to_string(i));
+    }
+    const nlohmann::json clean = sanitize_habits({{"machines", machines}, {"hidden", hidden}});
+    CHECK(clean["machines"].size() == 50);
+    CHECK(clean["hidden"].size() == 50);
+    const nlohmann::json hot = sanitize_habits({{"machines", {{"x", {{"filament", {{"type", "PLA"}, {"nozzle_temp", 900}, {"bed_temp", -5}}}}}}}});
+    CHECK_FALSE(hot["machines"]["x"]["filament"].contains("nozzle_temp"));
+    CHECK_FALSE(hot["machines"]["x"]["filament"].contains("bed_temp"));
+    CHECK(sanitize_habits(nlohmann::json("x")) == nlohmann::json({{"machines", nlohmann::json::object()}, {"hidden", nlohmann::json::array()}, {"last", ""}}));
+}

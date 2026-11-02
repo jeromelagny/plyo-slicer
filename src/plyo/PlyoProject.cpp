@@ -19,6 +19,7 @@
 #include <wx/string.h>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -93,7 +94,18 @@ nlohmann::json printers()
         if (!preset.is_visible || preset.is_default)
             continue;
         const bool linked = preset.config.has("print_host") && !preset.config.opt_string("print_host").empty();
-        out.push_back({{"preset", preset.name}, {"name", preset.name}, {"linked", linked}});
+        nlohmann::json item = {{"preset", preset.name}, {"name", preset.name}, {"linked", linked},
+                               {"host", linked ? preset.config.opt_string("print_host") : std::string()}};
+        // Taille du plateau (mm) : sert à dire sur quelle machine une pièce tient.
+        if (const auto* area = preset.config.option<Slic3r::ConfigOptionPoints>("printable_area"); area != nullptr && !area->values.empty()) {
+            double x0 = area->values.front().x(), x1 = x0, y0 = area->values.front().y(), y1 = y0;
+            for (const auto& pt : area->values) {
+                x0 = std::min(x0, pt.x()); x1 = std::max(x1, pt.x());
+                y0 = std::min(y0, pt.y()); y1 = std::max(y1, pt.y());
+            }
+            item["bed_mm"] = {std::round(x1 - x0), std::round(y1 - y0)};
+        }
+        out.push_back(item);
     }
     return out;
 }

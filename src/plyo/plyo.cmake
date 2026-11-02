@@ -45,6 +45,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoProjectLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJournal.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJournal.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoHabits.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoHabits.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCC2.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCC2.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCC2Logic.cpp
