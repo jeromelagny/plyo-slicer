@@ -99,3 +99,28 @@ test('machineThatFits : propose une autre machine reliée dont le plateau accept
   assert.equal(M.machineThatFits([k2b, Object.assign({}, cc2b, { linked: false })], k2b.preset, [240, 100, 10]), null); // pas reliée
   assert.equal(M.machineThatFits(null, 'x', [1, 1, 1]), null);
 });
+
+test('niveau d’explication : deviné tant que l’utilisateur ne l’a pas choisi, puis figé', () => {
+  let h = M.emptyHabits();
+  assert.equal(M.levelOf(h), 'detailed');
+  h = M.guessLevel(h, 'short');
+  assert.equal(M.levelOf(h), 'short');
+  h = M.chooseLevel(h, 'detailed');
+  assert.equal(M.levelOf(h), 'detailed');
+  h = M.guessLevel(h, 'short'); // choisi à la main : la supposition ne change plus rien
+  assert.equal(M.levelOf(h), 'detailed');
+});
+
+test('questions d’intention : après trois projets passés de suite, on propose de ne plus les poser', () => {
+  let h = M.emptyHabits();
+  assert.equal(M.askIntent(h), true);
+  h = M.noteIntent(M.noteIntent(h, true), true);
+  assert.equal(M.offerStopAsking(h), false);
+  h = M.noteIntent(h, true);
+  assert.equal(M.offerStopAsking(h), true);
+  assert.equal(M.offerStopAsking(M.noteIntent(h, false)), false); // une réponse remet le compteur à zéro
+  h = M.stopAsking(h, true);
+  assert.equal(M.askIntent(h), false);
+  assert.equal(M.offerStopAsking(h), false);
+  assert.equal(M.askIntent(M.stopAsking(h, false)), true);
+});

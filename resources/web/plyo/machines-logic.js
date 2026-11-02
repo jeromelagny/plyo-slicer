@@ -5,11 +5,16 @@
 (function (root) {
   var J = root.PlyoJourney || (typeof require !== 'undefined' ? require('./journey-logic.js') : null);
 
-  function emptyHabits() { return { machines: {}, hidden: [], last: '' }; }
+  function emptyHabits() { return { machines: {}, hidden: [], last: '', intent_skips: 0 }; }
   function clone(h) {
     var src = h && typeof h === 'object' ? h : {};
-    return { machines: src.machines && typeof src.machines === 'object' && !Array.isArray(src.machines) ? JSON.parse(JSON.stringify(src.machines)) : {},
+    var out = { machines: src.machines && typeof src.machines === 'object' && !Array.isArray(src.machines) ? JSON.parse(JSON.stringify(src.machines)) : {},
       hidden: Array.isArray(src.hidden) ? src.hidden.filter(function (x) { return typeof x === 'string'; }) : [], last: typeof src.last === 'string' ? src.last : '' };
+    if (src.level === 'short' || src.level === 'detailed') out.level = src.level;
+    if (src.level_manual === true) out.level_manual = true;
+    out.intent_skips = typeof src.intent_skips === 'number' ? src.intent_skips : 0;
+    if (src.ask_intent === false) out.ask_intent = false;
+    return out;
   }
 
   // Que demander au début d'une impression ? `printers` : liste du slicer ; `ctx` : { orcaPreset, lastPreset, hidden }.
@@ -70,7 +75,19 @@
     return found ? { preset: found.preset, label: J.machineLabel(found) } : null;
   }
 
-  var api = { machineThatFits: machineThatFits, visiblePrinters: visiblePrinters, isKnownHost: isKnownHost, machineQuestion: machineQuestion, habitFor: habitFor, rememberFilament: rememberFilament, replaceMachine: replaceMachine,
+  // Niveau d'explication : « detailed » par défaut ; deviné tant que l'utilisateur ne l'a pas choisi lui-même.
+  function levelOf(habits) { return habits && habits.level === 'short' ? 'short' : 'detailed'; }
+  function guessLevel(habits, level) { var h = clone(habits); if (!h.level_manual && (level === 'short' || level === 'detailed')) h.level = level; return h; }
+  function chooseLevel(habits, level) { var h = clone(habits); h.level = level === 'short' ? 'short' : 'detailed'; h.level_manual = true; return h; }
+
+  // Questions d'intention : passées (skipped = true) ou répondues ; après trois projets passés de suite, on propose d'arrêter.
+  function askIntent(habits) { return !(habits && habits.ask_intent === false); }
+  function noteIntent(habits, skipped) { var h = clone(habits); h.intent_skips = skipped ? Math.min(100, (h.intent_skips || 0) + 1) : 0; return h; }
+  function offerStopAsking(habits) { return askIntent(habits) && !!habits && (habits.intent_skips || 0) >= 3; }
+  function stopAsking(habits, stop) { var h = clone(habits); if (stop) h.ask_intent = false; else { delete h.ask_intent; h.intent_skips = 0; } return h; }
+
+  var api = { levelOf: levelOf, guessLevel: guessLevel, chooseLevel: chooseLevel, askIntent: askIntent, noteIntent: noteIntent,
+    offerStopAsking: offerStopAsking, stopAsking: stopAsking, machineThatFits: machineThatFits, visiblePrinters: visiblePrinters, isKnownHost: isKnownHost, machineQuestion: machineQuestion, habitFor: habitFor, rememberFilament: rememberFilament, replaceMachine: replaceMachine,
     hideMachine: hideMachine, unhideMachine: unhideMachine, emptyHabits: emptyHabits };
   root.PlyoMachines = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

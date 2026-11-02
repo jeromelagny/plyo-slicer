@@ -138,6 +138,18 @@ nlohmann::json sanitize(const nlohmann::json& project)
         text(*a, o, "name");
         out["part"] = o;
     }
+    if (const nlohmann::json* in = Json::field(project, "intent"); in != nullptr && in->is_object()) {
+        nlohmann::json o = nlohmann::json::object();
+        for (const char* key : {"use", "pref", "speed"}) {
+            const nlohmann::json* v = Json::field(*in, key);
+            if (v != nullptr && v->is_string() && !v->get_ref<const std::string&>().empty() && v->get_ref<const std::string&>().size() <= 20)
+                o[key] = *v;
+        }
+        for (const char* key : {"skipped", "applied"})
+            if (const nlohmann::json* v = Json::field(*in, key); v != nullptr && v->is_boolean())
+                o[key] = *v;
+        out["intent"] = o;
+    }
     if (const std::string adapted = Json::str(project, "adapted", 200); !adapted.empty())
         out["adapted"] = adapted;
     const std::string step = Json::str(project, "step");
@@ -187,6 +199,14 @@ nlohmann::json sanitize_habits(const nlohmann::json& habits)
             if (h.is_string() && !h.get_ref<const std::string&>().empty() && h.get_ref<const std::string&>().size() <= 200 && out["hidden"].size() < 50)
                 out["hidden"].push_back(h);
     out["last"] = Json::str(habits, "last", 200);
+    if (const std::string level = Json::str(habits, "level"); level == "short" || level == "detailed")
+        out["level"] = level;
+    if (const nlohmann::json* m = Json::field(habits, "level_manual"); m != nullptr && m->is_boolean())
+        out["level_manual"] = m->get<bool>();
+    if (const nlohmann::json* n = Json::field(habits, "intent_skips"); n != nullptr && n->is_number_integer())
+        out["intent_skips"] = std::max<long long>(0, std::min<long long>(100, n->get<long long>()));
+    if (const nlohmann::json* a = Json::field(habits, "ask_intent"); a != nullptr && a->is_boolean())
+        out["ask_intent"] = a->get<bool>();
     return out;
 }
 

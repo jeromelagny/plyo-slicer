@@ -777,3 +777,28 @@ TEST_CASE("Habits: sanitize_habits plafonne les listes et refuse les températur
     CHECK_FALSE(hot["machines"]["x"]["filament"].contains("bed_temp"));
     CHECK(sanitize_habits(nlohmann::json("x")) == nlohmann::json({{"machines", nlohmann::json::object()}, {"hidden", nlohmann::json::array()}, {"last", ""}}));
 }
+
+TEST_CASE("Habits: niveau d'explication et questions d'intention")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json clean = sanitize_habits({{"level", "short"}, {"level_manual", true}, {"intent_skips", 2}, {"ask_intent", false}});
+    CHECK(clean["level"] == "short");
+    CHECK(clean["level_manual"] == true);
+    CHECK(clean["intent_skips"] == 2);
+    CHECK(clean["ask_intent"] == false);
+    const nlohmann::json bad = sanitize_habits({{"level", "expert"}, {"intent_skips", 999}, {"ask_intent", "non"}});
+    CHECK_FALSE(bad.contains("level"));
+    CHECK(bad["intent_skips"] == 100);
+    CHECK_FALSE(bad.contains("ask_intent"));
+}
+
+TEST_CASE("Project: les réponses d'intention sont gardées, et rien d'autre")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json p = sanitize({{"intent", {{"use", "flex"}, {"pref", "balanced"}, {"speed", "normal"}, {"skipped", false}, {"applied", true}, {"secret", "SECRET"}}}});
+    CHECK(p["intent"]["use"] == "flex");
+    CHECK(p["intent"]["pref"] == "balanced");
+    CHECK(p["intent"]["applied"] == true);
+    CHECK(p.dump().find("SECRET") == std::string::npos);
+    CHECK_FALSE(sanitize({{"intent", {{"use", std::string(300, 'x')}}}})["intent"].contains("use"));
+}

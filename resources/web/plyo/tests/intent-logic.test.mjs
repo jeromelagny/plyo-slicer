@@ -73,3 +73,11 @@ test('summary : une phrase claire, des puces sans jargon, un avertissement honn�
   assert.equal(I.summary({ use: 'flex', pref: 'balanced', speed: 'normal' }, 'TPU').warning, '');
   assert.equal(I.summary({ use: 'daily', pref: 'balanced', speed: 'normal' }, 'PLA').warning, '');
 });
+
+test('detectLevel : courtes si l’utilisateur emploie le vocabulaire technique, détaillées sinon', () => {
+  assert.equal(I.detectLevel(['ma pièce se décolle du plateau, je fais quoi ?']), 'detailed');
+  assert.equal(I.detectLevel(['brim ou mouse ears sur du PETG ?', 'infill gyroid 20% ça suffit ?']), 'short');
+  assert.equal(I.detectLevel(['rétraction à 0,8 mm et débit à 95 %, ok ?']), 'short');
+  assert.equal(I.detectLevel([]), 'detailed');
+  assert.equal(I.detectLevel(null), 'detailed');
+});

@@ -110,7 +110,14 @@
     return { sentence: sentence, bullets: bullets, warning: warning };
   }
 
-  var api = { QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
+  // Niveau d'explication deviné d'après les messages de l'utilisateur : « short » s'il emploie au moins deux termes techniques.
+  var TECH = /\b(brim|infill|gyroid|cubic|lightning|r[ée]traction|retract|d[ée]bit|flow|pressure advance|\bpa\b|seam|couture|overhang|porte-?[àa]-?faux|layer height|hauteur de couche|z-?offset|p[ée]rim[èe]tre|wall|paroi|mm\/s|mouse ears|bridge|pont|ironing|lissage|support (arbre|tree)|tree support|first layer|premi[èe]re couche|petg|asa|abs|tpu)\b/gi;
+  function detectLevel(texts) {
+    var all = Array.isArray(texts) ? texts.join(' ') : '';
+    return (all.match(TECH) || []).length >= 2 ? 'short' : 'detailed';
+  }
+
+  var api = { detectLevel: detectLevel, QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
     settingsFor: settingsFor, keepManual: keepManual, summary: summary, MANAGED_KEYS: Object.keys(LABELS) };
   root.PlyoIntent = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
