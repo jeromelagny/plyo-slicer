@@ -193,6 +193,30 @@ std::optional<Printer> from_elegoo_sdcp(const std::string& datagram)
     return p;
 }
 
+std::optional<Printer> from_elegoo_cc2(const std::string& ip, const std::string& datagram)
+{
+    if (!octets(ip))
+        return std::nullopt;
+    const nlohmann::json j = nlohmann::json::parse(datagram, nullptr, false);
+    if (!j.is_object() || !j.contains("result") || !j["result"].is_object())
+        return std::nullopt;
+    const nlohmann::json& r    = j["result"];
+    std::string           name = text_of(r, "host_name");
+    if (name.empty())
+        name = text_of(r, "machine_model");
+    // Une réponse sans nom ni modèle n'est pas celle d'une imprimante (le serveur UDP répond aussi « Hello from UDP Server! »).
+    if (name.empty())
+        return std::nullopt;
+    Printer p;
+    p.ip        = ip;
+    p.name      = name;
+    p.brand     = "Elegoo";
+    p.host_type = "elegoolink";
+    p.host      = ip;
+    p.priority  = 2;
+    return p;
+}
+
 std::vector<Printer> merge(std::vector<Printer> found)
 {
     std::map<std::string, Printer> by_ip;

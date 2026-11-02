@@ -35,6 +35,10 @@ std::optional<Printer> from_moonraker(const std::string& ip, const std::string& 
 // Réponse d'une imprimante Elegoo au message de recherche SDCP (« M99999 » sur le port UDP 3000).
 std::optional<Printer> from_elegoo_sdcp(const std::string& datagram);
 
+// Réponse d'une Elegoo Centauri Carbon 2 à la recherche UDP du port 52700 (JSON-RPC, méthode 7000). La réponse ne
+// contient pas l'adresse : c'est celle de l'expéditeur du datagramme (`ip`).
+std::optional<Printer> from_elegoo_cc2(const std::string& ip, const std::string& datagram);
+
 // Marque devinée d'après un nom d'imprimante (« K1C-1A2B » → Creality) ; vide si rien ne correspond.
 std::string brand_from_name(const std::string& name);
 

@@ -220,6 +220,20 @@ TEST_CASE("Discovery reconnaît Moonraker et refuse les autres réponses")
     CHECK_FALSE(from_moonraker("192.168.1.44", R"({"result":{"foo":1}})"));
 }
 
+TEST_CASE("Discovery lit la réponse UDP 52700 d'une Centauri Carbon 2")
+{
+    using namespace Plyo::Discovery;
+    const auto cc2 = from_elegoo_cc2("192.168.1.29", R"({"id":0,"result":{"host_name":"Centauri Carbon 2","lan_status":1,"machine_model":"Centauri Carbon 2","protocol_version":"1.0.0","sn":"X","token_status":1}})");
+    REQUIRE(cc2);
+    CHECK(cc2->ip == "192.168.1.29");
+    CHECK(cc2->name == "Centauri Carbon 2");
+    CHECK(cc2->brand == "Elegoo");
+    CHECK(cc2->host_type == "elegoolink");
+    CHECK_FALSE(from_elegoo_cc2("192.168.1.29", R"({"id":0,"result":["error_code",1001,"error_message","Hello from UDP Server!"]})"));
+    CHECK_FALSE(from_elegoo_cc2("pas une ip", R"({"result":{"host_name":"x"}})"));
+    CHECK_FALSE(from_elegoo_cc2("192.168.1.29", "M99999"));
+}
+
 TEST_CASE("Discovery lit la réponse SDCP d'une Elegoo")
 {
     using namespace Plyo::Discovery;
