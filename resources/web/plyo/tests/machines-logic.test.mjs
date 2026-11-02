@@ -67,3 +67,35 @@ test('habitudes : une valeur illisible ne casse rien', () => {
   assert.equal(M.habitFor({ machines: 'abc' }, 'x'), null);
   assert.equal(M.rememberFilament(null, 'x', { type: 'PLA' }).machines.x.filament.type, 'PLA');
 });
+
+test('visiblePrinters : une machine masquée disparaît avec tous ses profils, sans rien supprimer', () => {
+  const list = [
+    cc2, k2, sys,
+    { preset: 'Ma Elegoo Centauri Carbon 2 0.4 nozzle - Copie', name: 'Ma Elegoo Centauri Carbon 2 0.4 nozzle - Copie', linked: true }
+  ];
+  const shown = M.visiblePrinters(list, [k2.preset]);
+  assert.deepEqual(shown.map((p) => p.preset).sort(), [cc2.preset, 'Ma Elegoo Centauri Carbon 2 0.4 nozzle - Copie'].sort());
+  assert.equal(M.visiblePrinters(list, []).length, 4);
+  assert.equal(M.visiblePrinters(null, []).length, 0);
+  assert.equal(list.length, 4); // la liste d'origine n'est pas modifiée
+});
+
+test('isKnownHost : une machine trouvée sur le réseau est connue si une machine a déjà cette adresse', () => {
+  const printers = [{ preset: 'a', host: '192.168.1.29', linked: true }, { preset: 'b', host: '192.168.1.40:7125', linked: true }, { preset: 'c', host: '', linked: false }];
+  assert.equal(M.isKnownHost(printers, '192.168.1.29'), true);
+  assert.equal(M.isKnownHost(printers, '192.168.1.40'), true);
+  assert.equal(M.isKnownHost(printers, '192.168.1.99'), false);
+  assert.equal(M.isKnownHost(printers, ''), false);
+  assert.equal(M.isKnownHost(null, '192.168.1.1'), false);
+});
+
+test('machineThatFits : propose une autre machine reliée dont le plateau accepte la pièce', () => {
+  const k2b = Object.assign({}, k2, { bed_mm: [220, 220] });
+  const cc2b = Object.assign({}, cc2, { bed_mm: [256, 256] });
+  assert.equal(M.machineThatFits([k2b, cc2b], k2b.preset, [260, 100, 10]), null);          // aucune ne tient
+  assert.equal(M.machineThatFits([k2b, cc2b], k2b.preset, [240, 100, 10]).preset, cc2b.preset);
+  assert.equal(M.machineThatFits([k2b, cc2b], cc2b.preset, [240, 100, 10]), null);        // la machine actuelle tient déjà : rien à proposer
+  assert.equal(M.machineThatFits([k2b, cc2b], k2b.preset, [100, 240, 10]).preset, cc2b.preset);
+  assert.equal(M.machineThatFits([k2b, Object.assign({}, cc2b, { linked: false })], k2b.preset, [240, 100, 10]), null); // pas reliée
+  assert.equal(M.machineThatFits(null, 'x', [1, 1, 1]), null);
+});

@@ -3,7 +3,7 @@
 // celui de la ligne d'action (journey-view.js). Chargé par index.html (window.PlyoJourneySteps).
 (function (root) {
   // ui : { el, button, icon }. opts : { step, ctx {sliced, linked, risks}, summary (texte durée et poids), handlers }.
-  // handlers : { skip(), exportFile(), started(), photo() }
+  // handlers : { skip(), exportFile(), started(), photo(), changeMachine() }. opts.machine : { name, reachable (true|false|null) }.
   function line(ui, iconName, text, tone) {
     var row = ui.el('div', 'printer-step' + (tone ? ' ' + tone : ''));
     row.appendChild(ui.icon(iconName, 14));
@@ -21,6 +21,12 @@
       if (c.sliced && c.risks > 0) body.appendChild(ui.button('Passer outre', h.skip, 'link'));
     } else if (opts.step === 'imprimer') {
       if (opts.summary) body.appendChild(line(ui, 'check', opts.summary, 'ok'));
+      // La machine est rappelée en lecture seule : en changer refait la préparation (réglages, filament, découpe).
+      if (opts.machine) {
+        body.appendChild(line(ui, 'wifi', 'Imprimer sur : ' + opts.machine.name, opts.machine.reachable === false ? 'warn' : ''));
+        if (opts.machine.reachable === false) body.appendChild(line(ui, 'alert', 'Elle ne répond pas : allume-la, ou envoie quand même (le fichier partira quand elle sera prête).', 'warn'));
+        body.appendChild(ui.button('Refaire la préparation sur une autre machine', h.changeMachine, 'link'));
+      }
       body.appendChild(ui.el('p', 'muted small', 'Vérifie que le plateau est vide et propre, et que le filament est chargé.'));
       var acts = ui.el('div', 'printer-actions');
       if (c.linked) acts.appendChild(ui.button('Exporter le fichier plutôt', h.exportFile, 'btn ghost sm', 'folder'));

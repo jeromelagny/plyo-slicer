@@ -492,6 +492,7 @@
 <!--plyo-include:project-logic.js-->
 <!--plyo-include:journey-logic.js-->
 <!--plyo-include:machines-logic.js-->
+<!--plyo-include:machines-view.js-->
 <!--plyo-include:journey-view.js-->
 <!--plyo-include:journey-steps.js-->
 <!--plyo-include:project-card.js-->
@@ -799,6 +800,7 @@
   function restoreProjectInOrca(discardUnsaved) {
     var p = conv && conv.project;
     if (!p || PlyoProject.nextStep(p) === 'printer' || PlyoProject.nextStep(p) === 'filament') return;
+    projectUI.restoringUntil = Date.now() + 4000; // Orca change de profil : pas d'alerte de divergence pendant ce temps
     window.orca.postMessage({ type: 'project_restore', project: p, discard_unsaved: !!discardUnsaved });
   }
   function onProjectRestored(msg) {
@@ -860,9 +862,10 @@
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
       extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'wifi', onClick: projectHandlers.setupPrinter } : null });
     if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
-      PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable,
+      PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
-    else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers });
+    else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
+      machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
     PlyoJourneyView.renderSuggestions($('suggestions'), ui, { step: step, handlers: suggestionHandlers });
@@ -884,7 +887,8 @@
     skip: function () { setTourStep('print'); },
     exportFile: function () { runAction('export'); },
     started: function () { rememberHabit(); setTourStep('after'); },
-    photo: function () { pickFiles(); }
+    photo: function () { pickFiles(); },
+    changeMachine: function () { projectHandlers.change('printer'); }
   };
   // Le bouton plein de la ligne d'action.
   function runAction(kind) {
@@ -906,6 +910,42 @@
     if (!p || !p.printer || !p.printer.preset || !p.filament || p.filament.proposed) return;
     habits = PlyoMachines.rememberFilament(habits, p.printer.preset, p.filament);
     saveHabits();
+  }
+  // « Mes machines » : tiroir de gestion (ajouter, masquer, reprendre des habitudes).
+  var machineHandlers = {
+    add: function () { closeDrawer(); startSetup(); renderSetupFlow(); },
+    hide: function (preset) { habits = PlyoMachines.hideMachine(habits, preset); saveHabits(); openMachinesDrawer(); renderProject(); },
+    show: function (preset) { habits = PlyoMachines.unhideMachine(habits, preset); saveHabits(); openMachinesDrawer(); renderProject(); },
+    copyHabits: function (from, to) { habits = PlyoMachines.replaceMachine(habits, from, to); saveHabits(); openMachinesDrawer(); }
+  };
+  function openMachinesDrawer() {
+    openDrawer('Mes machines', function (body) {
+      PlyoMachinesView.renderDrawer(body, { el: el, button: button, icon: icon }, { printers: projectUI.printers || [], habits: habits, handlers: machineHandlers });
+    });
+  }
+  // Nouvelle machine trouvée sur le réseau (une recherche discrète par session, si au moins une machine est déjà connue).
+  function scanForNewMachine() {
+    if (projectUI.scanned || !projectUI.printers || !projectUI.printers.some(function (p) { return p.linked; })) return;
+    projectUI.scanned = true;
+    projectUI.bgScan = true;
+    window.orca.postMessage({ type: 'printer_scan' });
+  }
+  function onBackgroundScan(found) {
+    projectUI.bgScan = false;
+    var fresh = (found || []).filter(function (f) { return !PlyoMachines.isKnownHost(projectUI.printers, f.ip) && f.ip; })[0];
+    if (!fresh) return;
+    PlyoMachinesView.renderNewMachine($('project-alert'), { el: el, button: button, icon: icon, alertBox: alertBox }, { name: fresh.name || fresh.brand || 'imprimante',
+      handlers: { add: function () { $('project-alert').textContent = ''; startSetup(); renderSetupFlow(); }, dismiss: function () { $('project-alert').textContent = ''; } } });
+  }
+  // Orca a changé de profil d'imprimante sans passer par Plyo : on le dit, sans rien décider à la place de l'utilisateur.
+  function checkDivergence() {
+    var p = conv && conv.project, orca = lastValues && lastValues.context ? lastValues.context.printer : '';
+    var alert = $('project-alert');
+    if (!p || !p.printer || p.printer.proposed || !orca || projectUI.pending || Date.now() < (projectUI.restoringUntil || 0)) return;
+    if (orca === p.printer.preset) { if (alert.dataset.kind === 'divergence') { alert.textContent = ''; alert.dataset.kind = ''; } return; }
+    alert.dataset.kind = 'divergence';
+    PlyoMachinesView.renderDivergence(alert, { el: el, button: button, icon: icon, alertBox: alertBox }, { from: p.printer.name || p.printer.preset, to: PlyoJourney.machineLabel({ name: orca }),
+      handlers: { useNew: function () { alert.textContent = ''; alert.dataset.kind = ''; projectHandlers.pickPrinter(orca, PlyoJourney.machineLabel({ name: orca })); }, restore: function () { alert.textContent = ''; alert.dataset.kind = ''; restoreProjectInOrca(false); } } });
   }
   // Début d'une impression : que demander pour la machine ? (voir PlyoMachines.machineQuestion)
   function applyMachineQuestion() {
@@ -949,6 +989,7 @@
     importPart: function () { pickFiles(); },
     expand: function () { journeyUI.ficheOpen = true; renderProject(); },
     toggleOthers: function () { projectUI.showOthers = !projectUI.showOthers; renderProject(); },
+    openMachines: function () { openMachinesDrawer(); },
     toggleList: function () { projectUI.showList = !projectUI.showList; renderProject(); },
     toggleKinds: function () { projectUI.showKinds = !projectUI.showKinds; renderProject(); },
     confirmFilament: function () {
@@ -959,9 +1000,11 @@
     },
     change: function (line) {
       projectUI.error = {};
-      if (line === 'printer') { conv.project.printer = null; conv.project.filament = null; }
+      var late = PlyoProject.nextStep(conv.project) === 'ready';
+      if (line === 'printer') { conv.project.printer = null; conv.project.filament = null; projectUI.showList = true; }
       if (line === 'filament') projectUI.editing = 'filament';
       projectChanged();
+      if (late && line === 'printer') noteLine('Changer de machine refait la préparation : filament, vérification et découpe.', '', 'info', 'guide');
     }
   };
   // Orca copie un profil d'Orca modifié sous « <nom> (Plyo) » : le filament du projet suit ce nouveau nom.
@@ -988,6 +1031,7 @@
     projectUI.printers.forEach(function (p) { if (p.linked) window.orca.postMessage({ type: 'project_reachable', preset: p.preset }); });
     applyMachineQuestion();
     renderProject();
+    scanForNewMachine();
   }
   function onProjectState(msg) {
     var pend = projectUI.pending;
@@ -2004,6 +2048,13 @@
   function onModelAdded(msg) {
     if (!msg.ok) { noteLine(msg.text, 'error', 'alert'); return; }
     if (msg.adaptation) syncProjectNames(msg.adaptation.saved);
+    if (msg.ok && msg.fits === false && conv.project.printer) {
+      var other = PlyoMachines.machineThatFits(projectUI.printers, conv.project.printer.preset, msg.size_mm);
+      if (other) {
+        var tip = noteLine('Cette pièce ne tient pas sur ' + conv.project.printer.name + '. Elle tient sur ' + other.label + '.', 'warn', 'alert', 'guide');
+        tip.appendChild(button('Refaire la préparation sur ' + other.label, function () { projectHandlers.pickPrinter(other.preset, other.label); }, 'link'));
+      }
+    }
     if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
     if (projectUI.newProjectFile) {
       projectUI.newProjectFile = false;
@@ -3397,6 +3448,7 @@
     } else if (msg.type === 'values') {
       var firstValues = !lastValues;
       renderValues(msg);
+      checkDivergence();
       if (firstValues) askOutcome(); // au démarrage, une fois les libellés des réglages connus
       window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
       drainPhoneQueue();
@@ -3440,6 +3492,8 @@
       onLimits(msg);
     } else if (msg.type === 'journal') {
       fillJournal(msg.events || []);
+    } else if (msg.type === 'printer_scan_result' && projectUI.bgScan) {
+      onBackgroundScan(msg.printers);
     } else if (msg.type === 'printer_scan_result') {
       var found = Array.isArray(msg.printers) ? msg.printers : [];
       if (setup.phase === 'scan') onSetupScan(found);

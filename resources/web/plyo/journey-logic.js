@@ -112,6 +112,9 @@
     return rows;
   }
 
+  // Nom d'une machine : le nom du profil sans « Ma » devant ni « - Copie » derrière.
+  function machineLabel(p) { return String(p && (p.name || p.preset) || '').replace(/^Ma\s+/i, '').replace(/\s*-\s*Copie.*$/i, '').trim(); }
+
   // Profils d'imprimante → une ligne par machine. « Ma K2 », « K2 - Copie » et « K2 » sont la même machine : on garde le profil
   // relié (« Ma … » de préférence). Les machines sans profil relié vont dans `others` (rangées sous « Autres profils »).
   function groupPrinters(list) {
@@ -120,7 +123,7 @@
     var groups = [], byKey = {};
     list.forEach(function (p) {
       if (!p || !p.preset) return;
-      var label = String(p.name || p.preset).replace(/^Ma\s+/i, '').replace(/\s*-\s*Copie.*$/i, '').trim();
+      var label = machineLabel(p);
       var key = label.toLowerCase();
       if (!byKey[key]) { byKey[key] = { label: label, items: [] }; groups.push(byKey[key]); }
       byKey[key].items.push(p);
@@ -154,7 +157,7 @@
     return ready ? base : base + ' Pour avancer pas à pas, passe par l’onglet « Étapes ».';
   }
 
-  var api = { chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
+  var api = { machineLabel: machineLabel, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;

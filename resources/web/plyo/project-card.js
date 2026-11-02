@@ -87,6 +87,7 @@
         }
         body.appendChild(acts);
       }
+      body.appendChild(ui.button('Mes machines…', h.openMachines, 'link'));
     } else if (wantsFilament && proposedFilament && !ctx.showKinds) {
       // « PLA, comme la dernière fois ? » : le bouton « Oui » est dans la ligne d'action.
       body.appendChild(ui.button('Autre matière', h.toggleKinds, 'link'));

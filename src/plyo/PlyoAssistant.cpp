@@ -106,7 +106,7 @@ std::string load_page()
     const std::string config_marker = "<!--plyo-config-->";
     if (const size_t at = page.find(config_marker); at != std::string::npos)
         page.replace(at, config_marker.size(), "<script>" + Config::api_url_script() + "</script>");
-    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js", "project-logic.js", "journey-logic.js", "machines-logic.js", "journey-view.js", "journey-steps.js", "project-card.js"}) {
+    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js", "project-logic.js", "journey-logic.js", "machines-logic.js", "machines-view.js", "journey-view.js", "journey-steps.js", "project-card.js"}) {
         const std::string marker = std::string("<!--plyo-include:") + name + "-->";
         if (const size_t at = page.find(marker); at != std::string::npos)
             page.replace(at, marker.size(), "<script>\n" + read_resource(name) + "\n</script>");
