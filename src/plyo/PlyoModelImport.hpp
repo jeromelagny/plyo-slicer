@@ -13,6 +13,8 @@ constexpr size_t MAX_BYTES = 50 * 1024 * 1024;
 
 // `name` : nom du fichier d'origine (STL, 3MF, OBJ, STEP, AMF) ; `base64` : son contenu.
 // Renvoie {ok, name, size_mm:[x,y,z], fits, bed_mm:[x,y,z]} ou {ok:false, text}.
-nlohmann::json add(const std::string& name, const std::string& base64);
+// `project` : le projet de la conversation ; pour un 3MF, ses réglages sont adaptés au projet (Project::adapt_file) et
+// rendus dans `adaptation`.
+nlohmann::json add(const std::string& name, const std::string& base64, const nlohmann::json& project = nlohmann::json());
 
 }} // namespace Plyo::ModelImport

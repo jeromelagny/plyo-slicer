@@ -613,3 +613,37 @@ TEST_CASE("Project: une valeur seulement proposée compte comme non choisie")
     CHECK(missing(p) == std::vector<std::string>{"printer"});
     CHECK_FALSE(refusal(p, "A", "F").empty());
 }
+
+TEST_CASE("Project: les réglages d'un 3MF sont lus en première valeur de chaque liste")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json settings = {{"layer_height", "0.2"}, {"nozzle_temperature", nlohmann::json::array({"250", "250"})},
+                                     {"enable_support", "1"}, {"vide", nlohmann::json::array()}, {"nombre", 5}};
+    const nlohmann::json flat = first_values(settings);
+    CHECK(flat["layer_height"] == "0.2");
+    CHECK(flat["nozzle_temperature"] == "250");
+    CHECK(flat["enable_support"] == "1");
+    CHECK_FALSE(flat.contains("vide"));
+    CHECK_FALSE(flat.contains("nombre"));
+    CHECK(first_values(nlohmann::json("x")).empty());
+}
+
+TEST_CASE("Project: un booléen ou un texte d'un 3MF passe tel quel quand la clé est permise")
+{
+    using namespace Plyo::ProjectLogic;
+    auto range_of = [](const std::string& key) -> nlohmann::json {
+        if (key == "enable_support" || key == "fill_density")
+            return nlohmann::json::object();
+        return nullptr;
+    };
+    const Adaptation a = adapt_3mf({{"enable_support", true}, {"fill_density", "15%"}, {"gcode_secret", "x"}}, nlohmann::json::object(), range_of);
+    bool support = false, density = false, secret = false;
+    for (const auto& c : a.apply) {
+        if (c["key"] == "enable_support" && c["value"] == true) support = true;
+        if (c["key"] == "fill_density" && c["value"] == "15%") density = true;
+        if (c["key"] == "gcode_secret") secret = true;
+    }
+    CHECK(support);
+    CHECK(density);
+    CHECK_FALSE(secret);
+}

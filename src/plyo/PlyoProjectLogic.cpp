@@ -111,6 +111,20 @@ nlohmann::json sanitize(const nlohmann::json& project)
     return out;
 }
 
+nlohmann::json first_values(const nlohmann::json& settings)
+{
+    nlohmann::json out = nlohmann::json::object();
+    if (!settings.is_object())
+        return out;
+    for (auto it = settings.begin(); it != settings.end(); ++it) {
+        if (it.value().is_string())
+            out[it.key()] = it.value();
+        else if (it.value().is_array() && !it.value().empty() && it.value().front().is_string())
+            out[it.key()] = it.value().front();
+    }
+    return out;
+}
+
 Adaptation adapt_3mf(const nlohmann::json& file_values, const nlohmann::json& project,
                      const std::function<nlohmann::json(const std::string&)>& range_of)
 {
@@ -131,11 +145,15 @@ Adaptation adapt_3mf(const nlohmann::json& file_values, const nlohmann::json& pr
         return out;
     for (auto it = file_values.begin(); it != file_values.end(); ++it) {
         const std::string key = it.key();
-        if (is_temperature_key(key) || !it.value().is_number())
+        if (is_temperature_key(key))
             continue;
         const nlohmann::json range = range_of(key);
         if (!range.is_object())
             continue;
+        if (!it.value().is_number()) {
+            out.apply.push_back({{"key", key}, {"value", it.value()}});
+            continue;
+        }
         const double value = it.value().get<double>();
         if (value < Json::num(range, "min", value) || value > Json::num(range, "max", value))
             out.dropped.push_back({{"key", key}, {"reason", "valeur hors de la plage sûre de l'assistant"}});

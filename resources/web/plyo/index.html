@@ -801,6 +801,14 @@
       projectChanged();
     }
   };
+  // Orca copie un profil d'Orca modifié sous « <nom> (Plyo) » : le filament du projet suit ce nouveau nom.
+  function syncProjectNames(saved) {
+    if (!Array.isArray(saved) || !conv || !conv.project.filament) return;
+    saved.forEach(function (item) {
+      if (item && item.type === 'filament' && item.from && conv.project.filament.preset === item.from) conv.project.filament.preset = item.name;
+    });
+    scheduleSave();
+  }
   function onProjectPrinters(msg) {
     projectUI.printers = Array.isArray(msg.printers) ? msg.printers : [];
     projectUI.printers.forEach(function (p) { if (p.linked) window.orca.postMessage({ type: 'project_reachable', preset: p.preset }); });
@@ -826,6 +834,7 @@
     } else if (pend.kind === 'temps' && conv.project.filament) {
       conv.project.filament.nozzle_temp = msg.nozzle_temp;
       conv.project.filament.bed_temp = msg.bed_temp;
+      conv.project.filament.preset = msg.filament_preset || conv.project.filament.preset; // copie « (Plyo) » faite par l'enregistrement
     }
     projectChanged();
   }
@@ -1674,7 +1683,7 @@
     var reader = new FileReader();
     reader.onload = function () {
       var data = String(reader.result || '');
-      window.orca.postMessage({ type: 'model_add', name: file.name, data: data.slice(data.indexOf(',') + 1) });
+      window.orca.postMessage({ type: 'model_add', name: file.name, data: data.slice(data.indexOf(',') + 1), project: conv.project });
     };
     reader.onerror = function () { noteLine('« ' + file.name + ' » n’a pas pu être lu.', 'error', 'alert'); };
     noteLine('Je pose « ' + file.name + ' » sur le plateau…', '', 'cube');
@@ -1865,8 +1874,30 @@
       }
       box.appendChild(warn);
     }
+    if (msg.adaptation) box.appendChild(renderAdaptation(msg.adaptation, archived));
     thread.appendChild(box);
     scrollDown();
+  }
+  // « J'ai adapté ce fichier à ton projet » : les réglages du 3MF repris, ceux écartés, et « Annuler ».
+  function renderAdaptation(a, archived) {
+    var adapted = Array.isArray(a.adapted) ? a.adapted : [], dropped = Array.isArray(a.dropped) ? a.dropped : [];
+    var box = alertBox(a.error ? 'warn' : 'tip', a.error ? 'Je n’ai pas pu adapter les réglages de ce fichier à ton projet : ' + a.error :
+      adapted.length ? 'J’ai adapté ce fichier à ton imprimante et à ton filament : ' + adapted.length + ' réglage' + (adapted.length > 1 ? 's' : '') + ' changé' + (adapted.length > 1 ? 's' : '') + '.' :
+      'Les réglages de ce fichier conviennent déjà à ton projet.', a.error ? 'alert' : 'check');
+    if (adapted.length) {
+      var list = el('ul', 'setup-checks');
+      adapted.forEach(function (c) { list.appendChild(el('li', '', c.label + ' : ' + String(c.before).replace('.', ',') + ' → ' + String(c.after).replace('.', ','))); });
+      box.body.appendChild(list);
+    }
+    if (dropped.length) {
+      var skipped = el('p', 'muted small', 'Écartés (hors des limites sûres) : ' + dropped.map(function (d) { return d.label; }).join(', ') + '.');
+      box.body.appendChild(skipped);
+    }
+    if (adapted.length && a.undo_id && !archived) {
+      var undo = button('Annuler', function () { undo.disabled = true; window.orca.postMessage({ type: 'undo', undo_id: a.undo_id }); }, 'btn ghost sm', 'undo');
+      box.body.appendChild(undo);
+    }
+    return box;
   }
 
   // ---------- Lien téléphone (un par conversation) ----------
@@ -3288,6 +3319,7 @@
       window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
       drainPhoneQueue();
     } else if (msg.type === 'result') {
+      syncProjectNames(msg.saved);
       if (msg.undone_id && undoneListeners[msg.undone_id]) { undoneListeners[msg.undone_id](); delete undoneListeners[msg.undone_id]; }
       if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text, msg); }
       else noteLine(msg.text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');

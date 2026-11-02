@@ -1,11 +1,14 @@
 #include "PlyoProject.hpp"
 
+#include "PlyoCatalog.hpp"
 #include "PlyoFirstSteps.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoProjectLogic.hpp"
+#include "PlyoProfiles.hpp"
 #include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/miniz_extension.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/Tab.hpp"
@@ -45,6 +48,29 @@ bool select(Preset::Type type, const std::string& name)
 {
     Slic3r::GUI::Tab* tab = wxGetApp().get_tab(type);
     return tab != nullptr && tab->select_preset(name, false, "", true);
+}
+
+// Réglages du projet 3MF ({clé: texte ou liste}) ; objet vide si le fichier n'en a pas ou est illisible.
+nlohmann::json read_3mf_settings(const std::string& path_utf8)
+{
+    constexpr size_t MAX_SETTINGS_BYTES = 8 * 1024 * 1024;
+    mz_zip_archive   zip;
+    mz_zip_zero_struct(&zip);
+    if (!Slic3r::open_zip_reader(&zip, path_utf8))
+        return nlohmann::json::object();
+    nlohmann::json out  = nlohmann::json::object();
+    size_t         size = 0;
+    void*          data = mz_zip_reader_extract_file_to_heap(&zip, "Metadata/project_settings.config", &size, 0);
+    if (data != nullptr) {
+        if (size <= MAX_SETTINGS_BYTES) {
+            const nlohmann::json parsed = nlohmann::json::parse(static_cast<const char*>(data), static_cast<const char*>(data) + size, nullptr, false);
+            if (parsed.is_object())
+                out = parsed;
+        }
+        mz_free(data);
+    }
+    Slic3r::close_zip_reader(&zip);
+    return out;
 }
 
 } // namespace
@@ -145,6 +171,68 @@ nlohmann::json restore(const nlohmann::json& project, bool discard_unsaved)
             return {{"ok", false}, {"text", Json::str(applied, "text")}};
     }
     return {{"ok", true}, {"text", "Projet remis dans Orca."}};
+}
+
+nlohmann::json adapt_file(const std::string& path_utf8, const nlohmann::json& project)
+{
+    const std::vector<std::string> todo = ProjectLogic::missing(project);
+    if (std::find(todo.begin(), todo.end(), "printer") != todo.end() || std::find(todo.begin(), todo.end(), "filament") != todo.end())
+        return nlohmann::json::object();
+    const nlohmann::json flat = ProjectLogic::first_values(read_3mf_settings(path_utf8));
+    if (flat.empty())
+        return nlohmann::json::object();
+
+    const Catalog::Policy&            policy = Catalog::policy();
+    const Slic3r::DynamicPrintConfig& config = bundle().prints.get_edited_preset().config;
+    nlohmann::json                    file_values = nlohmann::json::object();
+    for (auto it = flat.begin(); it != flat.end(); ++it) {
+        if (!policy.allows("print", it.key()))
+            continue; // le filament est celui de la fiche, l'imprimante et le G-code ne sont pas à l'assistant
+        const nlohmann::json typed = Catalog::typed_value(policy.kind("print", it.key()), it.value().get<std::string>());
+        if (!typed.is_null())
+            file_values[it.key()] = typed;
+    }
+    auto range_of = [&](const std::string& key) -> nlohmann::json {
+        const Slic3r::ConfigOptionDef* def = config.def() ? config.def()->get(key) : nullptr;
+        if (def == nullptr || config.option(key) == nullptr)
+            return nullptr;
+        nlohmann::json range = nlohmann::json::object();
+        if (def->min > -1e9f)
+            range["min"] = def->min;
+        if (def->max < 1e9f)
+            range["max"] = def->max;
+        return range;
+    };
+    const ProjectLogic::Adaptation plan = ProjectLogic::adapt_3mf(file_values, project, range_of);
+
+    nlohmann::json dropped = nlohmann::json::array();
+    for (const nlohmann::json& d : plan.dropped) {
+        const std::string label = policy.title(d["key"].get<std::string>());
+        dropped.push_back({{"label", label.empty() ? d["key"] : nlohmann::json(label)}, {"reason", d["reason"]}});
+    }
+    nlohmann::json changes = nlohmann::json::array();
+    for (const nlohmann::json& c : plan.apply) {
+        const std::string key = c["key"].get<std::string>();
+        if (!policy.allows("print", key))
+            continue; // les températures sont déjà celles de la fiche (filament)
+        if (SettingsBridge::typed_value_of(config, key, policy.kind("print", key)) == c["value"])
+            continue; // déjà la bonne valeur : rien à signaler
+        changes.push_back({{"key", key}, {"value", c["value"]}, {"label", policy.title(key)}});
+    }
+    nlohmann::json out = {{"adapted", nlohmann::json::array()}, {"dropped", dropped}, {"undo_id", 0}};
+    if (changes.empty())
+        return out;
+
+    nlohmann::json result = SettingsBridge::apply_catalog_changes(changes, bundle().prints.get_edited_preset().name, bundle().filaments.get_edited_preset().name);
+    if (!Json::boolean(result, "ok", false)) {
+        out["error"] = Json::str(result, "text"); // tout ou rien : aucun réglage du fichier n'a été appliqué
+        return out;
+    }
+    Profiles::save_applied(); // comme pour les réglages de l'assistant : le profil modifié est enregistré
+    for (const nlohmann::json& a : Json::arr(result, "applied"))
+        out["adapted"].push_back({{"label", a["label"]}, {"before", a["before"]}, {"after", a["after"]}});
+    out["undo_id"] = Json::integer(result, "undo_id", 0);
+    return out;
 }
 
 }} // namespace Plyo::Project

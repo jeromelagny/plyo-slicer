@@ -1,6 +1,7 @@
 #include "PlyoModelImport.hpp"
 #include "PlyoFiles.hpp"
 #include "PlyoPlateActions.hpp"
+#include "PlyoProject.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Model.hpp"
@@ -46,7 +47,7 @@ nlohmann::json size_of(const Slic3r::Vec3d& v)
 
 } // namespace
 
-nlohmann::json add(const std::string& name, const std::string& base64)
+nlohmann::json add(const std::string& name, const std::string& base64, const nlohmann::json& project)
 {
     const std::string file = safe_name(name);
     if (file.empty())
@@ -84,8 +85,15 @@ nlohmann::json add(const std::string& name, const std::string& base64)
     const Slic3r::Vec3d size = box.defined ? box.size() : Slic3r::Vec3d(0, 0, 0);
     const bool          fits = PlateActions::fits(size, bed);
     BOOST_LOG_TRIVIAL(info) << "Plyo: modèle joint posé sur le plateau : " << path.string();
-    return {{"ok", true}, {"name", fs::path(name).filename().string()}, {"count", added.size()},
-            {"size_mm", size_of(size)}, {"bed_mm", size_of(bed)}, {"fits", fits}};
+    nlohmann::json result = {{"ok", true}, {"name", fs::path(name).filename().string()}, {"count", added.size()},
+                             {"size_mm", size_of(size)}, {"bed_mm", size_of(bed)}, {"fits", fits}};
+    // Un 3MF arrive avec les réglages de son auteur : on les adapte à l'imprimante et au filament du projet.
+    if (boost::algorithm::to_lower_copy(path.extension().string()) == ".3mf") {
+        const nlohmann::json adaptation = Project::adapt_file(path.string(), project);
+        if (!adaptation.empty())
+            result["adaptation"] = adaptation;
+    }
+    return result;
 }
 
 }} // namespace Plyo::ModelImport

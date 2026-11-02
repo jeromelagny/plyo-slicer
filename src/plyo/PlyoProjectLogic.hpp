@@ -25,6 +25,10 @@ std::string refusal(const nlohmann::json& project, const std::string& current_pr
 // conversation. null si ce n'est pas un objet. `step` (étape guidée) : slice, print ou after seulement.
 nlohmann::json sanitize(const nlohmann::json& project);
 
+// Réglages d'un projet 3MF (Metadata/project_settings.config) aplatis : { clé: texte }, première valeur des listes,
+// valeurs non textuelles et listes vides ignorées.
+nlohmann::json first_values(const nlohmann::json& settings);
+
 struct Adaptation
 {
     nlohmann::json apply   = nlohmann::json::array(); // [{key, value}]
@@ -32,8 +36,9 @@ struct Adaptation
 };
 
 // Réglages lus dans un 3MF ({clé du catalogue: valeur}) adaptés au projet : les températures viennent toujours de la
-// fiche ; une autre valeur numérique hors de la plage de `range_of(clé)` ({min, max}) est écartée et signalée ;
-// une clé sans plage (null : hors liste blanche de l'assistant) ou une valeur non numérique est ignorée.
+// fiche ; une autre valeur numérique hors de la plage de `range_of(clé)` ({min, max}, bornes facultatives) est écartée
+// et signalée ; un booléen ou un texte d'une clé permise passe tel quel ; une clé que `range_of` rend null (hors de ce
+// que l'assistant peut modifier) est ignorée.
 Adaptation adapt_3mf(const nlohmann::json& file_values, const nlohmann::json& project,
                      const std::function<nlohmann::json(const std::string&)>& range_of);
 
