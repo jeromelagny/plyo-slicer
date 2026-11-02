@@ -29,6 +29,17 @@ nlohmann::json sanitize(const nlohmann::json& project);
 // valeurs non textuelles et listes vides ignorées.
 nlohmann::json first_values(const nlohmann::json& settings);
 
+// Le filament actuel d'Orca est-il celui du projet ? Oui s'il porte le même nom, ou ce nom suivi de « (Plyo) » (copie faite
+// à l'enregistrement d'un profil d'Orca) ou de « — » (profil calibré par Plyo).
+bool same_filament(const std::string& project_preset, const std::string& current);
+
+// Comme `refusal` mais pour un réglage fait par l'utilisateur dans la fiche (température…) : la pièce n'est pas exigée,
+// seuls l'imprimante et le filament déjà choisis sont comparés à Orca. Chaîne vide si c'est permis.
+std::string edit_refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament);
+
+// Le projet a une imprimante et un filament choisis, et Orca n'est plus dessus : « Remettre le projet » a un sens.
+bool can_restore(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament);
+
 struct Adaptation
 {
     nlohmann::json apply   = nlohmann::json::array(); // [{key, value}]

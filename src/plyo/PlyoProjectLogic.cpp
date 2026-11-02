@@ -53,13 +53,46 @@ std::vector<std::string> missing(const nlohmann::json& project)
 
 bool complete(const nlohmann::json& project) { return missing(project).empty(); }
 
+bool same_filament(const std::string& project_preset, const std::string& current)
+{
+    if (project_preset.empty())
+        return false;
+    if (current == project_preset)
+        return true;
+    for (const char* suffix : {" (Plyo)", " — "})
+        if (current.rfind(project_preset + suffix, 0) == 0)
+            return true;
+    return false;
+}
+
+std::string edit_refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament)
+{
+    const std::vector<std::string> todo = missing(project);
+    const bool has_printer  = std::find(todo.begin(), todo.end(), "printer") == todo.end();
+    const bool has_filament = std::find(todo.begin(), todo.end(), "filament") == todo.end();
+    if (has_printer && Json::str(*Json::field(project, "printer"), "preset") != current_printer)
+        return "Orca n'est plus sur l'imprimante de ce projet. Remets le projet dans Orca avant de changer des réglages.";
+    if (has_filament && !same_filament(Json::str(*Json::field(project, "filament"), "preset"), current_filament))
+        return "Orca n'est plus sur le filament de ce projet. Remets le projet dans Orca avant de changer des réglages.";
+    return std::string();
+}
+
+bool can_restore(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament)
+{
+    const std::vector<std::string> todo = missing(project);
+    if (std::find(todo.begin(), todo.end(), "printer") != todo.end() || std::find(todo.begin(), todo.end(), "filament") != todo.end())
+        return false;
+    return Json::str(*Json::field(project, "printer"), "preset") != current_printer ||
+           !same_filament(Json::str(*Json::field(project, "filament"), "preset"), current_filament);
+}
+
 std::string refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament)
 {
     const std::vector<std::string> todo = missing(project);
     if (!todo.empty())
         return "Complète d'abord la fiche du projet (imprimante, filament, pièce) : je ne change aucun réglage tant qu'elle est incomplète.";
     if (Json::str(*Json::field(project, "printer"), "preset") != current_printer ||
-        Json::str(*Json::field(project, "filament"), "preset") != current_filament)
+        !same_filament(Json::str(*Json::field(project, "filament"), "preset"), current_filament))
         return "Orca n'est plus sur l'imprimante ou le filament de ce projet. Remets le projet dans Orca avant de changer des réglages.";
     return std::string();
 }

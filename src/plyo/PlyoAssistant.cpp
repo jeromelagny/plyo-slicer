@@ -140,14 +140,18 @@ void send_result(const nlohmann::json& result)
 // (`revert`) et un réglage fait par l'utilisateur dans la fiche elle-même (`project_edit`, ex. les températures).
 nlohmann::json project_refusal(const nlohmann::json& data)
 {
-    if (Json::boolean(data, "revert", false) || Json::boolean(data, "project_edit", false))
+    if (Json::boolean(data, "revert", false))
         return nullptr;
-    const nlohmann::json state = Project::state();
-    const std::string    text  = ProjectLogic::refusal(data.contains("project") ? data["project"] : nlohmann::json(),
-                                                    Json::str(state, "printer_preset"), Json::str(state, "filament_preset"));
+    const nlohmann::json project = data.contains("project") ? data["project"] : nlohmann::json();
+    const nlohmann::json state   = Project::state();
+    const std::string    printer = Json::str(state, "printer_preset"), filament = Json::str(state, "filament_preset");
+    // Un réglage fait dans la fiche n'exige pas la pièce, mais Orca doit être sur le profil du projet : sinon il écrirait
+    // dans le filament d'un autre projet.
+    const std::string text = Json::boolean(data, "project_edit", false) ? ProjectLogic::edit_refusal(project, printer, filament)
+                                                                         : ProjectLogic::refusal(project, printer, filament);
     if (text.empty())
         return nullptr;
-    return {{"ok", false}, {"text", text}};
+    return {{"ok", false}, {"text", text}, {"can_restore", ProjectLogic::can_restore(project, printer, filament)}};
 }
 
 void handle_page_message(const nlohmann::json& data)

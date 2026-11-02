@@ -649,3 +649,38 @@ TEST_CASE("Project: un booléen ou un texte d'un 3MF passe tel quel quand la cl�
     CHECK(density);
     CHECK_FALSE(secret);
 }
+
+TEST_CASE("Project: le filament copié ou calibré par Plyo reste celui du projet")
+{
+    using namespace Plyo::ProjectLogic;
+    CHECK(same_filament("Generic PLA @ECC2", "Generic PLA @ECC2"));
+    CHECK(same_filament("Generic PLA @ECC2", "Generic PLA @ECC2 (Plyo)"));
+    CHECK(same_filament("Generic PLA @ECC2", "Generic PLA @ECC2 — Centauri (calibré Plyo)"));
+    CHECK_FALSE(same_filament("Generic PLA @ECC2", "Generic PETG @ECC2"));
+    CHECK_FALSE(same_filament("Generic PLA @ECC2", "Generic PLA @ECC2 Silk"));
+    const nlohmann::json full = {{"printer", {{"preset", "A"}}}, {"filament", {{"preset", "F"}}}, {"part", {{"name", "p.stl"}}}};
+    CHECK(refusal(full, "A", "F (Plyo)").empty());
+}
+
+TEST_CASE("Project: un réglage fait dans la fiche exige que le profil d'Orca soit celui du projet")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json no_part = {{"printer", {{"preset", "A"}}}, {"filament", {{"preset", "F"}}}};
+    CHECK(edit_refusal(no_part, "A", "F").empty());          // la pièce n'est pas encore choisie : permis
+    CHECK_FALSE(edit_refusal(no_part, "A", "G").empty());    // Orca est sur un autre filament : refusé
+    CHECK_FALSE(edit_refusal(no_part, "B", "F").empty());
+    const nlohmann::json only_printer = {{"printer", {{"preset", "A"}}}};
+    CHECK(edit_refusal(only_printer, "A", "n'importe quel filament").empty()); // le filament n'est pas encore choisi
+    CHECK(edit_refusal(nlohmann::json(), "A", "F").empty());                   // rien de choisi : rien à comparer
+}
+
+TEST_CASE("Project: la remise du projet n'est proposée que s'il y a quelque chose à remettre")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json p = {{"printer", {{"preset", "A"}}}, {"filament", {{"preset", "F"}}}};
+    CHECK_FALSE(can_restore(p, "A", "F"));
+    CHECK(can_restore(p, "B", "F"));
+    CHECK(can_restore(p, "A", "G"));
+    CHECK_FALSE(can_restore(nlohmann::json(), "A", "F"));
+    CHECK_FALSE(can_restore(nlohmann::json{{"printer", {{"preset", "A"}}}}, "B", "F")); // pas de filament à remettre
+}

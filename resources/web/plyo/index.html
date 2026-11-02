@@ -746,7 +746,7 @@
 
   // ---------- Fiche « Mon projet » : imprimante, filament (buse et plateau), pièce ----------
   // Le projet est gardé avec la conversation (conv.project) ; PlyoProject (project-logic.js) dit quelle étape manque.
-  var projectUI = { waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
+  var projectUI = { keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
   function projectChanged() {
     scheduleSave();
     renderProject();
@@ -810,6 +810,17 @@
     });
     scheduleSave();
   }
+  // Une modification refusée parce qu'Orca n'est plus sur le projet : un bouton pour l'y remettre.
+  function offerRestore() {
+    var slot = $('project-alert');
+    slot.textContent = '';
+    var box = alertBox('warn', 'Orca n’est plus sur l’imprimante ou le filament de ce projet.', 'alert');
+    var acts = el('div', 'printer-actions');
+    acts.appendChild(button('Remettre le projet', function () { slot.textContent = ''; restoreProjectInOrca(false); }, 'btn sm'));
+    acts.appendChild(button('Fermer', function () { slot.textContent = ''; }, 'btn ghost sm'));
+    box.body.appendChild(acts);
+    slot.appendChild(box);
+  }
   function onProjectPrinters(msg) {
     projectUI.printers = Array.isArray(msg.printers) ? msg.printers : [];
     projectUI.printers.forEach(function (p) { if (p.linked) window.orca.postMessage({ type: 'project_reachable', preset: p.preset }); });
@@ -823,19 +834,24 @@
     projectUI.pending = null;
     if (projectUI.adopt && setup.preset && msg.printer_preset) {
       projectUI.adopt = false;
+      var kept = conv.project.filament && !conv.project.filament.proposed ? conv.project.filament : null;
       conv.project.printer = { preset: msg.printer_preset, name: msg.printer_preset };
       conv.project.filament = null;
       projectChanged();
+      // Le filament du projet est rechoisi par son type pour la nouvelle machine, avec les mêmes températures.
+      if (kept && kept.type) { projectUI.keepTemps = { nozzle: kept.nozzle_temp, bed: kept.bed_temp }; projectHandlers.pickFilament(kept.type); }
       return;
     }
     if (!pend) return;
     if (pend.kind === 'filament') {
       conv.project.filament = { type: pend.type, preset: msg.filament_preset, nozzle_temp: msg.nozzle_temp, bed_temp: msg.bed_temp };
       projectUI.editing = null;
+      var wanted = projectUI.keepTemps;
+      projectUI.keepTemps = null;
+      if (wanted && (wanted.nozzle !== msg.nozzle_temp || wanted.bed !== msg.bed_temp)) { projectChanged(); projectHandlers.setTemps(wanted.nozzle, wanted.bed); return; }
     } else if (pend.kind === 'temps' && conv.project.filament) {
       conv.project.filament.nozzle_temp = msg.nozzle_temp;
       conv.project.filament.bed_temp = msg.bed_temp;
-      conv.project.filament.preset = msg.filament_preset || conv.project.filament.preset; // copie « (Plyo) » faite par l'enregistrement
     }
     projectChanged();
   }
@@ -1674,6 +1690,7 @@
       if (busy) { blockedWhileBusy(); return; }
       newConversation();
       projectUI.waitingFile = file;
+      projectUI.newProjectFile = true;
       projectChanged();
     }, 'btn sm'));
     acts.appendChild(button('Annuler', function () { slot.textContent = ''; }, 'btn ghost sm'));
@@ -1833,7 +1850,12 @@
   // ---------- Modèle 3D joint : posé sur le plateau, conseils sur clic seulement ----------
   function onModelAdded(msg) {
     if (!msg.ok) { noteLine(msg.text, 'error', 'alert'); return; }
+    if (msg.adaptation) syncProjectNames(msg.adaptation.saved);
     if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
+    if (projectUI.newProjectFile) {
+      projectUI.newProjectFile = false;
+      noteLine('L’ancienne pièce est toujours sur le plateau d’Orca : supprime-la avant de découper, un projet = une pièce.', 'warn', 'alert');
+    }
     renderModel(record({ kind: 'model', msg: msg, reduced: false }), false);
   }
   function renderModel(entry, archived) {
@@ -3268,6 +3290,7 @@
       drainPhoneQueue();
     } else if (msg.type === 'result') {
       syncProjectNames(msg.saved);
+      if (msg.can_restore) offerRestore();
       if (msg.undone_id && undoneListeners[msg.undone_id]) { undoneListeners[msg.undone_id](); delete undoneListeners[msg.undone_id]; }
       if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text, msg); }
       else noteLine(msg.text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');

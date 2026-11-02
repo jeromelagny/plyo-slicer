@@ -130,11 +130,9 @@ nlohmann::json restore(const nlohmann::json& project, bool discard_unsaved)
     const std::string filament = Json::str(*Json::field(project, "filament"), "preset");
     if (bundle().printers.find_preset(printer, false) == nullptr)
         return {{"ok", false}, {"text", "L'imprimante de ce projet n'existe plus dans Orca. Choisis-en une dans la fiche."}};
-    if (bundle().filaments.find_preset(filament, false) == nullptr)
-        return {{"ok", false}, {"text", "Le filament de ce projet n'existe plus dans Orca. Choisis-le à nouveau dans la fiche."}};
 
     const nlohmann::json now      = state();
-    const bool           changing = Json::str(now, "printer_preset") != printer || Json::str(now, "filament_preset") != filament;
+    const bool           changing = Json::str(now, "printer_preset") != printer || !ProjectLogic::same_filament(filament, Json::str(now, "filament_preset"));
     const bool           dirty    = bundle().printers.current_is_dirty() || bundle().prints.current_is_dirty() || bundle().filaments.current_is_dirty();
     if (changing && dirty && !discard_unsaved)
         return {{"ok", false}, {"needs_confirmation", true}, {"text", "Tu as des réglages non enregistrés dans Orca."}};
@@ -145,10 +143,15 @@ nlohmann::json restore(const nlohmann::json& project, bool discard_unsaved)
         bundle().prints.discard_current_changes();
         bundle().filaments.discard_current_changes();
         SettingsBridge::clear_undo(); // ses entrées viseraient les anciens profils
+        // L'imprimante d'abord : même si le filament a disparu, Orca revient sur la machine du projet.
         if (Json::str(now, "printer_preset") != printer && !select(Preset::TYPE_PRINTER, printer))
             return {{"ok", false}, {"text", "Je n'ai pas pu sélectionner l'imprimante de ce projet."}};
-        if (Json::str(state(), "filament_preset") != filament)
+        if (bundle().filaments.find_preset(filament, false) == nullptr)
+            return {{"ok", false}, {"text", "Le filament de ce projet n'existe plus dans Orca. Choisis-le à nouveau dans la fiche."}};
+        if (!ProjectLogic::same_filament(filament, Json::str(state(), "filament_preset")))
             FirstSteps::select_filament(filament);
+        if (!ProjectLogic::same_filament(filament, Json::str(state(), "filament_preset")))
+            return {{"ok", false}, {"text", "Je n'ai pas pu sélectionner le filament de ce projet."}};
     }
 
     // Températures de la fiche, seulement si elles diffèrent de celles du profil (un lot annulable par Plyo).
@@ -178,6 +181,10 @@ nlohmann::json adapt_file(const std::string& path_utf8, const nlohmann::json& pr
     const std::vector<std::string> todo = ProjectLogic::missing(project);
     if (std::find(todo.begin(), todo.end(), "printer") != todo.end() || std::find(todo.begin(), todo.end(), "filament") != todo.end())
         return nlohmann::json::object();
+    // Orca doit être sur l'imprimante et le filament du projet : sinon les réglages iraient dans le profil d'un autre projet.
+    const nlohmann::json now = state();
+    if (const std::string refused = ProjectLogic::edit_refusal(project, Json::str(now, "printer_preset"), Json::str(now, "filament_preset")); !refused.empty())
+        return {{"adapted", nlohmann::json::array()}, {"dropped", nlohmann::json::array()}, {"undo_id", 0}, {"error", refused}};
     const nlohmann::json flat = ProjectLogic::first_values(read_3mf_settings(path_utf8));
     if (flat.empty())
         return nlohmann::json::object();
@@ -228,7 +235,8 @@ nlohmann::json adapt_file(const std::string& path_utf8, const nlohmann::json& pr
         out["error"] = Json::str(result, "text"); // tout ou rien : aucun réglage du fichier n'a été appliqué
         return out;
     }
-    Profiles::save_applied(); // comme pour les réglages de l'assistant : le profil modifié est enregistré
+    const nlohmann::json saved = Profiles::save_applied(); // comme pour les réglages de l'assistant : le profil modifié est enregistré
+    out["saved"]               = saved["saved"]; // le panneau suit un éventuel renommage « (Plyo) » du filament
     for (const nlohmann::json& a : Json::arr(result, "applied"))
         out["adapted"].push_back({{"label", a["label"]}, {"before", a["before"]}, {"after", a["after"]}});
     out["undo_id"] = Json::integer(result, "undo_id", 0);
