@@ -9,9 +9,10 @@ const P = require('../project-logic.js');
 const printer = { preset: 'Elegoo Centauri Carbon 2 0.4 nozzle', name: 'Centauri Carbon 2' };
 const filament = { type: 'PLA', preset: 'Generic PLA @ECC2', nozzle_temp: 215, bed_temp: 60 };
 
-test('nextStep suit l’ordre imprimante, filament, pièce, puis ready', () => {
+test('nextStep suit l’ordre imprimante, pièce, filament, puis ready', () => {
   assert.equal(P.nextStep(P.emptyProject()), 'printer');
-  assert.equal(P.nextStep({ printer: printer, filament: null, part: null }), 'filament');
+  assert.equal(P.nextStep({ printer: printer, filament: null, part: null }), 'part');
+  assert.equal(P.nextStep({ printer: printer, filament: null, part: { name: 'a.stl' } }), 'filament');
   assert.equal(P.nextStep({ printer: printer, filament: filament, part: null }), 'part');
   assert.equal(P.nextStep({ printer: printer, filament: filament, part: { name: 'a.stl' } }), 'ready');
 });
@@ -47,6 +48,17 @@ test('partFromPlate prend la pièce posée sur le plateau quand la fiche attend 
   assert.equal(P.partFromPlate(ready, { objects: 2, part_name: '' }), 'Pièce posée sur le plateau');
   assert.equal(P.partFromPlate(ready, { objects: 0, part_name: '' }), null);
   assert.equal(P.partFromPlate({ printer: printer, filament: filament, part: { name: 'a.stl' } }, { objects: 1, part_name: 'b.stl' }), null);
-  assert.equal(P.partFromPlate({ printer: printer, filament: null, part: null }, { objects: 1, part_name: 'b.stl' }), null);
+  assert.equal(P.partFromPlate({ printer: printer, filament: null, part: null }, { objects: 1, part_name: 'b.stl' }), 'b.stl');
+  assert.equal(P.partFromPlate(P.emptyProject(), { objects: 1, part_name: 'b.stl' }), 'b.stl'); // pièce déjà sur le plateau avant même la machine
   assert.equal(P.partFromPlate(ready, null), null);
+});
+
+test('needsAdaptation : un 3MF se règle sur le projet une fois machine, pièce et filament choisis, une seule fois', () => {
+  const ready = { printer: printer, filament: filament, part: { name: 'bague.3mf' } };
+  assert.equal(P.needsAdaptation(ready, ''), true);
+  assert.equal(P.needsAdaptation(ready, 'bague.3mf'), false);
+  assert.equal(P.needsAdaptation({ printer: printer, filament: filament, part: { name: 'bague.stl' } }, ''), false);
+  assert.equal(P.needsAdaptation({ printer: printer, filament: null, part: { name: 'bague.3mf' } }, ''), false);
+  assert.equal(P.needsAdaptation({ printer: printer, filament: Object.assign({ proposed: true }, filament), part: { name: 'bague.3mf' } }, ''), false);
+  assert.equal(P.needsAdaptation(null, ''), false);
 });

@@ -27,6 +27,8 @@ using Slic3r::GUI::wxGetApp;
 
 namespace {
 
+std::string s_last_3mf; // chemin du dernier 3MF posé par le panneau
+
 // Nom de fichier sûr (pas de dossier, caractères simples) avec une extension de modèle acceptée ; "" sinon.
 std::string safe_name(const std::string& name)
 {
@@ -89,11 +91,19 @@ nlohmann::json add(const std::string& name, const std::string& base64, const nlo
                              {"size_mm", size_of(size)}, {"bed_mm", size_of(bed)}, {"fits", fits}};
     // Un 3MF arrive avec les réglages de son auteur : on les adapte à l'imprimante et au filament du projet.
     if (boost::algorithm::to_lower_copy(path.extension().string()) == ".3mf") {
+        s_last_3mf = path.string();
         const nlohmann::json adaptation = Project::adapt_file(path.string(), project);
         if (!adaptation.empty())
             result["adaptation"] = adaptation;
     }
     return result;
+}
+
+nlohmann::json adapt_last(const nlohmann::json& project)
+{
+    if (s_last_3mf.empty())
+        return nlohmann::json::object();
+    return Project::adapt_file(s_last_3mf, project);
 }
 
 }} // namespace Plyo::ModelImport

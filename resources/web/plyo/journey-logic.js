@@ -6,7 +6,7 @@
   var P = root.PlyoProject || (typeof require !== 'undefined' ? require('./project-logic.js') : null);
 
   var STEPS = [
-    { key: 'machine', label: 'Machine' }, { key: 'filament', label: 'Filament' }, { key: 'piece', label: 'Pièce' },
+    { key: 'machine', label: 'Machine' }, { key: 'piece', label: 'Pièce' }, { key: 'filament', label: 'Filament' },
     { key: 'preparer', label: 'Préparer' }, { key: 'imprimer', label: 'Imprimer' }, { key: 'resultat', label: 'Résultat' }
   ];
   var BY_FICHE = { printer: 'machine', filament: 'filament', part: 'piece' };
@@ -81,11 +81,11 @@
   function ficheSummary(project) {
     var p = project || {}, parts = [];
     if (p.printer && (p.printer.name || p.printer.preset)) parts.push(p.printer.name || p.printer.preset);
+    if (p.part && p.part.name) parts.push(p.part.name);
     if (p.filament && p.filament.type) {
       var temps = p.filament.nozzle_temp != null && p.filament.bed_temp != null ? ' ' + p.filament.nozzle_temp + '/' + p.filament.bed_temp : '';
       parts.push(p.filament.type + temps);
     }
-    if (p.part && p.part.name) parts.push(p.part.name);
     return parts.join(' · ');
   }
 
@@ -104,8 +104,8 @@
   function filledRows(project) {
     var p = project || {}, rows = [];
     if (p.printer && !p.printer.proposed && (p.printer.name || p.printer.preset)) rows.push({ line: 'printer', text: p.printer.name || p.printer.preset });
-    if (p.filament && !p.filament.proposed && p.filament.type) rows.push({ line: 'filament', text: p.filament.type });
     if (p.part && p.part.name) rows.push({ line: 'part', text: p.part.name });
+    if (p.filament && !p.filament.proposed && p.filament.type) rows.push({ line: 'filament', text: p.filament.type });
     return rows;
   }
 

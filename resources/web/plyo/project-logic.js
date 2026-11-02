@@ -16,8 +16,8 @@
   function nextStep(project) {
     var p = project && typeof project === 'object' ? project : {};
     if (!chosen(p.printer, 'preset')) return 'printer';
-    if (!chosen(p.filament, 'preset')) return 'filament';
     if (!chosen(p.part, 'name')) return 'part';
+    if (!chosen(p.filament, 'preset')) return 'filament';
     return 'ready';
   }
 
@@ -47,11 +47,20 @@
   // Pièce déjà posée sur le plateau d'Orca (import par le menu d'Orca, glisser-déposer sur le plateau…) alors que la fiche
   // attend la pièce : son nom, sinon null. `signals` : {objects, part_name} (tour_signals du slicer).
   function partFromPlate(project, signals) {
-    if (nextStep(project) !== 'part' || !signals || !(signals.objects > 0)) return null;
+    // Dès que la fiche n'a pas de pièce : une pièce déjà posée dans Orca est reconnue même avant le choix de la machine.
+    var p = project && typeof project === 'object' ? project : {};
+    if (chosen(p.part, 'name') || !signals || !(signals.objects > 0)) return null;
     return typeof signals.part_name === 'string' && signals.part_name ? signals.part_name : 'Pièce posée sur le plateau';
   }
 
-  var api = { partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  // Un 3MF posé reprend ses réglages d'impression adaptés au projet, quand machine, pièce et filament sont choisis ; une fois par pièce.
+  function needsAdaptation(project, adaptedFor) {
+    if (nextStep(project) !== 'ready') return false;
+    var name = project.part && project.part.name;
+    return /\.3mf$/i.test(String(name || '')) && adaptedFor !== name;
+  }
+
+  var api = { needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

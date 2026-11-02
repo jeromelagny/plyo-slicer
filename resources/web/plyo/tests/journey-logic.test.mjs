@@ -12,13 +12,14 @@ const part = { name: 'flexyring.stl' };
 const full = (extra) => Object.assign({ printer: printer, filament: filament, part: part }, extra || {});
 
 test('les six étapes sont dans l’ordre voulu', () => {
-  assert.deepEqual(J.STEPS.map((s) => s.key), ['machine', 'filament', 'piece', 'preparer', 'imprimer', 'resultat']);
-  assert.deepEqual(J.STEPS.map((s) => s.label), ['Machine', 'Filament', 'Pièce', 'Préparer', 'Imprimer', 'Résultat']);
+  assert.deepEqual(J.STEPS.map((s) => s.key), ['machine', 'piece', 'filament', 'preparer', 'imprimer', 'resultat']);
+  assert.deepEqual(J.STEPS.map((s) => s.label), ['Machine', 'Pièce', 'Filament', 'Préparer', 'Imprimer', 'Résultat']);
 });
 
 test('currentStep suit la fiche puis project.step', () => {
   assert.equal(J.currentStep(null), 'machine');
-  assert.equal(J.currentStep({ printer: printer }), 'filament');
+  assert.equal(J.currentStep({ printer: printer }), 'piece');
+  assert.equal(J.currentStep({ printer: printer, part: part }), 'filament');
   assert.equal(J.currentStep({ printer: printer, filament: filament }), 'piece');
   assert.equal(J.currentStep(full()), 'preparer');
   assert.equal(J.currentStep(full({ step: 'slice' })), 'preparer');
@@ -84,7 +85,7 @@ test('la barre passe en pastilles sous 340 px et la fiche se réduit sur fenêtr
 });
 
 test('ficheSummary omet les parties absentes', () => {
-  assert.equal(J.ficheSummary(full()), 'Centauri Carbon 2 · PLA 215/60 · flexyring.stl');
+  assert.equal(J.ficheSummary(full()), 'Centauri Carbon 2 · flexyring.stl · PLA 215/60');
   const partial = J.ficheSummary({ printer: printer });
   assert.equal(partial, 'Centauri Carbon 2');
   assert.ok(!/undefined|null/.test(J.ficheSummary(null)));

@@ -519,8 +519,8 @@ TEST_CASE("Sanitize::reliable garde l'instant du lot (at) quand il est donné")
 TEST_CASE("Project: les étapes manquantes sont dans l'ordre")
 {
     using namespace Plyo::ProjectLogic;
-    CHECK(missing(nlohmann::json()) == std::vector<std::string>{"printer", "filament", "part"});
-    CHECK(missing(nlohmann::json{{"printer", {{"preset", "A"}}}}) == std::vector<std::string>{"filament", "part"});
+    CHECK(missing(nlohmann::json()) == std::vector<std::string>{"printer", "part", "filament"});
+    CHECK(missing(nlohmann::json{{"printer", {{"preset", "A"}}}}) == std::vector<std::string>{"part", "filament"});
     const nlohmann::json full = {{"printer", {{"preset", "A"}}}, {"filament", {{"type", "PLA"}, {"preset", "F"}}}, {"part", {{"name", "p.stl"}}}};
     CHECK(missing(full).empty());
     CHECK(complete(full));

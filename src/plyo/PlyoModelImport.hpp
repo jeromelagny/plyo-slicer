@@ -17,4 +17,8 @@ constexpr size_t MAX_BYTES = 150 * 1024 * 1024;
 // rendus dans `adaptation`.
 nlohmann::json add(const std::string& name, const std::string& base64, const nlohmann::json& project = nlohmann::json());
 
+// Adapte au projet le dernier 3MF posé par `add` (réglages d'impression du fichier, voir Project::adapt_file). Sert quand le
+// filament est choisi après la pièce. {} si aucun 3MF n'a été posé ou si le fichier n'a pas de réglages.
+nlohmann::json adapt_last(const nlohmann::json& project);
+
 }} // namespace Plyo::ModelImport

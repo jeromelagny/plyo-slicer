@@ -44,10 +44,10 @@ std::vector<std::string> missing(const nlohmann::json& project)
     std::vector<std::string> out;
     if (!has_object(project, "printer", "preset"))
         out.push_back("printer");
-    if (!has_object(project, "filament", "preset"))
-        out.push_back("filament");
     if (!has_object(project, "part", "name"))
         out.push_back("part");
+    if (!has_object(project, "filament", "preset"))
+        out.push_back("filament");
     return out;
 }
 

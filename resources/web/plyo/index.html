@@ -823,6 +823,11 @@
     // Machine ou filament changé après la découpe : la découpe est périmée, on repasse à « Préparer ».
     conv.project = PlyoJourney.resetStepOnChange(conv.seenProject || null, conv.project);
     conv.seenProject = JSON.parse(JSON.stringify(conv.project));
+    // Un 3MF : ses réglages sont adaptés dès que le filament est choisi (la pièce vient avant le filament).
+    if (PlyoProject.needsAdaptation(conv.project, conv.adaptedFor)) {
+      conv.adaptedFor = conv.project.part.name;
+      window.orca.postMessage({ type: 'model_adapt', project: conv.project });
+    }
     scheduleSave();
     renderProject();
     // Un fichier en attente (déposé avant que la fiche soit prête) est posé dès que la pièce est la prochaine étape.
@@ -1780,10 +1785,10 @@
   function sendModel(file) {
     applyTab('show-guide'); // la pièce se pose et se vérifie dans le Guide
     var step = PlyoProject.nextStep(conv.project);
-    if (step === 'printer' || step === 'filament') {
+    if (step === 'printer') { // la machine d'abord : l'adaptation d'un 3MF en dépend
       projectUI.waitingFile = file;
       renderProject();
-      noteLine('« ' + file.name + ' » attend : choisis d’abord ' + (step === 'printer' ? 'ton imprimante' : 'ton filament') + ' dans la fiche, je le pose ensuite.', '', 'info', 'guide');
+      noteLine('« ' + file.name + ' » attend : choisis d’abord ton imprimante, je le pose ensuite.', '', 'info', 'guide');
       return;
     }
     if (conv.project.part && conv.project.part.name) { offerNewProject(file); return; }
@@ -3441,6 +3446,9 @@
       if (!saveFailedShown) { saveFailedShown = true; noteLine('Cette conversation est devenue trop longue pour être gardée : commence-en une nouvelle depuis le menu « ⋯ ».', 'error', 'alert'); }
     } else if (msg.type === 'project_restored') {
       onProjectRestored(msg);
+    } else if (msg.type === 'model_adapted') {
+      var ad = msg.adaptation;
+      if (ad && (ad.adapted && ad.adapted.length || ad.dropped && ad.dropped.length || ad.error)) { syncProjectNames(ad.saved); $('guide-notes').appendChild(renderAdaptation(ad, false)); }
     } else if (msg.type === 'project_printers') {
       onProjectPrinters(msg);
     } else if (msg.type === 'project_state') {

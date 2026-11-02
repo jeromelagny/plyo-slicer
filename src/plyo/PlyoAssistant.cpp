@@ -367,6 +367,8 @@ void handle_page_message(const nlohmann::json& data)
             nlohmann::json added = ModelImport::add(Json::str(data, "name"), Json::str(data, "data"), data.contains("project") ? data["project"] : nlohmann::json());
             added["type"]        = "model_added";
             send(added);
+        } else if (type == "model_adapt") {
+            send({{"type", "model_adapted"}, {"adaptation", ModelImport::adapt_last(data.contains("project") ? data["project"] : nlohmann::json())}});
         } else if (type == "show_me") {
             const std::string target = Json::str(data, "target");
             send({{"type", "show_me"}, {"target", target}, {"ok", Json::boolean(Highlight::show(target), "ok", false)}});
