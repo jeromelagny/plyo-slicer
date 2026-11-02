@@ -60,20 +60,18 @@
     var P = root.PlyoProject, project = projectOf(ctx), step = P.nextStep(project), h = ctx.handlers;
     slot.textContent = '';
     var fi = project.filament && !project.filament.proposed ? project.filament : null;
+    var proposedFilament = project.filament && project.filament.proposed ? project.filament : null;
     var wantsFilament = step === 'filament' || ctx.editing === 'filament';
     if (step !== 'printer' && !wantsFilament && step !== 'part') return;
     var body = ui.el('div', 'project-body');
     if (step === 'printer') {
       var proposed = project.printer && project.printer.proposed ? project.printer : null;
       if (ctx.error && ctx.error.printer) body.appendChild(ui.el('p', 'project-error', ctx.error.printer));
-      if (proposed) {
-        body.appendChild(ui.el('p', 'muted small', 'Comme ton projet précédent ?'));
-        var keep = ui.el('div', 'printer-actions');
-        keep.appendChild(ui.button('Garder ' + (proposed.name || proposed.preset), h.keepProposed, 'btn ghost sm'));
-        body.appendChild(keep);
-      }
       var list = ctx.printers;
-      if (list === null || list === undefined) body.appendChild(ui.el('p', 'muted small', 'Je cherche tes imprimantes…'));
+      if (proposed && !ctx.showList) {
+        // Une machine proposée (celle d'Orca ou la dernière utilisée) : le bouton « Oui » est dans la ligne d'action.
+        body.appendChild(ui.button('Une autre machine', h.toggleList, 'link'));
+      } else if (list === null || list === undefined) body.appendChild(ui.el('p', 'muted small', 'Je cherche tes imprimantes…'));
       else {
         var groups = root.PlyoJourney.groupPrinters(list);
         var acts = ui.el('div', 'printer-actions');
@@ -89,6 +87,9 @@
         }
         body.appendChild(acts);
       }
+    } else if (wantsFilament && proposedFilament && !ctx.showKinds) {
+      // « PLA, comme la dernière fois ? » : le bouton « Oui » est dans la ligne d'action.
+      body.appendChild(ui.button('Autre matière', h.toggleKinds, 'link'));
     } else if (wantsFilament) {
       if (ctx.error && ctx.error.filament) body.appendChild(ui.el('p', 'project-error', ctx.error.filament));
       body.appendChild(ui.el('p', 'muted small', 'Regarde ta bobine : la matière est écrite dessus. Pas sûr ? C’est presque toujours du PLA.'));

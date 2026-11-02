@@ -124,3 +124,13 @@ test('chatHello : l’accueil de « Poser une question » invite à poser une qu
   assert.match(J.chatHello(false), /Étapes/);
   assert.ok(!/Étapes/.test(J.chatHello(true)));
 });
+
+test('confirmation en un toucher : la machine et le filament proposés deviennent le bouton de la ligne d’action', () => {
+  assert.deepEqual(J.primaryAction('machine', { proposal: { name: 'Centauri Carbon 2' } }), { label: 'Oui, sur Centauri Carbon 2', kind: 'confirmMachine', enabled: true });
+  assert.deepEqual(J.primaryAction('filament', { proposal: { name: 'PLA' } }), { label: 'Oui, du PLA', kind: 'confirmFilament', enabled: true });
+  assert.equal(J.primaryAction('machine', {}).kind, 'none');
+  assert.equal(J.primaryAction('piece', { proposal: { name: 'x' } }).kind, 'none');
+  assert.match(J.prompt('machine', { proposal: { name: 'Centauri Carbon 2' } }), /Imprimer sur Centauri Carbon 2 \?/);
+  assert.match(J.prompt('filament', { proposal: { name: 'PLA' } }), /PLA, comme la dernière fois \?/);
+  assert.match(J.prompt('filament', {}), /filament/i);
+});

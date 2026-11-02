@@ -39,14 +39,17 @@
       return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: true } : { label: 'Exporter le fichier', kind: 'export', enabled: true };
     }
     if (step === 'resultat') return { label: 'Envoyer une photo', kind: 'photo', enabled: true };
+    // Machine et filament proposés (dernière machine, dernier filament) : confirmer d'un toucher.
+    if (step === 'machine' && c.proposal) return { label: 'Oui, sur ' + c.proposal.name, kind: 'confirmMachine', enabled: true };
+    if (step === 'filament' && c.proposal) return { label: 'Oui, du ' + c.proposal.name, kind: 'confirmFilament', enabled: true };
     return { label: '', kind: 'none', enabled: false };
   }
 
   function prompt(step, ctx) {
     var c = ctx || {};
     switch (step) {
-      case 'machine': return 'Choisis ton imprimante';
-      case 'filament': return 'Dis-moi quel filament est sur la bobine';
+      case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : 'Choisis ton imprimante';
+      case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : 'Dis-moi quel filament est sur la bobine';
       case 'piece': return 'Ajoute la pièce à imprimer';
       case 'preparer': return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler avant d’imprimer' : 'Tout est bon, on passe à l’impression');
       case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : 'Plateau vide et propre, filament chargé : c’est parti';

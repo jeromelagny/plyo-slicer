@@ -745,6 +745,7 @@
     if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
     if (typeof renderProject === 'function') renderProject();
+    if (typeof applyMachineQuestion === 'function') { projectUI.showList = false; projectUI.showKinds = false; applyMachineQuestion(); }
   }
   // Une conversation vaut d'être gardée dès qu'elle a des échanges ou un début de projet (imprimante choisie…).
   function worthSaving(c) { return !!c && (c.entries.length > 0 || PlyoProject.nextStep(c.project) !== 'printer'); }
@@ -818,10 +819,11 @@
 
   // ---------- Fiche « Mon projet » : imprimante, filament (buse et plateau), pièce ----------
   // Le projet est gardé avec la conversation (conv.project) ; PlyoProject (project-logic.js) dit quelle étape manque.
-  var projectUI = { showOthers: false, keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
+  var projectUI = { showList: false, showKinds: false, showOthers: false, keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
   function projectChanged() {
     // Machine ou filament changé après la découpe : la découpe est périmée, on repasse à « Préparer ».
     conv.project = PlyoJourney.resetStepOnChange(conv.seenProject || null, conv.project);
+    proposeFilamentFromHabit();
     conv.seenProject = JSON.parse(JSON.stringify(conv.project));
     // Un 3MF : ses réglages sont adaptés dès que le filament est choisi (la pièce vient avant le filament).
     if (PlyoProject.needsAdaptation(conv.project, conv.adaptedFor)) {
@@ -841,7 +843,12 @@
   var journeyUI = { ficheOpen: false, lastStep: null };
   var openRisks = 0; // risques de la vérification non ignorés
   var preflightFix = null; // lance « Tout corriger » de la carte de vérification affichée (rend faux s'il n'y a rien à faire)
-  function journeyCtx() { return { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks }; }
+  function journeyCtx() {
+    var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks };
+    if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
+    else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
+    return ctx;
+  }
   function renderProject() {
     if (!conv) return;
     var ui = { el: el, button: button, icon: icon };
@@ -854,7 +861,7 @@
       extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'wifi', onClick: projectHandlers.setupPrinter } : null });
     if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable,
-        error: projectUI.error, editing: projectUI.editing, showOthers: projectUI.showOthers, handlers: projectHandlers });
+        error: projectUI.error, editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
@@ -876,19 +883,44 @@
   var stepHandlers = {
     skip: function () { setTourStep('print'); },
     exportFile: function () { runAction('export'); },
-    started: function () { setTourStep('after'); },
+    started: function () { rememberHabit(); setTourStep('after'); },
     photo: function () { pickFiles(); }
   };
   // Le bouton plein de la ligne d'action.
   function runAction(kind) {
     if (kind === 'slice') plateAction('slice');
     else if (kind === 'photo') openPhone();
-    else if (kind === 'send') window.orca.postMessage({ type: 'print_start', export: false });
-    else if (kind === 'export') window.orca.postMessage({ type: 'print_start', export: true });
+    else if (kind === 'send') { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: false }); }
+    else if (kind === 'export') { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: true }); }
     else if (kind === 'advance') setTourStep('print');
+    else if (kind === 'confirmMachine') projectHandlers.keepProposed();
+    else if (kind === 'confirmFilament') projectHandlers.confirmFilament();
     else if (kind === 'fix') { if (!(preflightFix && preflightFix())) noteLine('Coche d’abord au moins une correction dans la carte, ou ignore-la.', '', 'info', 'guide'); }
   }
   window.addEventListener('resize', function () { if (conv) renderProject(); });
+  // Habitudes (dernier filament par machine, machines masquées) : gardées sur l'ordinateur par le slicer.
+  var habits = PlyoMachines.emptyHabits();
+  function saveHabits() { window.orca.postMessage({ type: 'habits_set', habits: habits }); }
+  function rememberHabit() {
+    var p = conv && conv.project;
+    if (!p || !p.printer || !p.printer.preset || !p.filament || p.filament.proposed) return;
+    habits = PlyoMachines.rememberFilament(habits, p.printer.preset, p.filament);
+    saveHabits();
+  }
+  // Début d'une impression : que demander pour la machine ? (voir PlyoMachines.machineQuestion)
+  function applyMachineQuestion() {
+    if (!conv || !projectUI.printers) return;
+    var p = conv.project, orca = lastValues && lastValues.context ? lastValues.context.printer : '';
+    var q = PlyoMachines.machineQuestion(projectUI.printers, { orcaPreset: orca, lastPreset: habits.last, hidden: habits.hidden });
+    if (q.mode === 'auto' && (!p.printer || p.printer.proposed)) projectHandlers.pickPrinter(q.machine.preset, q.machine.label);
+    else if (q.mode === 'confirm' && !p.printer) { p.printer = { preset: q.machine.preset, name: q.machine.label, proposed: true }; renderProject(); }
+  }
+  function proposeFilamentFromHabit() {
+    var p = conv && conv.project;
+    if (!p || !p.printer || p.printer.proposed || p.filament) return;
+    var h = PlyoMachines.habitFor(habits, p.printer.preset);
+    if (h) p.filament = { type: h.type, nozzle_temp: h.nozzle_temp, bed_temp: h.bed_temp, proposed: true };
+  }
   function askProjectPrinters() { window.orca.postMessage({ type: 'project_printers' }); }
   var projectHandlers = {
     pickPrinter: function (preset, name) {
@@ -917,6 +949,14 @@
     importPart: function () { pickFiles(); },
     expand: function () { journeyUI.ficheOpen = true; renderProject(); },
     toggleOthers: function () { projectUI.showOthers = !projectUI.showOthers; renderProject(); },
+    toggleList: function () { projectUI.showList = !projectUI.showList; renderProject(); },
+    toggleKinds: function () { projectUI.showKinds = !projectUI.showKinds; renderProject(); },
+    confirmFilament: function () {
+      var f = conv.project.filament;
+      if (!f || !f.type) return;
+      projectUI.keepTemps = { nozzle: f.nozzle_temp, bed: f.bed_temp }; // « comme avant » : mêmes températures qu'à la dernière impression
+      projectHandlers.pickFilament(f.type);
+    },
     change: function (line) {
       projectUI.error = {};
       if (line === 'printer') { conv.project.printer = null; conv.project.filament = null; }
@@ -946,9 +986,7 @@
   function onProjectPrinters(msg) {
     projectUI.printers = Array.isArray(msg.printers) ? msg.printers : [];
     projectUI.printers.forEach(function (p) { if (p.linked) window.orca.postMessage({ type: 'project_reachable', preset: p.preset }); });
-    // Une seule imprimante configurée et reliée : proposée d'office, à confirmer.
-    if (!conv.project.printer && projectUI.printers.length === 1 && projectUI.printers[0].linked)
-      conv.project.printer = { preset: projectUI.printers[0].preset, name: projectUI.printers[0].name, proposed: true };
+    applyMachineQuestion();
     renderProject();
   }
   function onProjectState(msg) {
@@ -981,11 +1019,11 @@
     var pend = projectUI.pending;
     projectUI.pending = null;
     if (!msg.ok) { projectUI.error = { printer: 'Je n’ai pas pu sélectionner cette imprimante dans Orca.' }; renderProject(); return; }
-    var proposedFilament = conv.project.filament && conv.project.filament.proposed ? conv.project.filament : null;
+    var sameMachine = conv.project.filament && conv.project.printer && conv.project.printer.preset === pend.preset;
     conv.project.printer = { preset: pend.preset, name: pend.name };
-    conv.project.filament = null;
+    if (!sameMachine) conv.project.filament = null; // le filament dépend de la machine : « comme avant » est reproposé pour celle-ci
+    projectUI.showList = false;
     projectChanged();
-    if (proposedFilament && proposedFilament.type) projectHandlers.pickFilament(proposedFilament.type);
   }
   function onProjectFilamentChosen(msg) {
     var pend = projectUI.pending;
@@ -3449,6 +3487,9 @@
     } else if (msg.type === 'model_adapted') {
       var ad = msg.adaptation;
       if (ad && (ad.adapted && ad.adapted.length || ad.dropped && ad.dropped.length || ad.error)) { syncProjectNames(ad.saved); $('guide-notes').appendChild(renderAdaptation(ad, false)); }
+    } else if (msg.type === 'habits') {
+      habits = Object.assign(PlyoMachines.emptyHabits(), msg.habits || {});
+      applyMachineQuestion();
     } else if (msg.type === 'project_printers') {
       onProjectPrinters(msg);
     } else if (msg.type === 'project_state') {
@@ -3468,6 +3509,7 @@
   });
 
   startConversation();
+  window.orca.postMessage({ type: 'habits_get' });
   askProjectPrinters();
   showLoggedIn(false);
   window.orca.postMessage({ type: 'ready' });
