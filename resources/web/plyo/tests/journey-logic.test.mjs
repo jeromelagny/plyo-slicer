@@ -100,3 +100,11 @@ test('suggestionsFor : quatre au plus, avec les bonnes ouvertures', () => {
   assert.ok(!J.suggestionsFor('machine').some((x) => x.value === 'limits'));
   assert.ok(J.suggestionsFor('filament').some((x) => x.value === 'limits'));
 });
+
+test('toggleFold : écrire replie, la flèche bascule, changer d’étape déplie', () => {
+  assert.deepEqual(J.toggleFold({ folded: false, ficheOpen: true }, 'send'), { folded: true, ficheOpen: false });
+  assert.deepEqual(J.toggleFold({ folded: true, ficheOpen: false }, 'toggle'), { folded: false, ficheOpen: false });
+  assert.deepEqual(J.toggleFold({ folded: false, ficheOpen: false }, 'toggle'), { folded: true, ficheOpen: false });
+  assert.deepEqual(J.toggleFold({ folded: true, ficheOpen: true }, 'stepChange'), { folded: false, ficheOpen: true });
+  assert.deepEqual(J.toggleFold({ folded: true, ficheOpen: false }, 'inconnu'), { folded: true, ficheOpen: false });
+});

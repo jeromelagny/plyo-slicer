@@ -95,7 +95,17 @@
     }
   }
 
-  var api = { STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
+  // État d'interface du repli : { folded, ficheOpen }. `send` (l'utilisateur écrit) replie, `toggle` bascule (la flèche),
+  // `stepChange` déplie. Un autre événement ne change rien.
+  function toggleFold(state, event) {
+    var st = { folded: !!(state && state.folded), ficheOpen: !!(state && state.ficheOpen) };
+    if (event === 'send') return { folded: true, ficheOpen: false };
+    if (event === 'toggle') return { folded: !st.folded, ficheOpen: false };
+    if (event === 'stepChange') return { folded: false, ficheOpen: st.ficheOpen };
+    return st;
+  }
+
+  var api = { toggleFold: toggleFold, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;

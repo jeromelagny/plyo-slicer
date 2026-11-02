@@ -35,6 +35,15 @@
     slot.appendChild(line);
   }
 
-  root.PlyoJourneyView = { renderBar: renderBar, renderActionLine: renderActionLine };
+  // Suggestions au-dessus du champ de question. handlers : { ask(text), open(value) }.
+  function renderSuggestions(slot, ui, opts) {
+    var list = root.PlyoJourney.suggestionsFor(opts.step);
+    slot.textContent = '';
+    list.forEach(function (sug) {
+      slot.appendChild(ui.button(sug.label, function () { if (sug.kind === 'ask') opts.handlers.ask(sug.value); else opts.handlers.open(sug.value); }, 'chip'));
+    });
+  }
+
+  root.PlyoJourneyView = { renderSuggestions: renderSuggestions, renderBar: renderBar, renderActionLine: renderActionLine };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.PlyoJourneyView;
 })(typeof window !== 'undefined' ? window : globalThis);

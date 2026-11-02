@@ -182,6 +182,8 @@
   .journey-prompt { flex: 1; min-width: 0; font-weight: 600; }
   .journey-fold .ic { transition: transform var(--motion); }
   .journey-fold[aria-expanded="true"] .ic { transform: rotate(90deg); }
+  .suggestions { display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s2); }
+  .suggestions:empty { display: none; }
   .btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
 
   /* Corps défilant : accueil puis conversation */
@@ -450,6 +452,7 @@
   <div class="composer" id="composer">
     <div class="focus-chip hidden" id="focus-chip"><span data-icon="search"></span><span>Tu regardes :</span><b id="focus-label"></b><button type="button" class="go" id="focus-explain">Explique-moi</button><button type="button" class="x" id="focus-close" title="Masquer" aria-label="Masquer"></button></div>
     <div class="attached hidden" id="attached"></div>
+    <div class="suggestions" id="suggestions"></div>
     <div class="box">
       <textarea id="note" maxlength="500" rows="2" placeholder="Décris le problème ou pose ta question…" aria-label="Ta demande"></textarea>
       <div class="tools">
@@ -782,13 +785,14 @@
     }
   }
   // Zone fixe (fiche, barre, ligne d'action) + contenu de l'étape en cours (premier bloc du corps qui défile).
-  var journeyUI = { folded: false, ficheOpen: false };
+  var journeyUI = { folded: false, ficheOpen: false, lastStep: null };
   var openRisks = 0; // risques de la vérification non ignorés
   function journeyCtx() { return { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks }; }
   function renderProject() {
     if (!conv) return;
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
+    if (step !== journeyUI.lastStep) { journeyUI = Object.assign(PlyoJourney.toggleFold(journeyUI, 'stepChange'), { lastStep: step }); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: journeyUI.folded, heightPx: window.innerHeight });
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
@@ -804,11 +808,21 @@
       imprimer: 'Tout est prêt. Dis-moi ce que tu veux obtenir, ou pose-moi une question.',
       resultat: 'Dis-moi comment s’est passée ton impression.' }[step]);
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
+    PlyoJourneyView.renderSuggestions($('suggestions'), ui, { step: step, handlers: suggestionHandlers });
     renderSetupFlow();
   }
   var journeyHandlers = {
-    toggleFold: function () { journeyUI.folded = !journeyUI.folded; journeyUI.ficheOpen = false; renderProject(); },
+    toggleFold: function () { journeyUI = Object.assign(PlyoJourney.toggleFold(journeyUI, 'toggle'), { lastStep: journeyUI.lastStep }); renderProject(); },
     run: function (kind) { runAction(kind); }
+  };
+  var suggestionHandlers = {
+    ask: function (text) { send(text); },
+    open: function (what) {
+      if (what === 'check') checkPlate();
+      else if (what === 'parts') openJournal();
+      else if (what === 'values') openValues();
+      else if (what === 'limits') openLimits();
+    }
   };
   var stepHandlers = {
     skip: function () { setTourStep('print'); },
@@ -2776,6 +2790,8 @@
     if (busy) return;
     var photos = opts.photos || attachments.slice();
     if (!note && !photos.length) { noteInput.focus(); return; }
+    journeyUI = Object.assign(PlyoJourney.toggleFold(journeyUI, 'send'), { lastStep: journeyUI.lastStep }); // le contenu d'étape se replie quand on discute
+    renderProject();
     if (!lastValues) { noteLine('Je lis encore les réglages du slicer : réessaie dans une seconde.', '', 'info'); return; }
     // « C'est quoi la rétraction ? » : la fiche du réglage répond, gratuitement et sans compte.
     var ficheKey = !opts.photos && !photos.length ? FS.matchSettingQuestion(note, window.PLYO_FICHES) : null;
