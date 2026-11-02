@@ -151,3 +151,12 @@ test('shouldRecheck : on revérifie une machine qui ne répondait pas, seulement
   assert.equal(J.shouldRecheck('imprimer', null), false);
   assert.equal(J.shouldRecheck('preparer', false), false);
 });
+
+test('étape Préparer avec les questions d’intention : pas de bouton pendant les questions, « Appliquer et préparer » au résumé', () => {
+  assert.equal(J.primaryAction('preparer', { sliced: false, intent: 'asking' }).kind, 'none');
+  assert.deepEqual(J.primaryAction('preparer', { sliced: false, intent: 'ready' }), { label: 'Appliquer et préparer', kind: 'applyIntent', enabled: true });
+  assert.equal(J.primaryAction('preparer', { sliced: false, intent: 'done' }).kind, 'slice');
+  assert.equal(J.primaryAction('preparer', { sliced: false }).kind, 'slice');
+  assert.match(J.prompt('preparer', { sliced: false, intent: 'asking' }), /question/i);
+  assert.match(J.prompt('preparer', { sliced: false, intent: 'ready' }), /propose/i);
+});

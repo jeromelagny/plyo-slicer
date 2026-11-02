@@ -11,11 +11,59 @@
     return row;
   }
 
+  // Questions d'intention (étape Préparer, avant la découpe). opts.intent : { mode: 'asking'|'ready', question, answers, total,
+  // idk, guess, summary, changes, kept, level } ; handlers : { answer(qid, id), idk(), chooseForMe(), skip(), reset() }.
+  function renderIntent(body, ui, it, h) {
+    var I = root.PlyoIntent;
+    if (it.mode === 'asking') {
+      var q = it.question, done = Object.keys(it.answers || {}).length;
+      body.appendChild(ui.el('p', 'muted small', 'Question ' + (done + 1) + ' sur ' + it.total));
+      body.appendChild(ui.el('p', 'intent-q', q.text));
+      var acts = ui.el('div', 'printer-actions');
+      if (it.idk) {
+        var help = I.idkOptions(q.id, it.answers);
+        body.appendChild(ui.el('p', 'muted small', 'Pas de souci. Laquelle ressemble le plus à ce que tu veux ?'));
+        help.options.forEach(function (o) { acts.appendChild(ui.button(o.label + (o.sub ? ' · ' + o.sub : ''), function () { h.answer(q.id, o.answer); }, 'btn ghost sm')); });
+        body.appendChild(acts);
+        body.appendChild(ui.button('Choisis pour moi (réglages sûrs)', function () { h.answer(q.id, help.safe); }, 'link'));
+      } else {
+        q.choices.forEach(function (c) { acts.appendChild(ui.button(c.label, function () { h.answer(q.id, c.id); }, 'btn ghost sm')); });
+        acts.appendChild(ui.button('Je ne sais pas', h.idk, 'link'));
+        body.appendChild(acts);
+        if (q.id === 'use' && it.guess) {
+          var label = q.choices.filter(function (c) { return c.id === it.guess; })[0];
+          if (label) {
+            var g = ui.el('p', 'muted small', 'D’après son nom, ça ressemble à « ' + label.label + ' ». ');
+            g.appendChild(ui.button('Oui, c’est ça', function () { h.answer('use', it.guess); }, 'link'));
+            body.appendChild(g);
+          }
+        }
+      }
+      body.appendChild(ui.button('Je règle moi-même', h.skip, 'link'));
+      return;
+    }
+    var sum = it.summary;
+    body.appendChild(ui.el('p', 'intent-q', sum.sentence));
+    var ul = ui.el('ul', 'setup-checks');
+    sum.bullets.forEach(function (b) { ul.appendChild(ui.el('li', '', b)); });
+    body.appendChild(ul);
+    if (sum.warning) body.appendChild(line(ui, 'alert', sum.warning, 'warn'));
+    (it.kept || []).forEach(function (k) { body.appendChild(ui.el('p', 'muted small', 'Je garde ton réglage « ' + k.label + ' », que tu as changé toi-même.')); });
+    var det = ui.el('details', 'intent-details');
+    if (it.level === 'short') det.open = true;
+    det.appendChild(ui.el('summary', '', 'Voir les ' + it.changes.length + ' réglages exacts'));
+    it.changes.forEach(function (c) { det.appendChild(ui.el('div', 'muted small', c.label + ' : ' + String(c.value).replace('.', ','))); });
+    body.appendChild(det);
+    body.appendChild(ui.button('Changer une réponse', h.reset, 'link'));
+  }
+
   function render(slot, ui, opts) {
     var c = opts.ctx || {}, h = opts.handlers;
     slot.textContent = '';
     var body = ui.el('div', 'project-body');
-    if (opts.step === 'preparer') {
+    if (opts.step === 'preparer' && opts.intent && !c.sliced) {
+      renderIntent(body, ui, opts.intent, h);
+    } else if (opts.step === 'preparer') {
       body.appendChild(line(ui, c.sliced ? 'check' : 'info', c.sliced ? 'Découpe faite' : 'Découpe à faire', c.sliced ? 'ok' : ''));
       if (c.sliced) body.appendChild(line(ui, c.risks > 0 ? 'alert' : 'check', c.risks > 0 ? c.risks + ' point' + (c.risks > 1 ? 's' : '') + ' à régler avant d’imprimer' : 'Aucun risque détecté', c.risks > 0 ? 'warn' : 'ok'));
       if (c.sliced && c.risks > 0) body.appendChild(ui.button('Passer outre', h.skip, 'link'));

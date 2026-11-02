@@ -186,6 +186,8 @@
   .journey-prompt { flex: 1; min-width: 12ch; font-weight: 600; font-size: var(--fs-lg); }
   .suggestions { display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s2); }
   .suggestions:empty { display: none; }
+  .intent-q { margin: 0; font-weight: 700; font-size: var(--fs-lg); }
+  .intent-details summary { cursor: pointer; color: var(--accent-text); }
   .btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
 
   /* Corps défilant : accueil puis conversation */
@@ -408,6 +410,7 @@
       <div class="group" role="presentation">Conversation</div>
       <button type="button" id="m-new" role="menuitem" data-icon="plus">Nouvelle conversation</button>
       <button type="button" id="m-convs" role="menuitem" data-icon="chat">Mes conversations</button>
+      <button type="button" id="m-level" role="menuitem" data-icon="chat">Mes explications : détaillées</button>
       <button type="button" id="m-undo" role="menuitem" data-icon="undo" disabled title="Rien à annuler pour l’instant">Annuler les derniers réglages appliqués</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
@@ -827,7 +830,9 @@
     // Machine ou filament changé après la découpe : la découpe est périmée, on repasse à « Préparer ».
     conv.project = PlyoJourney.resetStepOnChange(conv.seenProject || null, conv.project);
     proposeFilamentFromHabit();
+    var seenBefore = conv.seenProject;
     conv.seenProject = JSON.parse(JSON.stringify(conv.project));
+    maybeReapplyIntent(seenBefore);
     // Un 3MF : ses réglages sont adaptés dès que le filament est choisi (la pièce vient avant le filament).
     if (PlyoProject.needsAdaptation(conv.project)) {
       conv.project.adapted = conv.project.part.name;
@@ -850,6 +855,8 @@
     var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks };
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
     else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
+    var st = conv ? intentState(PlyoJourney.currentStep(conv.project), ctx.sliced) : null;
+    if (st) ctx.intent = st.mode;
     return ctx;
   }
   function renderProject() {
@@ -866,6 +873,7 @@
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
+      intent: intentState(step, !!(tourSignals && tourSignals.sliced)),
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     ensureRecheck(step);
@@ -891,7 +899,9 @@
     started: function () { rememberHabit(); setTourStep('after'); },
     photo: function () { pickFiles(); },
     changeMachine: function () { projectHandlers.change('printer'); },
-    recheck: function () { recheckMachine(); }
+    recheck: function () { recheckMachine(); },
+    answer: function (q, id) { intentHandlers.answer(q, id); }, idk: function () { intentHandlers.idk(); },
+    chooseForMe: function () {}, skip: function () { intentHandlers.skip(); }, reset: function () { intentHandlers.reset(); }
   };
   // Machine qui ne répond pas : « Vérifier à nouveau » et revérification automatique toutes les 8 s à l'étape Imprimer.
   var recheckTimer = null;
@@ -915,6 +925,7 @@
     else if (kind === 'export') { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: true }); }
     else if (kind === 'advance') setTourStep('print');
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
+    else if (kind === 'applyIntent') applyIntent(false);
     else if (kind === 'confirmFilament') projectHandlers.confirmFilament();
     else if (kind === 'fix') { if (!(preflightFix && preflightFix())) noteLine('Coche d’abord au moins une correction dans la carte, ou ignore-la.', '', 'info', 'guide'); }
   }
@@ -967,6 +978,69 @@
     PlyoMachinesView.renderDivergence(alert, { el: el, button: button, icon: icon, alertBox: alertBox }, { from: p.printer.name || p.printer.preset, to: PlyoJourney.machineLabel({ name: orca }),
       handlers: { useNew: function () { alert.textContent = ''; alert.dataset.kind = ''; projectHandlers.pickPrinter(orca, PlyoJourney.machineLabel({ name: orca })); }, restore: function () { alert.textContent = ''; alert.dataset.kind = ''; restoreProjectInOrca(false); } } });
   }
+
+  // ---------- Questions d'intention (étape Préparer, avant la découpe) ----------
+  // Réponses gardées dans le projet (project.intent : use, pref, speed, skipped, applied) ; la table est dans intent-logic.js.
+  var intentUI = { idk: false, manual: null };
+  function intentAnswers(p) { var i = p.intent || {}, a = {}; ['use', 'pref', 'speed'].forEach(function (k) { if (i[k]) a[k] = i[k]; }); return a; }
+  function intentState(step, sliced) {
+    var p = conv && conv.project;
+    if (!p || step !== 'preparer' || sliced) return null;
+    var i = p.intent || {};
+    if (i.applied || i.skipped || !PlyoMachines.askIntent(habits) && !i.use) return null;
+    var answers = intentAnswers(p), q = PlyoIntent.nextQuestion(answers);
+    if (q) return { mode: 'asking', question: q, answers: answers, total: answers.use === 'test' ? 1 : 3, idk: intentUI.idk,
+      guess: PlyoIntent.guessUse(p.part && p.part.name) };
+    if (intentUI.manual === null) { intentUI.manual = []; manualWaiter = function (items) { intentUI.manual = (items || []).map(function (m) { return m.key; }); renderProject(); }; window.orca.postMessage({ type: 'manual_edits_get' }); }
+    var type = p.filament && p.filament.type, nozzle = lastValues && lastValues.context ? lastValues.context.nozzle_mm : 0;
+    var r = PlyoIntent.keepManual(PlyoIntent.settingsFor(answers, type, nozzle), intentUI.manual);
+    return { mode: 'ready', summary: PlyoIntent.summary(answers, type), changes: r.apply, kept: r.kept, level: PlyoMachines.levelOf(habits) };
+  }
+  var intentHandlers = {
+    answer: function (qid, id) { var p = conv.project; p.intent = p.intent || {}; p.intent[qid] = id; intentUI.idk = false; projectChanged(); },
+    idk: function () { intentUI.idk = true; renderProject(); },
+    reset: function () { conv.project.intent = {}; intentUI.idk = false; intentUI.manual = null; projectChanged(); },
+    skip: function () {
+      conv.project.intent = { skipped: true };
+      habits = PlyoMachines.noteIntent(habits, true);
+      saveHabits();
+      projectChanged();
+      noteLine('D’accord, je garde les réglages actuels de ta machine.', '', 'info', 'guide');
+      if (PlyoMachines.offerStopAsking(habits)) {
+        var offer = noteLine('Tu passes souvent ces questions.', '', 'info', 'guide');
+        offer.appendChild(button('Ne plus me les poser', function () { habits = PlyoMachines.stopAsking(habits, true); saveHabits(); offer.remove(); }, 'link'));
+      }
+    }
+  };
+  // Applique les réglages de l'intention (un lot annulable, comme ceux de l'assistant), puis lance la découpe.
+  function applyIntent(again) {
+    var p = conv.project, st = intentState(PlyoJourney.currentStep(p), false);
+    if (!st || st.mode !== 'ready') return;
+    function done() {
+      p.intent.applied = true;
+      delete p.intent.reapply;
+      habits = PlyoMachines.noteIntent(habits, false);
+      saveHabits();
+      projectChanged();
+      noteLine(again ? 'J’ai réappliqué tes choix sur cette machine. Je prépare l’impression.' : 'Réglages appliqués. Je prépare l’impression.', 'ok', 'check', 'guide');
+      plateAction('slice');
+    }
+    if (!st.changes.length) { done(); return; }
+    var names = Logic.namesForApply(null, lastValues && lastValues.context);
+    pendingSheet = { kind: 'apply', onResult: function (ok, text) { if (!ok) { noteLine(text, 'error', 'alert', 'guide'); return; } done(); } };
+    window.orca.postMessage({ type: 'apply', changes: st.changes.map(function (c) { return { key: c.key, value: c.value, label: c.label }; }),
+      print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: 'Intention : ' + st.summary.sentence.replace(/ :$/, '') });
+  }
+  // Machine ou filament changé après avoir appliqué une intention : les mêmes réponses sont réappliquées en revenant à Préparer.
+  function maybeReapplyIntent(before) {
+    var p = conv && conv.project, i = p && p.intent;
+    if (!i || !before) return;
+    var moved = (before.printer && before.printer.preset) !== (p.printer && p.printer.preset) || (before.filament && before.filament.preset) !== (p.filament && p.filament.preset);
+    if (moved && i.applied) { i.applied = false; i.reapply = true; }
+    if (i.reapply && PlyoJourney.currentStep(p) === 'preparer' && !(tourSignals && tourSignals.sliced)) { var st = intentState('preparer', false); if (st && st.mode === 'ready') applyIntent(true); }
+  }
+  // Niveau d'explication : deviné d'après tes messages tant que tu ne l'as pas choisi (menu « Mes explications »).
+  function updateLevelLabel() { $('m-level').textContent = fr('Mes explications : ' + (PlyoMachines.levelOf(habits) === 'short' ? 'courtes' : 'détaillées')); }
   // Début d'une impression : que demander pour la machine ? (voir PlyoMachines.machineQuestion)
   function applyMachineQuestion() {
     if (!conv || !projectUI.printers) return;
@@ -1771,6 +1845,13 @@
   $('m-usage').addEventListener('click', openUsage);
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
+  $('m-level').addEventListener('click', function () {
+    menu.classList.add('hidden');
+    habits = PlyoMachines.chooseLevel(habits, PlyoMachines.levelOf(habits) === 'short' ? 'detailed' : 'short');
+    saveHabits();
+    updateLevelLabel();
+    noteLine(PlyoMachines.levelOf(habits) === 'short' ? 'Je te répondrai de façon courte et technique.' : 'Je t’expliquerai les choses en détail.', '', 'info');
+  });
   $('m-help').addEventListener('click', openHelp);
   $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
   $('m-login').addEventListener('click', function () { menu.classList.add('hidden'); openLogin(); });
@@ -2948,6 +3029,8 @@
     var photos = opts.photos || attachments.slice();
     if (!note && !photos.length) { noteInput.focus(); return; }
     applyTab('send'); // envoyer un message ouvre la Discussion
+    var guessed = PlyoMachines.guessLevel(habits, PlyoIntent.detectLevel(conv.history.filter(function (m) { return m.role === 'user'; }).map(function (m) { return m.text; }).concat([note])));
+    if (guessed.level !== habits.level) { habits = guessed; saveHabits(); updateLevelLabel(); }
     renderProject();
     if (!lastValues) { noteLine('Je lis encore les réglages du slicer : réessaie dans une seconde.', '', 'info'); return; }
     // « C'est quoi la rétraction ? » : la fiche du réglage répond, gratuitement et sans compte.
@@ -3566,6 +3649,7 @@
       if (ad && (ad.adapted && ad.adapted.length || ad.dropped && ad.dropped.length || ad.error)) { syncProjectNames(ad.saved); $('guide-notes').appendChild(renderAdaptation(ad, false)); }
     } else if (msg.type === 'habits') {
       habits = Object.assign(PlyoMachines.emptyHabits(), msg.habits || {});
+      updateLevelLabel();
       applyMachineQuestion();
     } else if (msg.type === 'project_printers') {
       onProjectPrinters(msg);

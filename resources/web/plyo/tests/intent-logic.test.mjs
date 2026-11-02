@@ -81,3 +81,12 @@ test('detectLevel : courtes si l’utilisateur emploie le vocabulaire technique,
   assert.equal(I.detectLevel([]), 'detailed');
   assert.equal(I.detectLevel(null), 'detailed');
 });
+
+test('settingsFor : la hauteur de couche reste sous 75 % de la buse', () => {
+  const layer = (a, nozzle) => I.settingsFor(a, 'PLA', nozzle).find((c) => c.key === 'layer_height').value;
+  assert.equal(layer({ use: 'test' }, 0.2), 0.15);
+  assert.equal(layer({ use: 'test' }, 0.4), 0.28);
+  assert.equal(layer({ use: 'daily', pref: 'balanced', speed: 'normal' }, 0.2), 0.15);
+  assert.equal(layer({ use: 'daily', pref: 'balanced', speed: 'fine' }, 0.2), 0.12);
+  assert.equal(layer({ use: 'test' }, undefined), 0.28);
+});

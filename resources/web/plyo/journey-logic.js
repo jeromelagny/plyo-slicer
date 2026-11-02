@@ -31,6 +31,9 @@
     var c = ctx || {};
     var slice = { label: 'Découper', kind: 'slice', enabled: true };
     if (step === 'preparer') {
+      // Questions d'intention : on répond avec les choix ; au résumé, un seul bouton applique et prépare.
+      if (!c.sliced && c.intent === 'asking') return { label: '', kind: 'none', enabled: false };
+      if (!c.sliced && c.intent === 'ready') return { label: 'Appliquer et préparer', kind: 'applyIntent', enabled: true };
       if (!c.sliced) return slice;
       return c.risks > 0 ? { label: 'Appliquer les correctifs', kind: 'fix', enabled: true } : { label: 'Continuer', kind: 'advance', enabled: true };
     }
@@ -51,7 +54,9 @@
       case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : 'Choisis ton imprimante';
       case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : 'Dis-moi quel filament est sur la bobine';
       case 'piece': return 'Ajoute la pièce à imprimer';
-      case 'preparer': return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler avant d’imprimer' : 'Tout est bon, on passe à l’impression');
+      case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
+        if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';
+        return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler avant d’imprimer' : 'Tout est bon, on passe à l’impression');
       case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : 'Plateau vide et propre, filament chargé : c’est parti';
       default: return 'Alors, ça a marché ? Envoie-moi une photo';
     }

@@ -67,10 +67,11 @@
   var LABELS = { layer_height: 'Hauteur de couche', wall_loops: 'Parois', sparse_infill_density: 'Remplissage', sparse_infill_pattern: 'Motif de remplissage',
     top_shell_layers: 'Couches pleines du dessus', bottom_shell_layers: 'Couches pleines du dessous', brim_width: 'Bordure' };
 
-  function settingsFor(answers, filamentType) {
+  function settingsFor(answers, filamentType, nozzleMm) {
     var a = answers || {}, rows = TABLE[a.use] || TABLE.daily;
     var r = a.use === 'test' ? rows.any : rows[a.pref] || rows[Object.keys(rows)[1] || Object.keys(rows)[0]];
     var layer = a.use === 'test' ? LAYER.fast : LAYER[a.speed] || LAYER.normal;
+    if (nozzleMm > 0) layer = Math.min(layer, Math.floor(nozzleMm * 0.75 * 100 + 1e-6) / 100); // 75 % de la buse au plus
     void filamentType; // la structure ne dépend pas du filament ; il sert à l'avertissement du résumé
     var out = [
       { key: 'layer_height', value: layer }, { key: 'wall_loops', value: r[0] }, { key: 'sparse_infill_density', value: r[1] + '%' },
