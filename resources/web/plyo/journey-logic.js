@@ -140,7 +140,21 @@
     return st;
   }
 
-  var api = { filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, toggleFold: toggleFold, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
+  // Onglets Guide / Discussion : { tab: 'guide'|'chat', unread }. `send` ouvre la Discussion ; `answer` (une réponse arrive)
+  // allume le point rouge si on est sur le Guide ; `show-chat` l'éteint ; `reset` (nouvelle conversation) revient au Guide.
+  function tabAfter(state, event) {
+    var st = { tab: state && state.tab === 'chat' ? 'chat' : 'guide', unread: !!(state && state.unread) };
+    switch (event) {
+      case 'send': return { tab: 'chat', unread: false };
+      case 'answer': return { tab: st.tab, unread: st.tab === 'guide' ? true : st.unread };
+      case 'show-chat': return { tab: 'chat', unread: false };
+      case 'show-guide': return { tab: 'guide', unread: st.unread };
+      case 'reset': return { tab: 'guide', unread: false };
+      default: return st;
+    }
+  }
+
+  var api = { tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, toggleFold: toggleFold, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;

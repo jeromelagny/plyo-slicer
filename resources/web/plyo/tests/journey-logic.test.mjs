@@ -158,3 +158,15 @@ test('groupPrinters : une machine non reliée va dans « autres », deux buses r
   assert.equal(g.others[0].label, 'Voron 2.4 0.4 nozzle');
   assert.deepEqual(J.groupPrinters(null), { main: [], others: [] });
 });
+
+test('tabAfter : envoyer ouvre la Discussion, une réponse ailleurs allume le point, changer d’étape ne bouge rien', () => {
+  const guide = { tab: 'guide', unread: false };
+  assert.deepEqual(J.tabAfter(guide, 'send'), { tab: 'chat', unread: false });
+  assert.deepEqual(J.tabAfter(guide, 'answer'), { tab: 'guide', unread: true });
+  assert.deepEqual(J.tabAfter({ tab: 'chat', unread: false }, 'answer'), { tab: 'chat', unread: false });
+  assert.deepEqual(J.tabAfter({ tab: 'guide', unread: true }, 'show-chat'), { tab: 'chat', unread: false });
+  assert.deepEqual(J.tabAfter({ tab: 'chat', unread: true }, 'show-guide'), { tab: 'guide', unread: true });
+  assert.deepEqual(J.tabAfter({ tab: 'chat', unread: true }, 'reset'), { tab: 'guide', unread: false });
+  assert.deepEqual(J.tabAfter(guide, 'inconnu'), guide);
+  assert.deepEqual(J.tabAfter(null, 'send'), { tab: 'chat', unread: false });
+});

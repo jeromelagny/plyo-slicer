@@ -63,3 +63,13 @@ test('« Ma machine n’est pas dans la liste » est dans la ligne d’action fi
   assert.ok(!read('project-card.js').includes('Ma machine n’est pas dans la liste'));
   assert.ok(read('journey-view.js').includes('extra'));
 });
+
+test('le panneau a deux onglets, et les messages d’étape vont dans le Guide', () => {
+  const page = read('index.html');
+  assert.ok(page.includes('id="tab-guide"') && page.includes('id="tab-chat"'), 'onglets');
+  assert.ok(page.includes('id="view-guide"') && page.includes('id="view-chat"'), 'deux vues');
+  assert.ok(page.includes('id="guide-notes"'), 'messages d’étape');
+  assert.ok(/function noteLine\(text, tone, iconName, where\)/.test(page), 'noteLine accepte une destination');
+  for (const text of ['Je pose « \' + file.name', 'Pas de risque détecté', 'Orca te demande de confirmer'])
+    assert.ok(new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^\\n]*\'guide\'').test(page), text + ' dans le Guide');
+});

@@ -191,6 +191,13 @@
 
   /* Corps défilant : accueil puis conversation */
   .body { flex: 1; overflow-y: auto; padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+  .tabs { flex: none; display: flex; border-bottom: 1px solid var(--border); }
+  .tab { flex: 1; background: transparent; border: 0; border-bottom: 2px solid transparent; padding: var(--s2) var(--s1); color: var(--muted); font: inherit; cursor: pointer; }
+  .tab.on { color: var(--accent-text); font-weight: 700; border-bottom-color: var(--accent); }
+  .tab-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-left: 6px; vertical-align: middle; }
+  .view { display: flex; flex-direction: column; gap: var(--s3); }
+  .view.hidden { display: none; }
+  #guide-notes { display: flex; flex-direction: column; gap: var(--s2); }
   .more-badge { position: sticky; bottom: var(--s2); align-self: center; z-index: 2; border: 1px solid var(--accent); background: var(--accent-fill); color: var(--on-accent); border-radius: var(--r-pill); padding: 6px 14px; font-weight: 600; font-size: var(--fs-sm); box-shadow: var(--shadow); cursor: pointer; }
   .more-badge.hidden { display: none; }
   .ai { scroll-margin-top: var(--s2); }
@@ -416,13 +423,22 @@
 
   <div class="journey" id="journey"><div id="journey-fiche"></div><div id="journey-bar"></div><div id="journey-action"></div></div>
 
+  <div class="tabs" role="tablist" id="tabs">
+    <button class="tab on" id="tab-guide" role="tab" aria-selected="true" type="button">Guide</button>
+    <button class="tab" id="tab-chat" role="tab" aria-selected="false" type="button">Discussion<span class="tab-dot hidden" id="tab-dot" aria-label="Nouvelle réponse"></span></button>
+  </div>
+
   <div class="body" id="body">
     <!-- Premiers pas : étape du parcours en cours -->
+    <div class="view" id="view-guide" role="tabpanel" aria-labelledby="tab-guide">
     <div id="project-slot"><div id="project-alert"></div><div id="project-card"></div></div>
     <div id="tour-slot"></div>
     <div id="outcome-slot"></div>
     <div id="preflight-slot"></div>
+    <div id="guide-notes"></div>
+    </div>
 
+    <div class="view hidden" id="view-chat" role="tabpanel" aria-labelledby="tab-chat">
     <!-- Conversation (avant l'accueil : des notes seules s'affichent au-dessus de lui) -->
     <div class="thread hidden" id="thread"></div>
 
@@ -442,6 +458,7 @@
           <button class="chip" type="button">Je veux plus de détails</button>
         </div>
       </div>
+    </div>
     </div>
     <button class="more-badge hidden" id="more-badge" type="button">↓ Scroll pour voir la suite de la réponse</button>
   </div>
@@ -610,6 +627,20 @@
   function scrollDown() { bodyEl.scrollTop = bodyEl.scrollHeight; }
   // Une réponse longue reste lue depuis son début : on cale son haut dans la zone visible (jamais son bas), et un badge
   // invite à défiler tant que la réponse dépasse en bas.
+  // Onglets Guide / Discussion
+  var viewUI = { tab: 'guide', unread: false };
+  function applyTab(event) {
+    viewUI = PlyoJourney.tabAfter(viewUI, event);
+    var chat = viewUI.tab === 'chat';
+    $('view-guide').classList.toggle('hidden', chat);
+    $('view-chat').classList.toggle('hidden', !chat);
+    [['tab-guide', !chat], ['tab-chat', chat]].forEach(function (t) { $(t[0]).classList.toggle('on', t[1]); $(t[0]).setAttribute('aria-selected', String(t[1])); });
+    $('tab-dot').classList.toggle('hidden', !viewUI.unread);
+    if (event === 'show-chat' || event === 'send') scrollDown(); else if (event === 'show-guide' || event === 'reset') bodyEl.scrollTop = 0;
+    updateMoreBadge();
+  }
+  $('tab-guide').addEventListener('click', function () { applyTab('show-guide'); });
+  $('tab-chat').addEventListener('click', function () { applyTab('show-chat'); });
   var answerBox = null; // la réponse en cours d'écriture, puis la réponse affichée
   var moreBadge = $('more-badge');
   function scrollToAnswerTop(node) { answerBox = node; node.scrollIntoView({ block: 'start' }); updateMoreBadge(); }
@@ -662,11 +693,13 @@
 
   // Note du fil, alignée à gauche comme une réponse. Elle ne cache pas l'accueil : une note seule
   // (« Demande annulée. ») ne doit pas laisser un écran vide avec une ligne grise au milieu.
-  function noteLine(text, tone, iconName) {
-    showThread();
+  // `where` : 'guide' = message de l'étape en cours (onglet Guide, effacé au changement d'étape) ; sinon dans la discussion.
+  function noteLine(text, tone, iconName, where) {
     var line = el('div', 'note-line' + (tone ? ' ' + tone : ''));
     if (iconName) line.appendChild(icon(iconName, 14));
     line.appendChild(el('span', 'note-text', text));
+    if (where === 'guide') { $('guide-notes').appendChild(line); return line; }
+    showThread();
     thread.appendChild(line);
     if (home.classList.contains('hidden')) scrollDown(); else line.scrollIntoView({ block: 'nearest' });
     return line;
@@ -707,6 +740,7 @@
   function newId() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6); }
   function startConversation(project) {
     openRisks = 0;
+    if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
     if (typeof renderProject === 'function') renderProject();
   }
@@ -805,7 +839,7 @@
     if (!conv) return;
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
-    if (step !== journeyUI.lastStep) { journeyUI = Object.assign(PlyoJourney.toggleFold(journeyUI, 'stepChange'), { lastStep: step }); }
+    if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI = Object.assign(PlyoJourney.toggleFold(journeyUI, 'stepChange'), { lastStep: step }); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: journeyUI.folded, heightPx: window.innerHeight });
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
@@ -827,12 +861,12 @@
   }
   var journeyHandlers = {
     toggleFold: function () { journeyUI = Object.assign(PlyoJourney.toggleFold(journeyUI, 'toggle'), { lastStep: journeyUI.lastStep }); renderProject(); },
-    run: function (kind) { runAction(kind); }
+    run: function (kind) { applyTab('show-guide'); runAction(kind); } // les retours de l'action arrivent dans le Guide
   };
   var suggestionHandlers = {
     ask: function (text) { send(text); },
     open: function (what) {
-      if (what === 'check') checkPlate();
+      if (what === 'check') { applyTab('show-guide'); checkPlate(); }
       else if (what === 'parts') openJournal();
       else if (what === 'values') openValues();
       else if (what === 'limits') openLimits();
@@ -851,7 +885,7 @@
     else if (kind === 'send') window.orca.postMessage({ type: 'print_start', export: false });
     else if (kind === 'export') window.orca.postMessage({ type: 'print_start', export: true });
     else if (kind === 'advance') setTourStep('print');
-    else if (kind === 'fix') { if (!(preflightFix && preflightFix())) noteLine('Coche d’abord au moins une correction dans la carte, ou ignore-la.', '', 'info'); }
+    else if (kind === 'fix') { if (!(preflightFix && preflightFix())) noteLine('Coche d’abord au moins une correction dans la carte, ou ignore-la.', '', 'info', 'guide'); }
   }
   window.addEventListener('resize', function () { if (conv) renderProject(); });
   function askProjectPrinters() { window.orca.postMessage({ type: 'project_printers' }); }
@@ -975,6 +1009,8 @@
     conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [],
       project: c.project && typeof c.project === 'object' ? c.project : PlyoProject.emptyProject() };
     openRisks = 0;
+    applyTab('reset');
+    $('guide-notes').textContent = '';
     restoreProjectInOrca(false);
     renderProject();
     if (!conv.entries.length) return;
@@ -1746,11 +1782,12 @@
 
   // Un projet = une pièce, et la pièce vient après l'imprimante et le filament (fiche « Mon projet »).
   function sendModel(file) {
+    applyTab('show-guide'); // la pièce se pose et se vérifie dans le Guide
     var step = PlyoProject.nextStep(conv.project);
     if (step === 'printer' || step === 'filament') {
       projectUI.waitingFile = file;
       renderProject();
-      noteLine('« ' + file.name + ' » attend : choisis d’abord ' + (step === 'printer' ? 'ton imprimante' : 'ton filament') + ' dans la fiche, je le pose ensuite.', '', 'info');
+      noteLine('« ' + file.name + ' » attend : choisis d’abord ' + (step === 'printer' ? 'ton imprimante' : 'ton filament') + ' dans la fiche, je le pose ensuite.', '', 'info', 'guide');
       return;
     }
     if (conv.project.part && conv.project.part.name) { offerNewProject(file); return; }
@@ -1775,14 +1812,14 @@
     slot.appendChild(box);
   }
   function importModel(file) {
-    if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd pour passer par ce panneau (150 Mo au plus). Importe-le plutôt par Fichier › Importer dans Orca : je verrai la pièce arriver.', 'error', 'alert'); return; }
+    if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd pour passer par ce panneau (150 Mo au plus). Importe-le plutôt par Fichier › Importer dans Orca : je verrai la pièce arriver.', 'error', 'alert', 'guide'); return; }
     var reader = new FileReader();
     reader.onload = function () {
       var data = String(reader.result || '');
       window.orca.postMessage({ type: 'model_add', name: file.name, data: data.slice(data.indexOf(',') + 1), project: conv.project });
     };
-    reader.onerror = function () { noteLine('« ' + file.name + ' » n’a pas pu être lu.', 'error', 'alert'); };
-    noteLine('Je pose « ' + file.name + ' » sur le plateau…', '', 'cube');
+    reader.onerror = function () { noteLine('« ' + file.name + ' » n’a pas pu être lu.', 'error', 'alert', 'guide'); };
+    noteLine('Je pose « ' + file.name + ' » sur le plateau…', '', 'cube', 'guide');
     reader.readAsDataURL(file);
   }
 
@@ -1818,7 +1855,7 @@
     delete plateWaiters[msg.request];
     var text = Logic.plateText(msg, plateCounts[msg.request]);
     delete plateCounts[msg.request];
-    var line = noteLine(text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
+    var line = noteLine(text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert', 'guide');
     if (msg.ok && msg.kind !== 'undo') plateUndoLinks.forEach(function (b) { b.remove(); });
     if (msg.ok && msg.undo_token !== undefined) {
       var undo = undoButton('Annuler', function (b) {
@@ -1931,7 +1968,7 @@
     if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
     if (projectUI.newProjectFile) {
       projectUI.newProjectFile = false;
-      noteLine('L’ancienne pièce est toujours sur le plateau d’Orca : supprime-la avant de découper, un projet = une pièce.', 'warn', 'alert');
+      noteLine('L’ancienne pièce est toujours sur le plateau d’Orca : supprime-la avant de découper, un projet = une pièce.', 'warn', 'alert', 'guide');
     }
     renderModel(record({ kind: 'model', msg: msg, reduced: false }), false);
   }
@@ -2533,7 +2570,7 @@
     renderPreflight(manual || fresh.length ? risks : [], data);
     // Découpe faite et aucun risque : on passe à l'impression sans demander.
     if (!manual && currentTourStep() === 'slice' && data && data.sliced && data.objects && data.objects.length && PlyoJourney.afterPreflight(openRisks) === 'advance') {
-      noteLine('Pas de risque détecté : on passe à l’impression.', 'ok', 'check');
+      noteLine('Pas de risque détecté : on passe à l’impression.', 'ok', 'check', 'guide');
       setTourStep('print');
     } else renderProject();
     if (!manual || risks.length) return;
@@ -2799,6 +2836,7 @@
     if (busy) return;
     var photos = opts.photos || attachments.slice();
     if (!note && !photos.length) { noteInput.focus(); return; }
+    applyTab('send'); // envoyer un message ouvre la Discussion
     journeyUI = Object.assign(PlyoJourney.toggleFold(journeyUI, 'send'), { lastStep: journeyUI.lastStep }); // le contenu d'étape se replie quand on discute
     renderProject();
     if (!lastValues) { noteLine('Je lis encore les réglages du slicer : réessaie dans une seconde.', '', 'info'); return; }
@@ -2993,6 +3031,7 @@
     box.body.appendChild(acts);
     thread.appendChild(box);
     scrollDown();
+    applyTab('answer');
   }
 
   // Brouillon de la réponse pendant que l'IA l'écrit ; « Arrêter » reste à portée de main.
@@ -3288,7 +3327,7 @@
     if (foot.children.length) box.appendChild(foot);
     thread.appendChild(box);
     // Réponse neuve : on reste sur son début (le badge invite à lire la suite) ; réponse rouverte : comme avant, en bas.
-    if (archived) scrollDown(); else scrollToAnswerTop(box);
+    if (archived) scrollDown(); else { scrollToAnswerTop(box); applyTab('answer'); }
   }
 
   // ---------- Actions ----------
@@ -3342,7 +3381,7 @@
     } else if (msg.type === 'tour_signals') {
       onTourSignals(msg);
     } else if (msg.type === 'show_me') {
-      if (!msg.ok && WHERE[msg.target]) noteLine(WHERE[msg.target], '', 'pin');
+      if (!msg.ok && WHERE[msg.target]) noteLine(WHERE[msg.target], '', 'pin', 'guide');
     } else if (msg.type === 'show_setting') {
       onShowSetting(msg);
     } else if (msg.type === 'explain') {
@@ -3372,8 +3411,8 @@
     } else if (msg.type === 'filament_chosen') {
       if (projectUI.pending && projectUI.pending.kind === 'filament') onProjectFilamentChosen(msg);
     } else if (msg.type === 'print_started') {
-      if (!msg.ok) noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque (étape 3) : clique sur « Découper la plaque » en haut à droite.' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert');
-      else noteLine('Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info');
+      if (!msg.ok) noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque (étape 3) : clique sur « Découper la plaque » en haut à droite.' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
+      else noteLine('Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
     } else if (msg.type === 'setup_catalog') {
       onSetupCatalog(Array.isArray(msg.catalog) ? msg.catalog : []);
     } else if (msg.type === 'setup_installed') {
