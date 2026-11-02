@@ -6,6 +6,7 @@
 #include "../../PlyoJson.hpp"
 #include "../../PlyoSanitize.hpp"
 #include "../../PlyoDiscoveryLogic.hpp"
+#include "../../PlyoProjectLogic.hpp"
 #include "../../PlyoLimitsLogic.hpp"
 #include "../../PlyoCatalogPolicy.hpp"
 #include "../../PlyoProfilesLogic.hpp"
@@ -512,4 +513,76 @@ TEST_CASE("Sanitize::reliable garde l'instant du lot (at) quand il est donné")
     const json stored = {{"machine", "K2 | TPU"}, {"date", "2026-10-28"}, {"at", "2026-10-28T11:14:03"}, {"values", {{"print", {{"layer_height", "0.2"}}}}}};
     CHECK(Plyo::Sanitize::reliable(stored)["at"] == "2026-10-28T11:14:03");
     CHECK(Plyo::Sanitize::reliable(json{{"machine", "K2 | TPU"}})["at"] == "");
+}
+
+TEST_CASE("Project: les étapes manquantes sont dans l'ordre")
+{
+    using namespace Plyo::ProjectLogic;
+    CHECK(missing(nlohmann::json()) == std::vector<std::string>{"printer", "filament", "part"});
+    CHECK(missing(nlohmann::json{{"printer", {{"preset", "A"}}}}) == std::vector<std::string>{"filament", "part"});
+    const nlohmann::json full = {{"printer", {{"preset", "A"}}}, {"filament", {{"type", "PLA"}, {"preset", "F"}}}, {"part", {{"name", "p.stl"}}}};
+    CHECK(missing(full).empty());
+    CHECK(complete(full));
+    CHECK_FALSE(complete(nlohmann::json("pas un objet")));
+}
+
+TEST_CASE("Project: refus quand la fiche est incomplète ou que le profil d'Orca diverge")
+{
+    using namespace Plyo::ProjectLogic;
+    CHECK_FALSE(refusal(nlohmann::json(), "A", "F").empty());
+    const nlohmann::json full = {{"printer", {{"preset", "A"}}}, {"filament", {{"type", "PLA"}, {"preset", "F"}}}, {"part", {{"name", "p.stl"}}}};
+    CHECK(refusal(full, "A", "F").empty());
+    CHECK_FALSE(refusal(full, "B", "F").empty());
+    CHECK_FALSE(refusal(full, "A", "G").empty());
+}
+
+TEST_CASE("Project: l'adaptation d'un 3MF impose les températures de la fiche")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json project = {{"filament", {{"type", "PLA"}, {"nozzle_temp", 215}, {"bed_temp", 60}}}};
+    const nlohmann::json file    = {{"nozzle_temperature", 250}, {"layer_height", 0.2}, {"outer_wall_speed", 900}};
+    auto range_of = [](const std::string& key) -> nlohmann::json {
+        if (key == "outer_wall_speed")
+            return {{"min", 10}, {"max", 300}};
+        if (key == "layer_height")
+            return {{"min", 0.05}, {"max", 0.6}};
+        return nullptr;
+    };
+    const Adaptation a = adapt_3mf(file, project, range_of);
+    bool nozzle_ok = false, layer_ok = false, speed_applied = false;
+    for (const auto& c : a.apply) {
+        if (c["key"] == "nozzle_temperature" && c["value"] == 215) nozzle_ok = true;
+        if (c["key"] == "layer_height" && c["value"] == 0.2) layer_ok = true;
+        if (c["key"] == "outer_wall_speed") speed_applied = true;
+    }
+    CHECK(nozzle_ok);
+    CHECK(layer_ok);
+    CHECK_FALSE(speed_applied);
+    REQUIRE(a.dropped.size() == 1);
+    CHECK(a.dropped[0]["key"] == "outer_wall_speed");
+}
+
+TEST_CASE("Project: une température absente du 3MF est imposée par la fiche")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json project = {{"filament", {{"nozzle_temp", 215}, {"bed_temp", 60}}}};
+    const Adaptation     a       = adapt_3mf(nlohmann::json::object(), project, [](const std::string&) -> nlohmann::json { return nullptr; });
+    bool nozzle = false, bed = false;
+    for (const auto& c : a.apply) {
+        if (c["key"] == "nozzle_temperature") nozzle = true;
+        if (c["key"] == "hot_plate_temp") bed = true;
+    }
+    CHECK(nozzle);
+    CHECK(bed);
+}
+
+TEST_CASE("Project: aucun secret ne sort de la logique du projet")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json project = {{"printer", {{"preset", "A"}, {"printhost_apikey", "SECRET"}}},
+                                    {"filament", {{"nozzle_temp", 215}, {"bed_temp", 60}, {"printhost_apikey", "SECRET"}}}};
+    const Adaptation a = adapt_3mf(nlohmann::json{{"printhost_apikey", "SECRET"}}, project, [](const std::string&) -> nlohmann::json { return nullptr; });
+    CHECK(a.apply.dump().find("SECRET") == std::string::npos);
+    CHECK(a.dropped.dump().find("SECRET") == std::string::npos);
+    CHECK(refusal(project, "B", "F").find("SECRET") == std::string::npos);
 }

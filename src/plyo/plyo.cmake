@@ -39,6 +39,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscovery.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscoveryLogic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscoveryLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProjectLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProjectLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJournal.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJournal.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalog.cpp
