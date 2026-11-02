@@ -191,6 +191,9 @@
 
   /* Corps défilant : accueil puis conversation */
   .body { flex: 1; overflow-y: auto; padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+  .more-badge { position: sticky; bottom: var(--s2); align-self: center; z-index: 2; border: 1px solid var(--accent); background: var(--accent-fill); color: var(--on-accent); border-radius: var(--r-pill); padding: 6px 14px; font-weight: 600; font-size: var(--fs-sm); box-shadow: var(--shadow); cursor: pointer; }
+  .more-badge.hidden { display: none; }
+  .ai { scroll-margin-top: var(--s2); }
   .body > div:empty { display: none; } /* emplacements vides : pas d'espace fantôme en haut */
   .hello { margin: var(--s3) 0 var(--s1); }
   .hello h2 { margin: 0 0 var(--s1); font-size: var(--fs-xl); font-weight: 600; line-height: 1.3; }
@@ -440,6 +443,7 @@
         </div>
       </div>
     </div>
+    <button class="more-badge hidden" id="more-badge" type="button">↓ Scroll pour voir la suite de la réponse</button>
   </div>
 
   <div class="composer" id="composer">
@@ -604,6 +608,18 @@
     return b;
   }
   function scrollDown() { bodyEl.scrollTop = bodyEl.scrollHeight; }
+  // Une réponse longue reste lue depuis son début : on cale son haut dans la zone visible (jamais son bas), et un badge
+  // invite à défiler tant que la réponse dépasse en bas.
+  var answerBox = null; // la réponse en cours d'écriture, puis la réponse affichée
+  var moreBadge = $('more-badge');
+  function scrollToAnswerTop(node) { answerBox = node; node.scrollIntoView({ block: 'start' }); updateMoreBadge(); }
+  function updateMoreBadge() {
+    var show = !!answerBox && answerBox.isConnected && PlyoLogic.moreBelow(answerBox.getBoundingClientRect(), bodyEl.getBoundingClientRect());
+    moreBadge.classList.toggle('hidden', !show);
+  }
+  moreBadge.addEventListener('click', function () { bodyEl.scrollBy({ top: Math.round(bodyEl.clientHeight * 0.8), behavior: 'smooth' }); });
+  bodyEl.addEventListener('scroll', updateMoreBadge);
+  window.addEventListener('resize', updateMoreBadge);
   function whoLine(suffix) {
     var who = el('div', 'who');
     who.appendChild(el('i', '', 'P'));
@@ -2826,6 +2842,8 @@
     thinking.appendChild(txt(photos.length ? 'Je regarde ta photo…' : 'Je réfléchis…'));
     thinking.appendChild(button('Annuler', function () { controller.abort('cancel'); }, 'link'));
     thread.appendChild(thinking);
+    answerBox = null;
+    updateMoreBadge();
     scrollDown();
     var live = null;           // réponse en cours d'écriture
     var out = {};              // événements du flux : final ou error
@@ -2836,7 +2854,6 @@
       if (live) live.box.remove();
       busy = false;
       sendButton.disabled = false;
-      scrollDown();
       drainPhoneQueue();
     }
     function fail(code, data) {
@@ -2993,6 +3010,7 @@
     box.appendChild(explanation);
     box.appendChild(message);
     thread.appendChild(box);
+    scrollToAnswerTop(box);
     // Le curseur suit la fin du texte en cours d'écriture.
     function set(target, text, caret) {
       target.textContent = '';
@@ -3008,7 +3026,7 @@
         title.textContent = fr(p.name || '');
         set(explanation, p.explanation, !p.message);
         set(message, p.message, !!p.message);
-        scrollDown();
+        updateMoreBadge(); // le brouillon grandit vers le bas, la vue reste sur son début
       }
     };
   }
@@ -3269,7 +3287,8 @@
     if (session && a.status !== 'off_topic' && !entry.flagged) foot.appendChild(feedbackLink(entry));
     if (foot.children.length) box.appendChild(foot);
     thread.appendChild(box);
-    scrollDown();
+    // Réponse neuve : on reste sur son début (le badge invite à lire la suite) ; réponse rouverte : comme avant, en bas.
+    if (archived) scrollDown(); else scrollToAnswerTop(box);
   }
 
   // ---------- Actions ----------

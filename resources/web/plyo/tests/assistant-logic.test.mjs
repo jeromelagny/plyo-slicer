@@ -302,3 +302,13 @@ test('réglages écartés par les contrôles : une phrase honnête, seulement en
   assert.equal(L.rejectedNote({ changes: [], rejected_count: 1 }), 'J’ai écarté 1 réglage que j’avais envisagé : il s’éloignait trop de ta valeur actuelle ou sortait des limites. Ce que le message annonce peut donc ne pas être dans la fiche ; redemande-moi par petites étapes si besoin.');
   assert.ok(L.rejectedNote({ changes: [{}], rejected_count: 3 }).startsWith('J’ai écarté 3 réglages que j’avais envisagés'));
 });
+
+test('moreBelow : le badge « scroll pour voir la suite » n’apparaît que si la réponse dépasse nettement en bas', () => {
+  assert.equal(L.moreBelow({ bottom: 900 }, { bottom: 600 }), true);
+  assert.equal(L.moreBelow({ bottom: 610 }, { bottom: 600 }), false); // quelques pixels de dépassement : on lit déjà la fin
+  assert.equal(L.moreBelow({ bottom: 624 }, { bottom: 600 }), false); // 24 px au plus
+  assert.equal(L.moreBelow({ bottom: 625 }, { bottom: 600 }), true);
+  assert.equal(L.moreBelow({ bottom: 300 }, { bottom: 600 }), false);
+  assert.equal(L.moreBelow(null, { bottom: 600 }), false);
+  assert.equal(L.moreBelow({ bottom: 900 }, null), false);
+});
