@@ -167,6 +167,8 @@
 
   /* Zone fixe du haut : fiche du projet, barre des six étapes, prochaine action. Ne défile jamais. */
   #journey-fiche { max-height: 22vh; overflow-y: auto; }
+  #journey-fiche:empty { display: none; }
+  .journey-extra { white-space: nowrap; }
   .journey { flex: none; background: var(--surface); border-bottom: 1px solid var(--border); padding: var(--s2) var(--s3) var(--s2); display: flex; flex-direction: column; gap: var(--s2); }
   .journey .project { border: 0; background: transparent; padding: 0; margin: 0; gap: var(--s1); }
   .journey .project.compact { flex-direction: row; }
@@ -445,7 +447,7 @@
     <div class="attached hidden" id="attached"></div>
     <div class="suggestions" id="suggestions"></div>
     <div class="box">
-      <textarea id="note" maxlength="500" rows="2" placeholder="Décris le problème ou pose ta question…" aria-label="Ta demande"></textarea>
+      <textarea id="note" maxlength="500" rows="1" placeholder="Décris le problème ou pose ta question…" aria-label="Ta demande"></textarea>
       <div class="tools">
         <button class="icon-btn" id="btn-files" type="button" title="Joindre des photos ou un modèle 3D (STL, 3MF…)" aria-label="Joindre un fichier"></button>
         <button class="icon-btn" id="btn-phone" type="button" title="Prendre des photos avec mon téléphone" aria-label="Photos avec le téléphone"></button>
@@ -453,7 +455,6 @@
         <button class="send" id="btn-send" type="button" title="Envoyer (Entrée) · Maj + Entrée pour aller à la ligne" aria-label="Envoyer"></button>
       </div>
     </div>
-    <p class="disclaimer"><span>L’IA te guide, tu valides chaque réglage.</span><button class="link" type="button" id="btn-ai-info">En savoir plus</button></p>
     <input id="file-input" type="file" accept="image/*,.stl,.3mf,.obj,.step,.stp,.amf" multiple hidden>
   </div>
 
@@ -737,7 +738,7 @@
     clearThread();
     attachments = [];
     renderAttachments();
-    noteInput.value = '';
+    noteInput.value = ''; growNote();
     // Nouveau projet : imprimante et filament du précédent proposés, jamais appliqués sans confirmation.
     startConversation(conv && PlyoProject.nextStep(conv.project) !== 'printer' ? PlyoProject.proposeFrom(conv.project) : null);
   }
@@ -765,7 +766,7 @@
 
   // ---------- Fiche « Mon projet » : imprimante, filament (buse et plateau), pièce ----------
   // Le projet est gardé avec la conversation (conv.project) ; PlyoProject (project-logic.js) dit quelle étape manque.
-  var projectUI = { keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
+  var projectUI = { showOthers: false, keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
   function projectChanged() {
     // Machine ou filament changé après la découpe : la découpe est périmée, on repasse à « Préparer ».
     conv.project = PlyoJourney.resetStepOnChange(conv.seenProject || null, conv.project);
@@ -792,10 +793,11 @@
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: journeyUI.folded, heightPx: window.innerHeight });
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
-    PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), folded: journeyUI.folded, handlers: journeyHandlers });
+    PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), folded: journeyUI.folded, handlers: journeyHandlers,
+      extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'wifi', onClick: projectHandlers.setupPrinter } : null });
     if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable,
-        error: projectUI.error, editing: projectUI.editing, handlers: projectHandlers });
+        error: projectUI.error, editing: projectUI.editing, showOthers: projectUI.showOthers, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers });
     $('project-card').classList.toggle('hidden', journeyUI.folded);
     $('hello-text').textContent = fr({ machine: 'Je prépare ton projet : choisis d’abord ton imprimante.',
@@ -863,6 +865,7 @@
     },
     importPart: function () { pickFiles(); },
     expand: function () { journeyUI.ficheOpen = true; renderProject(); },
+    toggleOthers: function () { projectUI.showOthers = !projectUI.showOthers; renderProject(); },
     change: function (line) {
       projectUI.error = {};
       if (line === 'printer') { conv.project.printer = null; conv.project.filament = null; }
@@ -1613,7 +1616,6 @@
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
   $('m-help').addEventListener('click', openHelp);
-  $('btn-ai-info').addEventListener('click', openHelp);
   $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
   $('m-login').addEventListener('click', function () { menu.classList.add('hidden'); openLogin(); });
   $('btn-login').addEventListener('click', openLogin);
@@ -2788,11 +2790,11 @@
     var ficheKey = !opts.photos && !photos.length ? FS.matchSettingQuestion(note, window.PLYO_FICHES) : null;
     if (ficheKey) {
       if (!opts.shown) addMe(note, [], false);
-      noteInput.value = '';
+      noteInput.value = ''; growNote();
       explain(ficheKey);
       return;
     }
-    if (!opts.photos) { attachments = []; renderAttachments(); noteInput.value = ''; }
+    if (!opts.photos) { attachments = []; renderAttachments(); noteInput.value = ''; growNote(); }
     if (!opts.shown) addMe(note, photos, opts.fromPhone);
     var again = { photos: photos, fromPhone: opts.fromPhone, shown: true };
     if (requireLogin('Pour te répondre, j’envoie ta demande à l’IA.', function () { send(note, again); })) return;
@@ -3273,6 +3275,9 @@
   // ---------- Actions ----------
   sendButton.addEventListener('click', function () { send(noteInput.value); });
   // Entrée envoie, Maj + Entrée va à la ligne (pas pendant la saisie d'un caractère composé).
+  // Le champ commence sur une ligne et grandit quand on écrit (six lignes au plus).
+  function growNote() { noteInput.style.height = 'auto'; noteInput.style.height = Math.min(noteInput.scrollHeight, 132) + 'px'; }
+  noteInput.addEventListener('input', growNote);
   noteInput.addEventListener('keydown', function (e) {
     if (Logic.isSendKey(e)) { e.preventDefault(); send(noteInput.value); }
   });

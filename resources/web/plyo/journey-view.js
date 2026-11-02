@@ -31,6 +31,8 @@
     arrow.setAttribute('aria-label', opts.folded ? 'Afficher l’étape' : 'Replier l’étape');
     line.appendChild(arrow);
     line.appendChild(ui.el('span', 'journey-prompt', J.prompt(opts.step, opts.ctx)));
+    // Un lien toujours visible à côté de la consigne (hors du contenu qui défile), jamais un bouton plein.
+    if (opts.extra) line.appendChild(ui.button(opts.extra.label, opts.extra.onClick, 'link journey-extra', opts.extra.icon));
     if (action.kind !== 'none') line.appendChild(ui.button(action.label, function () { opts.handlers.run(action.kind); }, 'btn sm'));
     slot.appendChild(line);
   }

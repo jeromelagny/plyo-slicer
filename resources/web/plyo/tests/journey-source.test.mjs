@@ -52,3 +52,14 @@ test('la carte de vérification n’a pas de bouton plein : le bouton de l’ét
   // Création d'un bouton plein (classe passée en argument) ; `classList.contains('btn')` n'en crée pas.
   assert.ok(!/,\s*['"]btn(?: sm)?['"]/.test(card), 'renderPreflight');
 });
+
+test('le champ de question est discret : une ligne, et plus de phrase d’avertissement sous lui', () => {
+  const page = read('index.html');
+  assert.ok(/<textarea id="note"[^>]*rows="1"/.test(page), 'rows="1"');
+  assert.ok(!page.includes('class="disclaimer"'), 'avertissement retiré du composeur');
+});
+
+test('« Ma machine n’est pas dans la liste » est dans la ligne d’action fixe, plus dans la liste qui défile', () => {
+  assert.ok(!read('project-card.js').includes('Ma machine n’est pas dans la liste'));
+  assert.ok(read('journey-view.js').includes('extra'));
+});

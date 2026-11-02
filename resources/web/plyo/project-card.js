@@ -11,60 +11,47 @@
   // Aucun bouton plein ici : le seul bouton plein d'une étape est celui de la ligne d'action (journey-view.js).
   function projectOf(ctx) { return ctx.project || root.PlyoProject.emptyProject(); }
 
-  // La fiche : trois lignes, toujours visibles (ou une seule ligne quand `compact`).
+  // La fiche : seulement ce qui est déjà choisi (rien au tout début), ou une seule ligne quand `compact`.
   function renderFiche(slot, ui, ctx) {
-    var P = root.PlyoProject, project = projectOf(ctx), step = P.nextStep(project), h = ctx.handlers;
+    var project = projectOf(ctx), h = ctx.handlers, rows = root.PlyoJourney.filledRows(project);
     slot.textContent = '';
+    if (!rows.length) return;
     var card = ui.el('div', 'project' + (ctx.compact ? ' compact' : ''));
     if (ctx.compact) {
-      var summary = root.PlyoJourney.ficheSummary(project) || 'Mon projet : rien de choisi';
-      card.appendChild(ui.button(summary, h.expand, 'link project-summary'));
+      card.appendChild(ui.button(root.PlyoJourney.ficheSummary(project), h.expand, 'link project-summary'));
       slot.appendChild(card);
       return;
     }
-    card.appendChild(ui.el('div', 'project-title', 'Mon projet'));
-
-    function row(iconName, line, summary, hint, actionLabel) {
-      var r = ui.el('div', 'project-row' + (step === line ? ' current' : ''));
+    var icons = { printer: 'wifi', filament: 'palette', part: 'cube' };
+    rows.forEach(function (row) {
+      var r = ui.el('div', 'project-row');
       var left = ui.el('div', 'project-label');
-      left.appendChild(ui.icon(iconName, 14));
-      var text = ui.el('span', summary ? '' : 'project-missing');
-      text.appendChild(document.createTextNode(summary || hint));
-      left.appendChild(text);
+      left.appendChild(ui.icon(icons[row.line], 14));
+      left.appendChild(ui.el('span', '', row.text));
+      if (row.line === 'printer' && ctx.reachable && ctx.reachable[project.printer.preset] === true) left.appendChild(ui.el('span', 'project-ok', '● connectée'));
       r.appendChild(left);
-      if (actionLabel) r.appendChild(ui.button(actionLabel, function () { h.change(line); }, 'link'));
+      if (row.line !== 'part') r.appendChild(ui.button('changer', function () { h.change(row.line); }, 'link'));
       card.appendChild(r);
-      return r;
-    }
-
-    var pr = project.printer && !project.printer.proposed ? project.printer : null;
-    var prRow = row('wifi', 'printer', pr ? (pr.name || pr.preset) : '', 'Quelle imprimante ?', pr ? 'changer' : '');
-    if (pr && ctx.reachable && ctx.reachable[pr.preset] === true) prRow.firstChild.appendChild(ui.el('span', 'project-ok', '● connectée'));
-
-    var fi = project.filament && !project.filament.proposed ? project.filament : null;
-    row('palette', 'filament', fi ? fi.type : '', 'Quel filament ?', fi ? 'changer' : '');
-    if (fi) {
-      var temps = ui.el('div', 'temp-row project-temps');
-      var field = function (label, value) {
-        var wrap = ui.el('label', 'temp-field');
-        wrap.appendChild(ui.el('span', 'muted small', label));
-        var input = ui.el('input', 'field');
-        input.type = 'text';
-        input.inputMode = 'numeric';
-        input.value = value === null || value === undefined ? '' : String(value);
-        input.setAttribute('aria-label', label);
-        input.addEventListener('change', function () { h.setTemps(nIn.value, bIn.value); });
-        wrap.appendChild(input);
-        temps.appendChild(wrap);
-        return input;
-      };
-      var nIn = field('Buse (°C)', fi.nozzle_temp);
-      var bIn = field('Plateau (°C)', fi.bed_temp);
-      card.appendChild(temps);
-    }
-
-    var pa = project.part && project.part.name ? project.part : null;
-    row('cube', 'part', pa ? pa.name : '', 'Aucune pièce : ajoute ton fichier', '');
+      if (row.line === 'filament') {
+        var fi = project.filament, temps = ui.el('div', 'temp-row project-temps');
+        var field = function (label, value) {
+          var wrap = ui.el('label', 'temp-field');
+          wrap.appendChild(ui.el('span', 'muted small', label));
+          var input = ui.el('input', 'field');
+          input.type = 'text';
+          input.inputMode = 'numeric';
+          input.value = value === null || value === undefined ? '' : String(value);
+          input.setAttribute('aria-label', label);
+          input.addEventListener('change', function () { h.setTemps(nIn.value, bIn.value); });
+          wrap.appendChild(input);
+          temps.appendChild(wrap);
+          return input;
+        };
+        var nIn = field('Buse (°C)', fi.nozzle_temp);
+        var bIn = field('Plateau (°C)', fi.bed_temp);
+        card.appendChild(temps);
+      }
+    });
     slot.appendChild(card);
   }
 
@@ -88,13 +75,18 @@
       var list = ctx.printers;
       if (list === null || list === undefined) body.appendChild(ui.el('p', 'muted small', 'Je cherche tes imprimantes…'));
       else {
-        if (list.length) body.appendChild(ui.el('p', 'muted small', 'Tes imprimantes déjà configurées :'));
+        var groups = root.PlyoJourney.groupPrinters(list);
         var acts = ui.el('div', 'printer-actions');
-        list.forEach(function (p) {
-          var label = p.name + (p.linked ? (ctx.reachable && ctx.reachable[p.preset] === true ? ' ● connectée' : ' · reliée') : '');
-          acts.appendChild(ui.button(label, function () { h.pickPrinter(p.preset, p.name); }, 'btn ghost sm'));
-        });
-        acts.appendChild(ui.button('Ma machine n’est pas dans la liste', h.setupPrinter, 'btn ghost sm', 'wifi'));
+        var add = function (p) {
+          var label = p.label + (p.linked ? (ctx.reachable && ctx.reachable[p.preset] === true ? ' ● connectée' : ' · reliée') : '');
+          acts.appendChild(ui.button(label, function () { h.pickPrinter(p.preset, p.label); }, 'btn ghost sm'));
+        };
+        groups.main.forEach(add);
+        if (!groups.main.length && !groups.others.length) body.appendChild(ui.el('p', 'muted small', 'Aucune imprimante configurée : utilise le lien juste au-dessus pour ajouter la tienne.'));
+        if (groups.others.length) {
+          acts.appendChild(ui.button('Autres profils (' + groups.others.length + ')', h.toggleOthers, 'link'));
+          if (ctx.showOthers) groups.others.forEach(add);
+        }
         body.appendChild(acts);
       }
     } else if (wantsFilament) {

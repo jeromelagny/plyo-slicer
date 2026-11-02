@@ -90,17 +90,16 @@ test('ficheSummary omet les parties absentes', () => {
   assert.ok(!/undefined|null/.test(J.ficheSummary(null)));
 });
 
-test('suggestionsFor : quatre au plus, avec les bonnes ouvertures', () => {
-  for (const s of J.STEPS) {
-    const list = J.suggestionsFor(s.key);
-    assert.ok(list.length >= 1 && list.length <= 4, s.key);
-    for (const x of list) assert.ok(x.label && (x.kind === 'ask' || x.kind === 'open'), s.key);
+test('suggestionsFor : aucune pendant les choix, deux au plus ensuite, et chaque tiroir reste accessible', () => {
+  for (const key of ['machine', 'filament', 'piece']) assert.deepEqual(J.suggestionsFor(key), [], key);
+  const opened = [];
+  for (const key of ['preparer', 'imprimer', 'resultat']) {
+    const list = J.suggestionsFor(key);
+    assert.ok(list.length >= 1 && list.length <= 2, key);
+    for (const x of list) { assert.ok(x.label && (x.kind === 'ask' || x.kind === 'open'), key); if (x.kind === 'open') opened.push(x.value); }
   }
+  for (const what of ['check', 'parts', 'values', 'limits']) assert.ok(opened.includes(what), what + ' n’est plus accessible');
   assert.ok(J.suggestionsFor('preparer').some((x) => x.kind === 'open' && x.value === 'check'));
-  assert.ok(J.suggestionsFor('imprimer').some((x) => x.kind === 'open' && x.value === 'parts'));
-  assert.ok(J.suggestionsFor('machine').some((x) => x.kind === 'open' && x.value === 'values'));
-  assert.ok(!J.suggestionsFor('machine').some((x) => x.value === 'limits'));
-  assert.ok(J.suggestionsFor('filament').some((x) => x.value === 'limits'));
 });
 
 test('toggleFold : écrire replie, la flèche bascule, changer d’étape déplie', () => {
@@ -120,4 +119,42 @@ test('contentFor : « changer » le filament rouvre les choix même après la d�
   assert.equal(J.contentFor('resultat', null), 'steps');
   assert.equal(J.contentFor('imprimer', 'filament'), 'choices');
   assert.equal(J.contentFor('machine', 'filament'), 'choices');
+});
+
+test('filledRows : seules les lignes déjà choisies sont affichées', () => {
+  assert.deepEqual(J.filledRows(null), []);
+  assert.deepEqual(J.filledRows({ printer: printer }).map((r) => r.line), ['printer']);
+  assert.deepEqual(J.filledRows({ printer: Object.assign({ proposed: true }, printer) }), []);
+  const rows = J.filledRows(full());
+  assert.deepEqual(rows.map((r) => r.line), ['printer', 'filament', 'part']);
+  assert.equal(rows[1].text, 'PLA');
+  assert.equal(rows[2].text, 'flexyring.stl');
+});
+
+test('groupPrinters : une ligne par machine, les profils non reliés rangés à part', () => {
+  const list = [
+    { preset: 'Creality K2 0.4 nozzle', name: 'Creality K2 0.4 nozzle', linked: false },
+    { preset: 'Elegoo Centauri Carbon 2 0.4 nozzle', name: 'Elegoo Centauri Carbon 2 0.4 nozzle', linked: false },
+    { preset: 'Elegoo Centauri Carbon 2 0.4 nozzle - Copie', name: 'Elegoo Centauri Carbon 2 0.4 nozzle - Copie', linked: true },
+    { preset: 'Ma Creality K2 0.4 nozzle', name: 'Ma Creality K2 0.4 nozzle', linked: true },
+    { preset: 'Ma Elegoo Centauri Carbon 2 0.4 nozzle', name: 'Ma Elegoo Centauri Carbon 2 0.4 nozzle', linked: true }
+  ];
+  const g = J.groupPrinters(list);
+  assert.equal(g.main.length, 2);
+  assert.equal(g.others.length, 0);
+  assert.deepEqual(g.main.map((p) => p.label).sort(), ['Creality K2 0.4 nozzle', 'Elegoo Centauri Carbon 2 0.4 nozzle']);
+  assert.ok(g.main.every((p) => p.linked));
+  assert.equal(g.main.find((p) => /Elegoo/.test(p.label)).preset, 'Ma Elegoo Centauri Carbon 2 0.4 nozzle'); // « Ma … » préféré à « - Copie »
+});
+
+test('groupPrinters : une machine non reliée va dans « autres », deux buses restent deux machines', () => {
+  const g = J.groupPrinters([
+    { preset: 'Voron 2.4 0.4 nozzle', name: 'Voron 2.4 0.4 nozzle', linked: false },
+    { preset: 'Ma Ender 0.4 nozzle', name: 'Ma Ender 0.4 nozzle', linked: true },
+    { preset: 'Ma Ender 0.6 nozzle', name: 'Ma Ender 0.6 nozzle', linked: true }
+  ]);
+  assert.equal(g.main.length, 2);
+  assert.equal(g.others.length, 1);
+  assert.equal(g.others[0].label, 'Voron 2.4 0.4 nozzle');
+  assert.deepEqual(J.groupPrinters(null), { main: [], others: [] });
 });
