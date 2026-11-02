@@ -998,7 +998,7 @@
   }
   function testLink() {
     linkStep('Je teste la connexion avec ' + (link.printer.name || 'ton imprimante') + '…', '', 'wifi');
-    window.orca.postMessage({ type: 'printer_link_test', printer: link.printer });
+    window.orca.postMessage({ type: 'printer_link_test', printer: link.printer, access_code: link.code || '' });
   }
   // Ce qu'il faut faire quand le test échoue, selon le type de connexion.
   var LINK_HELP = {
@@ -1006,6 +1006,31 @@
     flashforge: 'Flashforge demande le **numéro de série** et le **code de vérification** : tu les trouves sur l’écran de l’imprimante, dans Réglages, puis Réseau.',
     elegoolink: 'Vérifie que le mode réseau local est activé sur l’écran de l’imprimante.'
   };
+  // L'imprimante répond mais refuse : elle demande son code d'accès (affiché sur son écran). Gardé le temps du test et de
+  // l'enregistrement, puis rangé dans le profil d'imprimante par le slicer.
+  function askAccessCode(wrong) {
+    var name = link.printer.name || 'ton imprimante';
+    var box = linkStep((wrong ? 'Ce code d’accès est refusé par **' + name + '**. Vérifie-le sur son écran et réessaie.' :
+      '**' + name + '** est joignable, mais elle demande son **code d’accès**. Tu le trouves sur son écran, dans les réglages réseau.'), 'warn', 'alert');
+    var input = el('input', 'field');
+    input.type = 'password';
+    input.maxLength = 64;
+    input.autocomplete = 'off';
+    input.placeholder = 'Code d’accès de l’imprimante';
+    input.setAttribute('aria-label', 'Code d’accès de l’imprimante');
+    function submit() {
+      var code = input.value.trim();
+      if (!code) { input.focus(); return; }
+      link.code = code;
+      testLink();
+    }
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+    box.appendChild(input);
+    var acts = el('div', 'printer-actions');
+    acts.appendChild(button('Tester avec ce code', submit, 'btn sm', 'wifi'));
+    box.appendChild(acts);
+    setTimeout(function () { input.focus(); }, 0);
+  }
   function onLinkTested(msg) {
     if (!link) return;
     if (msg.ok) {
@@ -1013,10 +1038,11 @@
       var webui = typeof msg.webui === 'string' ? msg.webui : '';
       okBox.appendChild(button('Enregistrer la connexion', function () {
         linkStep('J’enregistre…', '', 'search');
-        window.orca.postMessage({ type: 'printer_link_save', printer: link.printer, webui: webui });
+        window.orca.postMessage({ type: 'printer_link_save', printer: link.printer, webui: webui, access_code: link.code || '' });
       }, 'btn sm', 'check'));
       return;
     }
+    if (msg.auth) { askAccessCode(!!link.code); return; }
     var box = linkStep('Je n’arrive pas à joindre ' + (link.printer.name || 'l’imprimante') + '. ' +
       (LINK_HELP[link.printer.host_type] || 'Vérifie qu’elle est allumée et sur le même Wi-Fi, puis réessaie.'), 'error', 'alert');
     if (msg.message) box.appendChild(el('p', 'muted small', msg.message));

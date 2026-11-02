@@ -360,12 +360,12 @@ void handle_page_message(const nlohmann::json& data)
             r["type"]        = "printer_profile_selected";
             send(r);
         } else if (type == "printer_link_test") {
-            PrinterLink::test(data.contains("printer") ? data["printer"] : nlohmann::json(), [](nlohmann::json r) {
+            PrinterLink::test(data.contains("printer") ? data["printer"] : nlohmann::json(), Json::str(data, "access_code"), [](nlohmann::json r) {
                 r["type"] = "printer_link_tested";
                 send(r);
             });
         } else if (type == "printer_link_save") {
-            nlohmann::json r = PrinterLink::save(data.contains("printer") ? data["printer"] : nlohmann::json(), Json::str(data, "webui"));
+            nlohmann::json r = PrinterLink::save(data.contains("printer") ? data["printer"] : nlohmann::json(), Json::str(data, "webui"), Json::str(data, "access_code"));
             r["type"]        = "printer_link_saved";
             send(r);
         } else if (type == "printer_link_dialog") {

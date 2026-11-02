@@ -19,12 +19,13 @@ nlohmann::json select_profile(const std::string& name);
 
 // Teste la connexion en arrière-plan (réseau local) et cherche la page web de l'imprimante (onglet « Appareil »).
 // `done` reçoit { ok, message, webui } sur le fil de l'interface.
-void test(const nlohmann::json& printer, std::function<void(nlohmann::json)> done);
+// `access_code` : code d'accès de l'imprimante (Elegoo CC2…), vide si elle n'en demande pas. Jamais journalisé.
+void test(const nlohmann::json& printer, const std::string& access_code, std::function<void(nlohmann::json)> done);
 
 // Enregistre la connexion (et la page web) dans le profil, au clic de l'utilisateur sur « Enregistrer ». Un profil
 // système d'Orca n'est pas modifiable : la connexion va dans un profil à soi, « Ma <profil> », qui devient actif.
 // { ok, profile }
-nlohmann::json save(const nlohmann::json& printer, const std::string& webui);
+nlohmann::json save(const nlohmann::json& printer, const std::string& webui, const std::string& access_code);
 
 // Préremplit la connexion puis ouvre la fenêtre « Connexion » d'Orca (clé ou code à saisir) : l'utilisateur
 // enregistre lui-même par OK. Annulée, la connexion d'avant est remise. { ok, saved }

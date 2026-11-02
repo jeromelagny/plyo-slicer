@@ -58,13 +58,17 @@ std::string host_type_of(const Slic3r::DynamicPrintConfig& config)
 }
 
 // Les réglages de connexion, prêts pour Tab::load_config (comme une saisie de l'utilisateur).
-Slic3r::DynamicPrintConfig connection(const std::string& host_type, const std::string& host, const std::string& webui = std::string())
+Slic3r::DynamicPrintConfig connection(const std::string& host_type, const std::string& host, const std::string& webui = std::string(),
+                                      const std::string& access_code = std::string())
 {
     Slic3r::DynamicPrintConfig c;
     const auto&                values = Slic3r::ConfigOptionEnum<Slic3r::PrintHostType>::get_enum_values();
     c.set_key_value("print_host", new Slic3r::ConfigOptionString(host));
     c.set_key_value("host_type", new Slic3r::ConfigOptionEnum<Slic3r::PrintHostType>(Slic3r::PrintHostType(values.at(host_type))));
     c.set_key_value("print_host_webui", new Slic3r::ConfigOptionString(webui));
+    // Code d'accès (Elegoo CC2…) : rangé dans la clé « API » du profil, comme le ferait la fenêtre Connexion d'Orca.
+    if (!access_code.empty())
+        c.set_key_value("printhost_apikey", new Slic3r::ConfigOptionString(access_code));
     return c;
 }
 
@@ -91,6 +95,23 @@ bool valid_webui(const std::string& webui)
 {
     const std::string prefix = "http://";
     return webui.empty() || (webui.rfind(prefix, 0) == 0 && Discovery::valid_host(webui.substr(prefix.size())));
+}
+
+// Un code d'accès saisi dans le panneau : 1 à 64 caractères imprimables, sans espace en début ni en fin.
+bool valid_access_code(const std::string& code)
+{
+    if (code.size() > 64)
+        return false;
+    for (unsigned char c : code)
+        if (c < 0x20 || c == 0x7f)
+            return false;
+    return code.empty() || (code.front() != ' ' && code.back() != ' ');
+}
+
+// Les imprimantes Elegoo répondent 401/403 quand le code d'accès manque ou est faux.
+bool is_auth_refusal(const std::string& host_type, const std::string& message)
+{
+    return host_type == "elegoolink" && (message.find("401") != std::string::npos || message.find("403") != std::string::npos);
 }
 
 } // namespace
@@ -133,23 +154,23 @@ nlohmann::json select_profile(const std::string& name)
     return {{"ok", tab != nullptr && tab->select_preset(name)}};
 }
 
-void test(const nlohmann::json& in, std::function<void(nlohmann::json)> done)
+void test(const nlohmann::json& in, const std::string& access_code, std::function<void(nlohmann::json)> done)
 {
     Discovery::Printer p;
-    if (!read_printer(in, p)) {
+    if (!read_printer(in, p) || !valid_access_code(access_code)) {
         done({{"ok", false}, {"message", "Imprimante invalide."}});
         return;
     }
     // Copie du profil (clés, certificats…) avec la connexion de l'imprimante trouvée : le profil n'est pas touché.
     auto config = std::make_shared<Slic3r::DynamicPrintConfig>(edited_printer());
-    config->apply(connection(p.host_type, p.host));
-    std::thread([config, done = std::move(done)]() {
+    config->apply(connection(p.host_type, p.host, std::string(), access_code));
+    std::thread([config, host_type = p.host_type, done = std::move(done)]() {
         nlohmann::json result;
         try {
             std::unique_ptr<Slic3r::PrintHost> host(Slic3r::PrintHost::get_print_host(config.get()));
             wxString                           message;
             const bool                         ok = host != nullptr && host->test(message);
-            result = {{"ok", ok}, {"message", message.utf8_string()}, {"webui", ok ? find_webui(config->opt_string("print_host").substr(0, config->opt_string("print_host").find(':'))) : std::string()}};
+            result = {{"ok", ok}, {"message", message.utf8_string()}, {"auth", !ok && is_auth_refusal(host_type, message.utf8_string())}, {"webui", ok ? find_webui(config->opt_string("print_host").substr(0, config->opt_string("print_host").find(':'))) : std::string()}};
         } catch (const std::exception& e) {
             result = {{"ok", false}, {"message", e.what()}};
         }
@@ -157,10 +178,10 @@ void test(const nlohmann::json& in, std::function<void(nlohmann::json)> done)
     }).detach();
 }
 
-nlohmann::json save(const nlohmann::json& in, const std::string& webui)
+nlohmann::json save(const nlohmann::json& in, const std::string& webui, const std::string& access_code)
 {
     Discovery::Printer p;
-    if (!read_printer(in, p) || !valid_webui(webui))
+    if (!read_printer(in, p) || !valid_webui(webui) || !valid_access_code(access_code))
         return {{"ok", false}};
     Slic3r::GUI::Tab* tab = wxGetApp().get_tab(Preset::TYPE_PRINTER);
     if (tab == nullptr)
@@ -168,7 +189,7 @@ nlohmann::json save(const nlohmann::json& in, const std::string& webui)
     const Preset& current = wxGetApp().preset_bundle->printers.get_edited_preset();
     // Profil à soi : on le met à jour. Profil système (non modifiable) : « Ma <profil> », plus parlant que « - Copie ».
     const std::string name = current.is_system || current.is_default ? "Ma " + current.name : current.name;
-    tab->load_config(connection(p.host_type, p.host, webui));
+    tab->load_config(connection(p.host_type, p.host, webui, access_code));
     tab->save_preset(name);
     const bool ok = wxGetApp().preset_bundle->printers.get_edited_preset().name == name;
     BOOST_LOG_TRIVIAL(info) << "Plyo: connexion de l'imprimante enregistrée dans « " << name << " » : " << (ok ? "oui" : "non");
