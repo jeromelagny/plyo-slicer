@@ -145,7 +145,13 @@
     }
   }
 
-  var api = { tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
+  // Texte d'accueil de l'onglet « Poser une question » (conversation vide). Sans projet complet, il renvoie vers « Étapes ».
+  function chatHello(ready) {
+    var base = 'Pose-moi ta question ici : un réglage, un problème d’impression, une photo de défaut à analyser.';
+    return ready ? base : base + ' Pour avancer pas à pas, passe par l’onglet « Étapes ».';
+  }
+
+  var api = { chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;

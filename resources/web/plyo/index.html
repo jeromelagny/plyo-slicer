@@ -445,10 +445,10 @@
     <div class="hidden" id="home">
       <div class="hello">
         <h2>Bonjour !</h2>
-        <p id="hello-text">Je prépare ton projet : choisis d’abord ton imprimante.</p>
+        <p id="hello-text">Pose-moi ta question ici : un réglage, un problème d’impression, une photo de défaut à analyser.</p>
       </div>
       <div class="home-more hidden" id="goals-wrap">
-        <p class="label">Ou pars d’un objectif</p>
+        <p class="label">Ou choisis un objectif</p>
         <div class="chips" id="goals">
           <button class="chip" type="button">Je veux une surface du dessus bien lisse</button>
           <button class="chip" type="button">Je veux imprimer plus vite</button>
@@ -850,11 +850,7 @@
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers, reachable: projectUI.reachable,
         error: projectUI.error, editing: projectUI.editing, showOthers: projectUI.showOthers, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers });
-    $('hello-text').textContent = fr({ machine: 'Je prépare ton projet : choisis d’abord ton imprimante.',
-      filament: 'Maintenant, ton filament et ses températures.', piece: 'Dernière chose : ta pièce.',
-      preparer: 'Tout est prêt. Dis-moi ce que tu veux obtenir, ou pose-moi une question.',
-      imprimer: 'Tout est prêt. Dis-moi ce que tu veux obtenir, ou pose-moi une question.',
-      resultat: 'Dis-moi comment s’est passée ton impression.' }[step]);
+    $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
     PlyoJourneyView.renderSuggestions($('suggestions'), ui, { step: step, handlers: suggestionHandlers });
     renderSetupFlow();
