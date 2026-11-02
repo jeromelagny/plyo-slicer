@@ -586,3 +586,22 @@ TEST_CASE("Project: aucun secret ne sort de la logique du projet")
     CHECK(a.dropped.dump().find("SECRET") == std::string::npos);
     CHECK(refusal(project, "B", "F").find("SECRET") == std::string::npos);
 }
+
+TEST_CASE("Project: sanitize ne garde que les clés connues du projet")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json dirty = {{"printer", {{"preset", "A"}, {"name", "Ma A"}, {"printhost_apikey", "SECRET"}, {"proposed", true}}},
+                                  {"filament", {{"type", "PLA"}, {"preset", "F"}, {"nozzle_temp", 215}, {"bed_temp", 60}, {"token", "SECRET"}}},
+                                  {"part", {{"name", "p.stl"}, {"path", "/Users/x/p.stl"}}},
+                                  {"step", "print"},
+                                  {"autre", "SECRET"}};
+    const nlohmann::json clean = sanitize(dirty);
+    CHECK(clean.dump().find("SECRET") == std::string::npos);
+    CHECK(clean["printer"]["preset"] == "A");
+    CHECK(clean["printer"]["proposed"] == true);
+    CHECK(clean["filament"]["nozzle_temp"] == 215);
+    CHECK(clean["part"]["name"] == "p.stl");
+    CHECK_FALSE(clean["part"].contains("path"));
+    CHECK(clean["step"] == "print");
+    CHECK(sanitize(nlohmann::json("x")).is_null());
+}

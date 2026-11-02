@@ -1,5 +1,6 @@
 #include "PlyoConversations.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoProjectLogic.hpp"
 #include "PlyoStore.hpp"
 
 #include <boost/filesystem.hpp>
@@ -82,7 +83,11 @@ bool save(const std::string& id, const nlohmann::json& conversation)
 {
     if (!valid_id(id) || !well_formed(conversation) || conversation.dump().size() > MAX_BYTES)
         return false;
-    if (!Store::write(path_of(id), conversation))
+    // Le projet est réduit à ses clés connues : ni secret ni chemin de fichier dans la conversation enregistrée.
+    nlohmann::json kept = conversation;
+    if (kept.contains("project"))
+        kept["project"] = ProjectLogic::sanitize(kept["project"]);
+    if (!Store::write(path_of(id), kept))
         return false;
     prune();
     return true;

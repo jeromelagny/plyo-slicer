@@ -3,6 +3,7 @@
 #include "PlyoJson.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace Plyo { namespace ProjectLogic {
 
@@ -57,6 +58,53 @@ std::string refusal(const nlohmann::json& project, const std::string& current_pr
         Json::str(*Json::field(project, "filament"), "preset") != current_filament)
         return "Orca n'est plus sur l'imprimante ou le filament de ce projet. Remets le projet dans Orca avant de changer des réglages.";
     return std::string();
+}
+
+nlohmann::json sanitize(const nlohmann::json& project)
+{
+    if (!project.is_object())
+        return nullptr;
+    auto text = [](const nlohmann::json& src, nlohmann::json& dst, const char* key) {
+        const std::string v = Json::str(src, key, 200);
+        if (!v.empty())
+            dst[key] = v;
+    };
+    auto number = [](const nlohmann::json& src, nlohmann::json& dst, const char* key) {
+        const nlohmann::json* v = Json::field(src, key);
+        if (v != nullptr && v->is_number() && std::isfinite(v->get<double>()))
+            dst[key] = *v;
+    };
+    auto flag = [](const nlohmann::json& src, nlohmann::json& dst) {
+        const nlohmann::json* v = Json::field(src, "proposed");
+        if (v != nullptr && v->is_boolean() && v->get<bool>())
+            dst["proposed"] = true;
+    };
+    nlohmann::json out = {{"printer", nullptr}, {"filament", nullptr}, {"part", nullptr}};
+    if (const nlohmann::json* p = Json::field(project, "printer"); p != nullptr && p->is_object()) {
+        nlohmann::json o = nlohmann::json::object();
+        text(*p, o, "preset");
+        text(*p, o, "name");
+        flag(*p, o);
+        out["printer"] = o;
+    }
+    if (const nlohmann::json* f = Json::field(project, "filament"); f != nullptr && f->is_object()) {
+        nlohmann::json o = nlohmann::json::object();
+        text(*f, o, "type");
+        text(*f, o, "preset");
+        number(*f, o, "nozzle_temp");
+        number(*f, o, "bed_temp");
+        flag(*f, o);
+        out["filament"] = o;
+    }
+    if (const nlohmann::json* a = Json::field(project, "part"); a != nullptr && a->is_object()) {
+        nlohmann::json o = nlohmann::json::object();
+        text(*a, o, "name");
+        out["part"] = o;
+    }
+    const std::string step = Json::str(project, "step");
+    if (step == "slice" || step == "print" || step == "after")
+        out["step"] = step;
+    return out;
 }
 
 Adaptation adapt_3mf(const nlohmann::json& file_values, const nlohmann::json& project,

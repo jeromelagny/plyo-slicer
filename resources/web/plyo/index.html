@@ -387,6 +387,7 @@
 
   <div class="body" id="body">
     <!-- Premiers pas : étape du parcours en cours -->
+    <div id="project-slot"></div>
     <div id="tour-slot"></div>
     <div id="outcome-slot"></div>
     <div id="preflight-slot"></div>
@@ -660,17 +661,19 @@
   var saveTimer = null;
   function newId() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6); }
   function startConversation() {
-    conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [] };
+    conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: PlyoProject.emptyProject() };
   }
+  // Une conversation vaut d'être gardée dès qu'elle a des échanges ou un début de projet (imprimante choisie…).
+  function worthSaving(c) { return !!c && (c.entries.length > 0 || PlyoProject.nextStep(c.project) !== 'printer'); }
   function saveNow(c) {
-    if (!c || !c.entries.length) return;
+    if (!worthSaving(c)) return;
     c.updated = new Date().toISOString();
-    window.orca.postMessage({ type: 'conv_save', id: c.id, conversation: { title: c.title, updated: c.updated, entries: c.entries, history: c.history } });
+    window.orca.postMessage({ type: 'conv_save', id: c.id, conversation: { title: c.title, updated: c.updated, entries: c.entries, history: c.history, project: c.project } });
   }
   var saveTarget = null;
   function scheduleSave(c) {
     var target = c || conv;
-    if (!target || !target.entries.length) return;
+    if (!worthSaving(target)) return;
     // Un enregistrement en attente pour une autre conversation part tout de suite.
     if (saveTarget && saveTarget !== target) { clearTimeout(saveTimer); saveNow(saveTarget); }
     saveTarget = target;
@@ -707,6 +710,27 @@
     noteInput.value = '';
     startConversation();
   }
+  // Remet l'imprimante et le filament du projet dans Orca (seulement si ces deux choix sont faits).
+  function restoreProjectInOrca(discardUnsaved) {
+    var p = conv && conv.project;
+    if (!p || PlyoProject.nextStep(p) === 'printer' || PlyoProject.nextStep(p) === 'filament') return;
+    window.orca.postMessage({ type: 'project_restore', project: p, discard_unsaved: !!discardUnsaved });
+  }
+  function onProjectRestored(msg) {
+    var slot = $('project-slot');
+    slot.textContent = '';
+    if (msg.ok) return;
+    if (msg.needs_confirmation) {
+      var box = alertBox('warn', 'Tu as des réglages non enregistrés dans Orca. Les abandonner pour revenir à l’imprimante et au filament de ce projet ?', 'alert');
+      var acts = el('div', 'printer-actions');
+      acts.appendChild(button('Les abandonner', function () { slot.textContent = ''; restoreProjectInOrca(true); }, 'btn sm'));
+      acts.appendChild(button('Garder mes réglages', function () { slot.textContent = ''; }, 'btn ghost sm'));
+      box.body.appendChild(acts);
+      slot.appendChild(box);
+      return;
+    }
+    slot.appendChild(alertBox('error', msg.text || 'Je n’ai pas pu remettre ce projet dans Orca.', 'alert'));
+  }
   function openConversation(id) {
     if (blockedWhileBusy()) return;
     flushSave();
@@ -717,7 +741,9 @@
     if (!c || !Array.isArray(c.entries) || busy) return;
     unlinkPhone(true);
     clearThread();
-    conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [] };
+    conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [],
+      project: c.project && typeof c.project === 'object' ? c.project : PlyoProject.emptyProject() };
+    restoreProjectInOrca(false);
     if (!conv.entries.length) return;
     showConversation();
     conv.entries.forEach(function (entry) { try { renderEntry(entry, true); } catch (e) { /* élément abîmé : ignoré */ } });
@@ -3190,6 +3216,8 @@
       fillConversations(msg.items || []);
     } else if (msg.type === 'conv_save_failed') {
       if (!saveFailedShown) { saveFailedShown = true; noteLine('Cette conversation est devenue trop longue pour être gardée : commence-en une nouvelle depuis le menu « ⋯ ».', 'error', 'alert'); }
+    } else if (msg.type === 'project_restored') {
+      onProjectRestored(msg);
     } else if (msg.type === 'conv_loaded') {
       var then = afterConvLoaded, auto = autoOpening === msg.id;
       afterConvLoaded = null;
