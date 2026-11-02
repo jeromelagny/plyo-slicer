@@ -18,6 +18,7 @@
 #include "PlyoPreflight.hpp"
 #include "PlyoProfiles.hpp"
 #include "PlyoPrinterLink.hpp"
+#include "PlyoProject.hpp"
 #include "PlyoPrinterSetup.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
@@ -351,6 +352,20 @@ void handle_page_message(const nlohmann::json& data)
             });
             if (!started)
                 BOOST_LOG_TRIVIAL(info) << "Plyo: recherche d'imprimantes déjà en cours";
+        } else if (type == "project_state") {
+            nlohmann::json state = Project::state();
+            state["type"]        = "project_state";
+            send(state);
+        } else if (type == "project_printers") {
+            send({{"type", "project_printers"}, {"printers", Project::printers()}});
+        } else if (type == "project_reachable") {
+            const std::string preset = Json::str(data, "preset");
+            Project::reachable(preset, [preset](bool ok) { send({{"type", "project_reachable"}, {"preset", preset}, {"ok", ok}}); });
+        } else if (type == "project_restore") {
+            nlohmann::json r = Project::restore(data.contains("project") ? data["project"] : nlohmann::json(), Json::boolean(data, "discard_unsaved", false));
+            r["type"]        = "project_restored";
+            send(r);
+            send_values();
         } else if (type == "printer_link_check") {
             nlohmann::json state = PrinterLink::check(data.contains("printer") ? data["printer"] : nlohmann::json());
             state["type"]        = "printer_link_state";

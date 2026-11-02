@@ -319,6 +319,13 @@ nlohmann::json choose_filament(const std::string& type)
     if (best == nullptr)
         return {{"ok", false}};
     const std::string name = best->name;
+    select_filament(name);
+    return {{"ok", true}, {"name", name}};
+}
+
+void select_filament(const std::string& name)
+{
+    Slic3r::PresetBundle& bundle = *wxGetApp().preset_bundle;
     // Comme un choix dans la liste du plateau (Plater::priv::on_select_preset), pour le premier filament.
     bundle.set_filament_preset(0, name);
     if (Slic3r::GUI::Tab* tab = wxGetApp().get_tab(Slic3r::Preset::TYPE_FILAMENT))
@@ -329,7 +336,6 @@ nlohmann::json choose_filament(const std::string& type)
         plater->on_filament_change(0);
     }
     bundle.export_selections(*wxGetApp().app_config);
-    return {{"ok", true}, {"name", name}};
 }
 
 nlohmann::json start_print(bool export_file)
