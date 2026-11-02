@@ -746,8 +746,17 @@
 
   // ---------- Fiche « Mon projet » : imprimante, filament (buse et plateau), pièce ----------
   // Le projet est gardé avec la conversation (conv.project) ; PlyoProject (project-logic.js) dit quelle étape manque.
-  var projectUI = { printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
-  function projectChanged() { scheduleSave(); renderProject(); }
+  var projectUI = { waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
+  function projectChanged() {
+    scheduleSave();
+    renderProject();
+    // Un fichier en attente (déposé avant que la fiche soit prête) est posé dès que la pièce est la prochaine étape.
+    if (projectUI.waitingFile && PlyoProject.nextStep(conv.project) === 'part') {
+      var file = projectUI.waitingFile;
+      projectUI.waitingFile = null;
+      importModel(file);
+    }
+  }
   function renderProject() {
     if (!conv) return;
     PlyoProjectCard.render($('project-card'), { el: el, button: button, icon: icon }, {
@@ -1631,7 +1640,36 @@
     });
   }
 
+  // Un projet = une pièce, et la pièce vient après l'imprimante et le filament (fiche « Mon projet »).
   function sendModel(file) {
+    var step = PlyoProject.nextStep(conv.project);
+    if (step === 'printer' || step === 'filament') {
+      projectUI.waitingFile = file;
+      renderProject();
+      noteLine('« ' + file.name + ' » attend : choisis d’abord ' + (step === 'printer' ? 'ton imprimante' : 'ton filament') + ' dans la fiche, je le pose ensuite.', '', 'info');
+      return;
+    }
+    if (conv.project.part && conv.project.part.name) { offerNewProject(file); return; }
+    importModel(file);
+  }
+  // Une autre pièce, c'est un autre projet : on propose une nouvelle conversation avec sa propre fiche.
+  function offerNewProject(file) {
+    var slot = $('project-alert');
+    slot.textContent = '';
+    var box = alertBox('warn', '« ' + file.name + ' » est une autre pièce que « ' + conv.project.part.name + ' ». Chaque pièce a son propre projet : j’ouvre une nouvelle conversation ?', 'alert');
+    var acts = el('div', 'printer-actions');
+    acts.appendChild(button('Nouvelle conversation', function () {
+      slot.textContent = '';
+      if (busy) { blockedWhileBusy(); return; }
+      newConversation();
+      projectUI.waitingFile = file;
+      projectChanged();
+    }, 'btn sm'));
+    acts.appendChild(button('Annuler', function () { slot.textContent = ''; }, 'btn ghost sm'));
+    box.body.appendChild(acts);
+    slot.appendChild(box);
+  }
+  function importModel(file) {
     if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd : 50 Mo au plus.', 'error', 'alert'); return; }
     var reader = new FileReader();
     reader.onload = function () {
@@ -1784,6 +1822,7 @@
   // ---------- Modèle 3D joint : posé sur le plateau, conseils sur clic seulement ----------
   function onModelAdded(msg) {
     if (!msg.ok) { noteLine(msg.text, 'error', 'alert'); return; }
+    if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
     renderModel(record({ kind: 'model', msg: msg, reduced: false }), false);
   }
   function renderModel(entry, archived) {
