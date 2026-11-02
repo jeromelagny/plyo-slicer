@@ -22,7 +22,7 @@ bool complete(const nlohmann::json& project);
 std::string refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament);
 
 // Le projet réduit à ses clés connues (aucun secret, aucun chemin de fichier), prêt à être enregistré avec la
-// conversation. null si ce n'est pas un objet. `step` (étape guidée) : slice, print ou after seulement.
+// conversation. null si ce n'est pas un objet. `step` (étape guidée) : slice, print, after, ou done (parcours terminé ou passé).
 nlohmann::json sanitize(const nlohmann::json& project);
 
 // Réglages d'un projet 3MF (Metadata/project_settings.config) aplatis : { clé: texte }, première valeur des listes,

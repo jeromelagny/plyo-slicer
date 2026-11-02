@@ -767,6 +767,7 @@
       filament: 'Maintenant, ton filament et ses températures.', part: 'Dernière chose : ta pièce.',
       ready: 'Tout est prêt. Dis-moi ce que tu veux obtenir, ou pose-moi une question.' }[step]);
     $('goals-wrap').classList.toggle('hidden', step !== 'ready');
+    renderTour();
   }
   function askProjectPrinters() { window.orca.postMessage({ type: 'project_printers' }); }
   var projectHandlers = {
@@ -1538,7 +1539,8 @@
   $('btn-login').addEventListener('click', openLogin);
   $('m-tour').addEventListener('click', function () {
     menu.classList.add('hidden');
-    window.orca.postMessage({ type: 'firststeps_set', patch: { level: 'beginner', tour_step: 'model' } });
+    if (conv && PlyoProject.nextStep(conv.project) === 'ready') setTourStep('slice');
+    else noteLine('Le parcours guidé commence quand ton projet est complet : imprimante, filament, puis pièce.', '', 'info');
   });
 
   // ---------- Réglages lus par le slicer ----------
@@ -2230,7 +2232,6 @@
     return 'Ton impression prendra ' + durationText(tourSignals.time_s) + grams + '.';
   }
   // Étape « Ton filament » : la matière écrite sur la bobine, puis les températures de son étiquette.
-  var filamentStep = { name: '' };
   // « 205 », « 205 °C » ou une fourchette « 190-220 » (on prend le milieu, arrondi à 5 °C) ; null si illisible.
   function labelTemp(text) {
     var nums = String(text || '').match(/\d+/g);
@@ -2238,85 +2239,36 @@
     var a = +nums[0], b = nums.length > 1 ? +nums[1] : a;
     return Math.round((a + b) / 2 / 5) * 5;
   }
-  function renderFilamentStep(box, acts, next) {
-    box.appendChild(el('h3', '', 'Ton filament'));
-    box.appendChild(el('p', '', 'Regarde ta bobine : la matière est écrite dessus. Laquelle as-tu ?'));
-    var kinds = el('div', 'row-acts');
-    ['PLA', 'PETG', 'ABS', 'ASA', 'TPU'].forEach(function (k) {
-      kinds.appendChild(button(k, function () { filamentStep.pending = k; window.orca.postMessage({ type: 'filament_choose', material: k }); }, filamentStep.material === k ? 'btn sm' : 'btn ghost sm'));
-    });
-    box.appendChild(kinds);
-    box.appendChild(el('p', 'muted small', 'Pas sûr ? C’est presque toujours du PLA : le plus courant et le plus facile.'));
-    if (filamentStep.error) box.appendChild(alertBox('error', 'Je n’ai pas trouvé de profil ' + filamentStep.error + ' pour ton imprimante. Choisis-le dans la liste « Filament » à gauche, ou demande-moi.'));
-    if (filamentStep.name) {
-      var nozzle = paramOf('nozzle_temp').value, bed = paramOf('bed_temp').value;
-      var chosen = el('p', 'done');
-      chosen.appendChild(icon('check', 13));
-      chosen.appendChild(txt('Profil « ' + filamentStep.name + ' »' + (nozzle ? ' : buse ' + nozzle + ' °C' : '') + (bed !== null && bed !== undefined ? ', plateau ' + bed + ' °C' : '') + '.'));
-      box.appendChild(chosen);
-      box.appendChild(rich('Sur l’étiquette de la bobine, il y a souvent les **températures conseillées** (par exemple « 190–220 °C » pour la buse et « 50–60 °C » pour le plateau). Recopie-les : je prends le milieu de la fourchette.'));
-      var row = el('div', 'temp-row');
-      function field(label, value) {
-        var wrap = el('label', 'temp-field');
-        wrap.appendChild(el('span', 'muted small', label));
-        var input = el('input', 'field');
-        input.type = 'text';
-        input.inputMode = 'numeric';
-        input.placeholder = value ? String(value) : '';
-        wrap.appendChild(input);
-        row.appendChild(wrap);
-        return input;
-      }
-      var nozzleIn = field('Buse (°C)', nozzle), bedIn = field('Plateau (°C)', bed);
-      box.appendChild(row);
-      var applyBtn = button('Utiliser ces températures', function () {
-        var n = labelTemp(nozzleIn.value), b = labelTemp(bedIn.value), changes = [];
-        if (n !== null) changes.push({ id: 'nozzle_temp', value: n }, { id: 'nozzle_temp_initial', value: n });
-        if (b !== null) changes.push({ id: 'bed_temp', value: b }, { id: 'bed_temp_initial', value: b });
-        if (!changes.length) { nozzleIn.focus(); return; }
-        window.orca.postMessage({ type: 'apply', changes: changes, why: 'Étiquette de la bobine' });
-      }, 'btn ghost sm');
-      box.appendChild(applyBtn);
-      box.appendChild(el('p', 'muted small', 'Pas d’étiquette ? Garde les valeurs du profil : elles conviennent à la plupart des bobines.'));
-    }
-    acts.appendChild(button('Montre-moi le filament', function () { showMe('filament'); }, 'btn ghost sm', 'eye'));
-    acts.appendChild(button('C’est bon, suivant', next, 'btn sm'));
+
+  // Le parcours guidé appartient au projet : il commence quand la fiche est complète, et se range dans la conversation.
+  function currentTourStep() {
+    if (!conv || PlyoProject.nextStep(conv.project) !== 'ready') return null;
+    var step = conv.project.step || 'slice';
+    return FS.TOUR_STEPS.indexOf(step) >= 0 ? step : null;
   }
-  function onFilamentChosen(msg) {
-    filamentStep.error = msg.ok ? '' : filamentStep.pending;
-    if (msg.ok) { filamentStep.name = msg.name; filamentStep.material = filamentStep.pending; }
+  function setTourStep(step) {
+    conv.project.step = step || 'done';
+    scheduleSave();
     renderTour();
   }
-
-  function setTourStep(step) { window.orca.postMessage({ type: 'firststeps_set', patch: { tour_step: step } }); }
 
   function renderTour() {
     var slot = $('tour-slot');
     slot.textContent = '';
     tourCard = null;
     if (setup.phase) { document.body.classList.add('touring'); renderSetup(slot); return; }
-    var step = fsState.level === 'beginner' ? fsState.tour_step : null;
-    var active = !!step && FS.TOUR_STEPS.indexOf(step) >= 0;
+    var step = currentTourStep();
+    var active = !!step;
     document.body.classList.toggle('touring', active);
     if (!active) { stopTourTimer(); return; }
     var n = FS.TOUR_STEPS.indexOf(step) + 1;
     var box = el('div', 'tour');
-    box.appendChild(el('div', 'step', 'Ma première impression · étape ' + n + ' sur ' + FS.TOUR_STEPS.length));
+    box.appendChild(el('div', 'step', 'Ton impression · étape ' + n + ' sur ' + FS.TOUR_STEPS.length));
     var acts = el('div', 'row-acts');
     var where = el('div', 'where');
     function next() { setTourStep(FS.TOUR_STEPS[n] || null); }
     function tell(iconName, text) { where.textContent = ''; where.appendChild(icon(iconName, 14)); where.appendChild(txt(text)); }
-    if (step === 'model') {
-      box.appendChild(el('h3', '', 'Le modèle à imprimer'));
-      box.appendChild(el('p', '', 'On commence par un petit bateau : c’est le test classique, rapide, et parfait pour une première fois.'));
-      acts.appendChild(button('Ajouter le bateau', function () { window.orca.postMessage({ type: 'tour_add_benchy' }); }, 'btn sm'));
-      acts.appendChild(button('J’ai déjà mon modèle', function () {
-        tell('folder', 'Glisse ton fichier (STL ou 3MF) sur le plateau ou dans ce panneau, ou passe par Fichier › Importer. Je passe à la suite dès qu’il est posé.');
-        showMe('plate');
-      }, 'btn ghost sm'));
-    } else if (step === 'presets') {
-      renderFilamentStep(box, acts, next);
-    } else if (step === 'slice') {
+    if (step === 'slice') {
       box.appendChild(el('h3', '', 'Découper'));
       box.appendChild(el('p', '', '« Découper », c’est transformer ton modèle en trajets pour la buse, couche par couche. Clique sur « Découper la plaque » : je te dirai combien de temps ça prendra.'));
       acts.appendChild(button('Montre-moi', function () { showMe('slice'); }, 'btn ghost sm', 'eye'));
@@ -2355,7 +2307,7 @@
     box.appendChild(where);
     var bottom = el('div', 'bottom');
     bottom.appendChild(button(step === 'after' ? 'Terminer la visite' : 'Passer la visite', function () { setTourStep(null); }, 'link'));
-    if (step === 'model' || step === 'slice') bottom.appendChild(button('Passer cette étape', next, 'link'));
+    if (step === 'slice') bottom.appendChild(button('Passer cette étape', next, 'link'));
     box.appendChild(bottom);
     slot.appendChild(box);
     tourCard = { box: box, where: where, tell: tell };
@@ -2706,7 +2658,7 @@
     var hadSummary = !!printSummary();
     var wasLinked = !!(tourSignals && tourSignals.linked);
     tourSignals = signals;
-    var step = fsState.level === 'beginner' ? fsState.tour_step : null;
+    var step = currentTourStep();
     if (!step) return;
     var nextStep = FS.nextTourStep(step, signals);
     if (nextStep !== step) setTourStep(nextStep);
@@ -2719,10 +2671,7 @@
     // Aucune imprimante installée (premier lancement) : l'assistant commence par elle, une fois par session.
     if (state.needs_printer && !setup.phase && !setup.offered) startSetup();
     renderTour();
-    if (first && state.level === 'expert' && !state.greeted) {
-      $('hello-text').textContent = fr('Je suis là si tu as besoin : pose ta question en bas, ou clique dans un réglage du slicer pour que je te l’explique.');
-      window.orca.postMessage({ type: 'firststeps_set', patch: { greeted: true } });
-    }
+    if (first && state.level === 'expert' && !state.greeted) window.orca.postMessage({ type: 'firststeps_set', patch: { greeted: true } });
   }
 
   function explain(key) { window.orca.postMessage({ type: 'explain', key: key }); }
@@ -3314,7 +3263,6 @@
     } else if (msg.type === 'values') {
       var firstValues = !lastValues;
       renderValues(msg);
-      if (filamentStep.name && fsState.tour_step === 'presets') renderTour(); // températures du filament choisi
       if (firstValues) askOutcome(); // au démarrage, une fois les libellés des réglages connus
       window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
       drainPhoneQueue();
@@ -3365,8 +3313,7 @@
       // Nouveau projet ou projet ouvert : retour à l'accueil (la conversation précédente reste dans « Mes conversations »).
       if (!busy) { closeDrawer(); newConversation(); }
     } else if (msg.type === 'filament_chosen') {
-      if (projectUI.pending && projectUI.pending.kind === 'filament') { onProjectFilamentChosen(msg); return; }
-      onFilamentChosen(msg);
+      if (projectUI.pending && projectUI.pending.kind === 'filament') onProjectFilamentChosen(msg);
     } else if (msg.type === 'print_started') {
       if (tourCard && !msg.ok) tourCard.tell('alert', msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque (étape 3) : clique sur « Découper la plaque » en haut à droite.' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.');
       else if (tourCard) tourCard.tell('info', 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.');

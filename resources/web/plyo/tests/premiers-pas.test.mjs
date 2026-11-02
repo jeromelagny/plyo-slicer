@@ -54,23 +54,19 @@ test('jugement d’une valeur', () => {
   assert.equal(unknown.changed, null);
 });
 
-test('le parcours avance tout seul quand l’étape est faite', () => {
-  assert.deepEqual(TOUR_STEPS, ['model', 'presets', 'slice', 'print', 'after']);
-  assert.equal(nextTourStep('model', { objects: 0, sliced: false }), 'model');
-  assert.equal(nextTourStep('model', { objects: 1, sliced: false }), 'presets');
+test('le parcours guidé avance tout seul quand l’étape est faite', () => {
+  assert.deepEqual(TOUR_STEPS, ['slice', 'print', 'after']);
+  assert.equal(nextTourStep('slice', { objects: 1, sliced: false }), 'slice');
   assert.equal(nextTourStep('slice', { objects: 1, sliced: true }), 'print');
-  assert.equal(nextTourStep('presets', { objects: 3, sliced: true }), 'presets');
   assert.equal(nextTourStep('print', { objects: 3, sliced: true }), 'print');
 });
 
-test('le parcours revient en arrière quand le plateau ne suit plus', () => {
-  assert.equal(nextTourStep('presets', { objects: 0, sliced: false }), 'model');
-  assert.equal(nextTourStep('slice', { objects: 0, sliced: false }), 'model');
-  assert.equal(nextTourStep('print', { objects: 0, sliced: false }), 'model');
+test('le parcours guidé revient à la découpe quand elle est périmée', () => {
   assert.equal(nextTourStep('print', { objects: 2, sliced: false }), 'slice');
   assert.equal(nextTourStep('after', { objects: 0, sliced: false }), 'after');
-  assert.equal(nextTourStep('presets', null), 'presets');
+  assert.equal(nextTourStep('slice', null), 'slice');
 });
+
 
 const { isModelFile, modelAddedText } = require('../premiers-pas.js');
 

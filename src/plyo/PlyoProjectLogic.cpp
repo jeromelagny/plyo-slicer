@@ -106,7 +106,7 @@ nlohmann::json sanitize(const nlohmann::json& project)
         out["part"] = o;
     }
     const std::string step = Json::str(project, "step");
-    if (step == "slice" || step == "print" || step == "after")
+    if (step == "slice" || step == "print" || step == "after" || step == "done")
         out["step"] = step;
     return out;
 }

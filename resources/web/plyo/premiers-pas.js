@@ -50,16 +50,14 @@
     return { inRange: inRange, changed: changed, text: parts.join(' ') };
   }
 
-  var TOUR_STEPS = ['model', 'presets', 'slice', 'print', 'after'];
+  // Le parcours guidé commence quand la fiche « Mon projet » est complète (imprimante, filament, pièce) : voir project-logic.js.
+  var TOUR_STEPS = ['slice', 'print', 'after'];
 
   // Avance automatique quand l'étape est faite ; les autres étapes avancent au clic « Suivant ».
   function nextTourStep(step, signals) {
     if (!signals) return step;
-    // Plateau vide (relance de l'app, nouveau projet, pièce supprimée) : on reprend au modèle à imprimer.
-    if ((step === 'presets' || step === 'slice' || step === 'print') && !signals.objects) return 'model';
     // Découpe périmée (réglage changé) : on redécoupe avant d'imprimer.
     if (step === 'print' && !signals.sliced) return 'slice';
-    if (step === 'model' && signals.objects > 0) return 'presets';
     if (step === 'slice' && signals.sliced) return 'print';
     return step;
   }

@@ -604,6 +604,8 @@ TEST_CASE("Project: sanitize ne garde que les clés connues du projet")
     CHECK_FALSE(clean["part"].contains("path"));
     CHECK(clean["step"] == "print");
     CHECK(sanitize(nlohmann::json("x")).is_null());
+    CHECK(sanitize(nlohmann::json{{"step", "done"}})["step"] == "done"); // visite terminée ou passée
+    CHECK_FALSE(sanitize(nlohmann::json{{"step", "model"}}).contains("step"));
 }
 
 TEST_CASE("Project: une valeur seulement proposée compte comme non choisie")
