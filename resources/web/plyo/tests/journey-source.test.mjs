@@ -85,6 +85,17 @@ test('la question de l’étape et ses choix sont dans la même carte, à l’in
   assert.ok(!/journey-fold|toggleFold/.test(read('journey-view.js') + page), 'plus de flèche de repli');
 });
 
+test('la barre des étapes est seulement dans l’onglet Étapes, la fiche reste au-dessus des deux onglets', () => {
+  const page = read('index.html');
+  const guide = page.slice(page.indexOf('id="view-guide"'), page.indexOf('id="view-chat"'));
+  const fixedZone = page.slice(page.indexOf('id="journey"'), page.indexOf('id="tabs"'));
+  assert.ok(guide.includes('id="journey-bar"'), 'la barre est dans l’onglet Étapes');
+  assert.ok(guide.indexOf('id="journey-bar"') < guide.indexOf('class="step-card"'), 'la barre vient avant la carte de l’étape');
+  assert.ok(!fixedZone.includes('journey-bar'), 'plus de barre au-dessus des onglets');
+  assert.ok(fixedZone.includes('id="journey-fiche"'), 'la fiche reste au-dessus des onglets');
+  assert.ok(page.includes('PlyoJourney.tabLabel('), 'le nom de l’onglet porte la progression');
+});
+
 test('une machine qui ne répond pas : on peut revérifier, et on ne promet pas un envoi différé qui n’existe pas', () => {
   const steps = read('journey-steps.js');
   assert.ok(/Vérifier à nouveau/.test(steps), 'lien « Vérifier à nouveau »');

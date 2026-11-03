@@ -160,3 +160,11 @@ test('étape Préparer avec les questions d’intention : pas de bouton pendant 
   assert.match(J.prompt('preparer', { sliced: false, intent: 'asking' }), /question/i);
   assert.match(J.prompt('preparer', { sliced: false, intent: 'ready' }), /propose/i);
 });
+
+test('tabLabel : l’onglet Étapes porte la progression', () => {
+  assert.equal(J.tabLabel({}), 'Étapes · 1/6');
+  const ready = { printer: { preset: 'CC2' }, part: { name: 'bague' }, filament: { preset: 'PLA' } };
+  assert.equal(J.tabLabel(ready), 'Étapes · 4/6');
+  assert.equal(J.tabLabel(Object.assign({ step: 'after' }, ready)), 'Étapes · 6/6');
+  assert.equal(J.tabLabel(null), 'Étapes');
+});

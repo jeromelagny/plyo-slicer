@@ -27,6 +27,14 @@
     });
   }
 
+  // Nom de l'onglet Étapes avec la progression (« Étapes · 4/6 ») : la barre n'est visible que dans cet onglet.
+  function tabLabel(project) {
+    if (!project) return 'Étapes';
+    var current = currentStep(project);
+    var i = STEPS.findIndex(function (s) { return s.key === current; });
+    return 'Étapes · ' + (i + 1) + '/' + STEPS.length;
+  }
+
   function primaryAction(step, ctx) {
     var c = ctx || {};
     var slice = { label: 'Découper', kind: 'slice', enabled: true };
@@ -168,7 +176,7 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { shouldRecheck: shouldRecheck, machineLabel: machineLabel, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, primaryAction: primaryAction, prompt: prompt,
+  var api = { shouldRecheck: shouldRecheck, machineLabel: machineLabel, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
