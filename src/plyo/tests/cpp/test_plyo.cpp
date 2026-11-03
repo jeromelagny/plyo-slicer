@@ -588,6 +588,30 @@ TEST_CASE("Project: aucun secret ne sort de la logique du projet")
     CHECK(refusal(project, "B", "F").find("SECRET") == std::string::npos);
 }
 
+TEST_CASE("Project: sanitize garde les emplacements du Canvas")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json raw = {{"printer", {{"preset", "Ma CC2"}}},
+                                {"canvas", {{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}, {"type", "PLA"}, {"color", "#7C4C00"}, {"preset", "Generic PLA @ECC2"}, {"secret", "x"}},
+                                            {{"t", 1}, {"canvas_id", 0}, {"tray_id", 2}, {"type", "ASA"}, {"color", "#898989"}, {"preset", "Generic ASA @ECC2"}},
+                                            {{"t", "2"}, {"canvas_id", 0}, {"tray_id", 1}},           // t illisible : écartée
+                                            {{"t", 3}, {"canvas_id", 0}, {"tray_id", -1}},            // emplacement illisible : écartée
+                                            {{"t", 40}, {"canvas_id", 0}, {"tray_id", 1}}}}};         // hors limites : écartée
+    const nlohmann::json clean = sanitize(raw);
+    REQUIRE(clean["canvas"].size() == 2);
+    CHECK(clean["canvas"][0] == nlohmann::json({{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}, {"type", "PLA"}, {"color", "#7C4C00"}, {"preset", "Generic PLA @ECC2"}}));
+    CHECK(clean["canvas"][1]["preset"] == "Generic ASA @ECC2");
+    // Projet d'avant la fonction : pas de clé « canvas ».
+    CHECK_FALSE(sanitize({{"printer", {{"preset", "Ma CC2"}}}}).contains("canvas"));
+    CHECK_FALSE(sanitize({{"canvas", "n'importe quoi"}}).contains("canvas"));
+
+    const auto extra = extra_filaments(clean);
+    REQUIRE(extra.size() == 1);
+    CHECK(extra[0].first == 1);
+    CHECK(extra[0].second == "Generic ASA @ECC2");
+    CHECK(extra_filaments(sanitize({{"printer", {{"preset", "Ma CC2"}}}})).empty());
+}
+
 TEST_CASE("Project: sanitize ne garde que les clés connues du projet")
 {
     using namespace Plyo::ProjectLogic;

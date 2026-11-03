@@ -150,11 +150,41 @@ nlohmann::json sanitize(const nlohmann::json& project)
                 o[key] = *v;
         out["intent"] = o;
     }
+    if (const nlohmann::json* c = Json::field(project, "canvas"); c != nullptr && c->is_array()) {
+        nlohmann::json list = nlohmann::json::array();
+        for (const nlohmann::json& e : *c) {
+            auto whole = [&](const char* key, int lo, int hi) {
+                const nlohmann::json* v = Json::field(e, key);
+                return v != nullptr && v->is_number_integer() && v->get<int>() >= lo && v->get<int>() <= hi;
+            };
+            if (!e.is_object() || !whole("t", 0, 15) || !whole("canvas_id", 0, 15) || !whole("tray_id", 0, 15) || list.size() >= 16)
+                continue;
+            nlohmann::json o = {{"t", e["t"]}, {"canvas_id", e["canvas_id"]}, {"tray_id", e["tray_id"]}};
+            text(e, o, "type");
+            text(e, o, "color");
+            text(e, o, "preset");
+            list.push_back(o);
+        }
+        if (!list.empty())
+            out["canvas"] = list;
+    }
     if (const std::string adapted = Json::str(project, "adapted", 200); !adapted.empty())
         out["adapted"] = adapted;
     const std::string step = Json::str(project, "step");
     if (step == "slice" || step == "print" || step == "after" || step == "done")
         out["step"] = step;
+    return out;
+}
+
+std::vector<std::pair<int, std::string>> extra_filaments(const nlohmann::json& project)
+{
+    std::vector<std::pair<int, std::string>> out;
+    for (const nlohmann::json& e : Json::arr(sanitize(project), "canvas")) {
+        const int t = e["t"].get<int>();
+        const std::string preset = Json::str(e, "preset");
+        if (t > 0 && !preset.empty())
+            out.emplace_back(t, preset);
+    }
     return out;
 }
 

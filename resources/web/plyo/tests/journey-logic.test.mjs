@@ -168,3 +168,18 @@ test('tabLabel : l’onglet Étapes porte la progression', () => {
   assert.equal(J.tabLabel(Object.assign({ step: 'after' }, ready)), 'Étapes · 6/6');
   assert.equal(J.tabLabel(null), 'Étapes');
 });
+
+test('resetStepOnChange : les emplacements du Canvas suivent la machine et le filament', () => {
+  const canvas = [{ t: 0, canvas_id: 0, tray_id: 3, type: 'PLA', color: '#7C4C00', preset: filament.preset }];
+  const base = full({ canvas });
+  // Autre machine : emplacements oubliés.
+  assert.equal(J.resetStepOnChange(base, full({ canvas, printer: { preset: 'Autre', name: 'Autre' } })).canvas, undefined);
+  // Filament choisi hors des emplacements (liste habituelle) : emplacements oubliés.
+  const petg = Object.assign({}, filament, { preset: 'Generic PETG @ECC2' });
+  assert.equal(J.resetStepOnChange(base, full({ canvas, filament: petg })).canvas, undefined);
+  // Filament changé par un emplacement (la carte suit) : gardés.
+  const viaSlot = [{ t: 0, canvas_id: 0, tray_id: 2, type: 'PETG', color: '#898989', preset: petg.preset }];
+  assert.deepEqual(J.resetStepOnChange(base, full({ canvas: viaSlot, filament: petg })).canvas, viaSlot);
+  // Rien ne change : gardés.
+  assert.deepEqual(J.resetStepOnChange(base, base).canvas, canvas);
+});

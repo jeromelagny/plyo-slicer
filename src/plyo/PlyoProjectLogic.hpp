@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Logique pure du « projet » d'une conversation (sans Orca ni wxWidgets, testée par src/plyo/tests/cpp) :
@@ -22,8 +23,13 @@ bool complete(const nlohmann::json& project);
 std::string refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament);
 
 // Le projet réduit à ses clés connues (aucun secret, aucun chemin de fichier), prêt à être enregistré avec la
-// conversation. null si ce n'est pas un objet. `step` (étape guidée) : slice, print, after, ou done (parcours terminé ou passé) ; `adapted` : nom de la pièce 3MF déjà adaptée.
+// conversation. null si ce n'est pas un objet. `step` (étape guidée) : slice, print, after, ou done (parcours terminé ou passé) ; `adapted` : nom de la pièce 3MF déjà adaptée ;
+// `canvas` : [{t, canvas_id, tray_id, type, color, preset}] (emplacements du Canvas choisis, 16 au plus).
 nlohmann::json sanitize(const nlohmann::json& project);
+
+// Filaments des couleurs 2 et suivantes choisis par les emplacements du Canvas : (numéro de filament t > 0, profil).
+// La couleur 1 (t = 0) est le « filament » du projet.
+std::vector<std::pair<int, std::string>> extra_filaments(const nlohmann::json& project);
 
 // Réglages d'un projet 3MF (Metadata/project_settings.config) aplatis : { clé: texte }, première valeur des listes,
 // valeurs non textuelles et listes vides ignorées.

@@ -75,15 +75,21 @@
   function presetOf(project, key) { return project && project[key] && project[key].preset ? project[key].preset : ''; }
 
   // Machine ou filament changé après la découpe : la découpe est périmée, on repasse à Préparer.
+  // Nom d'un profil sans la copie « (Plyo) » ni la calibration « — … » (comme ProjectLogic::same_filament).
+  function baseName(name) { return String(name || '').replace(/ \(Plyo\)$/, '').replace(/ — .*$/, ''); }
   function resetStepOnChange(before, after) {
     if (!after) return after;
     var printerChanged = !!before && presetOf(before, 'printer') !== presetOf(after, 'printer');
     var changed = printerChanged || (!!before && presetOf(before, 'filament') !== presetOf(after, 'filament'));
     var resetStep = changed && (after.step === 'print' || after.step === 'after');
-    if (!resetStep && !(printerChanged && after.adapted)) return after;
+    // Emplacements du Canvas : oubliés avec la machine, ou si le filament (couleur 1) n'est plus celui de l'emplacement.
+    var first = Array.isArray(after.canvas) ? after.canvas.filter(function (e) { return e.t === 0; })[0] : null;
+    var dropCanvas = !!after.canvas && (printerChanged || !first || !after.filament || baseName(first.preset) !== baseName(after.filament.preset));
+    if (!resetStep && !(printerChanged && after.adapted) && !dropCanvas) return after;
     var out = JSON.parse(JSON.stringify(after));
     if (resetStep) out.step = 'slice';
     if (printerChanged) delete out.adapted; // un autre profil de machine : les réglages du 3MF sont à adapter de nouveau
+    if (dropCanvas) delete out.canvas;
     return out;
   }
 
