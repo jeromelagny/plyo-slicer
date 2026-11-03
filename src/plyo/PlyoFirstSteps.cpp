@@ -300,11 +300,10 @@ nlohmann::json add_benchy()
     return {{"ok", false}, {"text", "Le petit bateau est introuvable dans Orca."}};
 }
 
-nlohmann::json choose_filament(const std::string& type)
+std::string best_filament(const std::string& type)
 {
-    static const std::vector<std::string> TYPES = {"PLA", "PETG", "ABS", "ASA", "TPU"};
-    if (std::find(TYPES.begin(), TYPES.end(), type) == TYPES.end() || wxGetApp().preset_bundle == nullptr)
-        return {{"ok", false}};
+    if (type.empty() || wxGetApp().preset_bundle == nullptr)
+        return std::string();
     Slic3r::PresetBundle& bundle = *wxGetApp().preset_bundle;
     // Le plus simple d'abord : « Generic PLA @… » plutôt que « Generic PLA Silk » ou une marque.
     const Slic3r::Preset* best       = nullptr;
@@ -325,9 +324,17 @@ nlohmann::json choose_filament(const std::string& type)
             best_score = score;
         }
     }
-    if (best == nullptr)
+    return best != nullptr ? best->name : std::string();
+}
+
+nlohmann::json choose_filament(const std::string& type)
+{
+    static const std::vector<std::string> TYPES = {"PLA", "PETG", "ABS", "ASA", "TPU"};
+    if (std::find(TYPES.begin(), TYPES.end(), type) == TYPES.end())
         return {{"ok", false}};
-    const std::string name = best->name;
+    const std::string name = best_filament(type);
+    if (name.empty())
+        return {{"ok", false}};
     select_filament(name);
     return {{"ok", true}, {"name", name}};
 }

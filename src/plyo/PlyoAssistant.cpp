@@ -2,6 +2,8 @@
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoCalibration.hpp"
+#include "PlyoCanvas.hpp"
+#include "PlyoCC2.hpp"
 #include "PlyoCommands.hpp"
 #include "PlyoConversations.hpp"
 #include "PlyoDiscovery.hpp"
@@ -106,7 +108,7 @@ std::string load_page()
     const std::string config_marker = "<!--plyo-config-->";
     if (const size_t at = page.find(config_marker); at != std::string::npos)
         page.replace(at, config_marker.size(), "<script>" + Config::api_url_script() + "</script>");
-    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js", "project-logic.js", "journey-logic.js", "machines-logic.js", "machines-view.js", "intent-logic.js", "journey-view.js", "journey-steps.js", "project-card.js"}) {
+    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js", "project-logic.js", "journey-logic.js", "machines-logic.js", "machines-view.js", "intent-logic.js", "canvas-logic.js", "canvas-view.js", "journey-view.js", "journey-steps.js", "project-card.js"}) {
         const std::string marker = std::string("<!--plyo-include:") + name + "-->";
         if (const size_t at = page.find(marker); at != std::string::npos)
             page.replace(at, marker.size(), "<script>\n" + read_resource(name) + "\n</script>");
@@ -404,6 +406,33 @@ void handle_page_message(const nlohmann::json& data)
             r["type"]        = "project_restored";
             send(r);
             send_values();
+        } else if (type == "canvas_read") {
+            Canvas::read(Json::str(data, "preset"), [](nlohmann::json r) {
+                r["type"] = "canvas_state";
+                send(r);
+            });
+        } else if (type == "canvas_apply") {
+            nlohmann::json r = Canvas::apply(data.contains("entries") ? data["entries"] : nlohmann::json());
+            r["type"]        = "canvas_applied";
+            send(r);
+            send_values();
+        } else if (type == "canvas_plan") {
+            static bool hooked = false;
+            if (!hooked) { // un départ avec carte refusé (envoi de Plyo ou d'Orca) est signalé au panneau
+                hooked = true;
+                CC2::on_refused([](const std::string& text) {
+                    Slic3r::GUI::wxGetApp().CallAfter([text] { send({{"type", "canvas_refused"}, {"text", text}}); });
+                });
+            }
+            if (Json::boolean(data, "clear", false))
+                Canvas::clear_plan();
+            else
+                Canvas::plan(Json::str(data, "preset"), data.contains("map") ? data["map"] : nlohmann::json());
+        } else if (type == "canvas_start_plain") {
+            Canvas::start_plain(Json::str(data, "preset"), [](nlohmann::json r) {
+                r["type"] = "canvas_started";
+                send(r);
+            });
         } else if (type == "printer_link_check") {
             nlohmann::json state = PrinterLink::check(data.contains("printer") ? data["printer"] : nlohmann::json());
             state["type"]        = "printer_link_state";

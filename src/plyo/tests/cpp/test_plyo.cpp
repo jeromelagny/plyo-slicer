@@ -8,6 +8,7 @@
 #include "../../PlyoDiscoveryLogic.hpp"
 #include "../../PlyoProjectLogic.hpp"
 #include "../../PlyoCC2Logic.hpp"
+#include "../../PlyoCanvasLogic.hpp"
 #include "../../PlyoLimitsLogic.hpp"
 #include "../../PlyoCatalogPolicy.hpp"
 #include "../../PlyoProfilesLogic.hpp"
@@ -867,6 +868,20 @@ TEST_CASE("CC2: numéro de série lu dans la réponse de découverte")
     CHECK(serial_from_discovery(R"({"id":0,"result":{"sn":"ABC123","machine_model":"Centauri Carbon 2"}})") == "ABC123");
     CHECK(serial_from_discovery(R"({"id":0,"result":{}})") == "");
     CHECK(serial_from_discovery("pas du json") == "");
+}
+
+TEST_CASE("Canvas: adresse nue et types de profil à essayer")
+{
+    using namespace Plyo::CanvasLogic;
+    CHECK(bare_host("192.168.1.29") == "192.168.1.29");
+    CHECK(bare_host("http://192.168.1.29") == "192.168.1.29");
+    CHECK(bare_host("http://192.168.1.29:80/") == "192.168.1.29");
+    CHECK(bare_host("https://cc2.local:3030/path") == "cc2.local");
+    CHECK(bare_host("") == "");
+    CHECK(profile_types("PLA") == std::vector<std::string>{"PLA"});
+    CHECK(profile_types("pla-cf") == std::vector<std::string>{"PLA-CF", "PLA"});
+    CHECK(profile_types(" PETG+ ") == std::vector<std::string>{"PETG+", "PETG"});
+    CHECK(profile_types("").empty());
 }
 
 TEST_CASE("Habits: sanitize_habits garde les machines, les habitudes de filament et les machines masquées")

@@ -1,5 +1,6 @@
 #include "PlyoProject.hpp"
 
+#include "PlyoCanvas.hpp"
 #include "PlyoCatalog.hpp"
 #include "PlyoFirstSteps.hpp"
 #include "PlyoJson.hpp"
@@ -169,6 +170,10 @@ nlohmann::json restore(const nlohmann::json& project, bool discard_unsaved)
                 return {{"ok", false}, {"text", "Je n'ai pas pu sélectionner le filament de ce projet."}};
         }
     }
+
+    // Couleurs 2 et suivantes choisies par les emplacements du Canvas.
+    if (has_filament)
+        Canvas::select_extra(ProjectLogic::extra_filaments(project));
 
     // Températures de la fiche, seulement si elles diffèrent de celles du profil (un lot annulable par Plyo).
     if (!has_filament)

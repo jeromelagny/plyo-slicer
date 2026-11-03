@@ -24,6 +24,8 @@ nlohmann::json add_benchy();
 
 // Choisit le filament générique compatible de cette matière (« PLA », « PETG »…) pour le premier filament. { ok, name }
 nlohmann::json choose_filament(const std::string& type);
+// Profil de filament compatible avec la machine en cours pour ce type exact (« PLA », « PLA-CF »…), le plus générique ; vide si aucun.
+std::string best_filament(const std::string& type);
 // Sélectionne ce profil de filament (le premier) dans Orca, comme un choix dans la liste du plateau.
 void select_filament(const std::string& name);
 
