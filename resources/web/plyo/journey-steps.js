@@ -52,7 +52,7 @@
     var det = ui.el('details', 'intent-details');
     if (it.level === 'short') det.open = true;
     det.appendChild(ui.el('summary', '', 'Voir les ' + it.changes.length + ' réglages exacts'));
-    it.changes.forEach(function (c) { det.appendChild(ui.el('div', 'muted small', c.label + ' : ' + String(c.value).replace('.', ','))); });
+    it.changes.forEach(function (c) { det.appendChild(ui.el('div', 'muted small', c.label + ' : ' + root.PlyoIntent.displayValue(c))); });
     body.appendChild(det);
     body.appendChild(ui.button('Changer une réponse', h.reset, 'link'));
   }
@@ -66,7 +66,7 @@
     } else if (opts.step === 'preparer') {
       body.appendChild(line(ui, c.sliced ? 'check' : 'info', c.sliced ? 'Découpe faite' : 'Découpe à faire', c.sliced ? 'ok' : ''));
       if (c.sliced) body.appendChild(line(ui, c.risks > 0 ? 'alert' : 'check', c.risks > 0 ? c.risks + ' point' + (c.risks > 1 ? 's' : '') + ' à régler avant d’imprimer' : 'Aucun risque détecté', c.risks > 0 ? 'warn' : 'ok'));
-      if (c.sliced && c.risks > 0) body.appendChild(ui.button('Passer outre', h.skip, 'link'));
+      if (c.sliced && c.risks > 0) body.appendChild(ui.button('Imprimer quand même', h.skip, 'link'));
     } else if (opts.step === 'imprimer') {
       if (opts.summary) body.appendChild(line(ui, 'check', opts.summary, 'ok'));
       // La machine est rappelée en lecture seule : en changer refait la préparation (réglages, filament, découpe).
@@ -90,7 +90,7 @@
       body.appendChild(ui.el('p', 'muted small', 'Vérifie que le plateau est vide et propre, et que le filament est chargé.'));
       var acts = ui.el('div', 'printer-actions');
       if (c.linked) acts.appendChild(ui.button('Exporter le fichier plutôt', h.exportFile, 'btn ghost sm', 'folder'));
-      acts.appendChild(ui.button('L’impression a démarré', h.started, 'btn ghost sm', 'check'));
+      if (opts.sent) acts.appendChild(ui.button('L’impression a démarré', h.started, 'btn ghost sm', 'check'));
       body.appendChild(acts);
     } else if (opts.step === 'resultat') {
       body.appendChild(ui.el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer.'));

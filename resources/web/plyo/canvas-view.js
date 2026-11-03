@@ -27,7 +27,7 @@
         none.value = '';
         select.appendChild(none);
         trays.forEach(function (t) {
-          var o = ui.el('option', '', t.label + (t.empty ? ' (vide selon l’imprimante)' : ''));
+          var o = ui.el('option', '', t.label + (t.empty ? ' (l’imprimante le croit vide)' : ''));
           o.value = t.canvas_id + ':' + t.tray_id;
           if (m.tray_id === t.tray_id && m.canvas_id === t.canvas_id) o.selected = true;
           select.appendChild(o);
@@ -42,11 +42,13 @@
       var chosen = (opts.mapping || [])[0];
       trays.forEach(function (t) {
         var on = chosen && chosen.tray_id === t.tray_id && chosen.canvas_id === t.canvas_id;
-        var b = ui.button(t.label + (t.empty ? ' · vide selon l’imprimante' : ''), function () { h.pickTray(t); }, 'btn ghost sm' + (on ? ' on' : ''));
+        var b = ui.button(t.label + (t.empty ? ' · vide ?' : ''), function () { h.pickTray(t); }, 'btn ghost sm' + (on ? ' on' : ''));
         b.insertBefore(swatch(ui, t.color), b.firstChild);
         acts.appendChild(b);
       });
       body.appendChild(acts);
+      if (trays.some(function (t) { return t.empty; }))
+        body.appendChild(ui.el('p', 'muted small', '« vide ? » : l’imprimante pense que cet emplacement est vide. S’il est chargé, tu peux le choisir quand même.'));
     }
     body.appendChild(ui.button('Choisir un autre filament', h.useList, 'link'));
     slot.appendChild(body);

@@ -27,12 +27,14 @@
       var r = ui.el('div', 'project-row');
       var left = ui.el('div', 'project-label');
       left.appendChild(ui.icon(icons[row.line], 14));
+      if (row.swatch) { var dot = ui.el('span', 'swatch'); dot.style.background = row.swatch; left.appendChild(dot); }
       left.appendChild(ui.el('span', '', row.text));
       if (row.line === 'printer' && ctx.reachable && ctx.reachable[project.printer.preset] === true) left.appendChild(ui.el('span', 'project-ok', '● connectée'));
       r.appendChild(left);
       if (row.line !== 'part') r.appendChild(ui.button('changer', function () { h.change(row.line); }, 'link'));
       card.appendChild(r);
-      if (row.line === 'filament') {
+      // Températures modifiables à la main : réservées aux confirmés (un débutant les change sans le vouloir).
+      if (row.line === 'filament' && !ctx.beginner) {
         var fi = project.filament, temps = ui.el('div', 'temp-row project-temps');
         var field = function (label, value) {
           var wrap = ui.el('label', 'temp-field');
@@ -80,11 +82,10 @@
           acts.appendChild(ui.button(label, function () { h.pickPrinter(p.preset, p.label); }, 'btn ghost sm'));
         };
         groups.main.forEach(add);
-        if (!groups.main.length && !groups.others.length) body.appendChild(ui.el('p', 'muted small', 'Aucune imprimante configurée : utilise le lien juste au-dessus pour ajouter la tienne.'));
-        if (groups.others.length) {
-          acts.appendChild(ui.button('Autres profils (' + groups.others.length + ')', h.toggleOthers, 'link'));
-          if (ctx.showOthers) groups.others.forEach(add);
-        }
+        if (!groups.main.length && !groups.others.length) body.appendChild(ui.el('p', 'muted small', 'Aucune imprimante pour l’instant : ajoute la tienne avec le lien en haut à droite.'));
+        // Machines non reliées (carte SD, clé USB) : visibles comme les autres tant qu'il y en a peu, sinon repliées.
+        if (groups.others.length && (groups.others.length <= 3 || ctx.showOthers)) groups.others.forEach(add);
+        else if (groups.others.length) acts.appendChild(ui.button('Autres machines installées (' + groups.others.length + ')', h.toggleOthers, 'link'));
         body.appendChild(acts);
       }
       body.appendChild(ui.button('Mes machines…', h.openMachines, 'link'));

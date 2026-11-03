@@ -45,7 +45,8 @@ test('primaryAction : un seul bouton, pas de bouton pour les trois choix', () =>
     assert.equal(a.enabled, false);
   }
   assert.deepEqual(J.primaryAction('preparer', { sliced: false, linked: true, risks: 0 }), { label: 'Découper', kind: 'slice', enabled: true });
-  assert.deepEqual(J.primaryAction('preparer', { sliced: true, linked: true, risks: 2 }), { label: 'Appliquer les correctifs', kind: 'fix', enabled: true });
+  // Des risques : un seul bouton pour corriger, celui de la carte de vérification (cases cochées) ; pas de doublon en haut.
+  assert.equal(J.primaryAction('preparer', { sliced: true, linked: true, risks: 2 }).kind, 'none');
   assert.deepEqual(J.primaryAction('preparer', { sliced: true, linked: true, risks: 0 }), { label: 'Continuer', kind: 'advance', enabled: true });
   assert.deepEqual(J.primaryAction('imprimer', { sliced: true, linked: true, risks: 0 }), { label: 'Envoyer et imprimer', kind: 'send', enabled: true });
   assert.deepEqual(J.primaryAction('imprimer', { sliced: true, linked: false, risks: 0 }), { label: 'Exporter le fichier', kind: 'export', enabled: true });
@@ -205,4 +206,34 @@ test('emplacements repris depuis l’étape Imprimer : l’action principale con
   assert.equal(J.prompt('imprimer', multi), 'Quel emplacement pour chaque couleur ?');
   assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true, canvas: { mode: 'loading' } }).kind, 'none');
   assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true }).kind, 'send');
+});
+
+test('Parcours débutant : textes simples aux étapes Préparer et Imprimer', () => {
+  assert.equal(J.prompt('preparer', { sliced: true, risks: 2 }), 'J’ai trouvé des points à régler : coche ce que tu veux corriger ci-dessous');
+  assert.equal(J.prompt('imprimer', { sliced: true }), 'Prêt à imprimer');
+  const labels = ['preparer', 'imprimer', 'resultat'].flatMap((k) => J.suggestionsFor(k).map((x) => x.label));
+  for (const bad of ['Voir les réglages que tu lis', 'Limites du fabricant']) assert.ok(!labels.includes(bad), bad);
+  assert.ok(J.suggestionsFor('imprimer').some((x) => x.kind === 'ask'), 'une question utile avant de lancer');
+});
+
+test('la fiche se replie dès l’étape Préparer : l’étape en cours garde la place', () => {
+  for (const step of ['machine', 'piece', 'filament']) assert.equal(J.compactFiche({ folded: false, heightPx: 900, step: step }), false, step);
+  for (const step of ['preparer', 'imprimer', 'resultat']) assert.equal(J.compactFiche({ folded: false, heightPx: 900, step: step }), true, step);
+});
+
+test('la fiche montre l’emplacement choisi sur le Canvas, avec sa couleur', () => {
+  const one = full({ canvas: [{ t: 0, canvas_id: 0, tray_id: 1, type: 'PLA', color: '#FFFFFF', preset: 'Generic PLA @ECC2' }] });
+  const row = J.filledRows(one).find((r) => r.line === 'filament');
+  assert.ok(row.text.startsWith('PLA') && row.text.endsWith('· emplacement 2'), row.text);
+  assert.equal(row.swatch, '#FFFFFF');
+  assert.ok(J.ficheSummary(one).includes('emplacement 2'));
+  const two = full({ canvas: [{ t: 0, tray_id: 1, type: 'PLA', color: '#FFFFFF' }, { t: 1, tray_id: 3, type: 'PLA', color: '#2850DF' }] });
+  assert.equal(J.filledRows(two).find((r) => r.line === 'filament').text, 'PLA · 2 emplacements');
+  assert.equal(J.filledRows(full()).find((r) => r.line === 'filament').text, 'PLA');
+});
+
+test('divergenceNames : deux profils de la même machine restent distinguables', () => {
+  assert.deepEqual(J.divergenceNames({ preset: 'Ma Elegoo Centauri Carbon 2 0.4 nozzle', name: 'Elegoo Centauri Carbon 2 0.4 nozzle' }, 'Elegoo Centauri Carbon 2 0.4 nozzle'),
+    { from: 'Ma Elegoo Centauri Carbon 2 0.4 nozzle', to: 'Elegoo Centauri Carbon 2 0.4 nozzle' });
+  assert.deepEqual(J.divergenceNames({ preset: 'Ma K2', name: 'K2' }, 'Bambu Lab A1'), { from: 'K2', to: 'Bambu Lab A1' });
 });

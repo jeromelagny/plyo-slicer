@@ -105,3 +105,14 @@ test('detectLevel compte des termes différents : répéter « première couche 
   assert.equal(I.detectLevel(['PETG ou PETG ?']), 'detailed');
   assert.equal(I.detectLevel(['première couche et rétraction']), 'short');
 });
+
+test('displayValue : des valeurs lisibles par un débutant (unités, motifs en français, « aucune »)', () => {
+  assert.equal(I.displayValue({ key: 'layer_height', value: 0.2 }), '0,2 mm');
+  assert.equal(I.displayValue({ key: 'sparse_infill_pattern', value: 'gyroid' }), 'gyroïde (solide dans tous les sens)');
+  assert.equal(I.displayValue({ key: 'sparse_infill_pattern', value: 'grid' }), 'grille');
+  assert.equal(I.displayValue({ key: 'sparse_infill_pattern', value: 'cubic' }), 'cubique');
+  assert.equal(I.displayValue({ key: 'brim_width', value: 0 }), 'aucune');
+  assert.equal(I.displayValue({ key: 'brim_width', value: 5 }), '5 mm');
+  assert.equal(I.displayValue({ key: 'sparse_infill_density', value: '30%' }), '30 %');
+  assert.equal(I.displayValue({ key: 'wall_loops', value: 4 }), '4');
+});

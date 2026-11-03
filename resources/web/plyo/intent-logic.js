@@ -81,6 +81,17 @@
     return out.map(function (c) { c.label = LABELS[c.key]; return c; });
   }
 
+  // Valeur affichée dans « Voir les réglages exacts » : unités, motifs en français, « aucune » bordure.
+  var PATTERNS = { gyroid: 'gyroïde (solide dans tous les sens)', grid: 'grille', cubic: 'cubique' };
+  function displayValue(c) {
+    var v = c && c.value;
+    if (c.key === 'sparse_infill_pattern') return PATTERNS[v] || String(v);
+    if (c.key === 'brim_width') return Number(v) > 0 ? String(v).replace('.', ',') + ' mm' : 'aucune';
+    if (c.key === 'layer_height') return String(v).replace('.', ',') + ' mm';
+    if (c.key === 'sparse_infill_density') return String(v).replace(/\s*%$/, ' %');
+    return String(v).replace('.', ',');
+  }
+
   // Un réglage modifié à la main par l'utilisateur est gardé (et signalé dans le résumé).
   function keepManual(changes, manualKeys) {
     var manual = manualKeys || [];
@@ -138,7 +149,7 @@
   }
 
   var api = { mergeAnswers: mergeAnswers, detectLevel: detectLevel, QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
-    settingsFor: settingsFor, keepManual: keepManual, summary: summary, MANAGED_KEYS: Object.keys(LABELS) };
+    settingsFor: settingsFor, displayValue: displayValue, keepManual: keepManual, summary: summary, MANAGED_KEYS: Object.keys(LABELS) };
   root.PlyoIntent = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

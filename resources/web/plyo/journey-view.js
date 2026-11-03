@@ -9,11 +9,11 @@
     var bar = ui.el('div', 'journey-bar ' + mode);
     bar.setAttribute('role', 'list');
     list.forEach(function (s, i) {
-      var seg = ui.el('div', 'journey-seg ' + s.state);
+      var seg = ui.el('div', 'journey-seg is-' + s.state); // « is-done » : la classe globale .done (lignes « fait ») cassait la barre
       seg.setAttribute('role', 'listitem');
       if (s.state === 'current') seg.setAttribute('aria-current', 'step');
       seg.appendChild(ui.el('i', 'journey-fill'));
-      seg.appendChild(ui.el('span', 'journey-name', mode === 'pills' ? String(i + 1) : s.label));
+      seg.appendChild(ui.el('span', 'journey-name', (s.state === 'done' ? '✓ ' : '') + (mode === 'pills' ? String(i + 1) : s.label)));
       seg.title = s.label;
       bar.appendChild(seg);
     });

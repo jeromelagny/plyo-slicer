@@ -73,7 +73,7 @@
       var now = (fresh || []).filter(function (t) { return t.canvas_id === e.canvas_id && t.tray_id === e.tray_id; })[0];
       if (!now) { out.block.push('L’emplacement ' + n + ' n’est plus visible sur le Canvas.'); return; }
       if (upper(now.type) !== upper(e.type)) { out.block.push('L’emplacement ' + n + ' contient maintenant du ' + (now.type || '?') + ' (choisi : ' + (e.type || '?') + ').'); return; }
-      if (now.empty) out.notes.push('L’emplacement ' + n + ' est vide selon l’imprimante : vérifie qu’il est bien chargé.');
+      if (now.empty) out.notes.push('L’imprimante pense que l’emplacement ' + n + ' est vide : vérifie qu’il est bien chargé.');
       if (upper(now.color) !== upper(e.color)) out.notes.push('L’emplacement ' + n + ' a changé de couleur (maintenant ' + (colourName(now.color) || now.color) + ').');
     });
     return out;

@@ -179,11 +179,12 @@
   .journey:has(#journey-fiche:empty) { display: none; }
   .journey-seg { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; align-items: stretch; }
   .journey-fill { display: block; height: 5px; border-radius: 3px; background: var(--border); }
-  .journey-seg.done .journey-fill { background: var(--accent); }
-  .journey-seg.current .journey-fill { background: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+  .journey-seg.is-done .journey-fill { background: var(--accent); }
+  .journey-seg.is-current .journey-fill { background: color-mix(in srgb, var(--accent) 55%, var(--border)); }
   .journey-name { font-size: 10px; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .journey-seg.current .journey-name { color: var(--accent-text); font-weight: 700; }
+  .journey-seg.is-current .journey-name { color: var(--accent-text); font-weight: 700; }
   .journey-bar.pills .journey-name { font-size: var(--fs-xs); }
+  .journey-seg.is-done .journey-name { color: var(--accent-text); }
   .step-card { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .journey-action { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
   .journey-prompt { flex: 1; min-width: 12ch; font-weight: 600; font-size: var(--fs-lg); }
@@ -214,6 +215,7 @@
   body.touring .home-more { display: none; }
   body.touring .home-mini { display: block; }
   body.touring .hello { display: none; }
+  body.touring #view-guide .step-card { display: none; } /* installation en cours : une seule carte à l'écran */
   .action { display: flex; gap: var(--s3); align-items: center; width: 100%; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); cursor: pointer; text-align: left; }
   .action:hover { border-color: var(--accent); }
   .action .badge { width: 36px; height: 36px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); flex: none; }
@@ -471,7 +473,7 @@
       </div>
     </div>
     </div>
-    <button class="more-badge hidden" id="more-badge" type="button">↓ Scroll pour voir la suite de la réponse</button>
+    <button class="more-badge hidden" id="more-badge" type="button">↓ Voir la suite</button>
   </div>
 
   <div class="composer" id="composer">
@@ -1022,8 +1024,8 @@
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
     if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { canvasUI.preset = null; canvasUI.useList = false; } }
-    var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight });
-    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, handlers: projectHandlers });
+    var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
+    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
@@ -1038,7 +1040,7 @@
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
-      canvas: PlyoCanvas.mapLabel(conv.project.canvas), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '',
+      sent: projectUI.sentConv === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '',
       intent: intentState(step, !!(tourSignals && tourSignals.sliced)),
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
@@ -1096,11 +1098,12 @@
     else if (kind === 'photo') openPhone();
     else if (kind === 'send') {
       canvasUI.refused = '';
+      projectUI.sentConv = conv;
       if (conv && Array.isArray(conv.project.canvas) && conv.project.canvas.length) sendWithCanvasCheck();
       else { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: false }); }
     }
     else if (kind === 'confirmCanvas') { if (canvasUI.mapping && PlyoCanvas.complete(canvasUI.mapping)) applyCanvas(canvasUI.mapping); }
-    else if (kind === 'export') { canvasUI.refused = ''; rememberHabit(); window.orca.postMessage({ type: 'print_start', export: true }); }
+    else if (kind === 'export') { canvasUI.refused = ''; projectUI.sentConv = conv; rememberHabit(); window.orca.postMessage({ type: 'print_start', export: true }); }
     else if (kind === 'advance') setTourStep('print');
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
     else if (kind === 'applyIntent') applyIntent(false);
@@ -1153,7 +1156,8 @@
     if (!p || !p.printer || p.printer.proposed || !orca || projectUI.pending || Date.now() < (projectUI.restoringUntil || 0)) return;
     if (orca === p.printer.preset) { if (alert.dataset.kind === 'divergence') { alert.textContent = ''; alert.dataset.kind = ''; } return; }
     alert.dataset.kind = 'divergence';
-    PlyoMachinesView.renderDivergence(alert, { el: el, button: button, icon: icon, alertBox: alertBox }, { from: p.printer.name || p.printer.preset, to: PlyoJourney.machineLabel({ name: orca }),
+    var names = PlyoJourney.divergenceNames(p.printer, orca);
+    PlyoMachinesView.renderDivergence(alert, { el: el, button: button, icon: icon, alertBox: alertBox }, { from: names.from, to: names.to,
       handlers: { useNew: function () { alert.textContent = ''; alert.dataset.kind = ''; projectHandlers.pickPrinter(orca, PlyoJourney.machineLabel({ name: orca })); }, restore: function () { alert.textContent = ''; alert.dataset.kind = ''; restoreProjectInOrca(false); } } });
   }
 
@@ -1775,7 +1779,8 @@
     // Windows) et ne voit rien : on relance une fois tout seul avant d'annoncer « aucune imprimante ».
     if (!printers.length && !setup.retried) { setup.retried = true; window.orca.postMessage({ type: 'printer_scan' }); return; }
     setup.printers = printers;
-    setupPhase(printers.length ? 'found' : 'none');
+    // Rien trouvé : on demande directement le modèle (pas de carte d'échec d'entrée) ; l'aide Wi-Fi reste à un clic.
+    if (printers.length) setupPhase('found'); else { setup.noneFound = true; openSearch(); }
   }
   function onSetupCatalog(catalog) { setup.catalog = catalog; if (setup.phase === 'search') renderSetupFlow(); }
   function openSearch() {
@@ -1838,7 +1843,7 @@
       });
       acts.appendChild(button('Ce n’est pas la mienne', openSearch, 'btn ghost sm', 'search'));
     } else if (setup.phase === 'none') {
-      box.appendChild(el('h3', '', 'Je n’ai pas trouvé d’imprimante'));
+      box.appendChild(el('h3', '', 'Elle est en Wi-Fi mais je ne la vois pas'));
       box.appendChild(el('p', '', 'Trois choses à vérifier :'));
       var list = el('ol', 'setup-checks');
       ['Elle est **allumée**, avec son écran actif.',
@@ -1849,7 +1854,7 @@
       box.appendChild(list);
       box.appendChild(el('p', 'muted small', 'Beaucoup d’imprimantes n’ont pas de Wi-Fi : ce n’est pas grave, on passera par la clé USB ou la carte SD.'));
       acts.appendChild(button('Chercher encore', function () { startSetup(); renderSetupFlow(); }, 'btn sm', 'search'));
-      acts.appendChild(button('Elle n’a pas de Wi-Fi : la choisir dans la liste', openSearch, 'btn ghost sm'));
+      acts.appendChild(button('La choisir dans la liste', openSearch, 'btn ghost sm'));
     } else if (setup.phase === 'search') {
       box.appendChild(el('h3', '', 'Quelle imprimante as-tu ?'));
       box.appendChild(el('p', '', 'Son nom est écrit dessus, souvent à l’avant : par exemple « Ender 3 V3 », « K1C » ou « A1 mini ».'));
@@ -1871,6 +1876,7 @@
       input.addEventListener('input', refresh);
       box.appendChild(input);
       box.appendChild(results);
+      if (setup.noneFound) box.appendChild(button('Elle est en Wi-Fi mais je ne la vois pas', function () { setupPhase('none'); }, 'link'));
       refresh();
       setTimeout(function () { input.focus(); }, 0);
       acts.appendChild(button('Chercher sur le Wi-Fi', function () { startSetup(); renderSetupFlow(); }, 'btn ghost sm', 'wifi'));
@@ -3118,9 +3124,9 @@
         h.appendChild(icon('check', 16));
         h.appendChild(el('span', '', 'Corrigé'));
         box.appendChild(h);
-        box.appendChild(el('p', 'muted', 'Découpe à nouveau la plaque : je revérifie tout de suite après.'));
+        box.appendChild(el('p', 'muted', 'Je redécoupe la plaque et je revérifie.'));
         var row = el('div', 'row-acts');
-        row.appendChild(button('Découper la plaque', function () { closeCard(); plateAction('slice'); }, 'btn ghost sm', 'wand'));
+        plateAction('slice'); // la nouvelle vérification remplace cette carte
         // « Annuler » au bout de la ligne « fait », comme partout ailleurs.
         if (undoId) h.appendChild(undoButton('Annuler', function (b) {
           pendingSheet = { kind: 'undo', onResult: function (ok, t) {

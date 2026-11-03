@@ -51,7 +51,8 @@
       if (!c.sliced && c.intent === 'asking') return { label: '', kind: 'none', enabled: false };
       if (!c.sliced && c.intent === 'ready') return { label: 'Appliquer et préparer', kind: 'applyIntent', enabled: true };
       if (!c.sliced) return slice;
-      return c.risks > 0 ? { label: 'Appliquer les correctifs', kind: 'fix', enabled: true } : { label: 'Continuer', kind: 'advance', enabled: true };
+      // Des risques : le seul bouton est « Tout corriger » dans la carte de vérification (il suit les cases cochées).
+      return c.risks > 0 ? { label: '', kind: 'none', enabled: false } : { label: 'Continuer', kind: 'advance', enabled: true };
     }
     if (step === 'imprimer') {
       if (!c.sliced) return slice;
@@ -80,8 +81,8 @@
       case 'piece': return 'Ajoute la pièce à imprimer';
       case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
         if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';
-        return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler avant d’imprimer' : 'Tout est bon, on passe à l’impression');
-      case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : 'Plateau vide et propre, filament chargé : c’est parti';
+        return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler : coche ce que tu veux corriger ci-dessous' : 'Tout est bon, on passe à l’impression');
+      case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : 'Prêt à imprimer';
       default: return 'Alors, ça a marché ? Envoie-moi une photo';
     }
   }
@@ -111,7 +112,8 @@
 
   function barMode(widthPx) { return widthPx < 340 ? 'pills' : 'names'; }
   // `folded` : l'utilisateur est dans la Discussion, qui a besoin de la place ; sinon seulement si la fenêtre est basse.
-  function compactFiche(o) { return !!(o && (o.folded || o.heightPx < 760)); }
+  // Repliée en une ligne : onglet Discussion, petite fenêtre, ou dès l'étape Préparer (les choix sont faits, l'étape en cours a la place).
+  function compactFiche(o) { return !!(o && (o.folded || o.heightPx < 760 || ['preparer', 'imprimer', 'resultat'].indexOf(o.step) >= 0)); }
 
   // Ce qui occupe le premier bloc du corps : les choix (étapes 1 à 3, ou « changer » le filament) ou le contenu des étapes 4 à 6.
   function contentFor(step, editing) {
@@ -123,7 +125,8 @@
     var p = project || {}, parts = [];
     if (p.printer && (p.printer.name || p.printer.preset)) parts.push(p.printer.name || p.printer.preset);
     if (p.part && p.part.name) parts.push(p.part.name);
-    if (p.filament && p.filament.type) {
+    if (p.filament && p.filament.type && Array.isArray(p.canvas) && p.canvas.length) parts.push(filamentRow(p).text);
+    else if (p.filament && p.filament.type) {
       var temps = p.filament.nozzle_temp != null && p.filament.bed_temp != null ? ' ' + p.filament.nozzle_temp + '/' + p.filament.bed_temp : '';
       parts.push(p.filament.type + temps);
     }
@@ -134,8 +137,9 @@
   // quatre les étapes 4 à 6 gardent accessibles « Vérifier ma plaque », « Mes pièces », « réglages lus » et « limites ».
   function suggestionsFor(step) {
     switch (step) {
-      case 'preparer': return [{ label: 'Vérifier ma plaque', kind: 'open', value: 'check' }, { label: 'Voir les réglages que tu lis', kind: 'open', value: 'values' }];
-      case 'imprimer': return [{ label: 'Mes pièces', kind: 'open', value: 'parts' }, { label: 'Limites du fabricant', kind: 'open', value: 'limits' }];
+      case 'preparer': return [{ label: 'Vérifier ma plaque', kind: 'open', value: 'check' }, { label: 'Voir mes réglages actuels', kind: 'open', value: 'values' }];
+      case 'imprimer': return [{ label: 'Que vérifier avant de lancer ?', kind: 'ask', value: 'Que dois-je vérifier sur mon imprimante juste avant de lancer l’impression ?' },
+        { label: 'Températures de ma bobine', kind: 'open', value: 'limits' }];
       case 'resultat': return [{ label: 'Mes pièces', kind: 'open', value: 'parts' }, { label: 'Ma pièce a un défaut', kind: 'ask', value: 'Ma pièce a un défaut, peux-tu m’aider ?' }];
       default: return [];
     }
@@ -146,12 +150,30 @@
     var p = project || {}, rows = [];
     if (p.printer && !p.printer.proposed && (p.printer.name || p.printer.preset)) rows.push({ line: 'printer', text: p.printer.name || p.printer.preset });
     if (p.part && p.part.name) rows.push({ line: 'part', text: p.part.name });
-    if (p.filament && !p.filament.proposed && p.filament.type) rows.push({ line: 'filament', text: p.filament.type });
+    if (p.filament && !p.filament.proposed && p.filament.type) rows.push(filamentRow(p));
     return rows;
+  }
+
+  // Ligne filament : avec les emplacements du Canvas, la couleur et le numéro (« PLA blanc · emplacement 2 »).
+  function filamentRow(p) {
+    var cv = Array.isArray(p.canvas) ? p.canvas : [];
+    if (cv.length > 1) return { line: 'filament', text: p.filament.type + ' · ' + cv.length + ' emplacements' };
+    if (cv.length === 1) {
+      var C = (typeof window !== 'undefined' && window.PlyoCanvas) || null, name = C ? C.colourName(cv[0].color) : '';
+      return { line: 'filament', text: p.filament.type + (name ? ' ' + name : '') + ' · emplacement ' + (cv[0].tray_id + 1), swatch: cv[0].color };
+    }
+    return { line: 'filament', text: p.filament.type };
   }
 
   // Nom d'une machine : le nom du profil sans « Ma » devant ni « - Copie » derrière.
   function machineLabel(p) { return String(p && (p.name || p.preset) || '').replace(/^Ma\s+/i, '').replace(/\s*-\s*Copie.*$/i, '').trim(); }
+
+  // Carte « Orca est passé sur… » : noms courts, sauf si les deux profils donnent le même nom (« Ma K2 » et « K2 »).
+  function divergenceNames(printer, orcaPreset) {
+    var from = (printer && (printer.name || printer.preset)) || '', to = machineLabel({ name: orcaPreset });
+    if (machineLabel({ name: from }).toLowerCase() !== to.toLowerCase()) return { from: from, to: to };
+    return { from: (printer && printer.preset) || from, to: orcaPreset }; // noms complets des profils
+  }
 
   // Profils d'imprimante → une ligne par machine. « Ma K2 », « K2 - Copie » et « K2 » sont la même machine : on garde le profil
   // relié (« Ma … » de préférence). Les machines sans profil relié vont dans `others` (rangées sous « Autres profils »).
@@ -198,7 +220,7 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { shouldRecheck: shouldRecheck, machineLabel: machineLabel, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
