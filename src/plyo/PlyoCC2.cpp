@@ -1,12 +1,16 @@
 // Sous Windows, boost (asio) doit être inclus avant les en-têtes de wxWidgets (même règle que PlyoDiscovery.cpp).
 #include "PlyoCC2.hpp"
 #include "PlyoCC2Logic.hpp"
+#include "PlyoJson.hpp"
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/ip/udp.hpp>
 #include <boost/log/trivial.hpp>
 
 #include <chrono>
+#include <functional>
+#include <mutex>
 #include <random>
 #include <thread>
 
@@ -93,26 +97,31 @@ template<class Accept> bool wait_publish(Connection& c, std::chrono::millisecond
     return false;
 }
 
-} // namespace
-
-bool start_print(const std::string& host, const std::string& access_code, const std::string& serial, const std::string& filename,
-                 std::string& error)
+// Session MQTT ouverte et enregistrée auprès de l'imprimante (connexion, abonnement à ses réponses, api_register).
+class Session
 {
-    if (serial.empty()) {
-        error = "Je ne connais pas le numéro de série de l'imprimante : teste d'abord la connexion.";
-        return false;
+public:
+    Session() : m_conn(m_io) {}
+    ~Session()
+    {
+        if (m_open)
+            m_conn.send(std::string("\xE0\x00", 2)); // DISCONNECT
     }
-    try {
-        asio::io_context io;
-        Connection       c(io);
-        if (!c.connect(host, error))
-            return false;
 
+    bool open(const std::string& host, const std::string& access_code, const std::string& serial, std::string& error)
+    {
+        if (serial.empty()) {
+            error = "Je ne connais pas le numéro de série de l'imprimante : teste d'abord la connexion.";
+            return false;
+        }
+        if (!m_conn.connect(host, error))
+            return false;
         std::random_device rd;
-        const std::string  client = "1_PC_" + std::to_string(1000 + rd() % 9000);
-        c.send(CC2Logic::connect_packet(client, "elegoo", access_code));
+        m_serial = serial;
+        m_client = "1_PC_" + std::to_string(1000 + rd() % 9000);
+        m_conn.send(CC2Logic::connect_packet(m_client, "elegoo", access_code));
         CC2Logic::Packet ack;
-        if (!c.next_packet(ack, 10s) || ack.type != 2 || ack.body.size() < 2) {
+        if (!m_conn.next_packet(ack, 10s) || ack.type != 2 || ack.body.size() < 2) {
             error = "L'imprimante n'a pas répondu à la connexion.";
             return false;
         }
@@ -120,12 +129,12 @@ bool start_print(const std::string& host, const std::string& access_code, const 
             error = "Code d'accès refusé par l'imprimante.";
             return false;
         }
-
-        c.send(CC2Logic::subscribe_packet(1, {CC2Logic::topic_api_response(serial, client), CC2Logic::topic_register_response(serial, client)}));
-        c.send(CC2Logic::publish_packet(CC2Logic::topic_api_register(serial), CC2Logic::register_payload(client)));
+        m_open = true;
+        m_conn.send(CC2Logic::subscribe_packet(1, {CC2Logic::topic_api_response(serial, m_client), CC2Logic::topic_register_response(serial, m_client)}));
+        m_conn.send(CC2Logic::publish_packet(CC2Logic::topic_api_register(serial), CC2Logic::register_payload(m_client)));
         bool registered = false;
-        wait_publish(c, 10s, [&](const std::string& topic, const std::string& payload) {
-            if (topic != CC2Logic::topic_register_response(serial, client))
+        wait_publish(m_conn, 10s, [&](const std::string& topic, const std::string& payload) {
+            if (topic != CC2Logic::topic_register_response(serial, m_client))
                 return false;
             registered = CC2Logic::is_register_ok(payload);
             return true;
@@ -134,21 +143,153 @@ bool start_print(const std::string& host, const std::string& access_code, const 
             error = "L'imprimante n'a pas accepté la connexion (trop de clients connectés ?). Ferme les autres applications reliées à elle, puis réessaie.";
             return false;
         }
+        return true;
+    }
 
-        const int id = 1 + static_cast<int>(rd() % 100000);
-        c.send(CC2Logic::publish_packet(CC2Logic::topic_api_request(serial, client), CC2Logic::start_print_payload(id, filename)));
-        int  code     = -1;
-        bool answered = wait_publish(c, 90s, [&](const std::string& topic, const std::string& payload) {
-            if (topic != CC2Logic::topic_api_response(serial, client))
-                return false;
-            const CC2Logic::StartReply reply = CC2Logic::parse_start_reply(payload, id);
-            if (!reply.matched)
-                return false;
-            code = reply.error_code;
-            return true;
+    int next_id() { std::random_device rd; return 1 + static_cast<int>(rd() % 100000); }
+
+    // Publie une demande et attend la réponse que `accept(payload)` reconnaît. Faux si le délai est dépassé.
+    template<class Accept> bool request(const std::string& payload, std::chrono::milliseconds timeout, Accept accept)
+    {
+        m_conn.send(CC2Logic::publish_packet(CC2Logic::topic_api_request(m_serial, m_client), payload));
+        return wait_publish(m_conn, timeout, [&](const std::string& topic, const std::string& body) {
+            return topic == CC2Logic::topic_api_response(m_serial, m_client) && accept(body);
         });
-        c.send(std::string("\xE0\x00", 2)); // DISCONNECT
-        if (!answered) {
+    }
+
+    // Lit les emplacements du Canvas ; null si l'imprimante ne répond pas.
+    nlohmann::json read_canvas()
+    {
+        const int      id  = next_id();
+        nlohmann::json out = nullptr;
+        request(CC2Logic::canvas_read_payload(id), 10s, [&](const std::string& body) {
+            out = CC2Logic::parse_canvas_reply(body, id);
+            return !out.is_null();
+        });
+        return out;
+    }
+
+private:
+    asio::io_context m_io;
+    Connection       m_conn;
+    std::string      m_serial, m_client;
+    bool             m_open = false;
+};
+
+std::mutex     g_mutex;
+nlohmann::json g_plan = nullptr;     // {host, map, sliced_t} : carte des emplacements choisie dans Plyo
+nlohmann::json g_refused = nullptr;  // {host, serial, filename} : départ refusé avec une carte, relançable sans carte
+std::function<void(const std::string&)> g_on_refused;
+
+bool send_start(Session& s, const std::string& filename, const nlohmann::json& map, int& code)
+{
+    const int id = s.next_id();
+    return s.request(CC2Logic::start_print_payload(id, filename, map), 90s, [&](const std::string& body) {
+        const CC2Logic::StartReply reply = CC2Logic::parse_start_reply(body, id);
+        if (reply.matched)
+            code = reply.error_code;
+        return reply.matched;
+    });
+}
+
+} // namespace
+
+void set_plan(const nlohmann::json& plan)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_plan = plan;
+}
+
+void clear_plan()
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_plan = nullptr;
+}
+
+void on_refused(std::function<void(const std::string&)> callback)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_on_refused = std::move(callback);
+}
+
+bool start_print(const std::string& host, const std::string& access_code, const std::string& serial, const std::string& filename,
+                 std::string& error)
+{
+    nlohmann::json plan;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        plan = g_plan;
+    }
+    std::vector<int> sliced_t;
+    for (const nlohmann::json& t : Json::arr(plan, "sliced_t"))
+        if (t.is_number_integer())
+            sliced_t.push_back(t.get<int>());
+    const nlohmann::json planned = CC2Logic::map_for_send(plan, host, sliced_t);
+    auto refused = [&](const std::string& text) {
+        error = text;
+        std::function<void(const std::string&)> notify;
+        {
+            std::lock_guard<std::mutex> lock(g_mutex);
+            g_refused = {{"host", host}, {"serial", serial}, {"filename", filename}};
+            notify    = g_on_refused;
+        }
+        if (notify)
+            notify(text);
+        return false;
+    };
+    try {
+        Session s;
+        if (!s.open(host, access_code, serial, error))
+            return false;
+        nlohmann::json map = nlohmann::json::array();
+        if (!planned.empty()) {
+            // Relecture juste avant le départ : on n'envoie jamais une carte qui ne correspond plus à l'imprimante.
+            const nlohmann::json canvas = s.read_canvas();
+            if (canvas.is_null())
+                return refused("Je n'ai pas pu relire les emplacements de l'imprimante : l'impression n'a pas démarré. Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Démarrer sans carte ».");
+            map = CC2Logic::sanitize_slot_map(planned, Json::arr(canvas, "canvases"));
+            if (map.empty())
+                return refused("Les emplacements choisis dans Plyo ne correspondent plus au Canvas : l'impression n'a pas démarré. Reviens à l'étape Filament, ou « Démarrer sans carte ».");
+        }
+        int code = -1;
+        if (!send_start(s, filename, map, code)) {
+            error = "L'imprimante n'a pas confirmé le démarrage.";
+            return false;
+        }
+        if (code != 0) {
+            if (!map.empty())
+                return refused("La CC2 a refusé les emplacements choisis (code " + std::to_string(code) + "). Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Démarrer sans carte ».");
+            error = CC2Logic::error_text(code);
+            return false;
+        }
+        BOOST_LOG_TRIVIAL(info) << "Plyo: impression démarrée sur le CC2 (" << filename << ", " << map.size() << " emplacement(s) choisi(s))";
+        return true;
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "Plyo: démarrage CC2 en échec : " << e.what();
+        error = "Le démarrage de l'impression a échoué.";
+        return false;
+    }
+}
+
+nlohmann::json last_refused()
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return g_refused;
+}
+
+bool start_again_plain(const std::string& access_code, std::string& error)
+{
+    nlohmann::json r = last_refused();
+    if (!r.is_object()) {
+        error = "Aucune impression en attente sur la CC2.";
+        return false;
+    }
+    try {
+        Session s;
+        if (!s.open(Json::str(r, "host"), access_code, Json::str(r, "serial"), error))
+            return false;
+        int code = -1;
+        if (!send_start(s, Json::str(r, "filename"), nlohmann::json::array(), code)) {
             error = "L'imprimante n'a pas confirmé le démarrage.";
             return false;
         }
@@ -156,13 +297,64 @@ bool start_print(const std::string& host, const std::string& access_code, const 
             error = CC2Logic::error_text(code);
             return false;
         }
-        BOOST_LOG_TRIVIAL(info) << "Plyo: impression démarrée sur le CC2 (" << filename << ")";
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_refused = nullptr;
         return true;
     } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << "Plyo: démarrage CC2 en échec : " << e.what();
+        BOOST_LOG_TRIVIAL(error) << "Plyo: démarrage CC2 sans carte en échec : " << e.what();
         error = "Le démarrage de l'impression a échoué.";
         return false;
     }
+}
+
+nlohmann::json read_canvas(const std::string& host, const std::string& access_code, const std::string& serial, std::string& error)
+{
+    try {
+        Session s;
+        if (!s.open(host, access_code, serial, error))
+            return nullptr;
+        nlohmann::json canvas = s.read_canvas();
+        if (canvas.is_null())
+            error = "L'imprimante n'a pas donné ses emplacements.";
+        return canvas;
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "Plyo: lecture du Canvas en échec : " << e.what();
+        error = "La lecture des emplacements a échoué.";
+        return nullptr;
+    }
+}
+
+std::string serial_of(const std::string& host)
+{
+    try {
+        asio::io_context        io;
+        asio::ip::udp::socket   socket(io);
+        boost::system::error_code ec;
+        socket.open(asio::ip::udp::v4(), ec);
+        if (ec)
+            return std::string();
+        asio::ip::udp::resolver resolver(io);
+        const auto              targets = resolver.resolve(asio::ip::udp::v4(), host, "52700", ec);
+        if (ec || targets.empty())
+            return std::string();
+        const std::string probe = R"({"id":0,"method":7000,"params":{}})";
+        socket.send_to(asio::buffer(probe), *targets.begin(), 0, ec);
+        socket.non_blocking(true, ec);
+        const auto until = std::chrono::steady_clock::now() + 3s;
+        char       buf[65536];
+        while (std::chrono::steady_clock::now() < until) {
+            asio::ip::udp::endpoint from;
+            const size_t            n = socket.receive_from(asio::buffer(buf), from, 0, ec);
+            if (ec == asio::error::would_block || ec == asio::error::try_again) {
+                std::this_thread::sleep_for(50ms);
+                continue;
+            }
+            if (ec)
+                return std::string();
+            return CC2Logic::serial_from_discovery(std::string(buf, n));
+        }
+    } catch (const std::exception&) {}
+    return std::string();
 }
 
 }} // namespace Plyo::CC2
