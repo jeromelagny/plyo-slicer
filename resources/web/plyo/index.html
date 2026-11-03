@@ -410,6 +410,7 @@
       <div class="group" role="presentation">Conversation</div>
       <button type="button" id="m-new" role="menuitem" data-icon="plus">Nouvelle conversation</button>
       <button type="button" id="m-convs" role="menuitem" data-icon="chat">Mes conversations</button>
+      <button type="button" id="m-intent" role="menuitem" data-icon="help" class="hidden">Reposer les questions sur ma pièce</button>
       <button type="button" id="m-level" role="menuitem" data-icon="chat">Mes explications : détaillées</button>
       <button type="button" id="m-undo" role="menuitem" data-icon="undo" disabled title="Rien à annuler pour l’instant">Annuler les derniers réglages appliqués</button>
       <hr id="m-account-sep">
@@ -747,6 +748,7 @@
   function newId() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6); }
   function startConversation(project) {
     openRisks = 0;
+    if (typeof intentUI !== 'undefined') { intentUI.idk = false; intentUI.manual = null; }
     if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
     if (typeof renderProject === 'function') renderProject();
@@ -877,6 +879,7 @@
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     ensureRecheck(step);
+    updateIntentMenu();
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
     PlyoJourneyView.renderSuggestions($('suggestions'), ui, { step: step, handlers: suggestionHandlers });
     renderSetupFlow();
@@ -901,7 +904,7 @@
     changeMachine: function () { projectHandlers.change('printer'); },
     recheck: function () { recheckMachine(); },
     answer: function (q, id) { intentHandlers.answer(q, id); }, idk: function () { intentHandlers.idk(); },
-    chooseForMe: function () {}, skip: function () { intentHandlers.skip(); }, reset: function () { intentHandlers.reset(); }
+    intentSkip: function () { intentHandlers.skip(); }, reset: function () { intentHandlers.reset(); }
   };
   // Machine qui ne répond pas : « Vérifier à nouveau » et revérification automatique toutes les 8 s à l'étape Imprimer.
   var recheckTimer = null;
@@ -991,10 +994,15 @@
     var answers = intentAnswers(p), q = PlyoIntent.nextQuestion(answers);
     if (q) return { mode: 'asking', question: q, answers: answers, total: answers.use === 'test' ? 1 : 3, idk: intentUI.idk,
       guess: PlyoIntent.guessUse(p.part && p.part.name) };
-    if (intentUI.manual === null) { intentUI.manual = []; manualWaiter = function (items) { intentUI.manual = (items || []).map(function (m) { return m.key; }); renderProject(); }; window.orca.postMessage({ type: 'manual_edits_get' }); }
+    if (intentUI.manual === null) fetchManualKeys(function () { renderProject(); });
     var type = p.filament && p.filament.type, nozzle = lastValues && lastValues.context ? lastValues.context.nozzle_mm : 0;
     var r = PlyoIntent.keepManual(PlyoIntent.settingsFor(answers, type, nozzle), intentUI.manual);
     return { mode: 'ready', summary: PlyoIntent.summary(answers, type), changes: r.apply, kept: r.kept, level: PlyoMachines.levelOf(habits) };
+  }
+  function fetchManualKeys(then) {
+    intentUI.manual = intentUI.manual || [];
+    manualListeners.push(function (items) { intentUI.manual = (items || []).map(function (m) { return m.key; }); then(); });
+    window.orca.postMessage({ type: 'manual_edits_get' });
   }
   var intentHandlers = {
     answer: function (qid, id) { var p = conv.project; p.intent = p.intent || {}; p.intent[qid] = id; intentUI.idk = false; projectChanged(); },
@@ -1034,9 +1042,14 @@
   }
   // Applique les réglages de l'intention (un lot annulable, comme ceux de l'assistant), puis lance la découpe.
   function applyIntent(again) {
+    // Les réglages modifiés à la main sont relus juste avant : une modification faite entre-temps dans Orca est gardée.
+    fetchManualKeys(function () { applyIntentNow(again); });
+  }
+  function applyIntentNow(again) {
     var p = conv.project, st = intentState(PlyoJourney.currentStep(p), false);
     if (!st || st.mode !== 'ready') return;
     function done() {
+      intentUI.manual = null; // à relire pour le projet suivant
       p.intent.applied = true;
       delete p.intent.reapply;
       habits = PlyoMachines.noteIntent(habits, false);
@@ -1060,6 +1073,7 @@
     if (i.reapply && PlyoJourney.currentStep(p) === 'preparer' && !(tourSignals && tourSignals.sliced)) { var st = intentState('preparer', false); if (st && st.mode === 'ready') applyIntent(true); }
   }
   // Niveau d'explication : deviné d'après tes messages tant que tu ne l'as pas choisi (menu « Mes explications »).
+  function updateIntentMenu() { $('m-intent').classList.toggle('hidden', PlyoMachines.askIntent(habits) && !(conv && conv.project.intent && (conv.project.intent.skipped || conv.project.intent.applied))); }
   function updateLevelLabel() { $('m-level').textContent = fr('Mes explications : ' + (PlyoMachines.levelOf(habits) === 'short' ? 'courtes' : 'détaillées')); }
   // Début d'une impression : que demander pour la machine ? (voir PlyoMachines.machineQuestion)
   function applyMachineQuestion() {
@@ -1359,6 +1373,7 @@
 
   // Modifications manuelles non enregistrées (profils impression et filament), demandées au slicer.
   var manualWaiter = null;
+  var manualListeners = []; // autres demandeurs des modifications manuelles (questions d'intention), servis en plus de manualWaiter
   function askManualEdits(callback) {
     manualWaiter = callback;
     window.orca.postMessage({ type: 'manual_edits_get' });
@@ -1865,6 +1880,13 @@
   $('m-usage').addEventListener('click', openUsage);
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
+  $('m-intent').addEventListener('click', function () {
+    menu.classList.add('hidden');
+    habits = PlyoMachines.stopAsking(habits, false);
+    saveHabits();
+    if (conv) { conv.project.intent = {}; intentUI.idk = false; intentUI.manual = null; projectChanged(); }
+    applyTab('show-guide');
+  });
   $('m-level').addEventListener('click', function () {
     menu.classList.add('hidden');
     habits = PlyoMachines.chooseLevel(habits, PlyoMachines.levelOf(habits) === 'short' ? 'detailed' : 'short');
@@ -3616,6 +3638,7 @@
       if (reliableResult) { var rr = reliableResult; reliableResult = null; rr(msg); }
     } else if (msg.type === 'manual_edits') {
       if (manualWaiter) { var waiter = manualWaiter; manualWaiter = null; waiter(msg.items || []); }
+      var listeners = manualListeners; manualListeners = []; listeners.forEach(function (f) { f(msg.items || []); });
     } else if (msg.type === 'limits') {
       onLimits(msg);
     } else if (msg.type === 'journal') {

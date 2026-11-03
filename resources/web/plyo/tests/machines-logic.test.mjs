@@ -124,3 +124,10 @@ test('questions d’intention : après trois projets passés de suite, on propos
   assert.equal(M.offerStopAsking(h), false);
   assert.equal(M.askIntent(M.stopAsking(h, false)), true);
 });
+
+test('le niveau deviné ne redescend jamais tout seul vers « détaillées »', () => {
+  let h = M.guessLevel(M.emptyHabits(), 'short');
+  h = M.guessLevel(h, 'detailed');
+  assert.equal(M.levelOf(h), 'short');
+  assert.equal(M.levelOf(M.guessLevel(M.emptyHabits(), 'detailed')), 'detailed');
+});

@@ -99,3 +99,9 @@ test('mergeAnswers : les réponses comprises par l’IA remplissent les question
   assert.deepEqual(I.mergeAnswers({ use: 'deco' }, [{ question: 'pref', choice: 'balanced' }]).answers, { use: 'deco' }); // « équilibrée » n'existe pas pour la déco
   assert.deepEqual(I.mergeAnswers({ use: 'flex' }, null).answers, { use: 'flex' });
 });
+
+test('detectLevel compte des termes différents : répéter « première couche » ou « PETG » ne suffit pas', () => {
+  assert.equal(I.detectLevel(['ma première couche ne colle pas', 'toujours la première couche qui se décolle']), 'detailed');
+  assert.equal(I.detectLevel(['PETG ou PETG ?']), 'detailed');
+  assert.equal(I.detectLevel(['première couche et rétraction']), 'short');
+});

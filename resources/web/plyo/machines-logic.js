@@ -77,7 +77,7 @@
 
   // Niveau d'explication : « detailed » par défaut ; deviné tant que l'utilisateur ne l'a pas choisi lui-même.
   function levelOf(habits) { return habits && habits.level === 'short' ? 'short' : 'detailed'; }
-  function guessLevel(habits, level) { var h = clone(habits); if (!h.level_manual && (level === 'short' || level === 'detailed')) h.level = level; return h; }
+  function guessLevel(habits, level) { var h = clone(habits); if (!h.level_manual && level === 'short') h.level = 'short'; return h; } // ne redescend jamais tout seul
   function chooseLevel(habits, level) { var h = clone(habits); h.level = level === 'short' ? 'short' : 'detailed'; h.level_manual = true; return h; }
 
   // Questions d'intention : passées (skipped = true) ou répondues ; après trois projets passés de suite, on propose d'arrêter.

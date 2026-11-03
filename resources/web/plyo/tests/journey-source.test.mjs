@@ -42,7 +42,7 @@ test('le menu ne garde que l’essentiel', () => {
   const page = read('index.html');
   const menu = page.slice(page.indexOf('id="menu"'), page.indexOf('</div>\n  </div>', page.indexOf('id="menu"')));
   const ids = [...menu.matchAll(/id="(m-[a-z-]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(ids, ['m-account-sep', 'm-convs', 'm-email', 'm-help', 'm-level', 'm-login', 'm-logout', 'm-new', 'm-undo', 'm-usage']);
+  assert.deepEqual(ids, ['m-account-sep', 'm-convs', 'm-email', 'm-help', 'm-intent', 'm-level', 'm-login', 'm-logout', 'm-new', 'm-undo', 'm-usage']);
   for (const gone of ['m-check', 'm-parts', 'm-values', 'm-setup', 'm-limits', 'm-tour']) assert.ok(!page.includes("$('" + gone + "')"), gone + ' encore écouté');
 });
 
@@ -89,4 +89,13 @@ test('une machine qui ne répond pas : on peut revérifier, et on ne promet pas 
   const steps = read('journey-steps.js');
   assert.ok(/Vérifier à nouveau/.test(steps), 'lien « Vérifier à nouveau »');
   assert.ok(!/partira|quand elle sera prête/.test(steps), 'pas de promesse d’envoi différé');
+});
+
+test('« Passer outre » et « Je règle moi-même » sont deux gestes distincts', () => {
+  const page = read('index.html');
+  const start = page.indexOf('var stepHandlers = {');
+  const block = page.slice(start, page.indexOf('\n  };', start));
+  assert.equal((block.match(/\bskip:/g) || []).length, 1, 'une seule clé skip');
+  assert.ok(/intentSkip:/.test(block), 'intentSkip existe');
+  assert.ok(/h\.intentSkip/.test(read('journey-steps.js')), 'renderIntent appelle intentSkip');
 });

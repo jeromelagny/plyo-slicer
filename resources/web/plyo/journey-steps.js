@@ -12,7 +12,7 @@
   }
 
   // Questions d'intention (étape Préparer, avant la découpe). opts.intent : { mode: 'asking'|'ready', question, answers, total,
-  // idk, guess, summary, changes, kept, level } ; handlers : { answer(qid, id), idk(), chooseForMe(), skip(), reset() }.
+  // idk, guess, summary, changes, kept, level } ; handlers : { answer(qid, id), idk(), intentSkip(), reset() }.
   function renderIntent(body, ui, it, h) {
     var I = root.PlyoIntent;
     if (it.mode === 'asking') {
@@ -39,7 +39,7 @@
           }
         }
       }
-      body.appendChild(ui.button('Je règle moi-même', h.skip, 'link'));
+      body.appendChild(ui.button('Je règle moi-même', h.intentSkip, 'link'));
       return;
     }
     var sum = it.summary;

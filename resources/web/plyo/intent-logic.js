@@ -114,8 +114,10 @@
   // Niveau d'explication deviné d'après les messages de l'utilisateur : « short » s'il emploie au moins deux termes techniques.
   var TECH = /\b(brim|infill|gyroid|cubic|lightning|r[ée]traction|retract|d[ée]bit|flow|pressure advance|\bpa\b|seam|couture|overhang|porte-?[àa]-?faux|layer height|hauteur de couche|z-?offset|p[ée]rim[èe]tre|wall|paroi|mm\/s|mouse ears|bridge|pont|ironing|lissage|support (arbre|tree)|tree support|first layer|premi[èe]re couche|petg|asa|abs|tpu)\b/gi;
   function detectLevel(texts) {
-    var all = Array.isArray(texts) ? texts.join(' ') : '';
-    return (all.match(TECH) || []).length >= 2 ? 'short' : 'detailed';
+    var all = Array.isArray(texts) ? texts.join(' ') : '', seen = {};
+    // Termes différents (sans accents ni majuscules) : répéter « première couche » ne fait pas un expert.
+    (all.match(TECH) || []).forEach(function (t) { seen[t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '')] = true; });
+    return Object.keys(seen).length >= 2 ? 'short' : 'detailed';
   }
 
   // Réponses comprises par l'IA dans une phrase libre ([{question, choice}]) ajoutées aux réponses existantes. L'usage passe en
