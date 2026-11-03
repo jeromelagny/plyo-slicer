@@ -1,8 +1,10 @@
 #include "PlyoCC2Logic.hpp"
 
 #include "PlyoJson.hpp"
+#include "PlyoProjectLogic.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 
 namespace Plyo { namespace CC2Logic {
@@ -227,6 +229,49 @@ nlohmann::json map_for_send(const nlohmann::json& plan, const std::string& host,
     if (planned.empty() || planned.size() != map.size() || planned != sliced)
         return none;
     return map;
+}
+
+MapDecision decide_map(const nlohmann::json& planned, const nlohmann::json& canvases, const std::vector<std::string>& presets)
+{
+    MapDecision out;
+    const std::string again = " Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Démarrer sans carte », ou choisis à nouveau les emplacements.";
+    if (!canvases.is_array()) {
+        out.refusal = "Je n'ai pas pu relire les emplacements de l'imprimante : l'impression n'a pas démarré." + again;
+        return out;
+    }
+    auto upper = [](std::string v) {
+        for (char& c : v)
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        return v;
+    };
+    for (const nlohmann::json& e : planned) {
+        const int         t = static_cast<int>(Json::num(e, "t", -1)), tray_id = static_cast<int>(Json::num(e, "tray_id", -1));
+        const std::string n = std::to_string(tray_id + 1);
+        nlohmann::json tray = nullptr; // copie : Json::arr rend une copie temporaire
+        for (const nlohmann::json& unit : canvases)
+            if (Json::num(unit, "canvas_id", -1) == Json::num(e, "canvas_id", -2) && Json::boolean(unit, "connected", false))
+                for (const nlohmann::json& tr : Json::arr(unit, "trays"))
+                    if (Json::num(tr, "tray_id", -1) == tray_id)
+                        tray = tr;
+        if (tray.is_null()) {
+            out.refusal = "L'emplacement " + n + " n'est plus visible sur le Canvas : l'impression n'a pas démarré." + again;
+            return out;
+        }
+        const std::string want = Json::str(e, "type"), now = Json::str(tray, "type");
+        if (!want.empty() && upper(want) != upper(now)) {
+            out.refusal = "L'emplacement " + n + " contient maintenant du " + (now.empty() ? std::string("?") : now) + " (choisi : " + want + ") : l'impression n'a pas démarré." + again;
+            return out;
+        }
+        const std::string preset = Json::str(e, "preset");
+        if (!preset.empty() && (t < 0 || t >= static_cast<int>(presets.size()) || !ProjectLogic::same_filament(preset, presets[t]))) {
+            out.refusal = "Le filament de la couleur " + std::to_string(t + 1) + " a changé dans Orca depuis le choix des emplacements : l'impression n'a pas démarré." + again;
+            return out;
+        }
+    }
+    out.map = sanitize_slot_map(planned, canvases);
+    if (out.map.empty())
+        out.refusal = "Les emplacements choisis dans Plyo ne correspondent plus au Canvas : l'impression n'a pas démarré." + again;
+    return out;
 }
 
 std::string serial_from_discovery(const std::string& datagram)

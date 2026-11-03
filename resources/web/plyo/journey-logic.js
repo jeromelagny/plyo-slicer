@@ -37,6 +37,14 @@
 
   function primaryAction(step, ctx) {
     var c = ctx || {};
+    // Canvas de la CC2 (étape Filament, ou emplacements repris depuis l'étape Imprimer) : on choisit un emplacement
+    // (une couleur) ou un emplacement par couleur ; l'envoi attend que ce soit fait.
+    if (c.canvas) {
+      var cv = c.canvas;
+      if (cv.mode === 'single' && cv.proposal) return { label: 'Oui, l’emplacement ' + cv.proposal.label, kind: 'confirmCanvas', enabled: true };
+      if (cv.mode === 'multi') return { label: 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
+      return { label: '', kind: 'none', enabled: false };
+    }
     var slice = { label: 'Découper', kind: 'slice', enabled: true };
     if (step === 'preparer') {
       // Questions d'intention : on répond avec les choix ; au résumé, un seul bouton applique et prépare.
@@ -50,29 +58,25 @@
       return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: true } : { label: 'Exporter le fichier', kind: 'export', enabled: true };
     }
     if (step === 'resultat') return { label: 'Envoyer une photo', kind: 'photo', enabled: true };
-    // Canvas de la CC2 : on choisit un emplacement (une couleur) ou un emplacement par couleur.
-    if (step === 'filament' && c.canvas) {
-      var cv = c.canvas;
-      if (cv.mode === 'single' && cv.proposal) return { label: 'Oui, l’emplacement ' + cv.proposal.label, kind: 'confirmCanvas', enabled: true };
-      if (cv.mode === 'multi') return { label: 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
-      return { label: '', kind: 'none', enabled: false };
-    }
     // Machine et filament proposés (dernière machine, dernier filament) : confirmer d'un toucher.
     if (step === 'machine' && c.proposal) return { label: 'Oui, sur ' + c.proposal.name, kind: 'confirmMachine', enabled: true };
     if (step === 'filament' && c.proposal) return { label: 'Oui, du ' + c.proposal.name, kind: 'confirmFilament', enabled: true };
     return { label: '', kind: 'none', enabled: false };
   }
 
+  function canvasPrompt(c) {
+    if (c.canvas.mode === 'loading') return 'Je lis les emplacements de ta CC2…';
+    if (c.canvas.mode === 'multi') return 'Quel emplacement pour chaque couleur ?';
+    if (c.canvas.mode === 'tooMany') return 'Ta pièce a plus de couleurs que d’emplacements';
+    return 'Quel emplacement du Canvas pour ta pièce ?';
+  }
+
   function prompt(step, ctx) {
     var c = ctx || {};
+    if (c.canvas) return canvasPrompt(c);
     switch (step) {
       case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : 'Choisis ton imprimante';
-      case 'filament':
-        if (c.canvas && c.canvas.mode === 'loading') return 'Je lis les emplacements de ta CC2…';
-        if (c.canvas && c.canvas.mode === 'multi') return 'Quel emplacement pour chaque couleur ?';
-        if (c.canvas && c.canvas.mode === 'tooMany') return 'Ta pièce a plus de couleurs que d’emplacements';
-        if (c.canvas) return 'Quel emplacement du Canvas pour ta pièce ?';
-        return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : 'Dis-moi quel filament est sur la bobine';
+      case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : 'Dis-moi quel filament est sur la bobine';
       case 'piece': return 'Ajoute la pièce à imprimer';
       case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
         if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';

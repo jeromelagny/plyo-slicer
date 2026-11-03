@@ -409,10 +409,12 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "canvas_read") {
             const std::string preset = Json::str(data, "preset");
             const bool        for_send = Json::boolean(data, "send", false);
-            Canvas::read(preset, [preset, for_send](nlohmann::json r) {
+            const long long   id       = Json::integer(data, "id", 0);
+            Canvas::read(preset, [preset, for_send, id](nlohmann::json r) {
                 r["type"]   = "canvas_state";
                 r["preset"] = preset;
                 r["send"]   = for_send;
+                r["id"]     = id;
                 send(r);
             });
         } else if (type == "canvas_apply") {
@@ -424,6 +426,7 @@ void handle_page_message(const nlohmann::json& data)
             static bool hooked = false;
             if (!hooked) { // un départ avec carte refusé (envoi de Plyo ou d'Orca) est signalé au panneau
                 hooked = true;
+                CC2::on_orca_state(&Canvas::orca_state);
                 CC2::on_refused([](const std::string& text) {
                     Slic3r::GUI::wxGetApp().CallAfter([text] { send({{"type", "canvas_refused"}, {"text", text}}); });
                 });

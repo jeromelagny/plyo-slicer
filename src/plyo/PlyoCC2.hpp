@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 // Démarrage d'une impression sur une Elegoo Centauri Carbon 2 : Orca sait envoyer le fichier (HTTP) mais pas le
 // démarrer, Plyo ajoute la commande par le canal MQTT local de l'imprimante (voir PlyoCC2Logic.hpp). Appelé par
@@ -20,9 +21,13 @@ bool start_print(const std::string& host, const std::string& access_code, const 
 // emplacements part avec l'ordre de départ, après une relecture du Canvas. Un départ refusé avec une carte est gardé
 // (last_refused) pour « Démarrer sans carte ».
 
-// Plan d'envoi choisi dans Plyo : {host, map:[{t, canvas_id, tray_id}], sliced_t:[numéros de filament découpés]}.
+// Plan d'envoi choisi dans Plyo : {host, map:[{t, canvas_id, tray_id, type, preset}]}.
 void set_plan(const nlohmann::json& plan);
 void clear_plan();
+// Lit dans Orca (fil principal) les numéros de filament utilisés par la plaque et les profils de filament par numéro ;
+// faux si la lecture n'a pas abouti. Appelé par start_print hors du fil principal.
+using OrcaState = std::function<bool(std::vector<int>& sliced_t, std::vector<std::string>& presets)>;
+void on_orca_state(OrcaState provider);
 // Appelé (hors du fil principal) quand un départ avec carte n'a pas abouti ; reçoit le texte de l'erreur.
 void on_refused(std::function<void(const std::string&)> callback);
 // {host, serial, filename} du dernier départ refusé avec une carte, ou null.

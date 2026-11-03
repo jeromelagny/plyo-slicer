@@ -862,6 +862,42 @@ TEST_CASE("CC2: map_for_send ne sert la carte qu'à la bonne imprimante et aux b
     CHECK(map_for_send(nullptr, "192.168.1.29", {0}).empty());
 }
 
+TEST_CASE("CC2: decide_map relit le Canvas et refuse une carte qui ne correspond plus")
+{
+    using namespace Plyo::CC2Logic;
+    const nlohmann::json canvases = parse_canvas_reply(CC2_CANVAS_REPLY, 4)["canvases"];
+    const nlohmann::json planned  = nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}, {"type", "PLA"}, {"preset", "Generic PLA @ECC2"}},
+                                                           {{"t", 1}, {"canvas_id", 0}, {"tray_id", 2}, {"type", "ASA"}, {"preset", "Generic ASA @ECC2"}}});
+    const std::vector<std::string> presets = {"Generic PLA @ECC2 (Plyo)", "Generic ASA @ECC2"};
+    const MapDecision ok = decide_map(planned, canvases, presets);
+    CHECK(ok.refusal.empty());
+    CHECK(ok.map == nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}}, {{"t", 1}, {"canvas_id", 0}, {"tray_id", 2}}}));
+    // Relecture impossible.
+    CHECK_FALSE(decide_map(planned, nullptr, presets).refusal.empty());
+    // L'emplacement 3 contient maintenant du PETG : refus (pas d'impression ASA découpée sur du PETG).
+    nlohmann::json petg = canvases;
+    petg[0]["trays"][2]["type"] = "PETG";
+    const MapDecision changed = decide_map(planned, petg, presets);
+    CHECK(changed.map.empty());
+    CHECK(changed.refusal.find("emplacement 3") != std::string::npos);
+    // La couleur 2 a changé de profil dans Orca depuis le choix : refus.
+    CHECK_FALSE(decide_map(planned, canvases, {"Generic PLA @ECC2", "Generic PETG @ECC2"}).refusal.empty());
+    // Moins de filaments dans Orca que de couleurs dans la carte : refus.
+    CHECK_FALSE(decide_map(planned, canvases, {"Generic PLA @ECC2"}).refusal.empty());
+    // Emplacement disparu : refus.
+    nlohmann::json gone = canvases;
+    gone[0]["trays"].erase(gone[0]["trays"].begin() + 3);
+    CHECK_FALSE(decide_map(planned, gone, presets).refusal.empty());
+}
+
+TEST_CASE("CC2: map_for_send prend les couleurs découpées de l'appelant, jamais celles gardées dans le plan")
+{
+    using namespace Plyo::CC2Logic;
+    const nlohmann::json map  = nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}}, {{"t", 1}, {"canvas_id", 0}, {"tray_id", 1}}});
+    const nlohmann::json plan = {{"host", "192.168.1.29"}, {"map", map}, {"sliced_t", {0, 1}}};
+    CHECK(map_for_send(plan, "192.168.1.29", {0, 1, 2}).empty()); // la pièce a maintenant 3 couleurs
+}
+
 TEST_CASE("CC2: numéro de série lu dans la réponse de découverte")
 {
     using namespace Plyo::CC2Logic;

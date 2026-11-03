@@ -51,6 +51,16 @@ nlohmann::json sanitize_slot_map(const nlohmann::json& map, const nlohmann::json
 // Carte du plan d'envoi ({host, map}) si l'envoi vise cette imprimante et que la pièce découpée utilise exactement les
 // couleurs de la carte (`sliced_t`, numéros de filament à partir de 0) ; sinon un tableau vide.
 nlohmann::json map_for_send(const nlohmann::json& plan, const std::string& host, const std::vector<int>& sliced_t);
+struct MapDecision
+{
+    nlohmann::json map = nlohmann::json::array(); // carte à envoyer ({t, canvas_id, tray_id})
+    std::string    refusal;                       // non vide : ne pas démarrer, texte pour l'utilisateur
+};
+// Carte prévue (`planned` : [{t, canvas_id, tray_id, type, preset}], non vide) confrontée à une relecture fraîche du
+// Canvas (`canvases`, null si la relecture a échoué) et aux profils de filament actuels d'Orca (`presets`, par numéro) :
+// refus si la relecture manque, si un emplacement a disparu ou changé de type, ou si une couleur a changé de profil.
+MapDecision decide_map(const nlohmann::json& planned, const nlohmann::json& canvases, const std::vector<std::string>& presets);
+
 // Numéro de série dans la réponse de découverte (méthode 7000) ; vide s'il n'y est pas.
 std::string serial_from_discovery(const std::string& datagram);
 

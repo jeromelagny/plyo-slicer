@@ -122,3 +122,12 @@ test('Canvas : vues sans bouton plein, fichiers inclus, rappel et relance à l�
   // L'envoi relit les emplacements avant de partir quand le projet en a.
   assert.ok(/kind === 'send'[\s\S]{0,200}sendWithCanvasCheck\(\)/.test(page));
 });
+
+test('Canvas : lectures numérotées, plan envoyé au premier affichage, refus oublié au prochain envoi', () => {
+  const page = read('index.html');
+  assert.ok(/planKey: null/.test(page), 'le premier affichage envoie le plan (ou l’efface) : rien ne reste d’un panneau rechargé');
+  assert.ok(/msg\.id !== canvasUI\.readId/.test(page), 'une réponse ancienne est ignorée');
+  assert.ok(/readId: 0/.test(page));
+  assert.ok(/kind === 'send'[\s\S]{0,120}canvasUI\.refused = ''/.test(page), 'un nouvel envoi oublie le refus précédent');
+  assert.ok(/type: e\.type, preset: e\.preset/.test(page), 'le plan porte le type et le profil de chaque couleur');
+});

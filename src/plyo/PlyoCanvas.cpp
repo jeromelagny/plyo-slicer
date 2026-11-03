@@ -14,6 +14,8 @@
 
 #include <boost/log/trivial.hpp>
 
+#include <chrono>
+#include <future>
 #include <memory>
 #include <thread>
 
@@ -183,10 +185,38 @@ void plan(const std::string& printer_preset, const nlohmann::json& map)
         CC2::clear_plan();
         return;
     }
-    nlohmann::json sliced = nlohmann::json::array();
-    for (int i : used_filaments())
-        sliced.push_back(i);
-    CC2::set_plan({{"host", t.host}, {"map", map}, {"sliced_t", sliced}});
+    nlohmann::json clean = nlohmann::json::array(); // {t, canvas_id, tray_id, type, preset} seulement
+    for (const nlohmann::json& e : map)
+        if (e.is_object())
+            clean.push_back({{"t", Json::any(e, "t")}, {"canvas_id", Json::any(e, "canvas_id")}, {"tray_id", Json::any(e, "tray_id")},
+                             {"type", Json::str(e, "type", 30)}, {"preset", Json::str(e, "preset", 200)}});
+    CC2::set_plan({{"host", t.host}, {"map", clean}});
+}
+
+bool orca_state(std::vector<int>& sliced_t, std::vector<std::string>& presets)
+{
+    auto read_now = [](std::vector<int>& s, std::vector<std::string>& p) {
+        s = used_filaments();
+        p = bundle().filament_presets;
+    };
+    if (wxIsMainThread()) {
+        read_now(sliced_t, presets);
+        return true;
+    }
+    using Result = std::pair<std::vector<int>, std::vector<std::string>>;
+    auto promise = std::make_shared<std::promise<Result>>();
+    auto future  = promise->get_future();
+    wxGetApp().CallAfter([promise, read_now] {
+        Result r;
+        read_now(r.first, r.second);
+        promise->set_value(std::move(r));
+    });
+    if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+        return false;
+    Result r = future.get();
+    sliced_t = std::move(r.first);
+    presets  = std::move(r.second);
+    return true;
 }
 
 void clear_plan() { CC2::clear_plan(); }

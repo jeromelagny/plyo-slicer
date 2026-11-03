@@ -198,3 +198,11 @@ test('étape Filament avec le Canvas : consigne et action principale', () => {
   // Le Canvas l'emporte sur « comme la dernière fois ».
   assert.equal(J.primaryAction('filament', Object.assign({ proposal: { name: 'PLA' } }, single)).kind, 'confirmCanvas');
 });
+
+test('emplacements repris depuis l’étape Imprimer : l’action principale confirme les emplacements, pas l’envoi', () => {
+  const multi = { sliced: true, linked: true, canvas: { mode: 'multi', complete: true } };
+  assert.equal(J.primaryAction('imprimer', multi).kind, 'confirmCanvas');
+  assert.equal(J.prompt('imprimer', multi), 'Quel emplacement pour chaque couleur ?');
+  assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true, canvas: { mode: 'loading' } }).kind, 'none');
+  assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true }).kind, 'send');
+});

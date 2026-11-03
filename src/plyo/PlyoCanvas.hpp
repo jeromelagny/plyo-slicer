@@ -23,6 +23,8 @@ nlohmann::json apply(const nlohmann::json& entries);
 // Plan d'envoi : carte [{t, canvas_id, tray_id}] pour l'imprimante de ce profil, avec les couleurs de la plaque.
 void plan(const std::string& printer_preset, const nlohmann::json& map);
 void clear_plan();
+// Couleurs découpées de la plaque et profils de filament (voir CC2::OrcaState) ; depuis n'importe quel fil.
+bool orca_state(std::vector<int>& sliced_t, std::vector<std::string>& presets);
 // Relance sans carte un départ refusé ; `done` (fil principal) reçoit {ok, text}.
 void start_plain(const std::string& printer_preset, std::function<void(nlohmann::json)> done);
 // Remet ces profils sur les filaments 2 et suivants (restauration du projet). Ignore un numéro hors de la plaque.

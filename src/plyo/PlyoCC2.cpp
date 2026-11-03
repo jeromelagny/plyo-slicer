@@ -177,9 +177,10 @@ private:
 };
 
 std::mutex     g_mutex;
-nlohmann::json g_plan = nullptr;     // {host, map, sliced_t} : carte des emplacements choisie dans Plyo
+nlohmann::json g_plan = nullptr;     // {host, map:[{t, canvas_id, tray_id, type, preset}]} : carte choisie dans Plyo
 nlohmann::json g_refused = nullptr;  // {host, serial, filename} : départ refusé avec une carte, relançable sans carte
 std::function<void(const std::string&)> g_on_refused;
+OrcaState g_orca_state; // couleurs découpées et profils de filament, lus dans Orca au moment du départ
 
 bool send_start(Session& s, const std::string& filename, const nlohmann::json& map, int& code)
 {
@@ -206,6 +207,12 @@ void clear_plan()
     g_plan = nullptr;
 }
 
+void on_orca_state(OrcaState provider)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_orca_state = std::move(provider);
+}
+
 void on_refused(std::function<void(const std::string&)> callback)
 {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -216,15 +223,19 @@ bool start_print(const std::string& host, const std::string& access_code, const 
                  std::string& error)
 {
     nlohmann::json plan;
+    OrcaState      orca_state;
     {
         std::lock_guard<std::mutex> lock(g_mutex);
-        plan = g_plan;
+        plan       = g_plan;
+        orca_state = g_orca_state;
+        g_refused  = nullptr; // un nouveau départ remplace le précédent refus
     }
-    std::vector<int> sliced_t;
-    for (const nlohmann::json& t : Json::arr(plan, "sliced_t"))
-        if (t.is_number_integer())
-            sliced_t.push_back(t.get<int>());
-    const nlohmann::json planned = CC2Logic::map_for_send(plan, host, sliced_t);
+    // Les couleurs de la plaque et les profils sont lus maintenant (pas au moment du choix) : la pièce a pu changer.
+    std::vector<int>         sliced_t;
+    std::vector<std::string> presets;
+    const bool               known   = orca_state && orca_state(sliced_t, presets);
+    const bool               planned_here = plan.is_object() && Json::str(plan, "host") == host && !Json::arr(plan, "map").empty();
+    const nlohmann::json     planned = known ? CC2Logic::map_for_send(plan, host, sliced_t) : nlohmann::json::array();
     auto refused = [&](const std::string& text) {
         error = text;
         std::function<void(const std::string&)> notify;
@@ -241,15 +252,16 @@ bool start_print(const std::string& host, const std::string& access_code, const 
         Session s;
         if (!s.open(host, access_code, serial, error))
             return false;
+        if (planned_here && !known)
+            return refused("Je n'ai pas pu vérifier la pièce dans Orca : l'impression n'a pas démarré. Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Démarrer sans carte ».");
         nlohmann::json map = nlohmann::json::array();
         if (!planned.empty()) {
             // Relecture juste avant le départ : on n'envoie jamais une carte qui ne correspond plus à l'imprimante.
-            const nlohmann::json canvas = s.read_canvas();
-            if (canvas.is_null())
-                return refused("Je n'ai pas pu relire les emplacements de l'imprimante : l'impression n'a pas démarré. Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Démarrer sans carte ».");
-            map = CC2Logic::sanitize_slot_map(planned, Json::arr(canvas, "canvases"));
-            if (map.empty())
-                return refused("Les emplacements choisis dans Plyo ne correspondent plus au Canvas : l'impression n'a pas démarré. Reviens à l'étape Filament, ou « Démarrer sans carte ».");
+            const nlohmann::json        canvas   = s.read_canvas();
+            const CC2Logic::MapDecision decision = CC2Logic::decide_map(planned, canvas.is_null() ? nlohmann::json() : Json::arr(canvas, "canvases"), presets);
+            if (!decision.refusal.empty())
+                return refused(decision.refusal);
+            map = decision.map;
         }
         int code = -1;
         if (!send_start(s, filename, map, code)) {
