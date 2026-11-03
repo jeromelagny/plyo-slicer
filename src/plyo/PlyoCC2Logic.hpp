@@ -34,8 +34,25 @@ std::string topic_api_response(const std::string& sn, const std::string& client_
 std::string register_payload(const std::string& client_id);
 bool        is_register_ok(const std::string& payload);
 
-// Démarre l'impression de `filename` (fichier déjà envoyé dans le stockage « local » de l'imprimante).
-std::string start_print_payload(int id, const std::string& filename);
+// Démarre l'impression de `filename` (fichier déjà envoyé dans le stockage « local » de l'imprimante). `slot_map`
+// ([{t, canvas_id, tray_id}], couleur découpée → emplacement du Canvas) n'est ajouté (params.config.slot_map) que s'il
+// n'est pas vide : sans carte, le message est celui d'avant et l'imprimante choisit elle-même.
+std::string start_print_payload(int id, const std::string& filename, const nlohmann::json& slot_map = nlohmann::json::array());
+
+// Lecture des emplacements du Canvas (méthode 2005, paramètres vides).
+std::string canvas_read_payload(int id);
+// Réponse à `canvas_read_payload(id)` : null si ce n'en est pas une ; sinon
+// {error_code, canvases:[{canvas_id, connected, trays:[{tray_id, brand, type, name, color "#RRGGBB" ou "", min_temp,
+// max_temp, status}]}], active:{canvas_id, tray_id}}. Sur la CC2, tray_id va de 0 à 3 (emplacement affiché = tray_id + 1).
+nlohmann::json parse_canvas_reply(const std::string& payload, int id);
+// La carte réduite à {t, canvas_id, tray_id} si chaque entrée est valable (t entier ≥ 0 sans doublon, unité connectée,
+// emplacement existant) ; sinon un tableau vide : jamais de carte partielle.
+nlohmann::json sanitize_slot_map(const nlohmann::json& map, const nlohmann::json& canvases);
+// Carte du plan d'envoi ({host, map}) si l'envoi vise cette imprimante et que la pièce découpée utilise exactement les
+// couleurs de la carte (`sliced_t`, numéros de filament à partir de 0) ; sinon un tableau vide.
+nlohmann::json map_for_send(const nlohmann::json& plan, const std::string& host, const std::vector<int>& sliced_t);
+// Numéro de série dans la réponse de découverte (méthode 7000) ; vide s'il n'y est pas.
+std::string serial_from_discovery(const std::string& datagram);
 
 struct StartReply
 {

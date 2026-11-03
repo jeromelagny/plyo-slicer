@@ -748,6 +748,103 @@ TEST_CASE("CC2: les messages de démarrage d'impression")
     CHECK_FALSE(error_text(99999).empty());
 }
 
+namespace {
+// Réponse réelle de la CC2 de Jérôme à la méthode 2005 (2026-11-03), emplacements numérotés 0 à 3.
+const char* CC2_CANVAS_REPLY = R"({"id":4,"method":2005,"result":{"canvas_info":{"active_canvas_id":0,"active_tray_id":-1,"auto_refill":false,
+ "canvas_list":[{"canvas_id":0,"connected":1,"tray_list":[
+  {"brand":"Generic","filament_code":"0x0000","filament_color":"#FCEBD7","filament_name":"PLA","filament_type":"PLA","max_nozzle_temp":230,"min_nozzle_temp":190,"status":0,"tray_id":0},
+  {"brand":"Generic","filament_code":"0x0000","filament_color":"#F95D77","filament_name":"PLA","filament_type":"PLA","max_nozzle_temp":230,"min_nozzle_temp":190,"status":1,"tray_id":1},
+  {"brand":"Generic","filament_code":"0x0800","filament_color":"#898989","filament_name":"ASA","filament_type":"ASA","max_nozzle_temp":280,"min_nozzle_temp":240,"status":1,"tray_id":2},
+  {"brand":"Generic","filament_code":"0x0000","filament_color":"#7c4c00","filament_name":"PLA","filament_type":"PLA","max_nozzle_temp":230,"min_nozzle_temp":190,"status":1,"tray_id":3}]}]},"error_code":0}})";
+} // namespace
+
+TEST_CASE("CC2: lecture des emplacements du Canvas (méthode 2005)")
+{
+    using namespace Plyo::CC2Logic;
+    const nlohmann::json ask = nlohmann::json::parse(canvas_read_payload(4));
+    CHECK(ask["id"] == 4);
+    CHECK(ask["method"] == 2005);
+    CHECK(ask["params"] == nlohmann::json::object());
+
+    const nlohmann::json c = parse_canvas_reply(CC2_CANVAS_REPLY, 4);
+    REQUIRE(c.is_object());
+    CHECK(c["error_code"] == 0);
+    REQUIRE(c["canvases"].size() == 1);
+    CHECK(c["canvases"][0]["canvas_id"] == 0);
+    CHECK(c["canvases"][0]["connected"] == true);
+    const nlohmann::json& trays = c["canvases"][0]["trays"];
+    REQUIRE(trays.size() == 4);
+    CHECK(trays[3]["tray_id"] == 3);
+    CHECK(trays[3]["type"] == "PLA");
+    CHECK(trays[3]["color"] == "#7C4C00"); // normalisée en majuscules
+    CHECK(trays[0]["status"] == 0);
+    CHECK(trays[2]["type"] == "ASA");
+    CHECK(trays[2]["min_temp"] == 240);
+    CHECK(c["active"]["tray_id"] == -1);
+    CHECK(parse_canvas_reply(CC2_CANVAS_REPLY, 5).is_null());             // autre demande
+    CHECK(parse_canvas_reply(R"({"id":4,"method":1020,"result":{}})", 4).is_null()); // autre méthode
+    CHECK(parse_canvas_reply("pas du json", 4).is_null());
+    const nlohmann::json bad = parse_canvas_reply(R"({"id":4,"method":2005,"result":{"canvas_info":{"canvas_list":[{"canvas_id":0,"connected":1,"tray_list":[{"tray_id":1,"filament_color":"rouge"}]}]},"error_code":0}})", 4);
+    CHECK(bad["canvases"][0]["trays"][0]["color"] == "");                  // couleur illisible → vide
+    CHECK(bad["canvases"][0]["trays"][0]["type"] == "");
+}
+
+TEST_CASE("CC2: démarrage avec la carte des emplacements")
+{
+    using namespace Plyo::CC2Logic;
+    // Sans carte : exactement le message d'avant (aucun « config »).
+    CHECK(start_print_payload(7, "bague.gcode") == start_print_payload(7, "bague.gcode", nlohmann::json::array()));
+    CHECK_FALSE(nlohmann::json::parse(start_print_payload(7, "bague.gcode"))["params"].contains("config"));
+    const nlohmann::json map = nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}}});
+    const nlohmann::json start = nlohmann::json::parse(start_print_payload(7, "bague.gcode", map));
+    CHECK(start["params"]["filename"] == "bague.gcode");
+    CHECK(start["params"]["config"]["slot_map"] == map);
+}
+
+TEST_CASE("CC2: sanitize_slot_map refuse toute carte douteuse (tout ou rien)")
+{
+    using namespace Plyo::CC2Logic;
+    const nlohmann::json canvases = parse_canvas_reply(CC2_CANVAS_REPLY, 4)["canvases"];
+    const nlohmann::json good = nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}}, {{"t", 1}, {"canvas_id", 0}, {"tray_id", 1}}});
+    CHECK(sanitize_slot_map(good, canvases) == good);
+    // Deux couleurs sur le même emplacement : permis (l'utilisateur l'a choisi).
+    const nlohmann::json same = nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}}, {{"t", 1}, {"canvas_id", 0}, {"tray_id", 3}}});
+    CHECK(sanitize_slot_map(same, canvases) == same);
+    CHECK(sanitize_slot_map(nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}}, {{"t", 0}, {"canvas_id", 0}, {"tray_id", 1}}}), canvases).empty()); // t en double
+    CHECK(sanitize_slot_map(nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 7}}}), canvases).empty());   // emplacement inconnu
+    CHECK(sanitize_slot_map(nlohmann::json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 3}}}), canvases).empty());   // unité absente
+    CHECK(sanitize_slot_map(nlohmann::json::array({{{"t", -1}, {"canvas_id", 0}, {"tray_id", 3}}}), canvases).empty());  // t négatif
+    CHECK(sanitize_slot_map(nlohmann::json::array({{{"t", "0"}, {"canvas_id", 0}, {"tray_id", 3}}}), canvases).empty()); // pas un entier
+    nlohmann::json off = canvases;
+    off[0]["connected"] = false;
+    CHECK(sanitize_slot_map(good, off).empty()); // unité déconnectée
+    CHECK(sanitize_slot_map("pas une liste", canvases).empty());
+    // Seules les trois clés partent vers l'imprimante.
+    const nlohmann::json extra = nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}, {"type", "PLA"}}});
+    CHECK(sanitize_slot_map(extra, canvases) == nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}}}));
+}
+
+TEST_CASE("CC2: map_for_send ne sert la carte qu'à la bonne imprimante et aux bonnes couleurs")
+{
+    using namespace Plyo::CC2Logic;
+    const nlohmann::json map  = nlohmann::json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}}, {{"t", 2}, {"canvas_id", 0}, {"tray_id", 1}}});
+    const nlohmann::json plan = {{"host", "192.168.1.29"}, {"map", map}};
+    CHECK(map_for_send(plan, "192.168.1.29", {0, 2}) == map);
+    CHECK(map_for_send(plan, "192.168.1.29", {2, 0}) == map);   // ordre indifférent
+    CHECK(map_for_send(plan, "192.168.1.30", {0, 2}).empty());  // autre imprimante
+    CHECK(map_for_send(plan, "192.168.1.29", {0}).empty());     // pièce découpée avec moins de couleurs
+    CHECK(map_for_send(plan, "192.168.1.29", {0, 1, 2}).empty()); // ou plus
+    CHECK(map_for_send(nullptr, "192.168.1.29", {0}).empty());
+}
+
+TEST_CASE("CC2: numéro de série lu dans la réponse de découverte")
+{
+    using namespace Plyo::CC2Logic;
+    CHECK(serial_from_discovery(R"({"id":0,"result":{"sn":"ABC123","machine_model":"Centauri Carbon 2"}})") == "ABC123");
+    CHECK(serial_from_discovery(R"({"id":0,"result":{}})") == "");
+    CHECK(serial_from_discovery("pas du json") == "");
+}
+
 TEST_CASE("Habits: sanitize_habits garde les machines, les habitudes de filament et les machines masquées")
 {
     using namespace Plyo::ProjectLogic;
