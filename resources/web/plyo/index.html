@@ -335,6 +335,10 @@
   .project-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s1); }
   .project-body p, .project-hint { margin: 0; }
   .project-error { color: var(--danger-text); margin: 0; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--border); margin-right: 6px; vertical-align: -2px; flex: none; }
+  .canvas-row { display: flex; align-items: center; gap: var(--s2); }
+  .canvas-colour { min-width: 5.5em; }
+  .canvas-select { flex: 1; min-width: 0; }
   .project-temps { padding-left: 20px; }
   .tour { border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--accent-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .tour .step { font-size: var(--fs-xs); font-weight: 600; color: var(--accent-text); text-transform: uppercase; letter-spacing: .04em; }
@@ -502,6 +506,8 @@
 <!--plyo-include:machines-logic.js-->
 <!--plyo-include:machines-view.js-->
 <!--plyo-include:intent-logic.js-->
+<!--plyo-include:canvas-logic.js-->
+<!--plyo-include:canvas-view.js-->
 <!--plyo-include:journey-view.js-->
 <!--plyo-include:journey-steps.js-->
 <!--plyo-include:project-card.js-->
@@ -832,6 +838,141 @@
   // ---------- Fiche « Mon projet » : imprimante, filament (buse et plateau), pièce ----------
   // Le projet est gardé avec la conversation (conv.project) ; PlyoProject (project-logic.js) dit quelle étape manque.
   var projectUI = { showList: false, showKinds: false, showOthers: false, keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
+  // Emplacements du Canvas (CC2) à l'étape Filament : lecture, proposition, application, plan d'envoi.
+  var canvasUI = { preset: null, state: null, loading: false, mapping: null, useList: false, error: '', applying: null, sendPending: false, refused: '', planKey: '' };
+  // Seulement pour une CC2 reliée (liste des machines du slicer) : les autres imprimantes gardent la liste des filaments.
+  function canvasWanted(step) {
+    var pr = conv && conv.project.printer, list = projectUI.printers || [];
+    var known = pr && list.filter(function (p) { return p.preset === pr.preset; })[0];
+    return !!(known && known.cc2 && known.linked && (step === 'filament' || projectUI.editing === 'filament'));
+  }
+  function canvasColours() {
+    var c = canvasUI.state && Array.isArray(canvasUI.state.colours) ? canvasUI.state.colours : [];
+    return c.length ? c : [{ t: 0, color: '', type: '' }];
+  }
+  function canvasMode(step) {
+    if (!canvasWanted(step) || canvasUI.useList) return null;
+    if (canvasUI.loading || canvasUI.preset !== conv.project.printer.preset) return 'loading';
+    if (!canvasUI.state || !canvasUI.state.ok) return null;
+    var trays = PlyoCanvas.trays(canvasUI.state), colours = canvasColours();
+    if (PlyoCanvas.tooMany(colours, trays)) return 'tooMany';
+    return colours.length > 1 ? 'multi' : 'single';
+  }
+  function ensureCanvasRead(step) {
+    if (!canvasWanted(step) || canvasUI.useList || canvasUI.loading || canvasUI.preset === conv.project.printer.preset) return;
+    canvasUI.preset = conv.project.printer.preset;
+    canvasUI.loading = true;
+    canvasUI.state = null;
+    canvasUI.mapping = null;
+    canvasUI.error = '';
+    window.orca.postMessage({ type: 'canvas_read', preset: canvasUI.preset });
+  }
+  function canvasProposal() {
+    var colours = canvasColours(), trays = PlyoCanvas.trays(canvasUI.state), chosen = conv.project.canvas;
+    // Déjà choisi pour ces couleurs : on le reprend ; sinon, proposition (une couleur : le type du filament du projet).
+    if (Array.isArray(chosen) && chosen.length === colours.length && colours.every(function (c) { return chosen.some(function (e) { return e.t === c.t; }); }))
+      return chosen.map(function (e) { return { t: e.t, color: (colours.filter(function (c) { return c.t === e.t; })[0] || {}).color, canvas_id: e.canvas_id, tray_id: e.tray_id }; });
+    var wanted = colours.length === 1 ? [{ t: colours[0].t, color: colours[0].color, type: conv.project.filament && !conv.project.filament.proposed ? conv.project.filament.type : '' }] : colours;
+    return PlyoCanvas.propose(wanted, trays);
+  }
+  function canvasCtx(step) {
+    var mode = canvasMode(step);
+    if (!mode) return null;
+    var out = { mode: mode };
+    if (mode === 'single' || mode === 'multi') {
+      var trays = PlyoCanvas.trays(canvasUI.state), m = canvasUI.mapping || [];
+      out.complete = PlyoCanvas.complete(m);
+      var first = m[0], tray = first && trays.filter(function (t) { return t.tray_id === first.tray_id && t.canvas_id === first.canvas_id; })[0];
+      if (mode === 'single' && tray) out.proposal = { label: tray.label };
+    }
+    return out;
+  }
+  function applyCanvas(mapping) {
+    var trays = PlyoCanvas.trays(canvasUI.state), entries = [], full = [];
+    mapping.forEach(function (m) {
+      var tray = trays.filter(function (t) { return t.tray_id === m.tray_id && t.canvas_id === m.canvas_id; })[0];
+      if (!tray) return;
+      entries.push({ t: m.t, type: tray.type, color: tray.color });
+      full.push({ t: m.t, canvas_id: tray.canvas_id, tray_id: tray.tray_id, type: tray.type, color: tray.color });
+    });
+    if (!entries.length || entries.length !== mapping.length) { canvasUI.error = 'Choisis un emplacement pour chaque couleur.'; renderProject(); return; }
+    canvasUI.error = '';
+    canvasUI.applying = full;
+    window.orca.postMessage({ type: 'canvas_apply', entries: entries });
+  }
+  function onCanvasApplied(msg) {
+    var full = canvasUI.applying;
+    canvasUI.applying = null;
+    if (!full) return;
+    if (!msg.ok) { canvasUI.error = msg.text || 'Je n’ai pas pu choisir ces emplacements.'; renderProject(); return; }
+    var presets = {};
+    (msg.presets || []).forEach(function (p) { presets[p.t] = p.preset; });
+    full.forEach(function (e) { e.preset = presets[e.t] || ''; });
+    full.sort(function (a, b) { return a.t - b.t; });
+    conv.project.canvas = full;
+    projectUI.error = {};
+    // Le filament du projet (couleur 1) suit l'emplacement : profil et températures relus dans Orca.
+    projectUI.pending = { kind: 'filament', type: full[0].type };
+    window.orca.postMessage({ type: 'project_state' });
+  }
+  // Le plan d'envoi (carte des emplacements) suit le projet affiché ; il n'est renvoyé que s'il change.
+  function syncCanvasPlan(force) {
+    var p = conv && conv.project, map = p && Array.isArray(p.canvas) && p.printer ? p.canvas.map(function (e) { return { t: e.t, canvas_id: e.canvas_id, tray_id: e.tray_id }; }) : [];
+    var key = map.length ? p.printer.preset + JSON.stringify(map) : '';
+    if (!force && key === canvasUI.planKey) return;
+    canvasUI.planKey = key;
+    window.orca.postMessage(map.length ? { type: 'canvas_plan', preset: p.printer.preset, map: map } : { type: 'canvas_plan', clear: true });
+  }
+  // Avant « Envoyer et imprimer » : relire les emplacements, bloquer si l'un a changé de type ou a disparu.
+  function sendWithCanvasCheck() {
+    canvasUI.sendPending = true;
+    noteLine('Je relis les emplacements du Canvas avant d’envoyer…', '', 'info', 'guide');
+    window.orca.postMessage({ type: 'canvas_read', preset: conv.project.printer.preset, send: true });
+  }
+  function onCanvasState(msg) {
+    if (canvasUI.sendPending && msg.send) {
+      canvasUI.sendPending = false;
+      if (!msg.ok) { noteLine('Je n’arrive pas à relire les emplacements de ta CC2 : rien n’est envoyé. Vérifie qu’elle est allumée, puis réessaie.', 'warn', 'alert', 'guide'); return; }
+      var chosen = conv.project.canvas || [], cols = Array.isArray(msg.colours) ? msg.colours : [];
+      var check = PlyoCanvas.checkBeforeSend(chosen, PlyoCanvas.trays(msg));
+      if (cols.length && (cols.length !== chosen.length || cols.some(function (c) { return !chosen.some(function (e) { return e.t === c.t; }); })))
+        check.block.push('La pièce n’a plus les mêmes couleurs qu’au choix des emplacements.');
+      if (check.block.length) {
+        check.block.forEach(function (t) { noteLine(t, 'warn', 'alert', 'guide'); });
+        noteLine('Choisis à nouveau les emplacements : rien n’est envoyé.', 'warn', 'alert', 'guide');
+        canvasUI.state = msg; canvasUI.preset = conv.project.printer.preset; canvasUI.loading = false; canvasUI.mapping = null; canvasUI.useList = false;
+        projectUI.editing = 'filament';
+        canvasUI.mapping = canvasProposal();
+        renderProject();
+        return;
+      }
+      check.notes.forEach(function (t) { noteLine(t, '', 'info', 'guide'); });
+      syncCanvasPlan(true); // rafraîchit aussi les couleurs découpées de la plaque
+      canvasUI.refused = '';
+      rememberHabit();
+      window.orca.postMessage({ type: 'print_start', export: false });
+      return;
+    }
+    if (!conv || !conv.project.printer || msg.preset !== canvasUI.preset) return; // réponse pour une autre machine
+    canvasUI.loading = false;
+    canvasUI.state = msg;
+    canvasUI.mapping = msg.ok ? canvasProposal() : null;
+    renderProject();
+  }
+  var canvasHandlers = {
+    pickTray: function (tray) { var c = canvasColours()[0]; applyCanvas([{ t: c.t, canvas_id: tray.canvas_id, tray_id: tray.tray_id }]); },
+    setTray: function (t, key) {
+      var parts = String(key).split(':');
+      (canvasUI.mapping || []).forEach(function (m) {
+        if (m.t !== t) return;
+        m.canvas_id = key ? Number(parts[0]) : null;
+        m.tray_id = key ? Number(parts[1]) : null;
+      });
+      renderProject();
+    },
+    useList: function () { canvasUI.useList = true; delete conv.project.canvas; projectChanged(); renderProject(); }
+  };
+
   function projectChanged() {
     // Machine ou filament changé après la découpe : la découpe est périmée, on repasse à « Préparer ».
     conv.project = PlyoJourney.resetStepOnChange(conv.seenProject || null, conv.project);
@@ -861,6 +1002,8 @@
     var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks };
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
     else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
+    var cctx = conv ? canvasCtx(PlyoJourney.currentStep(conv.project)) : null;
+    if (cctx) ctx.canvas = cctx;
     var st = conv ? intentState(PlyoJourney.currentStep(conv.project), ctx.sliced) : null;
     if (st) ctx.intent = st.mode;
     return ctx;
@@ -869,17 +1012,24 @@
     if (!conv) return;
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
-    if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; }
+    if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { canvasUI.preset = null; canvasUI.useList = false; } }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight });
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
       extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'wifi', onClick: projectHandlers.setupPrinter } : null });
-    if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
+    ensureCanvasRead(step);
+    syncCanvasPlan(false);
+    var cmode = canvasMode(step);
+    if (cmode && cmode !== 'loading')
+      PlyoCanvasView.render($('project-card'), ui, { mode: cmode, trays: PlyoCanvas.trays(canvasUI.state), colours: canvasColours(), mapping: canvasUI.mapping, error: canvasUI.error, handlers: canvasHandlers });
+    else if (cmode === 'loading') { $('project-card').textContent = ''; }
+    else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
+      canvas: PlyoCanvas.mapLabel(conv.project.canvas), refused: canvasUI.refused,
       intent: intentState(step, !!(tourSignals && tourSignals.sliced)),
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
@@ -902,6 +1052,12 @@
     }
   };
   var stepHandlers = {
+    changeSlots: function () { projectHandlers.change('filament'); canvasUI.preset = null; canvasUI.useList = false; renderProject(); },
+    startPlain: function () {
+      if (!conv || !conv.project.printer) return;
+      noteLine('Je démarre l’impression sans carte : l’imprimante choisit les emplacements.', '', 'info', 'guide');
+      window.orca.postMessage({ type: 'canvas_start_plain', preset: conv.project.printer.preset });
+    },
     skip: function () { setTourStep('print'); },
     exportFile: function () { runAction('export'); },
     started: function () { rememberHabit(); setTourStep('after'); },
@@ -929,7 +1085,11 @@
   function runAction(kind) {
     if (kind === 'slice') plateAction('slice');
     else if (kind === 'photo') openPhone();
-    else if (kind === 'send') { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: false }); }
+    else if (kind === 'send') {
+      if (conv && Array.isArray(conv.project.canvas) && conv.project.canvas.length) sendWithCanvasCheck();
+      else { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: false }); }
+    }
+    else if (kind === 'confirmCanvas') { if (canvasUI.mapping && PlyoCanvas.complete(canvasUI.mapping)) applyCanvas(canvasUI.mapping); }
     else if (kind === 'export') { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: true }); }
     else if (kind === 'advance') setTourStep('print');
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
@@ -3705,6 +3865,17 @@
       applyMachineQuestion();
     } else if (msg.type === 'project_printers') {
       onProjectPrinters(msg);
+    } else if (msg.type === 'canvas_state') {
+      onCanvasState(msg);
+    } else if (msg.type === 'canvas_applied') {
+      onCanvasApplied(msg);
+    } else if (msg.type === 'canvas_refused') {
+      canvasUI.refused = msg.text || 'La CC2 a refusé les emplacements choisis.';
+      noteLine(canvasUI.refused, 'warn', 'alert', 'guide');
+      if (conv) renderProject();
+    } else if (msg.type === 'canvas_started') {
+      noteLine(msg.text || '', msg.ok ? 'ok' : 'warn', msg.ok ? 'check' : 'alert', 'guide');
+      if (msg.ok) { canvasUI.refused = ''; if (conv) renderProject(); }
     } else if (msg.type === 'project_state') {
       onProjectState(msg);
     } else if (msg.type === 'project_reachable') {

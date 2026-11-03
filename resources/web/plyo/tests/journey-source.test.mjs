@@ -110,3 +110,15 @@ test('« Passer outre » et « Je règle moi-même » sont deux gestes distincts
   assert.ok(/intentSkip:/.test(block), 'intentSkip existe');
   assert.ok(/h\.intentSkip/.test(read('journey-steps.js')), 'renderIntent appelle intentSkip');
 });
+
+test('Canvas : vues sans bouton plein, fichiers inclus, rappel et relance à l’étape Imprimer', () => {
+  assert.ok(!FULL_BUTTON.test(read('canvas-view.js')), 'canvas-view.js : l’action principale est dans la ligne d’action');
+  const page = read('index.html');
+  assert.ok(page.includes('<!--plyo-include:canvas-logic.js-->') && page.includes('<!--plyo-include:canvas-view.js-->'));
+  const cpp = fs.readFileSync(new URL('../../../../src/plyo/PlyoAssistant.cpp', import.meta.url), 'utf8');
+  assert.ok(cpp.includes('"canvas-logic.js", "canvas-view.js"'), 'chargés par PlyoAssistant.cpp');
+  const steps = read('journey-steps.js');
+  assert.ok(steps.includes('Changer les emplacements') && steps.includes('Démarrer sans carte'));
+  // L'envoi relit les emplacements avant de partir quand le projet en a.
+  assert.ok(/kind === 'send'[\s\S]{0,200}sendWithCanvasCheck\(\)/.test(page));
+});

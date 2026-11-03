@@ -183,3 +183,18 @@ test('resetStepOnChange : les emplacements du Canvas suivent la machine et le fi
   // Rien ne change : gardés.
   assert.deepEqual(J.resetStepOnChange(base, base).canvas, canvas);
 });
+
+test('étape Filament avec le Canvas : consigne et action principale', () => {
+  const single = { canvas: { mode: 'single', proposal: { label: '4 · PLA brun' } } };
+  assert.deepEqual(J.primaryAction('filament', single), { label: 'Oui, l’emplacement 4 · PLA brun', kind: 'confirmCanvas', enabled: true });
+  assert.equal(J.prompt('filament', single), 'Quel emplacement du Canvas pour ta pièce ?');
+  assert.equal(J.primaryAction('filament', { canvas: { mode: 'single' } }).kind, 'none'); // pas de proposition : on touche un emplacement
+  assert.deepEqual(J.primaryAction('filament', { canvas: { mode: 'multi', complete: true } }), { label: 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: true });
+  assert.equal(J.primaryAction('filament', { canvas: { mode: 'multi', complete: false } }).enabled, false);
+  assert.equal(J.prompt('filament', { canvas: { mode: 'multi' } }), 'Quel emplacement pour chaque couleur ?');
+  assert.equal(J.primaryAction('filament', { canvas: { mode: 'loading' } }).kind, 'none');
+  assert.equal(J.prompt('filament', { canvas: { mode: 'loading' } }), 'Je lis les emplacements de ta CC2…');
+  assert.equal(J.primaryAction('filament', { canvas: { mode: 'tooMany' } }).kind, 'none');
+  // Le Canvas l'emporte sur « comme la dernière fois ».
+  assert.equal(J.primaryAction('filament', Object.assign({ proposal: { name: 'PLA' } }, single)).kind, 'confirmCanvas');
+});

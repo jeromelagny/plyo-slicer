@@ -407,8 +407,12 @@ void handle_page_message(const nlohmann::json& data)
             send(r);
             send_values();
         } else if (type == "canvas_read") {
-            Canvas::read(Json::str(data, "preset"), [](nlohmann::json r) {
-                r["type"] = "canvas_state";
+            const std::string preset = Json::str(data, "preset");
+            const bool        for_send = Json::boolean(data, "send", false);
+            Canvas::read(preset, [preset, for_send](nlohmann::json r) {
+                r["type"]   = "canvas_state";
+                r["preset"] = preset;
+                r["send"]   = for_send;
                 send(r);
             });
         } else if (type == "canvas_apply") {

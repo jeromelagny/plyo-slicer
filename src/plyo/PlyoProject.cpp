@@ -97,6 +97,8 @@ nlohmann::json printers()
         const bool linked = preset.config.has("print_host") && !preset.config.opt_string("print_host").empty();
         nlohmann::json item = {{"preset", preset.name}, {"name", preset.name}, {"linked", linked},
                                {"host", linked ? preset.config.opt_string("print_host") : std::string()}};
+        // Centauri Carbon 2 : l'étape Filament propose les emplacements de son Canvas.
+        item["cc2"] = preset.config.has("printer_model") && preset.config.opt_string("printer_model").find("Centauri Carbon 2") != std::string::npos;
         // Taille du plateau (mm) : sert à dire sur quelle machine une pièce tient.
         if (const auto* area = preset.config.option<Slic3r::ConfigOptionPoints>("printable_area"); area != nullptr && !area->values.empty()) {
             double x0 = area->values.front().x(), x1 = x0, y0 = area->values.front().y(), y1 = y0;

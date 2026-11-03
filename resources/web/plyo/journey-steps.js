@@ -78,6 +78,15 @@
         }
         body.appendChild(ui.button('Refaire la préparation sur une autre machine', h.changeMachine, 'link'));
       }
+      // Emplacements du Canvas choisis à l'étape Filament : rappel, et relance sans carte si la CC2 les a refusés.
+      if (opts.canvas) {
+        body.appendChild(line(ui, 'palette', opts.canvas, ''));
+        body.appendChild(ui.button('Changer les emplacements', h.changeSlots, 'link'));
+      }
+      if (opts.refused) {
+        body.appendChild(line(ui, 'alert', opts.refused, 'warn'));
+        body.appendChild(ui.button('Démarrer sans carte', h.startPlain, 'link'));
+      }
       body.appendChild(ui.el('p', 'muted small', 'Vérifie que le plateau est vide et propre, et que le filament est chargé.'));
       var acts = ui.el('div', 'printer-actions');
       if (c.linked) acts.appendChild(ui.button('Exporter le fichier plutôt', h.exportFile, 'btn ghost sm', 'folder'));
