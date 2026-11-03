@@ -312,3 +312,11 @@ test('moreBelow : le badge « scroll pour voir la suite » n’apparaît que si 
   assert.equal(L.moreBelow(null, { bottom: 600 }), false);
   assert.equal(L.moreBelow({ bottom: 900 }, null), false);
 });
+
+test('tempsFromRange : la température actuelle reste si elle est dans la plage de la bobine, sinon le milieu arrondi à 5', () => {
+  assert.deepEqual(L.tempsFromRange({ nozzle: 220, bed: 60 }, { nozzle_min: 190, nozzle_max: 230, bed_min: 50, bed_max: 70 }), { nozzle: 220, bed: 60 });
+  assert.deepEqual(L.tempsFromRange({ nozzle: 220, bed: 60 }, { nozzle_min: 230, nozzle_max: 250, bed_min: 70, bed_max: 80 }), { nozzle: 240, bed: 75 });
+  assert.deepEqual(L.tempsFromRange({ nozzle: 220, bed: 60 }, { nozzle_min: 190, nozzle_max: 210 }), { nozzle: 200, bed: null });
+  assert.deepEqual(L.tempsFromRange({ nozzle: 220, bed: 60 }, { nozzle_max: 215 }), { nozzle: 215, bed: null });
+  assert.deepEqual(L.tempsFromRange({ nozzle: null, bed: null }, { nozzle_min: 200, nozzle_max: 220 }), { nozzle: 210, bed: null });
+});

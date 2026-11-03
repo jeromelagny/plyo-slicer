@@ -131,3 +131,12 @@ test('Canvas : lectures numérotées, plan envoyé au premier affichage, refus o
   assert.ok(/kind === 'send'[\s\S]{0,120}canvasUI\.refused = ''/.test(page), 'un nouvel envoi oublie le refus précédent');
   assert.ok(/type: e\.type, preset: e\.preset/.test(page), 'le plan porte le type et le profil de chaque couleur');
 });
+
+test('les températures de la bobine se saisissent là où le texte le dit', () => {
+  const card = read('project-card.js');
+  assert.ok(!card.includes('Change-les dans la fiche'), 'plus de renvoi vers des champs masqués aux débutants');
+  assert.ok(card.includes('Ma bobine indique d’autres températures') && card.includes('renderSpoolEditor'), 'lien et formulaire de la plage');
+  const page = read('index.html');
+  assert.ok(page.includes('id="spool-slot"') && page.includes('setSpoolRange:'), 'formulaire branché dans le corps du Guide');
+  assert.ok(!/visite guidée|« Explique-moi »/.test(page), 'aucun texte ne cite un élément supprimé');
+});

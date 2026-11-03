@@ -53,8 +53,56 @@
         var bIn = field('Plateau (°C)', fi.bed_temp);
         card.appendChild(temps);
       }
+      if (row.line === 'filament') renderSpool(card, ui, project.filament, ctx);
     });
     slot.appendChild(card);
+  }
+
+  // Températures de la fiche : rappel (débutant), lien vers la plage de l'étiquette de la bobine, et ce formulaire une fois ouvert.
+  // ctx.spool : { open, limits (plage connue ou null), error }. Enregistrer garde la plage (limites du fabricant) et règle
+  // les températures dedans (h.setSpoolRange).
+  function renderSpool(card, ui, fi, ctx) {
+    var h = ctx.handlers, sp = ctx.spool || {};
+    var wrap = ui.el('div', 'project-spool');
+    if (ctx.beginner && (fi.nozzle_temp != null || fi.bed_temp != null))
+      wrap.appendChild(ui.el('p', 'muted small', 'Buse ' + (fi.nozzle_temp != null ? fi.nozzle_temp + ' °C' : '?') + ' · plateau ' + (fi.bed_temp != null ? fi.bed_temp + ' °C' : '?')));
+    if (!sp.open) wrap.appendChild(ui.button('Ma bobine indique d’autres températures', h.toggleSpool, 'link'));
+    card.appendChild(wrap);
+  }
+
+  // Formulaire de la plage de la bobine, dans le corps de l'onglet Étapes (la fiche en tête n'a pas la place).
+  function renderSpoolEditor(slot, ui, ctx) {
+    var h = ctx.handlers, sp = ctx.spool || {};
+    slot.textContent = '';
+    if (!sp.open) return;
+    var wrap = ui.el('div', 'card project-spool');
+    wrap.appendChild(ui.el('h3', '', 'Températures de ta bobine'));
+    wrap.appendChild(ui.el('p', 'small', 'Recopie les températures écrites sur l’étiquette de ta bobine (souvent une plage, par exemple 190–220 °C). Laisse vide ce qui n’y est pas.'));
+    var l = sp.limits || {}, inputs = {}, grid = ui.el('div', 'spool-grid');
+    [['nozzle_min', 'Buse min (°C)'], ['nozzle_max', 'Buse max (°C)'], ['bed_min', 'Plateau min (°C)'], ['bed_max', 'Plateau max (°C)']].forEach(function (f) {
+      var lab = ui.el('label', 'temp-field');
+      lab.appendChild(ui.el('span', 'muted small', f[1]));
+      var input = ui.el('input', 'field');
+      input.type = 'text';
+      input.inputMode = 'numeric';
+      input.value = typeof l[f[0]] === 'number' ? String(l[f[0]]) : '';
+      input.setAttribute('aria-label', f[1]);
+      inputs[f[0]] = input;
+      lab.appendChild(input);
+      grid.appendChild(lab);
+    });
+    wrap.appendChild(grid);
+    if (sp.error) wrap.appendChild(ui.el('p', 'project-error', sp.error));
+    var acts = ui.el('div', 'printer-actions');
+    acts.appendChild(ui.button('Utiliser ces températures', function () {
+      var raw = {};
+      Object.keys(inputs).forEach(function (k) { raw[k] = inputs[k].value; });
+      h.setSpoolRange(raw);
+    }, 'btn ghost sm'));
+    acts.appendChild(ui.button('Annuler', h.toggleSpool, 'link'));
+    wrap.appendChild(acts);
+    slot.appendChild(wrap);
+    setTimeout(function () { inputs.nozzle_min.focus(); }, 0);
   }
 
   // Le contenu des étapes 1 à 3 (imprimante, filament, pièce) : des choix qui s'appliquent tout de suite.
@@ -100,7 +148,10 @@
         kinds.appendChild(ui.button(k, function () { h.pickFilament(k); }, 'btn ghost sm' + (fi && fi.type === k ? ' on' : '')));
       });
       body.appendChild(kinds);
-      if (fi) body.appendChild(ui.el('p', 'muted small', 'Les températures sont celles conseillées pour ce filament. Change-les dans la fiche si l’étiquette de ta bobine indique autre chose.'));
+      if (fi) {
+        body.appendChild(ui.el('p', 'muted small', 'J’ai mis les températures conseillées pour ce filament. Si l’étiquette de ta bobine indique autre chose, entre-les :'));
+        body.appendChild(ui.button('Ma bobine indique d’autres températures', h.toggleSpool, 'link'));
+      }
     } else {
       body.appendChild(ui.el('p', 'muted small', 'Glisse ton fichier STL ou 3MF ici, ou choisis-le sur ton ordinateur. Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
       var pacts = ui.el('div', 'printer-actions');
@@ -110,6 +161,6 @@
     slot.appendChild(body);
   }
 
-  root.PlyoProjectCard = { renderFiche: renderFiche, renderChoices: renderChoices, MATERIALS: MATERIALS };
+  root.PlyoProjectCard = { renderFiche: renderFiche, renderChoices: renderChoices, renderSpoolEditor: renderSpoolEditor, MATERIALS: MATERIALS };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.PlyoProjectCard;
 })(typeof window !== 'undefined' ? window : globalThis);

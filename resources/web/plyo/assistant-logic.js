@@ -328,6 +328,20 @@
     return { ok: true, limits: limits };
   }
 
+  // Températures à appliquer d'après la plage de l'étiquette de la bobine : la valeur actuelle si elle y est déjà,
+  // sinon le milieu de la plage arrondi à 5 °C (ou la borne connue). null : rien à changer pour cette température.
+  function tempsFromRange(current, limits) {
+    var c = current || {}, l = limits || {};
+    function pick(now, min, max) {
+      var hasMin = typeof min === 'number', hasMax = typeof max === 'number';
+      if (!hasMin && !hasMax) return null;
+      if (typeof now === 'number' && (!hasMin || now >= min) && (!hasMax || now <= max)) return now;
+      if (hasMin && hasMax) return Math.round((min + max) / 2 / 5) * 5;
+      return hasMin ? min : max;
+    }
+    return { nozzle: pick(c.nozzle, l.nozzle_min, l.nozzle_max), bed: pick(c.bed, l.bed_min, l.bed_max) };
+  }
+
   // Réglages du catalogue (mode catalogue de l'API) : ils prennent la forme des propositions de la fiche, avec de quoi
   // les afficher sans dépendre de la liste des réglages lus. `confirm` : réglage sensible ; `beyond` : hors plage du fabricant.
   function catalogToSuggestions(changes) {
@@ -400,7 +414,7 @@
     return box.bottom - port.bottom > 24;
   }
 
-  var api = { moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, savedText: savedText, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, savedText: savedText, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

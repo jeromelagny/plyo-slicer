@@ -337,6 +337,8 @@
   .project-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s1); }
   .project-body p, .project-hint { margin: 0; }
   .project-error { color: var(--danger-text); margin: 0; }
+  .project-spool { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s1); }
+  .spool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
   .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--border); margin-right: 6px; vertical-align: -2px; flex: none; }
   .canvas-row { display: flex; align-items: center; gap: var(--s2); }
   .canvas-colour { min-width: 5.5em; }
@@ -445,6 +447,7 @@
     <div class="view" id="view-guide" role="tabpanel" aria-labelledby="tab-guide">
     <div id="journey-bar"></div>
     <section class="step-card"><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="project-card"></div></div></section>
+    <div id="spool-slot"></div>
     <div id="tour-slot"></div>
     <div id="outcome-slot"></div>
     <div id="preflight-slot"></div>
@@ -839,7 +842,8 @@
 
   // ---------- Fiche « Mon projet » : imprimante, filament (buse et plateau), pièce ----------
   // Le projet est gardé avec la conversation (conv.project) ; PlyoProject (project-logic.js) dit quelle étape manque.
-  var projectUI = { showList: false, showKinds: false, showOthers: false, keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false };
+  var projectUI = { showList: false, showKinds: false, showOthers: false, keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false,
+    spool: { open: false, limits: null, error: '' } }; // plage de températures de l'étiquette de la bobine (fiche)
   // Emplacements du Canvas (CC2) à l'étape Filament : lecture, proposition, application, plan d'envoi.
   // readId : numéro de la dernière lecture (une réponse plus ancienne est ignorée) ; planKey null : le premier affichage
   // envoie le plan ou l'efface (rien ne reste d'un panneau rechargé) ; refusedConv : conversation du départ refusé.
@@ -920,6 +924,13 @@
     // Le filament du projet (couleur 1) suit l'emplacement : profil et températures relus dans Orca.
     projectUI.pending = { kind: 'filament', type: full[0].type };
     window.orca.postMessage({ type: 'project_state' });
+    // Comme au choix d'une matière : les températures conseillées sont prises, la bobine peut en indiquer d'autres.
+    // Le message est posé après le passage à l'étape suivante (qui efface les messages du guide) : voir renderProject.
+    projectUI.spoolHint = conv;
+  }
+  function spoolHint() {
+    var tip = noteLine('J’ai pris les températures conseillées pour ce filament.', '', 'info', 'guide');
+    tip.appendChild(button('Ma bobine indique d’autres températures', function () { if (!projectUI.spool.open) projectHandlers.toggleSpool(); }, 'link'));
   }
   // Le plan d'envoi (carte des emplacements) suit le projet affiché ; il n'est renvoyé que s'il change.
   function syncCanvasPlan(force) {
@@ -1024,8 +1035,10 @@
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
     if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { canvasUI.preset = null; canvasUI.useList = false; } }
+    if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
-    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', handlers: projectHandlers });
+    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, handlers: projectHandlers });
+    PlyoProjectCard.renderSpoolEditor($('spool-slot'), ui, { spool: projectUI.spool, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
@@ -1292,6 +1305,26 @@
       window.orca.postMessage({ type: 'apply', project_edit: true, changes: changes, why: 'Étiquette de la bobine' });
       projectUI.pending = { kind: 'temps' };
       window.orca.postMessage({ type: 'project_state' });
+    },
+    // Plage de l'étiquette de la bobine : ouverte dans la fiche (dépliée s'il le faut), avec la plage déjà connue.
+    toggleSpool: function () {
+      var sp = projectUI.spool;
+      sp.open = !sp.open;
+      sp.error = '';
+      if (sp.open) { applyTab('show-guide'); window.orca.postMessage({ type: 'limits_get' }); }
+      renderProject();
+    },
+    setSpoolRange: function (raw) {
+      var sp = projectUI.spool, f = conv.project.filament, parsed = window.PlyoLogic.parseLimits(raw);
+      if (!f) return;
+      if (!parsed.ok) { sp.error = parsed.text; renderProject(); return; }
+      if (!Object.keys(parsed.limits).length) { sp.error = 'Entre au moins une température.'; renderProject(); return; }
+      var t = window.PlyoLogic.tempsFromRange({ nozzle: f.nozzle_temp, bed: f.bed_temp }, parsed.limits);
+      window.orca.postMessage({ type: 'limits_set', limits: parsed.limits });
+      sp.open = false;
+      sp.error = '';
+      noteLine('Températures de ta bobine enregistrées : buse ' + (t.nozzle != null ? t.nozzle : f.nozzle_temp) + ' °C, plateau ' + (t.bed != null ? t.bed : f.bed_temp) + ' °C. L’assistant restera dans cette plage.', 'ok', 'check', 'guide');
+      projectHandlers.setTemps(t.nozzle != null ? String(t.nozzle) : '', t.bed != null ? String(t.bed) : '');
     },
     importPart: function () { pickFiles(); },
     expand: function () { journeyUI.ficheOpen = true; renderProject(); },
@@ -1594,6 +1627,7 @@
     });
   }
   function onLimits(msg) {
+    if (projectUI.spool.open) { projectUI.spool.limits = msg.limits || null; if (msg.ok === undefined && conv) renderProject(); }
     if (!limitsView) return;
     var l = msg.limits || {};
     Object.keys(limitsView.inputs).forEach(function (k) { limitsView.inputs[k].value = typeof l[k] === 'number' ? String(l[k]) : ''; });
@@ -2015,7 +2049,7 @@
       body.appendChild(soon);
       body.appendChild(el('h3', '', 'Comment la jauge se remplit'));
       body.appendChild(rich('Chaque demande à l’IA remplit un peu ta jauge : un peu plus avec des photos, rien quand la demande sort de l’impression 3D. Une réponse commencée va toujours jusqu’au bout.'));
-      body.appendChild(rich('Toujours gratuit : l’accueil, la visite guidée, les explications des réglages (« Explique-moi »), « Montre-moi » et la pose d’un modèle sur le plateau.'));
+      body.appendChild(rich('Toujours gratuit : l’accueil, le parcours en étapes, les explications des réglages (le « ? » à côté d’un réglage, ou « c’est quoi la rétraction ? »), « Montre-moi où il est » et la pose d’un modèle sur le plateau.'));
       function show(g) {
         var v = Logic.gaugeView(g);
         if (!v) return;
@@ -2045,7 +2079,7 @@
       [
         ['Une IA qui te guide', 'L’assistant est une IA : il peut se tromper. Il propose, et **tu valides chaque réglage** avant qu’il soit appliqué. Les réglages restent toujours dans des plages sûres, vérifiées par le slicer, et tout s’annule d’un clic.'],
         ['Ce que je sais faire', '- Regarder la photo d’une impression ratée et te dire ce qui cloche\n- Proposer des réglages : tu choisis ce qu’on applique, et tout s’annule d’un clic\n- Répondre à tes questions d’impression 3D, avec tes mots\n- Te montrer où se trouve un bouton ou un réglage dans le slicer\n- Orienter, ranger, réduire ou découper tes pièces quand tu me le demandes\n- Te guider pour calibrer ton filament, photo à l’appui'],
-        ['Gratuit, sans compte', 'La visite guidée, les explications des réglages (« Explique-moi » ou « c’est quoi la rétraction ? »), « Montre-moi » et la pose d’un modèle sur le plateau.'],
+        ['Gratuit, sans compte', 'Le parcours en étapes, les explications des réglages (le « ? » à côté d’un réglage, ou « c’est quoi la rétraction ? »), « Montre-moi où il est » et la pose d’un modèle sur le plateau.'],
         ['Avec ton compte', 'Les réponses de l’IA et la lecture des photos remplissent ta jauge du mois, en haut à droite. Elle se recharge chaque mois.'],
         ['Astuces', '- **Entrée** envoie, **Maj + Entrée** va à la ligne\n- Clique dans un réglage du slicer : je te propose de l’expliquer\n- Glisse une photo ou un fichier STL directement dans ce panneau'],
         ['Tes données', 'Tes conversations restent sur cet ordinateur. Tes photos servent seulement à répondre à ta demande. Une réponse te semble fausse ? Clique sur « Signaler » sous la réponse : ça nous aide à corriger l’assistant.']
