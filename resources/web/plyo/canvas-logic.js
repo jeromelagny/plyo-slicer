@@ -123,6 +123,9 @@
     }).join(', ') + tail;
   }
 
+  // Pas de relecture possible pour une saisie manuelle : la fenêtre d'Orca s'ouvre directement.
+  function needsReread(canvas) { return Array.isArray(canvas) && canvas.length > 0 && canvas[0].source !== 'manual'; }
+
   // Après la relecture d'avant l'envoi : 'armed' (canvas_send, CFS et IFS), 'orca' (print_start : la fenêtre d'Orca, ou la carte de
   // la CC2 dans son fil d'envoi), 'refuse' (choisi pour être imposé, plus possible : rien ne part en silence d'une autre façon).
   function sendRoute(chosen, state) {
@@ -138,6 +141,7 @@
     var first = canvas[0];
     if (!first.system || first.system === 'canvas') return '';
     var trial = first.validated === true ? '' : ' Plyo n’a pas encore été essayé sur cette marque : regarde sur l’écran de l’imprimante que la bonne bobine alimente.';
+    if (first.source === 'manual') return 'Ces emplacements viennent de ce que tu m’as dit : sélectionne-les sur l’imprimante.';
     if (first.system === 'u1') return 'Ces couleurs sont sur tes têtes. Je ne change pas l’ordre des têtes : vérifie sur l’écran de la U1 laquelle imprime chaque couleur.' + trial;
     if (isImposed(canvas)) return 'Passe par « Envoyer et imprimer » : le bouton d’envoi d’Orca ouvre sa propre fenêtre et ne garde pas ce choix.' + trial;
     return 'Je lis ces emplacements, mais je ne les impose pas sur ta machine : choisis-les dans la fenêtre d’Orca à l’envoi.' + trial;
@@ -147,6 +151,8 @@
   function orcaConfirm(canvas) {
     if (Array.isArray(canvas) && canvas.length && canvas[0].system === 'u1')
       return 'Orca te demande de confirmer : valide, puis vérifie sur l’écran de ta U1 quelle tête imprime chaque couleur.';
+    if (Array.isArray(canvas) && canvas.length && canvas[0].source === 'manual')
+      return 'Orca te demande de confirmer : valide, puis sélectionne sur l’imprimante les emplacements que tu m’as indiqués.';
     if (Array.isArray(canvas) && canvas.length && canvas[0].system && canvas[0].system !== 'canvas' && !isImposed(canvas))
       return 'Orca te demande de confirmer : choisis les mêmes emplacements dans sa fenêtre, puis valide.';
     return '';
@@ -165,7 +171,31 @@
     return 'Ta machine a du ' + list[0].type + ' chargé, et ce projet est prévu en ' + projectType + '. Change de bobine ou de filament si ce n’est pas voulu.';
   }
 
-  var api = { askSlots: askSlots, typeMismatch: typeMismatch, sendRoute: sendRoute, printNote: printNote, orcaConfirm: orcaConfirm, colourName: colourName, trays: trays, propose: propose, complete: complete, tooMany: tooMany,
+  // Un fichier exporté ne porte aucune répartition (la CC2 garde son texte).
+  function exportNote(canvas) {
+    return Array.isArray(canvas) && canvas.length && canvas[0].system && canvas[0].system !== 'canvas' ? 'Ce fichier ne garde pas les emplacements : sélectionne-les sur l’imprimante.' : '';
+  }
+
+  // --- Saisie manuelle : rangée par le slicer (slots.json), jamais envoyée comme répartition. ---
+  var MANUAL_MAX = 16;
+  // Noms de Slic3r::MaterialType : un autre nom serait effacé par SlotsLogic::sanitize_manual (un test le vérifie).
+  var MANUAL_TYPES = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PLA-CF', 'PETG-CF', 'PA', 'PC', 'PCTG', 'HIPS'];
+  var MANUAL_COLOURS = PALETTE.map(function (p) { return { name: p[0], hex: '#' + ((1 << 24) + (p[1] << 16) + (p[2] << 8) + p[3]).toString(16).slice(1).toUpperCase() }; });
+  function manualRecall(state) {
+    var known = trays(state).filter(function (t) { return t.type || t.color; });
+    if (!known.length) return 'Toujours les mêmes emplacements ?';
+    return 'Toujours ' + known.slice(0, 3).map(function (t) { return trayText(t.type, t.color) + ' en ' + t.slot; }).join(', ') + (known.length > 3 ? '…' : '') + ' ?';
+  }
+  // Toujours 16 lignes : réduire le nombre puis l'augmenter garde ce qui a été choisi.
+  function manualDraft(state) {
+    var list = trays(state), out = [];
+    for (var i = 0; i < MANUAL_MAX; i++) out.push({ type: list[i] ? list[i].type : '', color: list[i] ? list[i].color : '' });
+    return out;
+  }
+  function manualCount(state) { return trays(state).length || 2; }
+  function manualSlots(draft, count) { return draft.slice(0, count).map(function (d) { return { type: d.type, color: d.color }; }); }
+
+  var api = { MANUAL_MAX: MANUAL_MAX, MANUAL_TYPES: MANUAL_TYPES, MANUAL_COLOURS: MANUAL_COLOURS, manualRecall: manualRecall, manualDraft: manualDraft, manualCount: manualCount, manualSlots: manualSlots, needsReread: needsReread, exportNote: exportNote, askSlots: askSlots, typeMismatch: typeMismatch, sendRoute: sendRoute, printNote: printNote, orcaConfirm: orcaConfirm, colourName: colourName, trays: trays, propose: propose, complete: complete, tooMany: tooMany,
     checkBeforeSend: checkBeforeSend, profileTypes: profileTypes, mapLabel: mapLabel, distance: distance,
     words: words, slotName: slotName, isImposed: isImposed };
   root.PlyoCanvas = api;

@@ -325,3 +325,11 @@ test('fiche : U1 : « tête 2 »', () => {
   const base = { printer: { preset: 'p' }, part: { name: 'x' }, filament: { type: 'PLA', preset: 'f' } };
   assert.equal(J.filledRows({ ...base, canvas: [{ t: 0, tray_id: 1, label: '2', color: '', system: 'u1' }] }).find(r => r.line === 'filament').text, 'PLA · tête 2');
 });
+
+test('saisie manuelle : un seul bouton plein par écran, consignes', () => {
+  assert.deepEqual(J.primaryAction('filament', { canvas: { mode: 'recall', system: 'manual', recall: 'Toujours PLA noir en 1 ?' } }), { label: 'Oui', kind: 'manualYes', enabled: true });
+  assert.equal(J.prompt('filament', { canvas: { mode: 'recall', system: 'manual', recall: 'Toujours PLA noir en 1 ?' } }), 'Toujours PLA noir en 1 ?');
+  assert.deepEqual(J.primaryAction('filament', { canvas: { mode: 'manual', system: 'manual' } }), { label: 'Garder ces emplacements', kind: 'manualSave', enabled: true });
+  assert.equal(J.prompt('filament', { canvas: { mode: 'manual', system: 'manual' } }), 'Décris tes emplacements');
+  assert.equal(J.prompt('filament', { canvas: { mode: 'single', system: 'manual' } }), 'Quel emplacement pour ta pièce ?');
+});

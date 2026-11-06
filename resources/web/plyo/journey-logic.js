@@ -41,6 +41,8 @@
     // (une couleur) ou un emplacement par couleur ; l'envoi attend que ce soit fait.
     if (c.canvas) {
       var cv = c.canvas;
+      if (cv.mode === 'recall') return { label: 'Oui', kind: 'manualYes', enabled: true };
+      if (cv.mode === 'manual') return { label: 'Garder ces emplacements', kind: 'manualSave', enabled: true };
       if (cv.mode === 'single' && cv.proposal) return { label: cv.system === 'u1' ? 'Oui, la t' + cv.proposal.label.slice(1) : 'Oui, l’emplacement ' + cv.proposal.label, kind: 'confirmCanvas', enabled: true };
       if (cv.mode === 'multi') return { label: cv.system === 'u1' ? 'Utiliser ces têtes' : 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
       return { label: '', kind: 'none', enabled: false };
@@ -74,10 +76,13 @@
     canvas: { loading: 'Je lis les emplacements de ta CC2…', one: 'Quel emplacement du Canvas pour ta pièce ?' },
     cfs: { loading: 'Je lis les emplacements de ton CFS…', one: 'Quel emplacement du CFS pour ta pièce ?' },
     ifs: { loading: 'Je lis les emplacements de ton IFS…', one: 'Quel emplacement de l’IFS pour ta pièce ?' },
+    manual: { loading: 'Je relis ce que tu m’as dit…', one: 'Quel emplacement pour ta pièce ?' },
     u1: { loading: 'Je lis les têtes de ta U1…', one: 'Quelle tête pour ta pièce ?', multi: 'Quelle tête pour chaque couleur ?', tooMany: 'Ta pièce a plus de couleurs que de têtes' }
   };
   function canvasPrompt(c) {
     var t = SLOT_PROMPTS[c.canvas.system] || SLOT_PROMPTS.canvas;
+    if (c.canvas.mode === 'recall') return c.canvas.recall;
+    if (c.canvas.mode === 'manual') return 'Décris tes emplacements';
     if (c.canvas.mode === 'loading') return t.loading;
     if (c.canvas.mode === 'multi') return t.multi || 'Quel emplacement pour chaque couleur ?';
     if (c.canvas.mode === 'tooMany') return t.tooMany || 'Ta pièce a plus de couleurs que d’emplacements';

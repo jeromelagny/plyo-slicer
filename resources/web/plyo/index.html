@@ -343,6 +343,8 @@
   .canvas-row { display: flex; align-items: center; gap: var(--s2); }
   .canvas-colour { min-width: 5.5em; }
   .canvas-select { flex: 1; min-width: 0; }
+  .manual-row .manual-num { min-width: 1.5em; }
+  .manual-tag { display: inline-flex; align-items: center; }
   .project-temps { padding-left: 20px; }
   .tour { border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--accent-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .tour .step { font-size: var(--fs-xs); font-weight: 600; color: var(--accent-text); text-transform: uppercase; letter-spacing: .04em; }
@@ -867,7 +869,9 @@
   // Emplacements (Canvas, CFS, IFS, U1) à l'étape Filament : lecture, proposition, application, plan d'envoi.
   // readId : numéro de la dernière lecture (une réponse plus ancienne est ignorée) ; planKey null : le premier affichage
   // envoie le plan ou l'efface (rien ne reste d'un panneau rechargé) ; refusedConv : conversation du départ refusé.
-  var canvasUI = { preset: null, state: null, loading: false, mapping: null, useList: false, error: '', applying: null, applyingConv: null, sendPending: false, refused: '', refusedConv: null, planKey: null, readId: 0 };
+  var canvasUI = { preset: null, state: null, loading: false, mapping: null, useList: false, error: '', applying: null, applyingConv: null, sendPending: false, refused: '', refusedConv: null, planKey: null, readId: 0,
+    // Saisie manuelle : `state` lu dans slots.json, `confirmed` après le « Oui » du rappel, `form` : écran de saisie ouvert.
+    manual: { preset: null, state: null, loading: false, confirmed: false, form: false, draft: null, count: 2, error: '' } };
   // La machine du projet dans la liste du slicer ; `slots` : son traducteur (canvas, cfs, ifs, u1), absent si on ne sait pas la lire.
   function knownPrinter() {
     var pr = conv && conv.project.printer, list = projectUI.printers || [];
@@ -880,21 +884,50 @@
     var known = knownPrinter();
     return !!(known && known.slots && known.linked && (step === 'filament' || projectUI.editing === 'filament'));
   }
-  // Machine à un seul emplacement lu : remarque si son type diffère du projet.
+  // Saisie manuelle : pour une machine qu'on ne sait pas lire, ou CFS, IFS, U1 injoignable à la lecture. La CC2 garde sa liste.
+  function manualWanted(step) {
+    var known = knownPrinter();
+    if (!known || !(step === 'filament' || projectUI.editing === 'filament')) return false;
+    if (known.slots === 'canvas') return false;
+    if (!known.slots) return true;
+    return !canvasUI.loading && canvasUI.preset === known.preset && !!canvasUI.state && !canvasUI.state.ok;
+  }
+  function ensureManualRead(step) {
+    var m = canvasUI.manual, preset = conv.project.printer && conv.project.printer.preset;
+    if (!manualWanted(step) || m.loading || m.preset === preset) return;
+    m.preset = preset;
+    m.loading = true;
+    m.state = null;
+    window.orca.postMessage({ type: 'slots_manual_get', preset: preset });
+  }
+  // L'état en cours : la lecture sur la machine si elle a réussi, sinon la saisie de cette machine, sinon la lecture ratée.
+  function slotState() {
+    var pr = conv && conv.project.printer;
+    if (!pr) return null;
+    var read = canvasUI.preset === pr.preset ? canvasUI.state : null, m = canvasUI.manual;
+    if (read && read.ok) return read;
+    return m.preset === pr.preset && m.state && m.state.ok ? m.state : read;
+  }
+  // Machine à un seul emplacement lu ou saisi : remarque si son type diffère du projet.
   function slotRemark() {
-    var f = conv && conv.project.filament;
-    return f && !f.proposed && canvasUI.state ? PlyoCanvas.typeMismatch(PlyoCanvas.trays(canvasUI.state), f.type) : '';
+    var f = conv && conv.project.filament, st = slotState();
+    return f && !f.proposed && st ? PlyoCanvas.typeMismatch(PlyoCanvas.trays(st), f.type) : '';
   }
   function canvasColours() {
-    var c = canvasUI.state && Array.isArray(canvasUI.state.colours) ? canvasUI.state.colours : [];
+    var st = slotState(), c = st && Array.isArray(st.colours) ? st.colours : [];
     return c.length ? c : [{ t: 0, color: '', type: '' }];
   }
   function canvasMode(step) {
-    if (!canvasWanted(step) || canvasUI.useList) return null;
-    if (canvasUI.loading || canvasUI.preset !== conv.project.printer.preset) return 'loading';
-    if (!canvasUI.state || !canvasUI.state.ok) return null;
-    if (!PlyoCanvas.askSlots(canvasUI.state)) return null; // un seul emplacement : aucune question
-    var trays = PlyoCanvas.trays(canvasUI.state), colours = canvasColours();
+    var m = canvasUI.manual;
+    if (m.form && (step === 'filament' || projectUI.editing === 'filament')) return 'manual';
+    if (canvasUI.useList) return null;
+    if (canvasWanted(step) && (canvasUI.loading || canvasUI.preset !== conv.project.printer.preset)) return 'loading';
+    if (!canvasWanted(step) && !manualWanted(step)) return null;
+    var st = slotState();
+    if (!st || !st.ok) return null;
+    if (!PlyoCanvas.askSlots(st)) return null; // un seul emplacement : aucune question
+    if (st.source === 'manual' && !m.confirmed) return 'recall';
+    var trays = PlyoCanvas.trays(st), colours = canvasColours();
     if (PlyoCanvas.tooMany(colours, trays)) return 'tooMany';
     return colours.length > 1 ? 'multi' : 'single';
   }
@@ -909,21 +942,22 @@
     window.orca.postMessage({ type: 'canvas_read', preset: canvasUI.preset, id: canvasUI.readId });
   }
   function canvasProposal() {
-    var colours = canvasColours(), trays = PlyoCanvas.trays(canvasUI.state), chosen = conv.project.canvas;
+    var colours = canvasColours(), st = slotState() || {}, trays = PlyoCanvas.trays(st), chosen = conv.project.canvas;
     // Déjà choisi pour ces couleurs : on le reprend ; sinon, proposition (une couleur : le type du filament du projet).
     if (Array.isArray(chosen) && chosen.length === colours.length && colours.every(function (c) { return chosen.some(function (e) { return e.t === c.t; }); }))
       return chosen.map(function (e) { return { t: e.t, color: (colours.filter(function (c) { return c.t === e.t; })[0] || {}).color, canvas_id: e.canvas_id, tray_id: e.tray_id }; });
     var wanted = colours.length === 1 ? [{ t: colours[0].t, color: colours[0].color, type: conv.project.filament && !conv.project.filament.proposed ? conv.project.filament.type : colours[0].type }] : colours;
     // Un emplacement vide refusé à l'envoi (CFS, IFS) n'est pas proposé.
-    if (canvasUI.state.empty_blocks) trays = trays.filter(function (t) { return !t.empty; });
+    if (st.empty_blocks) trays = trays.filter(function (t) { return !t.empty; });
     return PlyoCanvas.propose(wanted, trays);
   }
   function canvasCtx(step) {
     var mode = canvasMode(step);
     if (!mode) return null;
-    var out = { mode: mode, system: slotWordsKey() };
+    var st = slotState() || {}, out = { mode: mode, system: mode === 'manual' ? 'manual' : st.system || slotWordsKey() };
+    if (mode === 'recall') out.recall = PlyoCanvas.manualRecall(st);
     if (mode === 'single' || mode === 'multi') {
-      var trays = PlyoCanvas.trays(canvasUI.state), m = canvasUI.mapping || [];
+      var trays = PlyoCanvas.trays(st), m = canvasUI.mapping || [];
       out.complete = PlyoCanvas.complete(m);
       var first = m[0], tray = first && trays.filter(function (t) { return t.tray_id === first.tray_id && t.canvas_id === first.canvas_id; })[0];
       if (mode === 'single' && tray) out.proposal = { label: tray.label + (tray.empty ? ' · vide ?' : '') };
@@ -931,10 +965,11 @@
     return out;
   }
   function applyCanvas(mapping) {
-    var trays = PlyoCanvas.trays(canvasUI.state), entries = [], full = [], st = canvasUI.state || {};
+    var st = slotState() || {}, trays = PlyoCanvas.trays(st), entries = [], full = [], unknown = null;
     mapping.forEach(function (m) {
       var tray = trays.filter(function (t) { return t.tray_id === m.tray_id && t.canvas_id === m.canvas_id; })[0];
       if (!tray) return;
+      if (!tray.type && st.system && st.system !== 'canvas') unknown = tray;
       entries.push({ t: m.t, type: tray.type, color: tray.color });
       var entry = { t: m.t, canvas_id: tray.canvas_id, tray_id: tray.tray_id, type: tray.type, color: tray.color };
       // Numéro du traducteur et nature de la lecture (la CC2 reste sans : son plan et ses projets ne changent pas).
@@ -942,6 +977,7 @@
       full.push(entry);
     });
     if (!entries.length || entries.length !== mapping.length) { canvasUI.error = 'Choisis un emplacement pour chaque couleur.'; renderProject(); return; }
+    if (unknown) { var w = PlyoCanvas.words(st.system); canvasUI.error = 'Je ne connais pas la matière de ' + w.the + ' ' + unknown.slot + ' : choisis-en un autre, ou choisis ton filament dans la liste.'; renderProject(); return; }
     canvasUI.error = '';
     canvasUI.applying = full;
     canvasUI.applyingConv = conv;
@@ -1086,8 +1122,43 @@
       renderProject();
     },
     recheck: function () { canvasUI.preset = null; renderProject(); }, // relit les emplacements et les couleurs de la pièce
-    useList: function () { canvasUI.useList = true; delete conv.project.canvas; projectChanged(); renderProject(); }
+    useList: function () { canvasUI.useList = true; delete conv.project.canvas; projectChanged(); renderProject(); },
+    openManual: openManual,
+    manualCount: function (n) { canvasUI.manual.count = n; renderProject(); },
+    manualSet: function (i, field, value) { canvasUI.manual.draft[i][field] = value; },
+    manualCancel: function () { canvasUI.manual.form = false; canvasUI.manual.error = ''; renderProject(); }
   };
+  function openManual() {
+    var m = canvasUI.manual, st = m.state;
+    m.draft = PlyoCanvas.manualDraft(st);
+    m.count = PlyoCanvas.manualCount(st);
+    m.form = true;
+    m.error = '';
+    canvasUI.useList = false;
+    canvasUI.error = '';
+    renderProject();
+  }
+  function saveManual() {
+    var m = canvasUI.manual;
+    m.error = '';
+    window.orca.postMessage({ type: 'slots_manual_save', preset: conv.project.printer.preset, slots: PlyoCanvas.manualSlots(m.draft, m.count) });
+  }
+  function onManualSaved(msg) {
+    var m = canvasUI.manual;
+    if (!msg.ok) { m.error = 'Je n’ai pas pu garder ces emplacements. Réessaie.'; renderProject(); return; }
+    m.form = false;
+    m.confirmed = true; // tu viens de les décrire : pas de rappel
+    m.preset = null;    // relus dans slots.json au prochain affichage
+    renderProject();
+  }
+  function onManualState(msg) {
+    var m = canvasUI.manual, pr = conv && conv.project.printer;
+    if (!pr || msg.preset !== pr.preset) return; // réponse pour une machine quittée entre-temps
+    m.loading = false;
+    m.state = msg;
+    if (msg.ok && m.confirmed) canvasUI.mapping = canvasProposal();
+    renderProject();
+  }
 
   function projectChanged() {
     // Machine ou filament changé après la découpe : la découpe est périmée, on repasse à « Préparer ».
@@ -1133,7 +1204,7 @@
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
     if (step !== 'imprimer') projectUI.sentConv = null; // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
-    if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { canvasUI.preset = null; canvasUI.useList = false; } }
+    if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; } }
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, handlers: projectHandlers });
@@ -1143,14 +1214,19 @@
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
       extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'wifi', onClick: projectHandlers.setupPrinter } : null });
     ensureCanvasRead(step);
+    ensureManualRead(step);
     syncCanvasPlan(false);
-    var cmode = canvasMode(step);
-    if (cmode && cmode !== 'loading')
-      PlyoCanvasView.render($('project-card'), ui, { mode: cmode, system: slotWordsKey(), emptyBlocks: !!canvasUI.state.empty_blocks, readOnly: canvasUI.state.imposable === false, blocker: canvasUI.state.blocker || '', trial: canvasUI.state.validated === false, trays: PlyoCanvas.trays(canvasUI.state), colours: canvasColours(), mapping: canvasUI.mapping, error: canvasUI.error, handlers: canvasHandlers });
+    var cmode = canvasMode(step), cst = slotState() || {};
+    if (cmode === 'manual')
+      PlyoCanvasView.renderManual($('project-card'), ui, { draft: canvasUI.manual.draft, count: canvasUI.manual.count, error: canvasUI.manual.error, types: PlyoCanvas.MANUAL_TYPES, colours: PlyoCanvas.MANUAL_COLOURS, handlers: canvasHandlers });
+    else if (cmode === 'recall')
+      PlyoCanvasView.renderRecall($('project-card'), ui, { trays: PlyoCanvas.trays(cst), handlers: canvasHandlers });
+    else if (cmode && cmode !== 'loading')
+      PlyoCanvasView.render($('project-card'), ui, { mode: cmode, system: cst.system || slotWordsKey(), emptyBlocks: !!cst.empty_blocks, readOnly: cst.imposable === false && cst.source !== 'manual', blocker: cst.blocker || '', trial: cst.validated === false && cst.source !== 'manual', trays: PlyoCanvas.trays(cst), colours: canvasColours(), mapping: canvasUI.mapping, error: canvasUI.error, handlers: canvasHandlers });
     else if (cmode === 'loading') { $('project-card').textContent = ''; }
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
-        error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
+        error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()),
@@ -1248,7 +1324,7 @@
       return;
     }
     projectUI.sentConv = conv;
-    if (sendLock.kind === 'export') noteLine('Choisis où enregistrer le fichier, puis copie-le sur ta clé USB ou ta carte SD.', '', 'info', 'guide');
+    if (sendLock.kind === 'export') noteLine('Choisis où enregistrer le fichier, puis copie-le sur ta clé USB ou ta carte SD.' + (PlyoCanvas.exportNote(conv && conv.project.canvas) ? ' ' + PlyoCanvas.exportNote(conv.project.canvas) : ''), '', 'info', 'guide');
     else noteLine(PlyoCanvas.orcaConfirm(conv && conv.project.canvas) || 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
     unlockSendSoon();
     renderProject();
@@ -1262,10 +1338,12 @@
     else if (kind === 'send') {
       canvasUI.refused = '';
       if (!lockSend('print')) return;
-      if (conv && Array.isArray(conv.project.canvas) && conv.project.canvas.length) sendWithCanvasCheck();
+      if (conv && PlyoCanvas.needsReread(conv.project.canvas)) sendWithCanvasCheck();
       else { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: false }); }
     }
     else if (kind === 'confirmCanvas') { if (canvasUI.mapping && PlyoCanvas.complete(canvasUI.mapping)) applyCanvas(canvasUI.mapping); }
+    else if (kind === 'manualYes') { canvasUI.manual.confirmed = true; canvasUI.mapping = canvasProposal(); renderProject(); }
+    else if (kind === 'manualSave') saveManual();
     else if (kind === 'export') { canvasUI.refused = ''; if (!lockSend('export')) return; rememberHabit(); window.orca.postMessage({ type: 'print_start', export: true }); }
     else if (kind === 'advance') setTourStep('print');
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
@@ -1449,6 +1527,7 @@
     },
     keepProposed: function () { var p = conv.project.printer; if (p) projectHandlers.pickPrinter(p.preset, p.name); },
     setupPrinter: function () { startSetup(); renderSetupFlow(); },
+    openManual: function () { openManual(); },
     pickFilament: function (type) {
       projectUI.error = {};
       projectUI.pending = { kind: 'filament', type: type };
@@ -4178,6 +4257,10 @@
       projectUI.sentConv = null; // refus après l'envoi : l'impression n'a pas démarré
       noteLine(canvasUI.refused, 'warn', 'alert', 'guide');
       if (conv) renderProject();
+    } else if (msg.type === 'slots_manual_state') {
+      onManualState(msg);
+    } else if (msg.type === 'slots_manual_saved') {
+      onManualSaved(msg);
     } else if (msg.type === 'canvas_sent') {
       onCanvasSent(msg);
     } else if (msg.type === 'canvas_started') {

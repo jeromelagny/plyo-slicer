@@ -259,3 +259,52 @@ test('typeMismatch : une remarque si l’unique emplacement connu diffère du pr
   assert.equal(C.typeMismatch(one('PLA').concat(one('PETG')), 'ABS'), '', 'plusieurs emplacements : la question s’en charge');
   assert.equal(C.typeMismatch(one('PETG'), 'PLA'), 'Ta machine a du PETG chargé, et ce projet est prévu en PLA. Change de bobine ou de filament si ce n’est pas voulu.');
 });
+
+const MANUAL = { ok: true, system: 'manual', source: 'manual', imposable: false, empty_blocks: false, start_plain: false, validated: false, canvases: [{ canvas_id: 0, connected: true, trays: [
+  { tray_id: 0, label: '1', type: 'PLA', color: '#1A1A1A', status: 2 },
+  { tray_id: 1, label: '2', type: 'PETG', color: '#D22020', status: 2 },
+  { tray_id: 2, label: '3', type: '', color: '', status: 0 }] }] };
+const manualEntry = { t: 0, canvas_id: 0, tray_id: 1, label: '2', type: 'PETG', color: '#D22020', imposable: false, source: 'manual', system: 'manual', validated: false };
+
+test('saisie manuelle : le rappel cite ce qui a été dit', () => {
+  assert.equal(C.manualRecall(MANUAL), 'Toujours PLA noir en 1, PETG rouge en 2 ?');
+  const many = { ok: true, canvases: [{ connected: true, trays: [1, 2, 3, 4].map(i => ({ tray_id: i - 1, label: String(i), type: 'PLA', color: '#1A1A1A', status: 2 })) }] };
+  assert.equal(C.manualRecall(many), 'Toujours PLA noir en 1, PLA noir en 2, PLA noir en 3… ?');
+  assert.equal(C.manualRecall({ ok: true, canvases: [{ connected: true, trays: [{ tray_id: 0, label: '1', type: '', color: '', status: 0 }] }] }), 'Toujours les mêmes emplacements ?');
+});
+
+test('saisie manuelle : jamais imposée, jamais d’envoi armé, pas de relecture', () => {
+  assert.equal(C.isImposed([manualEntry]), false);
+  assert.equal(C.sendRoute([manualEntry], { ok: true, system: 'cfs', imposable: true }), 'orca');
+  assert.equal(C.needsReread([manualEntry]), false);
+  assert.equal(C.needsReread([imposedEntry]), true);
+  assert.equal(C.needsReread([{ t: 0, tray_id: 0 }]), true, 'CC2');
+  assert.equal(C.needsReread([]), false);
+  assert.equal(C.needsReread(undefined), false);
+  assert.equal(C.mapLabel([manualEntry], false), 'Emplacement 2 · PETG rouge : à sélectionner sur l’imprimante');
+  assert.equal(C.printNote([manualEntry]), 'Ces emplacements viennent de ce que tu m’as dit : sélectionne-les sur l’imprimante.');
+  assert.ok(!/impos/i.test(C.orcaConfirm([manualEntry])));
+  assert.ok(C.orcaConfirm([manualEntry]).includes('que tu m’as indiqués'));
+});
+
+test('saisie manuelle : brouillon : valeurs gardées quand le nombre change', () => {
+  const draft = C.manualDraft(MANUAL);
+  assert.deepEqual(draft.slice(0, 2), [{ type: 'PLA', color: '#1A1A1A' }, { type: 'PETG', color: '#D22020' }]);
+  assert.equal(draft.length, 16);
+  assert.deepEqual(draft[3], { type: '', color: '' });
+  assert.equal(C.manualDraft({ ok: false, reason: 'no_manual' }).length, 16);
+  assert.deepEqual(C.manualSlots(draft, 2), [{ type: 'PLA', color: '#1A1A1A' }, { type: 'PETG', color: '#D22020' }]);
+  assert.equal(C.manualCount(MANUAL), 3);
+  assert.equal(C.manualCount({ ok: false }), 2);
+});
+
+test('saisie manuelle : couleurs au format attendu par le C++, qui retrouvent leur nom', () => {
+  C.MANUAL_COLOURS.forEach(c => { assert.ok(/^#[0-9A-F]{6}$/.test(c.hex), c.hex); assert.equal(C.colourName(c.hex), c.name); });
+});
+
+test('exportNote : hors CC2, le fichier exporté ne garde pas les emplacements', () => {
+  assert.equal(C.exportNote([{ t: 0, tray_id: 0 }]), '');
+  assert.equal(C.exportNote([]), '');
+  assert.ok(C.exportNote([imposedEntry]).includes('sélectionne-les sur l’imprimante'));
+  assert.ok(C.exportNote([manualEntry]).includes('sélectionne-les sur l’imprimante'));
+});

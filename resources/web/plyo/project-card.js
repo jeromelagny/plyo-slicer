@@ -119,7 +119,12 @@
       body.appendChild(ui.el('p', 'muted small', 'Ta machine a été reliée sans son numéro de série ni son code d’accès : je ne lis pas ses emplacements. Allume-la, et je la cherche sur le réseau pour la relier.'));
       body.appendChild(ui.button('Relier à nouveau', ctx.handlers.setupPrinter, 'link'));
     }
+    if (ctx.noSlots) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas les emplacements de ta machine pour l’instant : choisis la matière ici. À l’envoi, regarde la fenêtre d’Orca et l’écran de l’imprimante.'));
     if (ctx.slotRemark) body.appendChild(ui.el('p', 'muted small', ctx.slotRemark));
+  }
+  // Pas de question par défaut : le profil ne permet pas de reconnaître une machine à une bobine. Un lien discret, après les matières.
+  function renderManualLink(body, ui, ctx) {
+    if (ctx.manualLink) body.appendChild(ui.button('Ma machine a plusieurs emplacements', ctx.handlers.openManual, 'link'));
   }
 
   // Le contenu des étapes 1 à 3 (imprimante, filament, pièce) : des choix qui s'appliquent tout de suite.
@@ -158,6 +163,7 @@
       // « PLA, comme la dernière fois ? » : le bouton « Oui » est dans la ligne d'action.
       renderSlotNotes(body, ui, ctx);
       body.appendChild(ui.button('Autre matière', h.toggleKinds, 'link'));
+      renderManualLink(body, ui, ctx);
     } else if (wantsFilament) {
       if (ctx.error && ctx.error.filament) body.appendChild(ui.el('p', 'project-error', ctx.error.filament));
       if (ctx.noCanvas) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas ton Canvas pour l’instant : choisis la matière ici, l’imprimante choisira l’emplacement.'));
@@ -173,6 +179,7 @@
         body.appendChild(ui.button('Ma bobine indique d’autres températures', h.toggleSpool, 'link'));
         if (ctx.editing === 'filament') body.appendChild(ui.button('Garder ce filament', h.cancelEdit, 'link'));
       }
+      renderManualLink(body, ui, ctx);
     } else {
       body.appendChild(ui.el('p', 'muted small', 'Glisse ton fichier STL ou 3MF ici, ou choisis-le sur ton ordinateur. Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
       var pacts = ui.el('div', 'printer-actions');

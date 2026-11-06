@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (name) => fs.readFileSync(path.join(dir, name), 'utf8');
@@ -433,4 +434,28 @@ test('une bobine : pas de question, remarque seulement ; liaison incomplète : p
   assert.ok(/PlyoCanvas\.typeMismatch\(/.test(page) && card.includes('ctx.slotRemark') && read('journey-steps.js').includes('opts.slotRemark'), 'la remarque est affichée aux deux étapes');
   assert.ok(/slots_reason === 'link_incomplete'/.test(page), 'link_incomplete lu dans la liste des machines');
   assert.ok(/Relier à nouveau', ctx\.handlers\.setupPrinter/.test(card), 'relier à nouveau lance la recherche d’abord (la série n’est connue que là)');
+});
+
+test('saisie manuelle : messages du C++, vue sans bouton plein, jamais de plan ni de canvas_send', () => {
+  const page = read('index.html'), view = read('canvas-view.js');
+  assert.ok(page.includes("type: 'slots_manual_get'") && page.includes("type: 'slots_manual_save'"));
+  assert.ok(page.includes("msg.type === 'slots_manual_state'") && page.includes("msg.type === 'slots_manual_saved'"));
+  assert.ok(!FULL_BUTTON.test(view));
+  assert.ok(/Ma machine a plusieurs emplacements/.test(read('project-card.js')));
+  assert.ok(view.includes('J’ai changé'));
+  // Le C++ refuse aussi : Canvas::plan ne reçoit qu'une répartition isImposed (voir SlotsLogic::plan_allowed).
+  assert.ok(/PlyoCanvas\.isImposed\(p\.canvas\)/.test(page), 'le plan passe par isImposed');
+  assert.ok(/PlyoCanvas\.needsReread\(/.test(page), 'pas de relecture pour une saisie');
+});
+
+test('saisie manuelle : la CC2 ne reçoit ni le lien ni la saisie', () => {
+  const page = read('index.html');
+  assert.ok(/known\.slots === 'canvas'\) return false/.test(page), 'manualWanted écarte la CC2');
+});
+
+test('saisie manuelle : les matières proposées existent toutes dans Orca (sinon le C++ les efface)', () => {
+  const names = [...readCpp('src/libslic3r/MaterialType.cpp').matchAll(/\{"([^"]+)",\s*\d/g)].map(m => m[1]);
+  assert.ok(names.length > 50);
+  const C = createRequire(import.meta.url)('../canvas-logic.js');
+  C.MANUAL_TYPES.forEach(t => assert.ok(names.includes(t), t));
 });
