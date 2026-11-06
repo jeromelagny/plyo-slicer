@@ -54,6 +54,14 @@ inline const std::vector<std::string>& ifs_imposable_models()
     return models;
 }
 
+// Décision ouverte 3 (Jérôme, à confirmer en T13) : sur CFS, Orca envoie toute la liste des filaments, couleurs inutilisées
+// comprises. Réglage par défaut : elles partent sur le même emplacement que la première entrée de la carte. À false, ces
+// projets sont refusés.
+constexpr bool UNUSED_COLOUR_ON_FIRST_SLOT = true;
+// Décision ouverte 4 (Jérôme) : un emplacement vide est refusé à l'envoi sur CFS et IFS. La CC2 garde sa règle (son `status`
+// n'est pas fiable). À false, CFS et IFS suivraient la règle permissive de la CC2.
+constexpr bool EMPTY_SLOT_BLOCKS = true;
+
 struct PrinterFacts
 {
     std::string         printer_model, host_type, printer_agent;

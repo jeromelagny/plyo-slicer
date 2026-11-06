@@ -4,6 +4,8 @@
 #include "PlyoSlotsLogic.hpp"
 
 #include <algorithm>
+#include <utility>
+#include <vector>
 
 namespace Plyo { namespace CfsLogic {
 
@@ -106,6 +108,75 @@ std::string live_blocker(const std::string& model_display, const std::string& pr
 bool live_imposable(const std::string& model_display, const std::string& profile_model, const nlohmann::json& parsed)
 {
     return live_blocker(model_display, profile_model, parsed).empty();
+}
+
+std::map<std::string, std::string> color_match_info(const nlohmann::json& map, const nlohmann::json& canvases, int filament_count, bool self_test,
+                                                    std::string& refusal)
+{
+    refusal.clear();
+    const auto refuse = [&](const std::string& text) {
+        refusal = text + " Rien n'est parti : relis les emplacements ou choisis-en d'autres.";
+        return std::map<std::string, std::string>();
+    };
+    if (!map.is_array() || map.empty())
+        return refuse("Aucun emplacement choisi pour cette pièce.");
+    if (filament_count <= 0 || filament_count > 26)
+        return refuse("Ce projet a trop de filaments pour que je choisisse les emplacements.");
+    struct Slot { std::string line_end; bool holder = false; };
+    std::map<int, Slot> by_t;
+    std::vector<std::pair<int, int>> used;
+    Slot first;
+    bool have_first = false;
+    for (const nlohmann::json& e : map) {
+        const int t = static_cast<int>(Json::integer(e, "t", -1)), box = static_cast<int>(Json::integer(e, "canvas_id", -1)), mat = static_cast<int>(Json::integer(e, "tray_id", -1));
+        if (t < 0 || t >= filament_count || by_t.count(t) != 0)
+            return refuse("Une couleur choisie n'existe plus dans la pièce.");
+        nlohmann::json tray = nullptr;
+        int box_type = -1;
+        for (const nlohmann::json& unit : canvases)
+            if (static_cast<int>(Json::integer(unit, "canvas_id", -1)) == box && Json::boolean(unit, "connected", false))
+                for (const nlohmann::json& tr : Json::arr(unit, "trays"))
+                    if (static_cast<int>(Json::integer(tr, "tray_id", -1)) == mat) {
+                        tray     = tr;
+                        box_type = static_cast<int>(Json::integer(unit, "box_type", -1));
+                    }
+        if (tray.is_null())
+            return refuse("Un emplacement choisi n'est plus visible sur l'imprimante.");
+        // start_print traite boxId 0 comme le porte-bobine ; une boîte CFS au numéro 0 ferait abandonner la répartition sans erreur.
+        if ((box == 0) != (box_type == 1) || (box_type != 0 && box_type != 1))
+            return refuse("La boîte lue a un numéro inattendu.");
+        const std::string type = Json::str(tray, "type", 30), color = Json::str(tray, "color", 16);
+        if (type.empty() || type.find('\t') != std::string::npos)
+            return refuse("Je ne connais pas le type du filament d'un emplacement choisi.");
+        if (color.empty() || color.find('\t') != std::string::npos)
+            return refuse("Je ne connais pas la couleur du filament d'un emplacement choisi.");
+        if (SlotsLogic::EMPTY_SLOT_BLOCKS && static_cast<int>(Json::integer(tray, "status", 0)) == 0)
+            return refuse("Un emplacement choisi est vide.");
+        if (std::find(used.begin(), used.end(), std::make_pair(box, mat)) != used.end())
+            return refuse("Deux couleurs de la pièce sont sur le même emplacement.");
+        used.emplace_back(box, mat);
+        Slot slot;
+        slot.line_end = "\t" + type + "\t" + color + "\t" + std::to_string(box) + "\t" + std::to_string(mat);
+        slot.holder   = box_type == 1;
+        by_t[t]       = slot;
+        if (!have_first) {
+            first      = slot;
+            have_first = true;
+        }
+    }
+    // Le porte-bobine ne sert qu'à une pièce d'une couleur : avec lui, Orca envoie opGcodeFile et abandonne toute répartition.
+    for (const auto& entry : by_t)
+        if (entry.second.holder && by_t.size() > 1)
+            return refuse("Le porte-bobine ne peut pas servir avec des emplacements de la boîte : une seule couleur sur lui, ou seulement la boîte.");
+    if (!SlotsLogic::UNUSED_COLOUR_ON_FIRST_SLOT && static_cast<int>(by_t.size()) != filament_count)
+        return refuse("Ce projet a des filaments que la pièce n'utilise pas.");
+    std::map<std::string, std::string> out;
+    for (int i = 0; i < filament_count; ++i) {
+        const auto it = by_t.find(i);
+        out["colorMatch_" + std::to_string(i)] = "T1" + std::string(1, char('A' + i)) + (it != by_t.end() ? it->second : first).line_end;
+    }
+    out["enableSelfTest"] = self_test ? "1" : "0";
+    return out;
 }
 
 }} // namespace Plyo::CfsLogic

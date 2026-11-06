@@ -1397,3 +1397,86 @@ TEST_CASE("Cfs::live_imposable : tout écart baisse vers « lire sans imposer »
     // Anomalie de lecture
     CHECK_FALSE(live_imposable("K2", "Creality K2", with(json::array({holder, box1, {{"id", 9}, {"state", 1}, {"type", 7}}}))));
 }
+
+// CFS : carte vers extended_info, format de CrealityPrintHostSendDialog::extendedInfo.
+TEST_CASE("Cfs::color_match_info : T0 seul, T0+T1, id brut de la boîte")
+{
+    using namespace Plyo::CfsLogic;
+    const json canvases = parse_boxes(CFS_ORCA_SCHEMA)["canvases"];
+    std::string refusal;
+    auto one = color_match_info(json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 1}}}), canvases, 1, false, refusal);
+    CHECK(refusal.empty());
+    REQUIRE(one.size() == 2);
+    CHECK(one["colorMatch_0"] == "T1A\tPETG\t#DDEEFF\t1\t1");
+    CHECK(one["enableSelfTest"] == "0");
+    auto two = color_match_info(json::array({{{"t", 1}, {"canvas_id", 1}, {"tray_id", 0}}, {{"t", 0}, {"canvas_id", 1}, {"tray_id", 1}}}), canvases, 2, true, refusal);
+    CHECK(refusal.empty());
+    CHECK(two["colorMatch_0"] == "T1A\tPETG\t#DDEEFF\t1\t1");
+    CHECK(two["colorMatch_1"] == "T1B\tPLA\t#AABBCC\t1\t0");
+    CHECK(two["enableSelfTest"] == "1");
+}
+
+TEST_CASE("Cfs::color_match_info : jamais de trou dans colorMatch_i (start_print s'arrête au premier absent)")
+{
+    using namespace Plyo::CfsLogic;
+    const json canvases = parse_boxes(CFS_ORCA_SCHEMA)["canvases"];
+    std::string refusal;
+    auto info = color_match_info(json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 1}}, {{"t", 2}, {"canvas_id", 1}, {"tray_id", 0}}}), canvases, 3, false, refusal);
+    CHECK(refusal.empty());
+    CHECK(info["colorMatch_0"] == "T1A\tPETG\t#DDEEFF\t1\t1");
+    CHECK(info["colorMatch_1"] == "T1B\tPETG\t#DDEEFF\t1\t1"); // inutilisée : même emplacement que la première entrée (décision ouverte 3)
+    CHECK(info["colorMatch_2"] == "T1C\tPLA\t#AABBCC\t1\t0");
+}
+
+TEST_CASE("Cfs::color_match_info : le porte-bobine seul passe, mêlé à autre chose il est refusé")
+{
+    using namespace Plyo::CfsLogic;
+    const json canvases = parse_boxes(CFS_ORCA_SCHEMA)["canvases"];
+    std::string refusal;
+    auto alone = color_match_info(json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 0}}}), canvases, 2, false, refusal);
+    CHECK(refusal.empty());
+    CHECK(alone["colorMatch_0"] == "T1A\tPLA\t#112233\t0\t0");
+    CHECK(alone["colorMatch_1"] == "T1B\tPLA\t#112233\t0\t0");
+    auto mixed = color_match_info(json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 0}}, {{"t", 1}, {"canvas_id", 1}, {"tray_id", 0}}}), canvases, 2, false, refusal);
+    CHECK_FALSE(refusal.empty());
+    CHECK(mixed.empty());
+}
+
+TEST_CASE("Cfs::color_match_info : tout doute est un refus, sans rien rendre")
+{
+    using namespace Plyo::CfsLogic;
+    const json canvases = parse_boxes(CFS_ORCA_SCHEMA)["canvases"];
+    const json t0_ok    = json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 0}}});
+    std::string refusal;
+    const auto refused = [&](const json& map, const json& units, int count) {
+        refusal.clear();
+        auto info = color_match_info(map, units, count, false, refusal);
+        return !refusal.empty() && info.empty();
+    };
+    CHECK(refused(json::array(), canvases, 1));                                        // carte vide
+    CHECK(refused(t0_ok, canvases, 0));                                                 // aucun filament
+    CHECK(refused(t0_ok, canvases, 27));                                                // plus de 26 : T1[ n'existe pas
+    CHECK(refused(json::array({{{"t", 1}, {"canvas_id", 1}, {"tray_id", 0}}}), canvases, 1));  // couleur hors du projet
+    CHECK(refused(json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 9}}}), canvases, 1));  // emplacement absent de la lecture
+    CHECK(refused(json::array({{{"t", 0}, {"canvas_id", 5}, {"tray_id", 0}}}), canvases, 1));  // boîte absente de la lecture
+    CHECK(refused(json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 2}}}), canvases, 1));  // type vide
+    CHECK(refused(json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 0}}, {{"t", 1}, {"canvas_id", 1}, {"tray_id", 0}}}), canvases, 2)); // deux couleurs, un emplacement
+    const auto unit = [](int id, int type, const json& tray) {
+        return json::array({{{"canvas_id", id}, {"box_type", type}, {"connected", true}, {"trays", json::array({tray})}}});
+    };
+    const json ok_tray  = {{"tray_id", 0}, {"type", "PLA"}, {"color", "#112233"}, {"status", 2}};
+    CHECK_FALSE(refused(t0_ok, unit(1, 0, ok_tray), 1));
+    CHECK(refused(json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 0}}}), unit(0, 0, ok_tray), 1)); // canvas_id 0 qui n'est pas le porte-bobine
+    json tab_type = ok_tray, tab_color = ok_tray, no_color = ok_tray, no_status = ok_tray;
+    tab_type["type"]   = "PL\tA";
+    tab_color["color"] = "#11\t33";
+    no_color["color"]  = "";
+    no_status["status"] = 0;
+    CHECK(refused(t0_ok, unit(1, 0, tab_type), 1));
+    CHECK(refused(t0_ok, unit(1, 0, tab_color), 1));
+    CHECK(refused(t0_ok, unit(1, 0, no_color), 1));
+    CHECK(refused(t0_ok, unit(1, 0, no_status), 1));
+    json off = unit(1, 0, ok_tray);
+    off[0]["connected"] = false;
+    CHECK(refused(t0_ok, off, 1));
+}
