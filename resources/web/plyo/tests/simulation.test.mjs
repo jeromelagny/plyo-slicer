@@ -146,3 +146,25 @@ test('G2 : rendu forcé au retour de la fenêtre native', () => {
   assert.match(page, /function onPrintStarted\(msg\) \{\n\s+repaintPanel\(\);/);
   assert.match(page, /window\.addEventListener\('focus', repaintPanel\)/);
 });
+
+test('G5 : une pièce réussie ou exportée entre dans « Mes pièces », sans écraser un défaut déjà noté', () => {
+  const page = read('index.html');
+  assert.match(page, /success: function \(\) \{ conv\.project\.success = true; journalPart\('ok'\);/);
+  assert.match(page, /started: function \(\) \{ rememberHabit\(\); journalPart\(''\);/);
+  const done = page.slice(page.indexOf('function onExportDone'), page.indexOf('function repaintPanel'));
+  assert.ok(done.indexOf('msg.cancelled) return') < done.indexOf("journalPart('')"), 'annulé : rien dans le journal');
+  assert.match(cpp('PlyoJournal.cpp'), /if \(!defect\.empty\(\) \|\| !e->contains\("defect"\)\)/);
+  assert.deepEqual(L.journalStatus({ changes: [], outcome: 'ok' }), { label: 'Réussi', tone: 'ok' });
+  assert.deepEqual(L.journalStatus({ changes: [] }), { label: 'Sans réglage', tone: '' });
+  assert.equal(L.journalProblem({ problem: 'Fils', defect: 'stringing' }), 'Fils');
+  assert.equal(L.journalProblem({ problem: '', defect: 'stringing' }), 'Question à l’assistant');
+  assert.equal(L.journalProblem({ problem: '', defect: '', outcome: 'ok' }), 'Imprimée, réussie');
+  assert.equal(L.journalProblem({ problem: '', defect: '' }), 'Fichier préparé pour l’impression');
+});
+
+test('G5 : le suffixe « (Plyo) » ne fait pas croire à une autre imprimante ou un autre filament', () => {
+  const e = { printer: 'Bambu Lab A1 0.4 nozzle', filament: 'Generic PLA @BBL A1', changes: [{ id: 'x', after: 1 }], outcome: 'ok' };
+  assert.deepEqual(L.reapplyChanges(e, { printer: 'Bambu Lab A1 0.4 nozzle', filament: 'Generic PLA @BBL A1 (Plyo)' }), [{ id: 'x', value: 1 }]);
+  assert.equal(L.reapplyChanges(e, { printer: 'Bambu Lab A1 0.4 nozzle', filament: 'Generic PETG @BBL A1' }), null);
+  assert.equal(L.reapplyChanges(e, { printer: 'Autre', filament: 'Generic PLA @BBL A1' }), null);
+});

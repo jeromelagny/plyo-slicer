@@ -57,8 +57,15 @@ void record(const nlohmann::json& event)
     (*e)["at"]       = boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time());
     (*e)["printer"]  = text(event, "printer", 200);
     (*e)["filament"] = text(event, "filament", 200);
-    (*e)["problem"]  = text(event, "problem", 120);
-    (*e)["defect"]   = text(event, "defect", 40);
+    // Une pièce notée à l'export ou à « réussi » n'a pas de défaut : elle n'efface pas celui qu'une réponse de l'IA a déjà noté.
+    const std::string defect = text(event, "defect", 40);
+    if (!defect.empty() || !e->contains("defect")) {
+        (*e)["problem"] = text(event, "problem", 120);
+        (*e)["defect"]  = defect;
+    }
+    // « Oui, c'est réussi » sans réglage à suivre ; avec des réglages en attente, c'est set_outcome qui décide.
+    if (text(event, "outcome", 10) == "ok" && (!e->contains("changes") || !(*e)["changes"].is_array() || (*e)["changes"].empty()))
+        (*e)["outcome"] = "ok";
     if (Json::str((*e), "thumb").empty())
         (*e)["thumb"] = thumb;
     if (all.size() > MAX_EVENTS)

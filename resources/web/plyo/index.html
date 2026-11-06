@@ -1269,9 +1269,9 @@
     },
     skip: function () { $('preflight-slot').textContent = ''; preflightFix = null; plateChecked = 'ignored'; setTourStep('print'); },
     exportFile: function () { runAction('export'); },
-    started: function () { rememberHabit(); delete conv.project.success; setTourStep('after'); },
+    started: function () { rememberHabit(); journalPart(''); delete conv.project.success; setTourStep('after'); },
     photo: function () { pickFiles(); },
-    success: function () { conv.project.success = true; projectChanged(); },
+    success: function () { conv.project.success = true; journalPart('ok'); projectChanged(); },
     newPart: function () { newConversation(); },
     reprint: function () { delete conv.project.success; setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
     changeMachine: function () { projectHandlers.change('printer'); },
@@ -1346,6 +1346,7 @@
       return;
     }
     rememberHabit();
+    journalPart('');
     projectUI.sentConv = conv;
     projectUI.exported = { conv: conv, text: Logic.exportedText(msg, PlyoCanvas.exportNote(conv && conv.project.canvas)) };
     renderProject();
@@ -2231,7 +2232,7 @@
   var journalTarget = null;
   function openJournal() {
     openDrawer('Mes pièces', function (body) {
-      body.appendChild(el('p', 'muted', 'Les pièces que tu as traitées avec l’assistant : le problème vu, les réglages appliqués et le résultat. Tout reste sur cet ordinateur.'));
+      body.appendChild(el('p', 'muted', 'Les pièces que tu as imprimées ou exportées avec l’assistant : le problème vu, les réglages appliqués et le résultat. Tout reste sur cet ordinateur.'));
       var list = el('div', 'journal-list');
       list.appendChild(el('p', 'muted', 'Chargement…'));
       body.appendChild(list);
@@ -2245,7 +2246,7 @@
     list.textContent = '';
     var groups = Logic.journalGroups(events);
     if (!groups.length) {
-      list.appendChild(emptyState('cube', 'Pas encore de pièce', 'Pose une question à l’assistant avec une pièce sur le plateau : elle apparaîtra ici, avec les réglages essayés et le résultat.',
+      list.appendChild(emptyState('cube', 'Pas encore de pièce', 'Exporte ou imprime une pièce, ou pose une question à son sujet : elle apparaîtra ici, avec les réglages essayés et le résultat.',
         'Poser une question', function () { closeDrawer(); noteInput.focus(); }));
       return;
     }
@@ -2264,7 +2265,7 @@
         var st = Logic.journalStatus(e);
         top.appendChild(el('span', 'badge-pill' + (st.tone ? ' ' + st.tone : ''), st.label));
         col.appendChild(top);
-        col.appendChild(el('p', 'problem', e.problem || 'Question à l’assistant'));
+        col.appendChild(el('p', 'problem', Logic.journalProblem(e)));
         var q = Logic.outcomeQuestion(e, function (id) { var p = paramOf(id); return p.label === id ? null : p; });
         if (q.changes.length) {
           var ul = el('ul', 'meta');
@@ -3864,6 +3865,14 @@
       window.orca.postMessage({ type: 'journal_add', conv: target.id, parts: parts.slice(0, 3), printer: ctx.printer || '', filament: ctx.filament || '',
         problem: a.defect.name || '', defect: key, thumb: thumb });
     });
+  }
+
+  // Chaque pièce imprimée ou exportée entre dans « Mes pièces », même sans question à l'IA.
+  function journalPart(outcome) {
+    var name = partName(conv), ctx = (lastValues && lastValues.context) || {};
+    if (!name) return;
+    window.orca.postMessage({ type: 'journal_add', conv: conv.id, parts: [name], printer: ctx.printer || '', filament: ctx.filament || '', problem: '', defect: '', thumb: '', outcome: outcome });
+    scheduleSave(); // « Conversation » rouvre le projet de cette pièce
   }
 
   // Erreur : ce qui s'est passé et l'action suivante. La demande est gardée pour « Réessayer ».
