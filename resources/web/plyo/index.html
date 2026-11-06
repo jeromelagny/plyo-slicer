@@ -1095,7 +1095,7 @@
       if (what === 'check') { applyTab('show-guide'); checkPlate(); }
       else if (what === 'parts') openJournal();
       else if (what === 'values') openValues();
-      else if (what === 'limits') openLimits();
+      else if (what === 'limits') { if (!projectUI.spool.open) projectHandlers.toggleSpool(); $('spool-slot').scrollIntoView({ block: 'nearest' }); }
     }
   };
   var stepHandlers = {
@@ -1674,40 +1674,9 @@
     window.orca.postMessage({ type: 'reliable_get' });
   }
 
-  // « Limites du fabricant » : les températures de la fiche technique du filament, bornes strictes pour l'assistant.
-  var limitsView = null;
-  function openLimits() {
-    openDrawer('Limites du fabricant', function (body) {
-      body.appendChild(el('p', 'muted', 'Les températures conseillées par le fabricant de ton filament (sur la bobine ou la fiche technique). L’assistant ne propose jamais de sortir de cette plage sans te le dire.'));
-      var status = el('p', '', 'Lecture…');
-      var inputs = {};
-      [['nozzle_min', 'Buse, minimum (°C)'], ['nozzle_max', 'Buse, maximum (°C)'], ['bed_min', 'Plateau, minimum (°C)'], ['bed_max', 'Plateau, maximum (°C)']].forEach(function (f) {
-        var wrap = el('label', 'temp-field', f[1]);
-        var input = el('input', 'field');
-        input.type = 'text';
-        input.inputMode = 'decimal';
-        inputs[f[0]] = input;
-        wrap.appendChild(input);
-        body.appendChild(wrap);
-      });
-      body.appendChild(status);
-      body.appendChild(button('Enregistrer', function () {
-        var raw = {};
-        Object.keys(inputs).forEach(function (k) { raw[k] = inputs[k].value; });
-        var parsed = window.PlyoLogic.parseLimits(raw);
-        if (!parsed.ok) { status.textContent = parsed.text; return; }
-        window.orca.postMessage({ type: 'limits_set', limits: parsed.limits });
-      }, 'btn primary'));
-      limitsView = { status: status, inputs: inputs };
-      window.orca.postMessage({ type: 'limits_get' });
-    });
-  }
   function onLimits(msg) {
+    if (msg.ok === false) noteLine('Ces températures ne sont pas valables : la plage de ta bobine n’a pas été enregistrée.', 'error', 'alert', 'guide');
     if (projectUI.spool.open) { projectUI.spool.limits = msg.limits || null; if (msg.ok === undefined && conv) renderProject(); }
-    if (!limitsView) return;
-    var l = msg.limits || {};
-    Object.keys(limitsView.inputs).forEach(function (k) { limitsView.inputs[k].value = typeof l[k] === 'number' ? String(l[k]) : ''; });
-    limitsView.status.textContent = msg.ok === false ? 'Ces températures ne sont pas valables : rien n’a été enregistré.' : window.PlyoLogic.limitsLine(l);
   }
 
   function openConversations() {

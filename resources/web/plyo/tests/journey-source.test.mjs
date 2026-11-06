@@ -221,3 +221,10 @@ test('formulaire de la bobine : pas de redessin pendant la saisie, et succès an
   assert.ok(range.indexOf('function (ok, text)') < range.indexOf('limits_set') && range.indexOf('function (ok, text)') < range.indexOf('enregistrées'), 'limits_set et le message viennent après la réponse');
   assert.ok(/if \(!ok\) \{ sp\.error = text/.test(range), 'refus dit dans le formulaire');
 });
+
+test('la suggestion « Températures de ma bobine » ouvre le formulaire de la fiche : plus de volet « Limites du fabricant »', () => {
+  const page = read('index.html');
+  assert.ok(/what === 'limits'\) \{ if \(!projectUI\.spool\.open\) projectHandlers\.toggleSpool\(\)/.test(page));
+  assert.ok(!page.includes('openLimits') && !page.includes('limitsView'), 'volet retiré');
+  assert.ok(!page.includes('Limites du fabricant'), 'aucun texte ne le cite');
+});
