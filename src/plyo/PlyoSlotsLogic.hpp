@@ -11,6 +11,15 @@
 //
 // ÉTAT : NON VALIDÉ sur machine pour CFS, IFS et U1 : les essais T9, T13, T14, T15 et T17 ne sont pas faits, et cette
 // branche n'est pas livrable tant qu'ils ne le sont pas.
+//
+// Décisions encore ouvertes (Jérôme), réglages par défaut en place et où les changer :
+//  1. K2 et K2 Plus tous deux sur la liste blanche : cfs_imposable_models() ci-dessous.
+//  2. Relecture avant l'envoi du fichier : Canvas::send_planned ; une bobine changée pendant l'envoi échappe au contrôle.
+//  3. Couleurs inutilisées CFS sur le même emplacement que la première, à confirmer en T13 : UNUSED_COLOUR_ON_FIRST_SLOT.
+//  4. Emplacement vide refusé sur CFS/IFS : EMPTY_SLOT_BLOCKS.
+//  5. AD5X déjà reliée sans série : reason link_incomplete dans detect(), le panneau propose de la relier à nouveau.
+//  7. Pas de question par défaut sans traducteur : côté panneau (T22, T24), aucune logique ici.
+// Prudence ajoutée en attendant les essais : REFUSE_CURSOR_FILAMENT_CHANGES.
 namespace Plyo { namespace SlotsLogic {
 
 // La carte réduite à {t, canvas_id, tray_id} si chaque entrée est valable (t entier ≥ 0 sans doublon, unité connectée,
