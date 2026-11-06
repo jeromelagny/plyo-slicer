@@ -829,6 +829,9 @@
     attachments = [];
     renderAttachments();
     noteInput.value = ''; growNote();
+    // La pièce du projet précédent reste sur le plateau d'Orca : ce n'est pas celle du nouveau projet, on ne la reprend pas en silence.
+    var previous = conv && conv.project.part && conv.project.part.name;
+    projectUI.oldPart = previous && tourSignals && tourSignals.objects > 0 ? { label: previous, name: tourSignals.part_name, objects: tourSignals.objects } : null;
     // Nouveau projet : imprimante et filament du précédent proposés, jamais appliqués sans confirmation.
     startConversation(conv && PlyoProject.nextStep(conv.project) !== 'printer' ? PlyoProject.proposeFrom(conv.project) : null);
   }
@@ -1069,7 +1072,7 @@
     else if (cmode === 'loading') { $('project-card').textContent = ''; }
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
-        error: projectUI.error, editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
+        error: projectUI.error, oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
       sent: projectUI.sentConv === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '',
       intent: intentState(step, !!(tourSignals && tourSignals.sliced)),
@@ -1380,6 +1383,11 @@
       projectHandlers.setTemps(t.nozzle != null ? String(t.nozzle) : '', t.bed != null ? String(t.bed) : '');
     },
     importPart: function () { pickFiles(); },
+    keepOldPart: function () {
+      var old = projectUI.oldPart;
+      projectUI.oldPart = null;
+      if (old) { conv.project.part = { name: old.label }; projectChanged(); }
+    },
     expand: function () { journeyUI.ficheOpen = true; renderProject(); },
     toggleOthers: function () { projectUI.showOthers = !projectUI.showOthers; renderProject(); },
     openMachines: function () { openMachinesDrawer(); },
@@ -1482,6 +1490,8 @@
     if (!c || !Array.isArray(c.entries) || busy) return;
     unlinkPhone(true);
     clearThread();
+    projectUI.oldPart = null;
+    projectUI.waitingFile = null;
     conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [],
       project: c.project && typeof c.project === 'object' ? c.project : PlyoProject.emptyProject() };
     if (PlyoProject.nextStep(conv.project) === 'ready' && conv.project.part && !conv.project.adapted) conv.project.adapted = conv.project.part.name; // ancienne conversation : jamais réadaptée
@@ -2281,8 +2291,12 @@
   function sendModel(file) {
     applyTab('show-guide'); // la pièce se pose et se vérifie dans le Guide
     var step = PlyoProject.nextStep(conv.project);
-    if (step === 'printer') { // la machine d'abord : l'adaptation d'un 3MF en dépend
+    var adopted = conv.project.part && conv.project.part.fromPlate;
+    if (step === 'printer' && (adopted || !(conv.project.part && conv.project.part.name))) { // la machine d'abord : l'adaptation d'un 3MF en dépend
+      // Le fichier déposé est prioritaire sur ce qui traîne sur le plateau : l'ancienne pièce est signalée à l'import.
+      if (adopted) conv.project.part = null;
       projectUI.waitingFile = file;
+      if (tourSignals && tourSignals.objects > 0) projectUI.newProjectFile = true;
       renderProject();
       noteLine('« ' + file.name + ' » attend : choisis d’abord ton imprimante, je le pose ensuite.', '', 'info', 'guide');
       return;
@@ -2470,6 +2484,7 @@
     if (msg.adaptation) { syncProjectNames(msg.adaptation.saved); if (msg.name) conv.project.adapted = msg.name; } // adapté dès l'import : pas une deuxième fois
     if (tourSignals) tourSignals.objects = Math.max(tourSignals.objects || 0, 1); // sans attendre le prochain signal
     if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
+    projectUI.oldPart = null;
     if (projectUI.reposing) { projectUI.reposing = false; renderProject(); noteLine('« ' + msg.name + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); }
     if (projectUI.newProjectFile) {
       projectUI.newProjectFile = false;
@@ -3285,8 +3300,9 @@
     var wasLinked = !!(tourSignals && tourSignals.linked);
     tourSignals = signals;
     // Pièce posée sur le plateau autrement que par ce panneau (Fichier › Importer d'Orca, glisser-déposer) : elle remplit la fiche.
-    var plated = PlyoProject.partFromPlate(conv && conv.project, signals);
-    if (plated) { conv.project.part = { name: plated }; projectChanged(); }
+    if (signals.objects === 0) projectUI.oldPart = null;
+    var plated = projectUI.waitingFile ? null : PlyoProject.partFromPlate(conv && conv.project, signals, projectUI.oldPart);
+    if (plated) { conv.project.part = { name: plated, fromPlate: true }; projectUI.oldPart = null; projectChanged(); }
     var step = currentTourStep();
     // La découpe est périmée (un réglage a changé) : on redécoupe avant d'imprimer, y compris après une correction à l'étape Résultat.
     if ((step === 'print' || step === 'after') && FS.nextTourStep(step, signals, projectUI.fixedAfter === conv) === 'slice') { projectUI.fixedAfter = null; setTourStep('slice'); return; }

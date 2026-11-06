@@ -193,3 +193,10 @@ test('reprise d’un projet : le même fichier est reposé sans proposer un nouv
   assert.ok(send.includes('déjà sur le plateau'), 'pas de doublon si la pièce est encore là');
   assert.ok(/kind === 'importPart'\) pickFiles\(\)/.test(page), 'le bouton de l’étape ouvre le choix de fichier');
 });
+
+test('un fichier déposé est prioritaire : le plateau ne le remplace pas, et il est posé dès la machine choisie', () => {
+  const page = read('index.html');
+  assert.ok(/projectUI\.waitingFile \? null : PlyoProject\.partFromPlate\(/.test(page));
+  assert.ok(/if \(adopted\) conv\.project\.part = null/.test(page), 'une pièce seulement vue sur le plateau cède la place');
+  assert.ok(read('project-card.js').includes('Garder cette pièce'), 'l’ancienne pièce reste récupérable, et le panneau le dit');
+});
