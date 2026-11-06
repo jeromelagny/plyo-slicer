@@ -152,7 +152,20 @@
     return '';
   }
 
-  var api = { sendRoute: sendRoute, printNote: printNote, orcaConfirm: orcaConfirm, colourName: colourName, trays: trays, propose: propose, complete: complete, tooMany: tooMany,
+  // Une question de répartition ? Pas avec un seul emplacement, ni sans lecture ni saisie (le profil ne permet pas de reconnaître une
+  // machine à une bobine). La CC2 reste comme avant.
+  function askSlots(state) {
+    if (!state || !state.ok) return false;
+    if (!state.system || state.system === 'canvas') return true;
+    return trays(state).length > 1;
+  }
+  // Un seul emplacement, de type connu et différent du projet : une remarque, jamais un blocage.
+  function typeMismatch(list, projectType) {
+    if (!Array.isArray(list) || list.length !== 1 || !list[0].type || !projectType || upper(list[0].type) === upper(projectType)) return '';
+    return 'Ta machine a du ' + list[0].type + ' chargé, et ce projet est prévu en ' + projectType + '. Change de bobine ou de filament si ce n’est pas voulu.';
+  }
+
+  var api = { askSlots: askSlots, typeMismatch: typeMismatch, sendRoute: sendRoute, printNote: printNote, orcaConfirm: orcaConfirm, colourName: colourName, trays: trays, propose: propose, complete: complete, tooMany: tooMany,
     checkBeforeSend: checkBeforeSend, profileTypes: profileTypes, mapLabel: mapLabel, distance: distance,
     words: words, slotName: slotName, isImposed: isImposed };
   root.PlyoCanvas = api;

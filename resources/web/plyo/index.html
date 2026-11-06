@@ -880,6 +880,11 @@
     var known = knownPrinter();
     return !!(known && known.slots && known.linked && (step === 'filament' || projectUI.editing === 'filament'));
   }
+  // Machine à un seul emplacement lu : remarque si son type diffère du projet.
+  function slotRemark() {
+    var f = conv && conv.project.filament;
+    return f && !f.proposed && canvasUI.state ? PlyoCanvas.typeMismatch(PlyoCanvas.trays(canvasUI.state), f.type) : '';
+  }
   function canvasColours() {
     var c = canvasUI.state && Array.isArray(canvasUI.state.colours) ? canvasUI.state.colours : [];
     return c.length ? c : [{ t: 0, color: '', type: '' }];
@@ -888,6 +893,7 @@
     if (!canvasWanted(step) || canvasUI.useList) return null;
     if (canvasUI.loading || canvasUI.preset !== conv.project.printer.preset) return 'loading';
     if (!canvasUI.state || !canvasUI.state.ok) return null;
+    if (!PlyoCanvas.askSlots(canvasUI.state)) return null; // un seul emplacement : aucune question
     var trays = PlyoCanvas.trays(canvasUI.state), colours = canvasColours();
     if (PlyoCanvas.tooMany(colours, trays)) return 'tooMany';
     return colours.length > 1 ? 'multi' : 'single';
@@ -1144,9 +1150,9 @@
     else if (cmode === 'loading') { $('project-card').textContent = ''; }
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
-        error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
+        error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
-      sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
+      sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()),
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));

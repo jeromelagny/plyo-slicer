@@ -112,6 +112,16 @@
     if (!wasOpen) setTimeout(function () { inputs.nozzle_min.focus(); }, 0);
   }
 
+  // Liaison faite sans le numéro de série ni le code (AD5X reliée avant) : aucune répartition possible tant qu'elle n'est pas refaite.
+  // La série n'est connue qu'après une recherche sur le réseau : « Relier à nouveau » commence par là.
+  function renderSlotNotes(body, ui, ctx) {
+    if (ctx.relink) {
+      body.appendChild(ui.el('p', 'muted small', 'Ta machine a été reliée sans son numéro de série ni son code d’accès : je ne lis pas ses emplacements. Allume-la, et je la cherche sur le réseau pour la relier.'));
+      body.appendChild(ui.button('Relier à nouveau', ctx.handlers.setupPrinter, 'link'));
+    }
+    if (ctx.slotRemark) body.appendChild(ui.el('p', 'muted small', ctx.slotRemark));
+  }
+
   // Le contenu des étapes 1 à 3 (imprimante, filament, pièce) : des choix qui s'appliquent tout de suite.
   function renderChoices(slot, ui, ctx) {
     var P = root.PlyoProject, project = projectOf(ctx), step = P.nextStep(project), h = ctx.handlers;
@@ -146,10 +156,12 @@
       body.appendChild(ui.button('Mes machines…', h.openMachines, 'link'));
     } else if (wantsFilament && proposedFilament && !ctx.showKinds) {
       // « PLA, comme la dernière fois ? » : le bouton « Oui » est dans la ligne d'action.
+      renderSlotNotes(body, ui, ctx);
       body.appendChild(ui.button('Autre matière', h.toggleKinds, 'link'));
     } else if (wantsFilament) {
       if (ctx.error && ctx.error.filament) body.appendChild(ui.el('p', 'project-error', ctx.error.filament));
       if (ctx.noCanvas) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas ton Canvas pour l’instant : choisis la matière ici, l’imprimante choisira l’emplacement.'));
+      renderSlotNotes(body, ui, ctx);
       body.appendChild(ui.el('p', 'muted small', 'Regarde ta bobine : la matière est écrite dessus. Pas sûr ? C’est presque toujours du PLA.'));
       var kinds = ui.el('div', 'printer-actions');
       MATERIALS.forEach(function (k) {

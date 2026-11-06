@@ -237,3 +237,25 @@ test('U1 : lire sans imposer, jamais présenté comme imposé, aucun rangement p
 test('U1 : l’état d’essai reste signalé à l’étape Imprimer', () => {
   assert.ok(C.printNote([u1Entry]).includes('pas encore été essayé'));
 });
+
+test('askSlots : une question seulement s’il y a plusieurs emplacements à répartir', () => {
+  const one = { ok: true, system: 'cfs', canvases: [{ canvas_id: 0, connected: true, trays: [{ tray_id: 0, label: 'Ext', type: 'PLA', color: '#000000', status: 2 }] }] };
+  assert.equal(C.askSlots(one), false, 'un seul emplacement lu');
+  assert.equal(C.askSlots(CFS), true);
+  assert.equal(C.askSlots({ ok: false, reason: 'no_translator' }), false, 'machine sans traducteur (CC1, AD5M, Ender-3 V3)');
+  assert.equal(C.askSlots(null), false);
+  assert.equal(C.askSlots({ ok: false, reason: 'no_manual', source: 'manual', system: 'manual' }), false, 'sans saisie');
+  // La CC2 reste comme avant, quel que soit le nombre d'emplacements qu'elle rend.
+  assert.equal(C.askSlots(Object.assign({}, one, { system: 'canvas' })), true);
+  assert.equal(C.askSlots({ ok: true, canvases: one.canvases }), true);
+});
+
+test('typeMismatch : une remarque si l’unique emplacement connu diffère du projet, jamais un blocage', () => {
+  const one = (type) => [{ type, slot: '1' }];
+  assert.equal(C.typeMismatch(one('PETG'), 'PETG'), '');
+  assert.equal(C.typeMismatch(one('petg'), 'PETG'), '', 'sans tenir compte de la casse');
+  assert.equal(C.typeMismatch(one(''), 'PETG'), '', 'type inconnu : rien à dire');
+  assert.equal(C.typeMismatch(one('PETG'), ''), '', 'projet sans filament : rien à dire');
+  assert.equal(C.typeMismatch(one('PLA').concat(one('PETG')), 'ABS'), '', 'plusieurs emplacements : la question s’en charge');
+  assert.equal(C.typeMismatch(one('PETG'), 'PLA'), 'Ta machine a du PETG chargé, et ce projet est prévu en PLA. Change de bobine ou de filament si ce n’est pas voulu.');
+});

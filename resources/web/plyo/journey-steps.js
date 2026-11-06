@@ -93,6 +93,7 @@
         if (opts.slotsNote) body.appendChild(ui.el('p', 'muted small', opts.slotsNote));
       }
       // Hors CC2, le sens d'un départ sans carte n'est pas vérifié : on relit, ou on change d'emplacements (lien ci-dessus).
+      if (opts.slotRemark) body.appendChild(line(ui, 'alert', opts.slotRemark, ''));
       if (opts.refused) {
         body.appendChild(line(ui, 'alert', opts.refused, 'warn'));
         if (opts.offerPlain === false) body.appendChild(ui.button('Relire les emplacements', h.rereadSlots, 'link'));

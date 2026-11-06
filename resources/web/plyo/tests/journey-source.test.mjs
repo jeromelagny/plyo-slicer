@@ -426,3 +426,11 @@ test('U1 : le réordonnancement (T18 à T21) n’existe pas dans le panneau, et 
   const u1 = view.slice(view.indexOf("system === 'u1'"), view.indexOf("system === 'u1'") + 300);
   assert.ok(u1.includes('Ces couleurs sont sur tes têtes') && !/impos/i.test(u1), 'texte U1 sans « imposé »');
 });
+
+test('une bobine : pas de question, remarque seulement ; liaison incomplète : proposer de relier à nouveau', () => {
+  const page = read('index.html'), card = read('project-card.js');
+  assert.ok(/PlyoCanvas\.askSlots\(/.test(page), 'canvasMode passe par askSlots');
+  assert.ok(/PlyoCanvas\.typeMismatch\(/.test(page) && card.includes('ctx.slotRemark') && read('journey-steps.js').includes('opts.slotRemark'), 'la remarque est affichée aux deux étapes');
+  assert.ok(/slots_reason === 'link_incomplete'/.test(page), 'link_incomplete lu dans la liste des machines');
+  assert.ok(/Relier à nouveau', ctx\.handlers\.setupPrinter/.test(card), 'relier à nouveau lance la recherche d’abord (la série n’est connue que là)');
+});
