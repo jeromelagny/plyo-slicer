@@ -3154,6 +3154,8 @@
       noteLine('Pas de risque détecté : on passe à l’impression.', 'ok', 'check', 'guide');
       setTourStep('print');
     } else renderProject();
+    // La carte doit se voir, surtout dans un panneau bas : son haut est amené dans la zone visible.
+    if (risks.length && (manual || fresh.length) && viewUI.tab === 'guide' && $('preflight-slot').firstChild) scrollToAnswerTop($('preflight-slot').firstChild); // le badge « Voir la suite » invite à défiler jusqu'au bouton
     if (!manual || risks.length) return;
     var slot = $('preflight-slot');
     var close = function () { slot.textContent = ''; };

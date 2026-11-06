@@ -258,3 +258,9 @@ test('Canvas, trop de couleurs : « puis reviens ici » a un bouton qui relit', 
   assert.ok(/Vérifier à nouveau', h\.recheck/.test(read('canvas-view.js')));
   assert.ok(/recheck: function \(\) \{ canvasUI\.preset = null/.test(read('index.html')));
 });
+
+test('la carte « Avant d’imprimer » est amenée dans la zone visible', () => {
+  const page = read('index.html');
+  const on = page.slice(page.indexOf('function onPreflight'), page.indexOf('function resultCard'));
+  assert.ok(/scrollToAnswerTop\(\$\('preflight-slot'\)\.firstChild\)/.test(on));
+});
