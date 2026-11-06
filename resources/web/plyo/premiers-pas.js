@@ -54,10 +54,12 @@
   var TOUR_STEPS = ['slice', 'print', 'after'];
 
   // Avance automatique quand l'étape est faite ; les autres étapes avancent au clic « Suivant ».
-  function nextTourStep(step, signals) {
+  // `fixed` : des réglages ont été appliqués à l'étape Résultat.
+  function nextTourStep(step, signals, fixed) {
     if (!signals) return step;
     // Découpe périmée (réglage changé) : on redécoupe avant d'imprimer.
     if (step === 'print' && !signals.sliced) return 'slice';
+    if (step === 'after' && fixed && !signals.sliced) return 'slice';
     if (step === 'slice' && signals.sliced) return 'print';
     return step;
   }

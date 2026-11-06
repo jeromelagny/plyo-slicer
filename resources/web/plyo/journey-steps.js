@@ -95,6 +95,7 @@
     } else if (opts.step === 'resultat') {
       body.appendChild(ui.el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer.'));
       body.appendChild(ui.button('Ajouter une photo depuis l’ordinateur', h.photo, 'btn ghost sm', 'camera'));
+      body.appendChild(ui.button('Réimprimer cette pièce', h.reprint, 'link'));
     }
     if (body.childNodes.length) slot.appendChild(body);
   }

@@ -1050,6 +1050,7 @@
     if (!conv) return;
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
+    if (step !== 'imprimer') projectUI.sentConv = null; // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
     if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { canvasUI.preset = null; canvasUI.useList = false; } }
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
@@ -1102,6 +1103,7 @@
     exportFile: function () { runAction('export'); },
     started: function () { rememberHabit(); setTourStep('after'); },
     photo: function () { pickFiles(); },
+    reprint: function () { setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
     changeMachine: function () { projectHandlers.change('printer'); },
     recheck: function () { recheckMachine(); },
     answer: function (q, id) { intentHandlers.answer(q, id); }, idk: function () { intentHandlers.idk(); },
@@ -3277,8 +3279,8 @@
     var plated = PlyoProject.partFromPlate(conv && conv.project, signals);
     if (plated) { conv.project.part = { name: plated }; projectChanged(); }
     var step = currentTourStep();
-    // La découpe est périmée (un réglage a changé) : on redécoupe avant d'imprimer.
-    if (step === 'print' && FS.nextTourStep(step, signals) === 'slice') { setTourStep('slice'); return; }
+    // La découpe est périmée (un réglage a changé) : on redécoupe avant d'imprimer, y compris après une correction à l'étape Résultat.
+    if ((step === 'print' || step === 'after') && FS.nextTourStep(step, signals, projectUI.fixedAfter === conv) === 'slice') { projectUI.fixedAfter = null; setTourStep('slice'); return; }
     // Le contenu des étapes 4 et 5 (temps, poids, machine reliée) dépend de ces signaux.
     var sig = JSON.stringify([signals.sliced, signals.linked, signals.time_s]);
     if (sig !== onTourSignals.last) { onTourSignals.last = sig; renderProject(); }
@@ -3908,6 +3910,11 @@
       if (msg.undone_id && undoneListeners[msg.undone_id]) { undoneListeners[msg.undone_id](); delete undoneListeners[msg.undone_id]; }
       if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text, msg); }
       else noteLine(msg.text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
+      // Corriger à l'étape Résultat, c'est préparer la prochaine impression : la découpe est à refaire.
+      if (msg.ok && msg.undo_id && currentTourStep() === 'after') {
+        projectUI.fixedAfter = conv;
+        if (viewUI.tab === 'chat') noteLine('Ces réglages demandent une nouvelle découpe : retourne à l’onglet « Étapes » pour redécouper et réimprimer.', '', 'info');
+      }
     } else if (msg.type === 'calib_started') {
       onCalibStarted(msg);
     } else if (msg.type === 'calib_history') {

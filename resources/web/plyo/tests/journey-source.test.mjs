@@ -177,3 +177,11 @@ test('« L’impression a démarré » suit l’acceptation d’Orca, et un refu
   assert.ok(/sentConv = conv[\s\S]*renderProject\(\)/.test(started), 'et le bouton s’affiche sans attendre');
   assert.ok(/kind === 'send'[\s\S]{0,60}lockSend\('print'\)/.test(run) && /lockSend\('export'\)/.test(run), 'double-clic : un seul départ');
 });
+
+test('Résultat n’est pas une impasse : on peut réimprimer, et « démarré » ne survit pas à l’étape', () => {
+  assert.ok(read('journey-steps.js').includes('Réimprimer cette pièce'));
+  const page = read('index.html');
+  assert.ok(/reprint: function \(\) \{ setTourStep\(/.test(page));
+  assert.ok(/if \(step !== 'imprimer'\) projectUI\.sentConv = null/.test(page));
+  assert.ok(page.includes('retourne à l’onglet « Étapes »') && page.includes('id="tab-guide"'), 'le renvoi vise un onglet qui existe');
+});
