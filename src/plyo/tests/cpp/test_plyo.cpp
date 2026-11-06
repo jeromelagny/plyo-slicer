@@ -8,6 +8,7 @@
 #include "../../PlyoDiscoveryLogic.hpp"
 #include "../../PlyoProjectLogic.hpp"
 #include "../../PlyoCC2Logic.hpp"
+#include "../../PlyoSlotsLogic.hpp"
 #include "../../PlyoCanvasLogic.hpp"
 #include "../../PlyoLimitsLogic.hpp"
 #include "../../PlyoCatalogPolicy.hpp"
@@ -1142,3 +1143,73 @@ TEST_CASE("Project: adapt_3mf accepte la valeur exacte d'une borne d'Orca en flo
     CHECK(out.dropped.size() == 2);
 }
 
+
+// --- Emplacements multi-marques : logique commune ---
+// Rien ici ne vient d'une machine : tant que T9, T13, T14, T15 et T17 ne sont pas faits, CFS, IFS et U1 ne sont pas validés.
+
+namespace {
+json slots_one_unit(int canvas_id, const std::string& label, int tray_id, const std::string& type, int status)
+{
+    return json::array({{{"canvas_id", canvas_id}, {"connected", true},
+                         {"trays", json::array({{{"tray_id", tray_id}, {"label", label}, {"type", type}, {"status", status}}})}}});
+}
+} // namespace
+
+TEST_CASE("Slots::decide_map : sans options, exactement les textes de la CC2")
+{
+    using namespace Plyo;
+    const json planned = json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}, {"type", "PLA"}, {"preset", ""}}});
+    const SlotsLogic::MapDecision gone = SlotsLogic::decide_map(planned, json::array(), {});
+    CHECK(gone.refusal == "L'emplacement 4 n'est plus visible sur le Canvas : l'impression n'a pas démarré. Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Démarrer sans carte », ou choisis à nouveau les emplacements.");
+    const SlotsLogic::MapDecision same = CC2Logic::decide_map(planned, json::array(), {});
+    CHECK(same.refusal == gone.refusal);
+    const SlotsLogic::MapDecision none = SlotsLogic::decide_map(planned, json(), {});
+    CHECK(none.refusal.find("Je n'ai pas pu relire") == 0);
+    CHECK(none.refusal.find("Démarrer sans carte") != std::string::npos);
+}
+
+TEST_CASE("Slots::decide_map : offer_plain faux ne propose jamais « Démarrer sans carte »")
+{
+    using namespace Plyo;
+    SlotsLogic::DecideOptions opts;
+    opts.offer_plain = false;
+    opts.unit_name   = "la boîte CFS";
+    const json planned = json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 0}, {"label", "1A"}, {"type", "PLA"}, {"preset", ""}}});
+    for (const json& canvases : {json(), json::array(), slots_one_unit(1, "1A", 0, "PETG", 2)}) {
+        const SlotsLogic::MapDecision d = SlotsLogic::decide_map(planned, canvases, {}, opts);
+        CHECK_FALSE(d.refusal.empty());
+        CHECK(d.refusal.find("sans carte") == std::string::npos);
+        CHECK(d.refusal.find("Le fichier est sur l'imprimante") == std::string::npos); // rien n'est parti sur CFS/IFS
+        CHECK(d.map.empty());
+    }
+    CHECK(SlotsLogic::decide_map(planned, json::array(), {}, opts).refusal.find("sur la boîte CFS") != std::string::npos);
+}
+
+TEST_CASE("Slots::decide_map : le libellé vient du plan, puis de la lecture, jamais tray_id + 1 s'il en existe un")
+{
+    using namespace Plyo;
+    const json read = slots_one_unit(1, "1A", 0, "PETG", 2);
+    const json with_label    = json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 0}, {"label", "1A"}, {"type", "PLA"}, {"preset", ""}}});
+    const json without_label = json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 0}, {"type", "PLA"}, {"preset", ""}}});
+    CHECK(SlotsLogic::decide_map(with_label, read, {}).refusal.find("L'emplacement 1A contient") == 0);
+    CHECK(SlotsLogic::decide_map(without_label, read, {}).refusal.find("L'emplacement 1A contient") == 0);
+    CHECK(SlotsLogic::decide_map(with_label, json::array(), {}).refusal.find("L'emplacement 1A n'est plus") == 0);
+    // Une lecture IFS : tray_id 2 s'affiche « 2 », pas « 3 ».
+    const json ifs = json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 2}, {"type", "PLA"}, {"preset", ""}}});
+    CHECK(SlotsLogic::decide_map(ifs, slots_one_unit(0, "2", 2, "PETG", 2), {}).refusal.find("L'emplacement 2 contient") == 0);
+}
+
+TEST_CASE("Slots::decide_map : emplacement vide refusé seulement avec empty_blocks")
+{
+    using namespace Plyo;
+    const json planned = json::array({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 0}, {"type", ""}, {"preset", ""}}});
+    SlotsLogic::DecideOptions opts;
+    opts.empty_blocks = true;
+    opts.offer_plain  = false;
+    const SlotsLogic::MapDecision blocked = SlotsLogic::decide_map(planned, slots_one_unit(1, "1A", 0, "", 0), {}, opts);
+    CHECK(blocked.refusal.find("L'emplacement 1A est vide") == 0);
+    CHECK(blocked.map.empty());
+    CHECK(SlotsLogic::decide_map(planned, slots_one_unit(1, "1A", 0, "", 2), {}, opts).map.size() == 1);
+    // La CC2 garde sa règle : son `status` n'est pas fiable.
+    CHECK(SlotsLogic::decide_map(planned, slots_one_unit(1, "1A", 0, "", 0), {}).map.size() == 1);
+}

@@ -1,0 +1,44 @@
+#pragma once
+
+#include <nlohmann/json.hpp>
+
+#include <string>
+#include <vector>
+
+// Logique pure (sans réseau ni Orca, testée par src/plyo/tests/cpp) des emplacements, commune à toutes les marques.
+// Format commun : canvases[{canvas_id, connected, trays[{tray_id, label, brand, type, name, color, min_temp, max_temp, status}]}].
+// « canvas » désigne ici toute unité d'emplacements (Canvas, boîte CFS, IFS, têtes de la U1).
+//
+// ÉTAT : NON VALIDÉ sur machine pour CFS, IFS et U1 : les essais T9, T13, T14, T15 et T17 ne sont pas faits, et cette
+// branche n'est pas livrable tant qu'ils ne le sont pas.
+namespace Plyo { namespace SlotsLogic {
+
+// La carte réduite à {t, canvas_id, tray_id} si chaque entrée est valable (t entier ≥ 0 sans doublon, unité connectée,
+// emplacement existant) ; sinon un tableau vide : jamais de carte partielle.
+nlohmann::json sanitize_slot_map(const nlohmann::json& map, const nlohmann::json& canvases);
+// Carte du plan d'envoi ({host, map}) si l'envoi vise cette imprimante et que la pièce découpée utilise exactement les
+// couleurs de la carte (`sliced_t`, numéros de filament à partir de 0) ; sinon un tableau vide.
+nlohmann::json map_for_send(const nlohmann::json& plan, const std::string& host, const std::vector<int>& sliced_t);
+
+struct MapDecision
+{
+    nlohmann::json map = nlohmann::json::array(); // carte à envoyer ({t, canvas_id, tray_id})
+    std::string    refusal;                       // non vide : ne pas démarrer, texte pour l'utilisateur
+};
+struct DecideOptions
+{
+    std::string unit_name    = "le Canvas"; // « le … » ou « la … », utilisé dans les refus
+    bool        offer_plain  = true;        // le refus propose « Démarrer sans carte » (CC2 seulement tant que son sens n'est pas vérifié ailleurs)
+    bool        empty_blocks = false;       // un emplacement vide (status 0) est refusé
+};
+// Carte prévue (`planned` : [{t, canvas_id, tray_id, type, preset, label?}], non vide) confrontée à une relecture fraîche
+// (`canvases`, null si la relecture a échoué) et aux profils de filament actuels d'Orca (`presets`, par numéro) : refus si
+// la relecture manque, si un emplacement a disparu ou changé de type, ou si une couleur a changé de profil.
+// Numéro affiché : `label` du plan, puis celui de la lecture, puis tray_id + 1 (CC2 et ses projets enregistrés).
+MapDecision decide_map(const nlohmann::json& planned, const nlohmann::json& canvases, const std::vector<std::string>& presets,
+                       const DecideOptions& opts = {});
+
+// « #RRGGBB » en majuscules, ou vide si la valeur n'a pas cette forme.
+std::string hex_colour(const std::string& raw);
+
+}} // namespace Plyo::SlotsLogic

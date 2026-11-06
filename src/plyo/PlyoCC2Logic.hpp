@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PlyoSlotsLogic.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <string>
@@ -45,21 +47,11 @@ std::string canvas_read_payload(int id);
 // {error_code, canvases:[{canvas_id, connected, trays:[{tray_id, brand, type, name, color "#RRGGBB" ou "", min_temp,
 // max_temp, status}]}], active:{canvas_id, tray_id}}. Sur la CC2, tray_id va de 0 à 3 (emplacement affiché = tray_id + 1).
 nlohmann::json parse_canvas_reply(const std::string& payload, int id);
-// La carte réduite à {t, canvas_id, tray_id} si chaque entrée est valable (t entier ≥ 0 sans doublon, unité connectée,
-// emplacement existant) ; sinon un tableau vide : jamais de carte partielle.
-nlohmann::json sanitize_slot_map(const nlohmann::json& map, const nlohmann::json& canvases);
-// Carte du plan d'envoi ({host, map}) si l'envoi vise cette imprimante et que la pièce découpée utilise exactement les
-// couleurs de la carte (`sliced_t`, numéros de filament à partir de 0) ; sinon un tableau vide.
-nlohmann::json map_for_send(const nlohmann::json& plan, const std::string& host, const std::vector<int>& sliced_t);
-struct MapDecision
-{
-    nlohmann::json map = nlohmann::json::array(); // carte à envoyer ({t, canvas_id, tray_id})
-    std::string    refusal;                       // non vide : ne pas démarrer, texte pour l'utilisateur
-};
-// Carte prévue (`planned` : [{t, canvas_id, tray_id, type, preset}], non vide) confrontée à une relecture fraîche du
-// Canvas (`canvases`, null si la relecture a échoué) et aux profils de filament actuels d'Orca (`presets`, par numéro) :
-// refus si la relecture manque, si un emplacement a disparu ou changé de type, ou si une couleur a changé de profil.
-MapDecision decide_map(const nlohmann::json& planned, const nlohmann::json& canvases, const std::vector<std::string>& presets);
+// Carte des emplacements : logique commune à toutes les marques (voir PlyoSlotsLogic.hpp).
+using SlotsLogic::decide_map;
+using SlotsLogic::map_for_send;
+using SlotsLogic::MapDecision;
+using SlotsLogic::sanitize_slot_map;
 
 // Pourquoi « Démarrer sans carte » ne peut pas partir (vide : il peut). `refused` : voir CC2::last_refused ; `profile_host` :
 // adresse nue de l'imprimante du profil en cours, dont le code d'accès serait envoyé en clair à l'adresse du refus.
