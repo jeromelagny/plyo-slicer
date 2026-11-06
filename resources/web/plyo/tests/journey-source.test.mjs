@@ -313,3 +313,9 @@ test('comportements : brouillon gardé, demande remise si la jauge est pleine, m
   assert.ok(/skip: function \(\) \{ \$\('preflight-slot'\)\.textContent = ''/.test(page));
   assert.ok(read('project-card.js').includes('Garder ce filament'));
 });
+
+test('réglages lus : pas de nom technique pour un débutant ; ligne décochée lisible', () => {
+  const page = read('index.html');
+  assert.ok(/fsState\.level === 'expert' \? p\.key : ''/.test(page));
+  assert.ok(!/\.row\.off \{ opacity/.test(page) && /\.row\.off input \{ opacity/.test(page));
+});

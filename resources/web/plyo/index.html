@@ -282,7 +282,7 @@
   .delta .arrow { color: var(--muted); }
   .delta .new { color: var(--accent-text); font-weight: 700; }
   .row .why { color: var(--muted); font-size: var(--fs-sm); }
-  .row.off { opacity: .45; }
+  .row.off input { opacity: .45; } /* décoché : seule la case s'efface, le texte reste lisible */
   .row.best { background: var(--accent-soft); }
   .row.static { cursor: default; }
   .sheet .status { padding: var(--s2) var(--s3); color: var(--muted); font-size: var(--fs-sm); }
@@ -1678,7 +1678,9 @@
       ((lastValues && lastValues.params) || []).forEach(function (p) {
         var tr = el('tr');
         var label = el('td', '', p.label);
-        label.appendChild(el('span', 'key', p.key + (p.note ? ' — ' + p.note : '')));
+        // Le nom technique ne parle qu'aux experts ; la remarque éventuelle reste pour tous.
+        var keyText = [fsState.level === 'expert' ? p.key : '', p.note || ''].filter(Boolean).join(' — ');
+        if (keyText) label.appendChild(el('span', 'key', keyText));
         tr.appendChild(label);
         tr.appendChild(el('td', 'value', formatValue(p.value, p.unit)));
         tbody.appendChild(tr);

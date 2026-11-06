@@ -278,3 +278,10 @@ test('suggestions : celles qui partent à l’IA le disent ; « changer » le fi
   for (const key of ['imprimer', 'resultat']) for (const s of J.suggestionsFor(key)) if (s.kind === 'ask') assert.ok(/jauge/.test(s.label), s.label);
   assert.equal(J.primaryAction('preparer', { editing: true }).kind, 'none');
 });
+
+test('fiche repliée : un nom très long est coupé, le filament reste', () => {
+  const long = 'une-piece-avec-un-nom-de-fichier-vraiment-tres-tres-long.stl';
+  const text = J.ficheSummary({ printer: { name: 'K1C', preset: 'k' }, part: { name: long }, filament: { type: 'PLA', preset: 'p' } });
+  assert.ok(text.endsWith('PLA') && !text.includes(long) && text.includes('.stl'), text);
+  assert.ok(text.length < 50, text);
+});

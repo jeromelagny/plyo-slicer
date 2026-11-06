@@ -129,10 +129,16 @@
     return step === 'machine' || step === 'filament' || step === 'piece' ? 'choices' : 'steps';
   }
 
+  // La fiche repliée tient sur une ligne : un nom très long est coupé au milieu, pour que le filament reste visible.
+  function shortName(name) {
+    var n = String(name || '');
+    return n.length <= 28 ? n : n.slice(0, 18) + '…' + n.slice(-8);
+  }
+
   function ficheSummary(project) {
     var p = project || {}, parts = [];
     if (p.printer && (p.printer.name || p.printer.preset)) parts.push(p.printer.name || p.printer.preset);
-    if (p.part && p.part.name) parts.push(p.part.name);
+    if (p.part && p.part.name) parts.push(shortName(p.part.name));
     if (p.filament && p.filament.type && Array.isArray(p.canvas) && p.canvas.length) parts.push(filamentRow(p).text);
     else if (p.filament && p.filament.type) {
       var temps = p.filament.nozzle_temp != null && p.filament.bed_temp != null ? ' ' + p.filament.nozzle_temp + '/' + p.filament.bed_temp : '';
