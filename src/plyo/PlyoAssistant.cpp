@@ -63,6 +63,7 @@ constexpr const char* PANE_NAME = "plyo:assistant";
 // Le panneau est détruit par Orca quand on le ferme ; wxWeakRef repasse alors à nullptr tout seul.
 wxWeakRef<DockPanel> s_panel;
 bool                 s_refresh_pending = false;
+int                  s_project_pauses  = 0; // gardes ProjectNotificationsPause en vie (fil principal seulement)
 wxWeakRef<SideButton> s_topbar_button;
 
 // Bouton de la barre du haut : plein quand le panneau est ouvert, cerné quand il est fermé.
@@ -572,10 +573,15 @@ wxWindow* create_topbar_button(wxWindow* parent)
 
 void on_project_changed()
 {
-    Canvas::clear_plan(); // la carte des emplacements visait la pièce d'avant
     CC2::clear_refused(); // « Démarrer sans carte » lancerait le fichier de la pièce d'avant
+    if (s_project_pauses > 0)
+        return; // calibration : la pièce reviendra, le panneau garde sa conversation et son plan d'envoi
+    Canvas::clear_plan(); // la carte des emplacements visait la pièce d'avant
     send({{"type", "project_changed"}});
 }
+
+ProjectNotificationsPause::ProjectNotificationsPause() { ++s_project_pauses; }
+ProjectNotificationsPause::~ProjectNotificationsPause() { --s_project_pauses; }
 
 void on_config_changed()
 {

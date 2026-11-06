@@ -26,4 +26,15 @@ void on_config_changed();
 // Appelé par Plater::new_project() et Plater::load_project() : le panneau revient à son accueil.
 void on_project_changed();
 
+// Tant qu'une de ces gardes existe, on_project_changed() ne prévient pas le panneau : la calibration vide et recharge le
+// plateau, mais la conversation et le lien téléphone doivent continuer (comme un `try/finally` qui lève puis baisse un drapeau).
+class ProjectNotificationsPause
+{
+public:
+    ProjectNotificationsPause();
+    ~ProjectNotificationsPause();
+    ProjectNotificationsPause(const ProjectNotificationsPause&) = delete;
+    ProjectNotificationsPause& operator=(const ProjectNotificationsPause&) = delete;
+};
+
 } // namespace Plyo

@@ -1,5 +1,6 @@
 #include "PlyoCalibration.hpp"
 #include "PlyoCalibrationLogic.hpp"
+#include "PlyoAssistant.hpp"
 #include "PlyoStore.hpp"
 #include "PlyoSanitize.hpp"
 #include "PlyoJson.hpp"
@@ -384,6 +385,7 @@ nlohmann::json start_test(const std::string& test, int pass, double base_value)
     if (std::find(known.begin(), known.end(), test) == known.end())
         return {{"ok", false}, {"text", "Test de calibration inconnu."}};
 
+    const ProjectNotificationsPause quiet; // capture et fonctions calib_* d'Orca : plusieurs « nouveau projet »
     if (!capture())
         return {{"ok", false}, {"text", "Ta pièce n'a pas pu être mise de côté : le test n'est pas lancé."}};
     nlohmann::json result;
@@ -482,6 +484,7 @@ nlohmann::json restore()
     if (!s_before)
         return {{"ok", false}, {"text", "Rien à remettre."}};
     const Snapshot snap = *s_before;
+    const ProjectNotificationsPause quiet; // la pièce revient : pour le panneau, le projet n'a pas changé
 
     // Projet vidé d'abord (sans question), puis rechargé sans fenêtre de choix ; la capture n'est oubliée
     // qu'une fois la pièce revenue.
