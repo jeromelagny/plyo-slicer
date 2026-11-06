@@ -1292,14 +1292,19 @@
     noteLine('J’ai noté pour ta pièce : ' + r.labels.join(', ') + '.', 'ok', 'check', 'guide');
   }
   // Applique les réglages de l'intention (un lot annulable, comme ceux de l'assistant), puis lance la découpe.
+  // Un seul envoi à la fois (double-clic) ; le verrou tombe à la réponse, succès ou refus, et au pire après 8 s sans réponse.
+  function releaseIntent() { clearTimeout(intentUI.applying); intentUI.applying = null; }
   function applyIntent(again) {
+    if (intentUI.applying) return;
+    intentUI.applying = setTimeout(releaseIntent, 8000);
     // Les réglages modifiés à la main sont relus juste avant : une modification faite entre-temps dans Orca est gardée.
     fetchManualKeys(function () { applyIntentNow(again); });
   }
   function applyIntentNow(again) {
     var p = conv.project, st = intentState(PlyoJourney.currentStep(p), false);
-    if (!st || st.mode !== 'ready') return;
+    if (!st || st.mode !== 'ready') { releaseIntent(); return; }
     function done() {
+      releaseIntent();
       intentUI.manual = null; // à relire pour le projet suivant
       p.intent.applied = true;
       delete p.intent.reapply;
@@ -1311,7 +1316,7 @@
     }
     if (!st.changes.length) { done(); return; }
     var names = Logic.namesForApply(null, lastValues && lastValues.context);
-    pendingSheet = { kind: 'apply', onResult: function (ok, text) { if (!ok) { noteLine(text, 'error', 'alert', 'guide'); return; } done(); } };
+    pendingSheet = { kind: 'apply', onResult: function (ok, text) { if (!ok) { releaseIntent(); noteLine(text, 'error', 'alert', 'guide'); return; } done(); } };
     window.orca.postMessage({ type: 'apply', changes: st.changes.map(function (c) { return { key: c.key, value: c.value, label: c.label }; }),
       print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: 'Intention : ' + st.summary.sentence.replace(/ :$/, '') });
   }

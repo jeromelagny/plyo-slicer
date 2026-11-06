@@ -240,3 +240,9 @@ test('« Mes conversations » : le nom de la pièce sert de titre, et un simple 
   assert.ok(/function worthSaving\(c\) \{ return !!c && \(c\.entries\.length > 0 \|\| !!partName\(c\)\); \}/.test(page));
   assert.ok(/title: c\.title \|\| partName\(c\)/.test(page));
 });
+
+test('« Appliquer et préparer » : un seul lot au double-clic, et un refus laisse réessayer', () => {
+  const page = read('index.html');
+  assert.ok(/function applyIntent\(again\) \{\s*if \(intentUI\.applying\) return;/.test(page));
+  assert.ok(/if \(!ok\) \{ releaseIntent\(\); noteLine\(text/.test(page), 'le refus libère le verrou');
+});
