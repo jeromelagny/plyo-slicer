@@ -47,7 +47,8 @@ Target target_of(const std::string& printer_preset)
     return t;
 }
 
-// Numéros (à partir de 0) des filaments utilisés par les objets de la plaque en cours.
+// Numéros (à partir de 0) des filaments utilisés par la plaque en cours, y compris les changements de filament posés sur
+// le curseur de l'aperçu (true : Orca compte alors les G-codes personnalisés de type ToolChange).
 std::vector<int> used_filaments()
 {
     std::vector<int> out;
@@ -57,7 +58,7 @@ std::vector<int> used_filaments()
     Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
     if (plate == nullptr)
         return out;
-    for (int e : plate->get_extruders(false))
+    for (int e : plate->get_extruders(true))
         if (e >= 1)
             out.push_back(e - 1);
     return out;
