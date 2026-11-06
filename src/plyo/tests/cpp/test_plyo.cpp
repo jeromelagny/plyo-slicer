@@ -619,6 +619,26 @@ TEST_CASE("Project: sanitize garde les emplacements du Canvas")
     CHECK(extra_filaments(sanitize({{"printer", {{"preset", "Ma CC2"}}}})).empty());
 }
 
+TEST_CASE("Project: sanitize garde le numéro et la nature d'un emplacement (CFS, IFS, U1, saisie manuelle)")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json raw = {{"canvas", {{{"t", 0}, {"canvas_id", 1}, {"tray_id", 0}, {"label", "1A"}, {"imposable", true}, {"source", "printer"}, {"system", "cfs"}},
+                                            {{"t", 1}, {"canvas_id", 0}, {"tray_id", 1}, {"label", "2"}, {"imposable", false}, {"source", "manual"}, {"system", "manual"}},
+                                            {{"t", 2}, {"canvas_id", 0}, {"tray_id", 2}, {"imposable", "oui"}, {"source", "ailleurs"}, {"system", "autre"}}}}};
+    const nlohmann::json clean = sanitize(raw)["canvas"];
+    REQUIRE(clean.size() == 3);
+    CHECK(clean[0]["label"] == "1A");
+    CHECK(clean[0]["imposable"] == true);
+    CHECK(clean[0]["system"] == "cfs");
+    CHECK(clean[1]["imposable"] == false);
+    CHECK(clean[1]["source"] == "manual");
+    // Une valeur illisible disparaît ; le panneau traite alors l'entrée comme celles d'un projet ancien de la CC2.
+    CHECK_FALSE(clean[2].contains("imposable"));
+    CHECK_FALSE(clean[2].contains("source"));
+    CHECK_FALSE(clean[2].contains("system"));
+    CHECK_FALSE(clean[2].contains("label"));
+}
+
 TEST_CASE("Project: sanitize ne garde que les clés connues du projet")
 {
     using namespace Plyo::ProjectLogic;

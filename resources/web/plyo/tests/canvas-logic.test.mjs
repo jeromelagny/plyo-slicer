@@ -112,3 +112,69 @@ test('propose : un emplacement vu vide n’est pas écarté (status non fiable s
   assert.equal(C.propose([{ t: 0, color: '#FFFFFF', type: 'PLA' }], tie)[0].tray_id, 1, 'à égalité : celui vu chargé');
   assert.equal(C.propose([{ t: 0, color: '', type: '' }], tie)[0].tray_id, 1, 'couleur inconnue : celui vu chargé');
 });
+
+// États tels que les rend PlyoCanvas.cpp : logique pure testée en C++ sur les schémas d'Orca (CFS_ORCA_SCHEMA, ifs_orca_schema, U1_ORCA_SCHEMA).
+const CFS = { ok: true, system: 'cfs', source: 'printer', imposable: true, empty_blocks: true, start_plain: false, validated: false, canvases: [
+  { canvas_id: 0, connected: true, box_type: 1, trays: [{ tray_id: 0, label: 'Ext', type: 'PLA', color: '#112233', status: 2 }] },
+  { canvas_id: 1, connected: true, box_type: 0, trays: [
+    { tray_id: 0, label: '1A', type: 'PLA', color: '#AABBCC', status: 2 },
+    { tray_id: 1, label: '1B', type: 'PETG', color: '#DDEEFF', status: 2 },
+    { tray_id: 2, label: '1C', type: '', color: '', status: 0 }] }] };
+const IFS = { ok: true, system: 'ifs', source: 'printer', imposable: true, empty_blocks: true, start_plain: false, validated: false, canvases: [{ canvas_id: 0, connected: true, trays: [
+  { tray_id: 1, label: '1', type: 'PLA', color: '#AABBCC', status: 2 },
+  { tray_id: 2, label: '2', type: 'PETG', color: '#DDEEFF', status: 2 },
+  { tray_id: 3, label: '3', type: '', color: '', status: 0 }] }] };
+
+test('trays : le numéro vient du traducteur, jamais de tray_id + 1 quand il y a un libellé', () => {
+  const cfs = C.trays(CFS);
+  assert.deepEqual(cfs.map(t => t.slot), ['Ext', '1A', '1B', '1C']);
+  assert.equal(cfs[1].label, '1A · PLA gris'.replace('gris', C.colourName('#AABBCC')));
+  assert.ok(!cfs.some(t => t.label.startsWith('Canvas')), 'pas de préfixe Canvas hors CC2, même avec deux unités');
+  const ifs = C.trays(IFS);
+  assert.equal(ifs[1].tray_id, 2);
+  assert.equal(ifs[1].slot, '2', 'IFS : tray_id 2 affiché « 2 », pas « 3 »');
+});
+
+test('trays : CC2 sans libellé et projet ancien : tray_id + 1, préfixe Canvas gardé', () => {
+  const two = { ok: true, canvases: [{ canvas_id: 0, connected: true, trays: [{ tray_id: 0, type: 'PLA', color: '#000000', status: 1 }] }, { canvas_id: 1, connected: true, trays: [{ tray_id: 3, type: 'PLA', color: '#000000', status: 1 }] }] };
+  assert.equal(C.trays(two)[1].label, 'Canvas 2 · 4 · PLA noir');
+  assert.equal(C.mapLabel([{ t: 0, tray_id: 3, type: 'PLA', color: '#000000' }]), 'Emplacement 4 · PLA noir');
+});
+
+test('checkBeforeSend : numéro du traducteur, unité nommée, CC2 inchangée', () => {
+  const fresh = C.trays(CFS);
+  const gone = C.checkBeforeSend([{ canvas_id: 2, tray_id: 0, label: '2A', type: 'PLA', color: '#000000' }], fresh, { system: 'cfs' });
+  assert.deepEqual(gone.block, ['L’emplacement 2A n’est plus visible sur le CFS.']);
+  const changed = C.checkBeforeSend([{ canvas_id: 1, tray_id: 1, label: '1B', type: 'PLA', color: '#DDEEFF' }], fresh, { system: 'cfs' });
+  assert.deepEqual(changed.block, ['L’emplacement 1B contient maintenant du PETG (choisi : PLA).']);
+  const cc2 = C.checkBeforeSend([{ canvas_id: 0, tray_id: 2, type: 'PLA', color: '#000000' }], [], {});
+  assert.deepEqual(cc2.block, ['L’emplacement 3 n’est plus visible sur le Canvas.']);
+  // Sans options : comme avant.
+  assert.deepEqual(C.checkBeforeSend([{ canvas_id: 0, tray_id: 2, type: 'PLA', color: '#000000' }], []).block, ['L’emplacement 3 n’est plus visible sur le Canvas.']);
+});
+
+test('checkBeforeSend : emplacement vide : refus avec empty_blocks, simple remarque sinon (CC2)', () => {
+  const chosen = [{ canvas_id: 1, tray_id: 2, label: '1C', type: '', color: '' }];
+  assert.deepEqual(C.checkBeforeSend(chosen, C.trays(CFS), { system: 'cfs', empty_blocks: true }).block, ['L’emplacement 1C est vide.']);
+  const r = C.checkBeforeSend(chosen, C.trays(CFS), { system: 'cfs', empty_blocks: false });
+  assert.deepEqual(r.block, []);
+  assert.equal(r.notes.length, 1);
+});
+
+test('mapLabel : lire sans imposer : « à sélectionner sur l’imprimante », imposé : sans cette mention', () => {
+  const one = [{ t: 0, canvas_id: 1, tray_id: 0, label: '1A', type: 'PLA', color: '#000000', system: 'cfs' }];
+  assert.equal(C.mapLabel(one, true), 'Emplacement 1A · PLA noir');
+  assert.equal(C.mapLabel(one, false), 'Emplacement 1A · PLA noir : à sélectionner sur l’imprimante');
+  const two = one.concat([{ t: 1, canvas_id: 1, tray_id: 1, label: '1B', type: 'PETG', color: '#FFFFFF', system: 'cfs' }]);
+  assert.ok(C.mapLabel(two, false).endsWith('à sélectionner sur l’imprimante'));
+  assert.ok(C.mapLabel(two, false).includes('couleur 2 → emplacement 1B'));
+});
+
+test('isImposed : projet ancien (CC2) oui ; lu sans imposer ou saisi à la main : non', () => {
+  assert.equal(C.isImposed([{ t: 0 }]), true);
+  assert.equal(C.isImposed([{ t: 0, imposable: true, source: 'printer' }]), true);
+  assert.equal(C.isImposed([{ t: 0, imposable: false, source: 'printer' }]), false);
+  assert.equal(C.isImposed([{ t: 0, source: 'manual' }]), false);
+  assert.equal(C.isImposed([]), false);
+  assert.equal(C.isImposed(undefined), false);
+});

@@ -285,3 +285,28 @@ test('fiche repliée : un nom très long est coupé, le filament reste', () => {
   assert.ok(text.endsWith('PLA') && !text.includes(long) && text.includes('.stl'), text);
   assert.ok(text.length < 50, text);
 });
+
+test('emplacements hors CC2 : consigne selon le système, CC2 inchangée', () => {
+  const at = (canvas) => J.prompt('filament', { canvas });
+  assert.equal(at({ mode: 'loading' }), 'Je lis les emplacements de ta CC2…');
+  assert.equal(at({ mode: 'loading', system: 'canvas' }), 'Je lis les emplacements de ta CC2…');
+  assert.equal(at({ mode: 'single', system: 'canvas' }), 'Quel emplacement du Canvas pour ta pièce ?');
+  assert.equal(at({ mode: 'loading', system: 'cfs' }), 'Je lis les emplacements de ton CFS…');
+  assert.equal(at({ mode: 'single', system: 'cfs' }), 'Quel emplacement du CFS pour ta pièce ?');
+  assert.equal(at({ mode: 'single', system: 'ifs' }), 'Quel emplacement de l’IFS pour ta pièce ?');
+  assert.equal(at({ mode: 'multi', system: 'ifs' }), 'Quel emplacement pour chaque couleur ?');
+  assert.equal(at({ mode: 'tooMany', system: 'cfs' }), 'Ta pièce a plus de couleurs que d’emplacements');
+});
+
+test('fiche : le numéro affiché est celui du traducteur, tray_id + 1 pour un projet ancien', () => {
+  const base = { printer: { preset: 'p' }, part: { name: 'x' }, filament: { type: 'PLA', preset: 'f' } };
+  const row = (canvas) => J.filledRows({ ...base, canvas }).find(r => r.line === 'filament').text;
+  assert.equal(row([{ t: 0, tray_id: 1, label: '2', color: '' }]), 'PLA · emplacement 2');
+  assert.equal(row([{ t: 0, tray_id: 0, label: '1A', color: '' }]), 'PLA · emplacement 1A');
+  assert.equal(row([{ t: 0, tray_id: 1, color: '' }]), 'PLA · emplacement 2');
+});
+
+test('une carte d’emplacements saisie sans numéro lisible ne casse pas la fiche', () => {
+  const base = { printer: { preset: 'p' }, part: { name: 'x' }, filament: { type: 'PLA', preset: 'f' } };
+  assert.equal(J.ficheSummary({ ...base, canvas: [{ t: 0, tray_id: 3, label: 'Ext', color: '' }] }), 'p · x · PLA · emplacement Ext');
+});

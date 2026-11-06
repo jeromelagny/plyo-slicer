@@ -1,6 +1,7 @@
-// Logique pure des emplacements du Canvas (Centauri Carbon 2) : liste des emplacements, nom des couleurs, proposition
-// couleur de la pièce → emplacement, vérification avant l'envoi. Chargée par index.html (window.PlyoCanvas) et testée
-// par node (tests/canvas-logic.test.mjs). Les emplacements sont numérotés tray_id 0 à 3 ; l'écran affiche tray_id + 1.
+// Logique pure des emplacements (Canvas, CFS, IFS, têtes de la U1, saisie manuelle : « canvas » désigne ici toute unité) : liste
+// des emplacements, nom des couleurs, proposition couleur de la pièce → emplacement, vérification avant l'envoi. Chargée par
+// index.html (window.PlyoCanvas) et testée par node (tests/canvas-logic.test.mjs). Le numéro affiché est `label`, donné par le
+// traducteur (« 1A », « Ext », « 2 ») ; sans lui (CC2, projet enregistré avant) : tray_id + 1.
 (function (root) {
   var PALETTE = [
     ['noir', 26, 26, 26], ['blanc', 245, 245, 245], ['gris', 140, 140, 140], ['crème', 243, 229, 200], ['brun', 123, 74, 18],
@@ -31,15 +32,29 @@
   function upper(s) { return String(s || '').trim().toUpperCase(); }
   function trayText(type, color) { return (type || '?') + (colourName(color) ? ' ' + colourName(color) : ''); }
 
+  // Les mots de chaque système ; sans système connu (réponse ancienne, projet enregistré) : ceux de la CC2.
+  var WORDS = {
+    canvas: { on: 'sur le Canvas', of: 'du Canvas', unit: 'le Canvas', your: 'ta CC2', the: 'l’emplacement', The: 'L’emplacement', Slot: 'Emplacement', slot: 'emplacement', slots: 'emplacements' },
+    cfs: { on: 'sur le CFS', of: 'du CFS', unit: 'le CFS', your: 'ton CFS', the: 'l’emplacement', The: 'L’emplacement', Slot: 'Emplacement', slot: 'emplacement', slots: 'emplacements' },
+    ifs: { on: 'sur l’IFS', of: 'de l’IFS', unit: 'l’IFS', your: 'ton IFS', the: 'l’emplacement', The: 'L’emplacement', Slot: 'Emplacement', slot: 'emplacement', slots: 'emplacements' },
+    u1: { on: 'sur la U1', of: 'de la U1', unit: 'la U1', your: 'ta U1', the: 'la tête', The: 'La tête', Slot: 'Tête', slot: 'tête', slots: 'têtes' },
+    manual: { on: 'sur ta machine', of: 'de ta machine', unit: 'ta machine', your: 'ta machine', the: 'l’emplacement', The: 'L’emplacement', Slot: 'Emplacement', slot: 'emplacement', slots: 'emplacements' }
+  };
+  function words(system) { return WORDS[system] || WORDS.canvas; }
+  // Le numéro affiché d'un emplacement (lu ou choisi).
+  function slotName(t) { return t.label !== undefined && t.label !== null && t.label !== '' ? String(t.label) : String(t.tray_id + 1); }
+
   function trays(state) {
     if (!state || !state.ok || !Array.isArray(state.canvases)) return [];
     var units = state.canvases.filter(function (c) { return c && c.connected; });
-    var out = [];
+    var system = state.system || 'canvas', w = words(system), out = [];
     units.forEach(function (c) {
       (c.trays || []).forEach(function (t) {
-        var prefix = units.length > 1 ? 'Canvas ' + (c.canvas_id + 1) + ' · ' : '';
+        // CC2 : plusieurs Canvas se distinguent par un préfixe ; le libellé du CFS porte déjà sa boîte (« 1A »).
+        var prefix = system === 'canvas' && units.length > 1 ? 'Canvas ' + (c.canvas_id + 1) + ' · ' : '';
+        var name = slotName(t);
         out.push({ canvas_id: c.canvas_id, tray_id: t.tray_id, type: t.type || '', color: t.color || '', status: t.status,
-          empty: t.status === 0, label: prefix + (t.tray_id + 1) + ' · ' + trayText(t.type, t.color) });
+          empty: t.status === 0, slot: name, system: system, label: prefix + (system === 'u1' ? w.Slot + ' ' : '') + name + ' · ' + trayText(t.type, t.color) });
       });
     });
     return out;
@@ -68,16 +83,18 @@
   }
   function tooMany(colours, list) { return (colours || []).length > (list || []).length; }
 
-  // chosen : project.canvas ; fresh : trays(nouvelle lecture).
-  function checkBeforeSend(chosen, fresh) {
-    var out = { block: [], notes: [] };
+  // chosen : project.canvas ; fresh : trays(nouvelle lecture) ; opts : { system, empty_blocks } de cette lecture. Le status de la
+  // CC2 n'est pas fiable : une simple remarque ; CFS et IFS refusent un emplacement vide à l'envoi (empty_blocks).
+  function checkBeforeSend(chosen, fresh, opts) {
+    var out = { block: [], notes: [] }, o = opts || {}, w = words(o.system);
     (chosen || []).forEach(function (e) {
-      var n = e.tray_id + 1;
+      var n = slotName(e);
       var now = (fresh || []).filter(function (t) { return t.canvas_id === e.canvas_id && t.tray_id === e.tray_id; })[0];
-      if (!now) { out.block.push('L’emplacement ' + n + ' n’est plus visible sur le Canvas.'); return; }
-      if (upper(now.type) !== upper(e.type)) { out.block.push('L’emplacement ' + n + ' contient maintenant du ' + (now.type || '?') + ' (choisi : ' + (e.type || '?') + ').'); return; }
-      if (now.empty) out.notes.push('L’imprimante pense que l’emplacement ' + n + ' est vide : vérifie qu’il est bien chargé.');
-      if (upper(now.color) !== upper(e.color)) out.notes.push('L’emplacement ' + n + ' a changé de couleur (maintenant ' + (colourName(now.color) || now.color) + ').');
+      if (!now) { out.block.push(w.The + ' ' + n + ' n’est plus visible ' + w.on + '.'); return; }
+      if (upper(now.type) !== upper(e.type)) { out.block.push(w.The + ' ' + n + ' contient maintenant du ' + (now.type || '?') + ' (choisi : ' + (e.type || '?') + ').'); return; }
+      if (now.empty && o.empty_blocks) { out.block.push(w.The + ' ' + n + ' est vide.'); return; }
+      if (now.empty) out.notes.push('L’imprimante pense que ' + w.the + ' ' + n + ' est vide : vérifie qu’il est bien chargé.');
+      if (upper(now.color) !== upper(e.color)) out.notes.push(w.The + ' ' + n + ' a changé de couleur (maintenant ' + (colourName(now.color) || now.color) + ').');
     });
     return out;
   }
@@ -89,17 +106,25 @@
     return base && base !== t ? [t, base] : [t];
   }
 
-  function mapLabel(canvas) {
+  // Une répartition imposée à l'envoi, ou seulement à sélectionner sur l'imprimante (lue sans imposer, saisie à la main) ? Un
+  // projet enregistré avant ces champs vient de la CC2 : imposée.
+  function isImposed(canvas) {
+    return Array.isArray(canvas) && canvas.length > 0 && canvas.every(function (e) { return e.imposable !== false && e.source !== 'manual'; });
+  }
+
+  function mapLabel(canvas, imposable) {
     if (!Array.isArray(canvas) || !canvas.length) return '';
     var sorted = canvas.slice().sort(function (a, b) { return a.t - b.t; });
-    if (sorted.length === 1) return 'Emplacement ' + (sorted[0].tray_id + 1) + ' · ' + trayText(sorted[0].type, sorted[0].color);
+    var tail = imposable === false ? ' : à sélectionner sur l’imprimante' : '';
+    if (sorted.length === 1) return words(sorted[0].system).Slot + ' ' + slotName(sorted[0]) + ' · ' + trayText(sorted[0].type, sorted[0].color) + tail;
     return sorted.map(function (e, i) {
-      return (i ? 'couleur ' : 'Couleur ') + (e.t + 1) + ' → emplacement ' + (e.tray_id + 1) + ' · ' + trayText(e.type, e.color);
-    }).join(', ');
+      return (i ? 'couleur ' : 'Couleur ') + (e.t + 1) + ' → ' + words(e.system).slot + ' ' + slotName(e) + ' · ' + trayText(e.type, e.color);
+    }).join(', ') + tail;
   }
 
   var api = { colourName: colourName, trays: trays, propose: propose, complete: complete, tooMany: tooMany,
-    checkBeforeSend: checkBeforeSend, profileTypes: profileTypes, mapLabel: mapLabel, distance: distance };
+    checkBeforeSend: checkBeforeSend, profileTypes: profileTypes, mapLabel: mapLabel, distance: distance,
+    words: words, slotName: slotName, isImposed: isImposed };
   root.PlyoCanvas = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

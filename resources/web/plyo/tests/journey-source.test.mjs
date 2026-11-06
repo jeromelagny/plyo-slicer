@@ -377,3 +377,20 @@ test('réglages lus : pas de nom technique pour un débutant ; ligne décochée 
   assert.ok(/fsState\.level === 'expert' \? p\.key : ''/.test(page));
   assert.ok(!/\.row\.off \{ opacity/.test(page) && /\.row\.off input \{ opacity/.test(page));
 });
+
+test('emplacements : canvasWanted lit le traducteur (known.slots), et la CC2 garde ses textes', () => {
+  const page = read('index.html');
+  assert.ok(/known && known\.slots && known\.linked/.test(page), 'canvasWanted : known.slots');
+  assert.ok(!/known\.cc2/.test(page), 'plus de lecture de known.cc2');
+  // Textes CC2 fixés (consigne : la CC2 ne change ni de comportement ni de texte).
+  assert.ok(page.includes('Je n’arrive pas à relire les emplacements de ta CC2 : rien n’est envoyé. Vérifie qu’elle est allumée, puis réessaie.'));
+  assert.ok(read('project-card.js').includes('Je ne lis pas ton Canvas pour l’instant : choisis la matière ici, l’imprimante choisira l’emplacement.'));
+  // Le plan de la CC2 ne reçoit rien de nouveau : label, imposable, source et system ne sont posés que hors CC2.
+  assert.ok(/st\.system && st\.system !== 'canvas'\) \{ entry\.label/.test(page));
+});
+
+test('emplacements : le numéro affiché vient du traducteur partout (aucun tray_id + 1 hors repli)', () => {
+  for (const name of ['canvas-view.js', 'project-card.js', 'journey-steps.js', 'index.html'])
+    assert.ok(!/tray_id \+ 1/.test(read(name)), name);
+  assert.equal((read('canvas-logic.js').match(/tray_id \+ 1/g) || []).length, 2, 'canvas-logic.js : le commentaire de tête et slotName');
+});

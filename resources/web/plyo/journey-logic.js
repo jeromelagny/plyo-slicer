@@ -69,11 +69,18 @@
     return { label: '', kind: 'none', enabled: false };
   }
 
+  // Sans système connu : les textes de la CC2.
+  var SLOT_PROMPTS = {
+    canvas: { loading: 'Je lis les emplacements de ta CC2…', one: 'Quel emplacement du Canvas pour ta pièce ?' },
+    cfs: { loading: 'Je lis les emplacements de ton CFS…', one: 'Quel emplacement du CFS pour ta pièce ?' },
+    ifs: { loading: 'Je lis les emplacements de ton IFS…', one: 'Quel emplacement de l’IFS pour ta pièce ?' }
+  };
   function canvasPrompt(c) {
-    if (c.canvas.mode === 'loading') return 'Je lis les emplacements de ta CC2…';
+    var t = SLOT_PROMPTS[c.canvas.system] || SLOT_PROMPTS.canvas;
+    if (c.canvas.mode === 'loading') return t.loading;
     if (c.canvas.mode === 'multi') return 'Quel emplacement pour chaque couleur ?';
     if (c.canvas.mode === 'tooMany') return 'Ta pièce a plus de couleurs que d’emplacements';
-    return 'Quel emplacement du Canvas pour ta pièce ?';
+    return t.one;
   }
 
   function prompt(step, ctx) {
@@ -168,13 +175,14 @@
     return rows;
   }
 
-  // Ligne filament : avec les emplacements du Canvas, la couleur et le numéro (« PLA blanc · emplacement 2 »).
+  // Ligne filament : avec les emplacements, la couleur et le numéro (« PLA blanc · emplacement 2 »).
   function filamentRow(p) {
     var cv = Array.isArray(p.canvas) ? p.canvas : [];
     if (cv.length > 1) return { line: 'filament', text: p.filament.type + ' · ' + cv.length + ' emplacements' };
     if (cv.length === 1) {
       var C = (typeof window !== 'undefined' && window.PlyoCanvas) || null, name = C ? C.colourName(cv[0].color) : '';
-      return { line: 'filament', text: p.filament.type + (name ? ' ' + name : '') + ' · emplacement ' + (cv[0].tray_id + 1), swatch: cv[0].color };
+      var slot = cv[0].label !== undefined && cv[0].label !== '' ? cv[0].label : cv[0].tray_id + 1; // numéro du traducteur (« 1A ») ; projet ancien : tray_id + 1
+      return { line: 'filament', text: p.filament.type + (name ? ' ' + name : '') + ' · emplacement ' + slot, swatch: cv[0].color };
     }
     return { line: 'filament', text: p.filament.type };
   }

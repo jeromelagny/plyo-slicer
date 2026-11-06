@@ -79,3 +79,8 @@ test('partFromPlate : la pièce du projet précédent n’est pas reprise en sil
   assert.equal(P.partFromPlate({}, { objects: 2, part_name: 'premier.stl' }, old), 'Pièce posée sur le plateau', 'une pièce de plus est reconnue');
   assert.equal(P.partFromPlate({}, { objects: 1, part_name: 'premier.stl' }), 'premier.stl', 'sans projet précédent : comme avant');
 });
+
+test('les emplacements du projet gardent leur numéro et leur nature à la copie', async () => {
+  const entry = { t: 0, canvas_id: 1, tray_id: 0, label: '1A', imposable: true, source: 'printer', system: 'cfs' };
+  assert.deepEqual(P.confirm({ printer: null, filament: null, part: null, canvas: [entry] }).canvas, [entry]);
+});
