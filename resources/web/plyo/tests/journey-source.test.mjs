@@ -187,3 +187,14 @@ test('envoi armé : un plan CFS/IFS passe toujours par plan_allowed (jamais de s
   const assign = body.indexOf('g_send_plan = {');
   assert.ok(assign > body.indexOf('SlotsLogic::plan_allowed('), 'le plan est rangé après la vérification');
 });
+
+test('saisie manuelle : ne touche jamais au plan ni à la dernière lecture de la machine', () => {
+  const slots = readRoot('src/plyo/PlyoSlots.cpp');
+  assert.ok(!/Canvas::|set_plan|send_planned|g_last_read/.test(slots), 'PlyoSlots ne connaît ni le plan ni la lecture');
+  const canvas = readRoot('src/plyo/PlyoCanvas.cpp');
+  assert.ok(!canvas.includes('manual_state') && !canvas.includes('PlyoSlots.hpp'), 'le pont du plan ne lit pas la saisie manuelle');
+  const assistant = readRoot('src/plyo/PlyoAssistant.cpp');
+  const start = assistant.indexOf('type == "slots_manual_get"');
+  const body = assistant.slice(start, assistant.indexOf('type == "canvas_send"', start));
+  assert.ok(start >= 0 && !/Canvas::plan|send_planned|http|Http/.test(body), 'les messages de saisie ne planifient rien et ne sortent pas');
+});

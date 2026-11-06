@@ -3,6 +3,7 @@
 #include "PlyoJson.hpp"
 #include "PlyoCalibration.hpp"
 #include "PlyoCanvas.hpp"
+#include "PlyoSlots.hpp"
 #include "PlyoCC2.hpp"
 #include "PlyoCommands.hpp"
 #include "PlyoConversations.hpp"
@@ -436,6 +437,19 @@ void handle_page_message(const nlohmann::json& data)
                 Canvas::clear_plan();
             else
                 Canvas::plan(Json::str(data, "preset"), data.contains("map") ? data["map"] : nlohmann::json());
+        } else if (type == "slots_manual_get") {
+            const std::string preset = Json::str(data, "preset");
+            nlohmann::json    r      = Slots::manual_get(preset);
+            r["type"]    = "slots_manual_state";
+            r["preset"]  = preset;
+            r["colours"] = Canvas::colours();
+            send(r);
+        } else if (type == "slots_manual_save") {
+            const std::string preset = Json::str(data, "preset");
+            nlohmann::json    r      = Slots::manual_save(preset, Json::any(data, "slots"));
+            r["type"]   = "slots_manual_saved";
+            r["preset"] = preset;
+            send(r);
         } else if (type == "canvas_send") {
             Canvas::send_planned(Json::str(data, "preset"), [](nlohmann::json r) {
                 r["type"] = "canvas_sent";

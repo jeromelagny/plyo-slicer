@@ -112,6 +112,16 @@ nlohmann::json state_fields(const std::string& kind, bool imposable);
 // n'est pas vérifié sur la machine (T13, T15).
 DecideOptions decide_options(const std::string& kind);
 
+// --- Saisie manuelle (slots.json, par préréglage d'imprimante), jamais imposée : voir PlyoSlots.hpp ---
+
+// Nettoyage à la lecture : {préréglage: {slots: [{type, color}]}}, 50 machines et 16 emplacements au plus. Un type absent de
+// `known_types` ou une couleur qui n'est pas #RRGGBB devient vide ; un préréglage sans emplacement disparaît.
+nlohmann::json sanitize_manual(const nlohmann::json& all, const std::vector<std::string>& known_types);
+// Format commun avec source: manual, imposable faux. Entrée absente : {ok: false, reason: no_manual, ...}.
+nlohmann::json manual_state(const nlohmann::json& entry);
+// `all` avec ces emplacements pour ce préréglage (une liste vide le retire). `ok` faux, sans rien changer : préréglage vide ou 51e machine.
+nlohmann::json manual_with(const nlohmann::json& all, const std::string& preset, const nlohmann::json& slots, const std::vector<std::string>& known_types, bool& ok);
+
 // « #RRGGBB » en majuscules, ou vide si la valeur n'a pas cette forme.
 std::string hex_colour(const std::string& raw);
 

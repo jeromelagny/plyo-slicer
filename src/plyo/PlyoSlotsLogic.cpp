@@ -238,4 +238,92 @@ std::string profile_refusal(const nlohmann::json& plan, const Detection& edited,
     return same ? std::string() : "L'imprimante choisie dans Orca n'est plus celle des emplacements choisis : rien n'est parti. Remets-la, ou choisis à nouveau les emplacements.";
 }
 
+namespace {
+
+constexpr size_t MANUAL_MAX_MACHINES = 50, MANUAL_MAX_SLOTS = 16, MANUAL_MAX_NAME = 200;
+
+nlohmann::json manual_slots(const nlohmann::json& slots, const std::vector<std::string>& known_types)
+{
+    nlohmann::json out = nlohmann::json::array();
+    if (!slots.is_array())
+        return out;
+    for (const nlohmann::json& s : slots) {
+        if (out.size() >= MANUAL_MAX_SLOTS)
+            break;
+        if (!s.is_object())
+            continue;
+        const std::string type = Json::str(s, "type", 30);
+        out.push_back({{"type", std::find(known_types.begin(), known_types.end(), type) != known_types.end() ? type : std::string()},
+                       {"color", hex_colour(Json::str(s, "color", 16))}});
+    }
+    return out;
+}
+
+} // namespace
+
+nlohmann::json sanitize_manual(const nlohmann::json& all, const std::vector<std::string>& known_types)
+{
+    nlohmann::json out = nlohmann::json::object();
+    if (!all.is_object())
+        return out;
+    for (const auto& [preset, entry] : all.items()) {
+        if (out.size() >= MANUAL_MAX_MACHINES)
+            break;
+        if (preset.empty() || preset.size() > MANUAL_MAX_NAME)
+            continue;
+        const nlohmann::json slots = manual_slots(Json::any(entry, "slots"), known_types);
+        if (!slots.empty())
+            out[preset] = {{"slots", slots}};
+    }
+    return out;
+}
+
+nlohmann::json manual_state(const nlohmann::json& entry)
+{
+    nlohmann::json out = state_fields("manual", false);
+    out["source"]       = "manual";
+    out["empty_blocks"] = false; // rien n'est jamais envoyé depuis une saisie : pas de refus à l'envoi
+    nlohmann::json trays = nlohmann::json::array();
+    const nlohmann::json slots = Json::arr(entry, "slots");
+    for (size_t i = 0; i < slots.size(); ++i) {
+        const std::string type = Json::str(slots[i], "type", 30), color = Json::str(slots[i], "color", 16);
+        trays.push_back({{"tray_id", static_cast<int>(i)},
+                         {"label", std::to_string(i + 1)},
+                         {"brand", ""},
+                         {"type", type},
+                         {"name", ""},
+                         {"color", color},
+                         {"min_temp", 0},
+                         {"max_temp", 0},
+                         {"status", type.empty() && color.empty() ? 0 : 2}});
+    }
+    if (trays.empty()) {
+        out["ok"]     = false;
+        out["reason"] = "no_manual";
+        return out;
+    }
+    out["ok"]       = true;
+    out["canvases"] = nlohmann::json::array({{{"canvas_id", 0}, {"connected", true}, {"trays", trays}}});
+    return out;
+}
+
+nlohmann::json manual_with(const nlohmann::json& all, const std::string& preset, const nlohmann::json& slots, const std::vector<std::string>& known_types, bool& ok)
+{
+    nlohmann::json out = sanitize_manual(all, known_types);
+    ok                 = false;
+    if (preset.empty() || preset.size() > MANUAL_MAX_NAME)
+        return out;
+    const nlohmann::json clean = manual_slots(slots, known_types);
+    if (clean.empty()) {
+        out.erase(preset);
+        ok = true;
+        return out;
+    }
+    if (!out.contains(preset) && out.size() >= MANUAL_MAX_MACHINES)
+        return out;
+    out[preset] = {{"slots", clean}};
+    ok          = true;
+    return out;
+}
+
 }} // namespace Plyo::SlotsLogic

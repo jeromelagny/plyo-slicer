@@ -1818,3 +1818,94 @@ TEST_CASE("U1::query_url : adresse du profil vers la requête d'Orca")
     CHECK(query_url("https://u1.local") == "https://u1.local" + path);
     CHECK(query_url("") == "");
 }
+
+// --- Saisie manuelle : jamais imposée ---
+TEST_CASE("Slots::sanitize_manual : par préréglage, formes inattendues écartées")
+{
+    using namespace Plyo::SlotsLogic;
+    const std::vector<std::string> known = {"PLA", "PETG"};
+    const json in = {{"Ma K2", {{"slots", json::array({{{"type", "PLA"}, {"color", "#aabbcc"}, {"secret", "x"}},
+                                                       {{"type", "INCONNU"}, {"color", "bleu"}},
+                                                       {{"type", ""}, {"color", ""}},
+                                                       "pas un objet"})}}},
+                     {"Vide", {{"slots", json::array()}}},
+                     {"Autre", 3},
+                     {"", {{"slots", json::array({{{"type", "PLA"}, {"color", "#000000"}}})}}}};
+    const json out = sanitize_manual(in, known);
+    CHECK(out.size() == 1);
+    REQUIRE(out.contains("Ma K2"));
+    const json& slots = out["Ma K2"]["slots"];
+    REQUIRE(slots.size() == 3); // ce qui n'est pas un objet est écarté
+    CHECK(slots[0] == json{{"type", "PLA"}, {"color", "#AABBCC"}});
+    CHECK(slots[1] == json{{"type", ""}, {"color", ""}}); // type inconnu et couleur d'une autre forme : neutres
+    CHECK(slots[2] == json{{"type", ""}, {"color", ""}});
+    for (const json& bad : {json(), json(3), json::array(), json("x")})
+        CHECK(sanitize_manual(bad, known) == json::object());
+    json many_slots = json::array();
+    for (int i = 0; i < 40; ++i)
+        many_slots.push_back({{"type", "PLA"}, {"color", "#000000"}});
+    CHECK(sanitize_manual({{"P", {{"slots", many_slots}}}}, known)["P"]["slots"].size() == 16);
+    json many_machines = json::object();
+    for (int i = 0; i < 80; ++i)
+        many_machines["P" + std::to_string(i)] = {{"slots", json::array({{{"type", "PLA"}, {"color", "#000000"}}})}};
+    CHECK(sanitize_manual(many_machines, known).size() == 50);
+}
+
+TEST_CASE("Slots::manual_state : format commun, jamais imposable, jamais de départ sans carte")
+{
+    using namespace Plyo::SlotsLogic;
+    const json state = manual_state({{"slots", json::array({{{"type", "PLA"}, {"color", "#000000"}}, {{"type", ""}, {"color", ""}}})}});
+    CHECK(state["ok"] == true);
+    CHECK(state["source"] == "manual");
+    CHECK(state["system"] == "manual");
+    CHECK(state["imposable"] == false);
+    CHECK(state["start_plain"] == false);
+    CHECK(state["validated"] == false);
+    const json& t = state["canvases"][0]["trays"];
+    REQUIRE(t.size() == 2);
+    CHECK(t[0]["tray_id"] == 0);
+    CHECK(t[0]["label"] == "1");
+    CHECK(t[0]["status"] == 2);
+    CHECK(t[1]["label"] == "2");
+    CHECK(t[1]["status"] == 0);
+    const json none = manual_state(json());
+    CHECK(none["ok"] == false);
+    CHECK(none["reason"] == "no_manual");
+    CHECK(none["source"] == "manual");
+    CHECK(none["imposable"] == false);
+    // Une lecture manuelle retenue ne permet jamais un plan.
+    Detection cfs;
+    cfs.kind      = "cfs";
+    cfs.imposable = true;
+    json last = state;
+    last["host"] = "192.168.1.5";
+    CHECK_FALSE(plan_allowed(cfs, last, "192.168.1.5"));
+}
+
+TEST_CASE("Slots::manual_with : ajoute, remplace, retire, refuse la 51e machine")
+{
+    using namespace Plyo::SlotsLogic;
+    const std::vector<std::string> known = {"PLA"};
+    const json slot = json::array({{{"type", "PLA"}, {"color", "#000000"}}});
+    bool       ok   = false;
+    json       all  = manual_with(json(), "P", slot, known, ok);
+    CHECK(ok);
+    CHECK(all["P"]["slots"].size() == 1);
+    all = manual_with(all, "P", json::array({{{"type", ""}, {"color", ""}}, {{"type", "PLA"}, {"color", "#111111"}}}), known, ok);
+    CHECK(ok);
+    CHECK(all["P"]["slots"].size() == 2);
+    all = manual_with(all, "P", json::array(), known, ok);
+    CHECK(ok);
+    CHECK_FALSE(all.contains("P"));
+    all = manual_with(all, "", slot, known, ok);
+    CHECK_FALSE(ok);
+    json many = json::object();
+    for (int i = 0; i < 50; ++i)
+        many["P" + std::to_string(i)] = {{"slots", slot}};
+    const json full = manual_with(many, "nouvelle", slot, known, ok);
+    CHECK_FALSE(ok);
+    CHECK_FALSE(full.contains("nouvelle"));
+    CHECK(full.size() == 50);
+    manual_with(many, "P3", slot, known, ok);
+    CHECK(ok); // une machine déjà là reste modifiable
+}
