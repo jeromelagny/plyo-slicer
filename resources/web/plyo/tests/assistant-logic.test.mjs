@@ -320,3 +320,18 @@ test('tempsFromRange : la température actuelle reste si elle est dans la plage 
   assert.deepEqual(L.tempsFromRange({ nozzle: 220, bed: 60 }, { nozzle_max: 215 }), { nozzle: 215, bed: null });
   assert.deepEqual(L.tempsFromRange({ nozzle: null, bed: null }, { nozzle_min: 200, nozzle_max: 220 }), { nozzle: 210, bed: null });
 });
+
+test('annulation : dit sobrement que ça peut compter sur la jauge (l’API facture l’usage déjà publié)', () => {
+  assert.equal(L.CANCEL_TEXT, 'Demande annulée. Ce que l’IA a déjà fait peut compter sur ta jauge.');
+  assert.ok(L.errorView('timeout').text.includes('peut compter sur ta jauge'), 'le délai dépassé ferme le flux de la même façon');
+  assert.ok(L.errorView('timeout').text.includes('ta demande est gardée'));
+  assert.equal(L.errorView('timeout').action, 'retry');
+});
+
+test('hors-sujet : gratuit dans le quota, rien à dire ; au-delà, la réponse dit qu’elle compte', () => {
+  assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: { charged: 0, balance: 5 } }), '');
+  assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: { charged: 2, balance: 5 } }), 'Cette réponse compte sur ta jauge.');
+  assert.equal(L.offTopicCostNote({ status: 'off_topic' }), '', 'archive sans crédits');
+  assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: null }), '');
+  assert.equal(L.offTopicCostNote({ status: 'ok', credits: { charged: 2 } }), '', 'une réponse normale ne le répète pas');
+});

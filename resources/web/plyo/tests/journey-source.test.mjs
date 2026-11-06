@@ -459,3 +459,13 @@ test('saisie manuelle : les matières proposées existent toutes dans Orca (sino
   const C = createRequire(import.meta.url)('../canvas-logic.js');
   C.MANUAL_TYPES.forEach(t => assert.ok(names.includes(t), t));
 });
+
+test('annulation ou délai dépassé : la jauge est relue, une fois la facturation passée côté service', () => {
+  const page = read('index.html');
+  const fail = page.slice(page.indexOf('function fail(code, data)'), page.indexOf('// Profils au moment de la question'));
+  assert.ok(/code === 'cancel'[\s\S]{0,120}Logic\.CANCEL_TEXT/.test(fail), 'le texte vient de la logique');
+  assert.ok(/refreshGaugeSoon\(\)/.test(fail), 'relecture après annulation');
+  assert.ok(/code === 'timeout'[\s\S]{0,80}refreshGaugeSoon\(\)/.test(fail), 'relecture après délai dépassé');
+  assert.ok(/Logic\.offTopicCostNote\(a\)/.test(page), 'le hors-sujet facturé est dit');
+  assert.ok(!page.includes("noteLine('Demande annulée.'"), 'plus le texte seul');
+});

@@ -1797,6 +1797,11 @@
       .catch(function () { $('gauge-label').textContent = fr('Hors ligne'); return false; });
   }
 
+  // Après une annulation, le débit n'a pas de ligne « final » et arrive un peu après la fermeture du flux : on relit la jauge deux fois.
+  function refreshGaugeSoon() {
+    [2000, 8000].forEach(function (ms) { setTimeout(function () { if (session) refreshAccount(); }, ms); });
+  }
+
   function logout(message) {
     unlinkPhone(true);
     session = null;
@@ -3667,7 +3672,8 @@
     }
     function fail(code, data) {
       finish();
-      if (code === 'cancel') { noteLine('Demande annulée.', '', 'info'); return; }
+      if (code === 'cancel') { noteLine(Logic.CANCEL_TEXT, '', 'info'); refreshGaugeSoon(); return; }
+      if (code === 'timeout') refreshGaugeSoon(); // le flux est fermé comme par « Annuler » : même facturation
       if (code === 'insufficient_credits' && !noteInput.value && !photos.length) { noteInput.value = note; growNote(); } // la demande reste à portée pour plus tard
       if (code === 'unauthorized') { logout(); requireLogin('Ta session a expiré : reconnecte-toi, ta demande repartira. Pas de mot de passe, tu reçois un code par e-mail.', function () { send(note, { photos: photos, shown: true }); }, true); return; }
       showError(code, function () { ask(note, photos); }, data);
@@ -4092,6 +4098,8 @@
     } else if (a.message) {
       box.appendChild(rich(a.message));
     }
+    var costNote = Logic.offTopicCostNote(a);
+    if (costNote) box.appendChild(el('p', 'muted small', fr(costNote)));
     var dropped = Logic.rejectedNote(a);
     if (dropped) box.appendChild(el('p', 'muted small', fr(dropped)));
 
