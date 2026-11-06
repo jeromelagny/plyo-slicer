@@ -518,7 +518,9 @@ void toggle_assistant(Plater* plater)
         send(message);
     });
     auto* panel = new DockPanel(plater, load_page(), on_page_message, [] {}, [] {
-        // Panneau détruit (fermé par sa croix ou par le bouton) : le bouton du haut repasse à « fermé ».
+        // Panneau détruit (fermé par sa croix ou par le bouton) : le plan d'envoi n'a plus personne pour le montrer ou le
+        // retirer (le panneau le renvoie à sa réouverture) ; le bouton du haut repasse à « fermé ».
+        Canvas::clear_plan();
         if (s_topbar_button)
             s_topbar_button->CallAfter([] { refresh_topbar_button(); });
     });
@@ -570,6 +572,7 @@ wxWindow* create_topbar_button(wxWindow* parent)
 
 void on_project_changed()
 {
+    Canvas::clear_plan(); // la carte des emplacements visait la pièce d'avant
     send({{"type", "project_changed"}});
 }
 
