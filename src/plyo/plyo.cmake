@@ -18,6 +18,7 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibrationLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCommands.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCommands.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCommandsLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoFirstSteps.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoFirstSteps.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoWelcomeDialog.cpp

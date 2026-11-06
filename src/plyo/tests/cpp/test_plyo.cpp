@@ -13,6 +13,7 @@
 #include "../../PlyoCatalogPolicy.hpp"
 #include "../../PlyoProfilesLogic.hpp"
 #include "../../PlyoCalibrationLogic.hpp"
+#include "../../PlyoCommandsLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -1083,5 +1084,25 @@ TEST_CASE("Catalog: toutes les températures du catalogue livré ont un plafond"
                 ++checked;
             }
     CHECK(checked > 10);
+}
+
+TEST_CASE("Commands: seuls les ordres qui créent ou agrandissent peuvent réorganiser la plaque")
+{
+    using Plyo::CommandsLogic::grows_plate;
+    for (const char* op : {"set_copies", "scale", "scale_to_size", "cut_height", "split", "fill_bed", "inch_to_mm"})
+        CHECK(grows_plate(op));
+    for (const char* op : {"rename", "object_setting", "range_setting", "rotate", "move", "select", "printable", "delete", "center", "drop", "mirror", "lay_flat"})
+        CHECK_FALSE(grows_plate(op));
+}
+
+TEST_CASE("Commands: un chevauchement déjà là (pièces imbriquées) ne déclenche pas de réorganisation")
+{
+    using Plyo::CommandsLogic::has_new_overlap;
+    const std::set<std::pair<size_t, size_t>> nested{{1, 2}};
+    CHECK_FALSE(has_new_overlap({}, {}));
+    CHECK_FALSE(has_new_overlap(nested, nested));
+    CHECK_FALSE(has_new_overlap(nested, {})); // un chevauchement disparu n'en est pas un nouveau
+    CHECK(has_new_overlap(nested, {{1, 2}, {2, 3}})); // une copie posée sur une autre pièce
+    CHECK(has_new_overlap({}, {{4, 5}}));              // une coupe : deux morceaux qui se touchent
 }
 

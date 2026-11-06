@@ -1,4 +1,5 @@
 #include "PlyoCommands.hpp"
+#include "PlyoCommandsLogic.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoPlateActions.hpp"
 #include "PlyoSettingsBridge.hpp"
@@ -30,6 +31,7 @@
 #include <boost/log/trivial.hpp>
 #include <wx/event.h>
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 #include <optional>
@@ -310,24 +312,26 @@ std::string range_setting(int idx, double from, double to, const std::string& id
     return Json::str(checked, "text");
 }
 
-// Deux exemplaires de la même plaque se chevauchent ou se touchent (vus de dessus, à 1 mm près) :
-// après une coupe, une séparation, des copies ou un agrandissement, il faut réorganiser la plaque.
-bool pieces_overlap()
+// Les exemplaires de la même plaque qui se chevauchent ou se touchent (vus de dessus, à 1 mm près).
+CommandsLogic::OverlapPairs overlapping_pieces()
 {
-    Slic3r::GUI::PartPlateList&                       plates = plater().get_partplate_list();
-    std::map<int, std::vector<Slic3r::BoundingBoxf>> by_plate;
-    const auto&                                       objects = model().objects;
+    Slic3r::GUI::PartPlateList&      plates = plater().get_partplate_list();
+    struct Seen { size_t id; Slic3r::BoundingBoxf box; };
+    std::map<int, std::vector<Seen>> by_plate;
+    CommandsLogic::OverlapPairs      pairs;
+    const auto&                      objects = model().objects;
     for (size_t o = 0; o < objects.size(); ++o)
         for (size_t i = 0; i < objects[o]->instances.size(); ++i) {
             const Slic3r::BoundingBoxf3 box = objects[o]->instance_bounding_box(i);
             const Slic3r::BoundingBoxf  flat(Slic3r::Vec2d(box.min.x() - 0.5, box.min.y() - 0.5), Slic3r::Vec2d(box.max.x() + 0.5, box.max.y() + 0.5));
-            std::vector<Slic3r::BoundingBoxf>& seen = by_plate[plates.find_instance(static_cast<int>(o), static_cast<int>(i))];
-            for (const Slic3r::BoundingBoxf& other : seen)
-                if (flat.overlap(other))
-                    return true;
-            seen.push_back(flat);
+            const size_t       id   = objects[o]->instances[i]->id().id;
+            std::vector<Seen>& seen = by_plate[plates.find_instance(static_cast<int>(o), static_cast<int>(i))];
+            for (const Seen& other : seen)
+                if (flat.overlap(other.box))
+                    pairs.emplace(std::min(id, other.id), std::max(id, other.id));
+            seen.push_back({id, flat});
         }
-    return false;
+    return pairs;
 }
 
 // Exécute un ordre ; rend le texte de vérification à ajouter à la phrase de l'IA (réglage appliqué), ou vide.
@@ -464,10 +468,13 @@ nlohmann::json run(const nlohmann::json& commands)
     bool           orca_failed = false; // ordre interrompu par une erreur d'Orca : il a pu laisser un état partiel
     long long      undo_token = -1;
     const size_t   first_async = ordered.size() - background.size() - slicing.size();
-    // Après les ordres immédiats : si des pièces se chevauchent, « Organiser » d'Orca les regroupe au plus près
-    // (écart minimal calculé par Orca), sauf si l'utilisateur a déjà demandé de ranger ou d'orienter.
+    // Après un ordre qui crée ou agrandit : si de nouvelles pièces se chevauchent, « Organiser » d'Orca les regroupe au plus
+    // près (écart minimal calculé par Orca), sauf si l'utilisateur a déjà demandé de ranger ou d'orienter. Un chevauchement
+    // déjà là avant le lot est un placement voulu (pièces imbriquées) : il ne déclenche rien.
+    const CommandsLogic::OverlapPairs overlaps_before = overlapping_pieces();
+    bool                              grew            = false;
     const auto rearrange_if_needed = [&]() {
-        if (!failure.empty() || !background.empty() || !pieces_overlap())
+        if (!failure.empty() || !background.empty() || !grew || !CommandsLogic::has_new_overlap(overlaps_before, overlapping_pieces()))
             return;
         plater().arrange();
         done.push_back("J'ai réorganisé la plaque : les pièces se chevauchaient, elles sont maintenant regroupées sans se toucher.");
@@ -488,6 +495,7 @@ nlohmann::json run(const nlohmann::json& commands)
             const nlohmann::json& c = ordered[i];
             try {
                 const std::string checked = execute(c, targets[i]);
+                grew = grew || CommandsLogic::grows_plate(Json::str(c, "op"));
                 std::string       said    = Json::str(c, "summary");
                 if (!checked.empty())
                     said += " (" + checked + ")";
