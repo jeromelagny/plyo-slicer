@@ -3,6 +3,7 @@
 #include "PlyoCC2Logic.hpp"
 #include "PlyoJson.hpp"
 
+#include <boost/asio/connect.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ip/udp.hpp>
@@ -22,12 +23,16 @@ using namespace std::chrono_literals;
 namespace {
 
 constexpr int MQTT_PORT = 1883;
+constexpr auto CONNECT_TIMEOUT = 5s;
 
-// Lecture avec délai : accumule les octets reçus et rend le premier paquet complet. Faux si le délai est dépassé.
+// Lecture avec délai : accumule les octets reçus et rend le premier paquet complet. Faux si le délai est dépassé ou si la
+// connexion s'est fermée (closed() dit lequel des deux : inutile d'attendre encore une connexion fermée).
 class Connection
 {
 public:
-    explicit Connection(asio::io_context& io) : m_socket(io) {}
+    explicit Connection(asio::io_context& io) : m_io(io), m_socket(io) {}
+
+    bool closed() const { return m_closed; }
 
     bool connect(const std::string& host, std::string& error)
     {
@@ -38,7 +43,16 @@ public:
             error = "Je ne trouve pas l'imprimante sur le réseau.";
             return false;
         }
-        asio::connect(m_socket, endpoints, ec);
+        // Connexion avec délai : asio::connect attendrait le délai du système (de l'ordre de la minute) si l'imprimante ne répond pas.
+        ec = asio::error::would_block;
+        asio::async_connect(m_socket, endpoints, [&ec](const boost::system::error_code& result, const asio::ip::tcp::endpoint&) { ec = result; });
+        m_io.restart();
+        m_io.run_for(CONNECT_TIMEOUT);
+        if (!m_io.stopped()) { // délai dépassé : on ferme, puis on laisse le rappel se terminer (il écrit dans `ec`, une variable locale)
+            boost::system::error_code ignored;
+            m_socket.close(ignored);
+            m_io.run();
+        }
         if (ec) {
             error = "Je n'arrive pas à joindre le canal de commande de l'imprimante (port 1883). Vérifie que le mode réseau local est activé.";
             return false;
@@ -71,15 +85,19 @@ public:
                 std::this_thread::sleep_for(50ms);
                 continue;
             }
-            if (ec)
-                return false; // connexion fermée
+            if (ec) {
+                m_closed = true;
+                return false;
+            }
             m_buffer.append(chunk, n);
         }
     }
 
 private:
+    asio::io_context&     m_io;
     asio::ip::tcp::socket m_socket;
     std::string           m_buffer;
+    bool                  m_closed = false;
 };
 
 // Attend une publication ; `accept` rend vrai quand c'est celle qu'on attend. Ignore les autres paquets.
@@ -88,8 +106,11 @@ template<class Accept> bool wait_publish(Connection& c, std::chrono::millisecond
     const auto until = std::chrono::steady_clock::now() + timeout;
     while (std::chrono::steady_clock::now() < until) {
         CC2Logic::Packet packet;
-        if (!c.next_packet(packet, 1000ms))
+        if (!c.next_packet(packet, 1000ms)) {
+            if (c.closed())
+                return false; // sinon cette boucle tournerait à vide jusqu'au délai, à 100 % d'un cœur
             continue;
+        }
         std::string topic, payload;
         if (CC2Logic::publish_fields(packet, topic, payload) && accept(topic, payload))
             return true;
@@ -146,6 +167,8 @@ public:
         return true;
     }
 
+    bool closed() const { return m_conn.closed(); }
+
     int next_id() { std::random_device rd; return 1 + static_cast<int>(rd() % 100000); }
 
     // Publie une demande et attend la réponse que `accept(payload)` reconnaît. Faux si le délai est dépassé.
@@ -191,6 +214,13 @@ bool send_start(Session& s, const std::string& filename, const nlohmann::json& m
             code = reply.error_code;
         return reply.matched;
     });
+}
+
+// Le départ n'a pas été confirmé : la liaison coupée après l'ordre ne veut pas dire que l'impression n'a pas démarré.
+std::string unconfirmed_text(const Session& s)
+{
+    return s.closed() ? "La liaison avec l'imprimante s'est coupée avant sa confirmation : regarde sur son écran si l'impression a démarré."
+                      : "L'imprimante n'a pas confirmé le démarrage.";
 }
 
 } // namespace
@@ -265,7 +295,7 @@ bool start_print(const std::string& host, const std::string& access_code, const 
         }
         int code = -1;
         if (!send_start(s, filename, map, code)) {
-            error = "L'imprimante n'a pas confirmé le démarrage.";
+            error = unconfirmed_text(s);
             return false;
         }
         if (code != 0) {
@@ -308,7 +338,7 @@ bool start_again_plain(const std::string& profile_host, const std::string& acces
             return false;
         int code = -1;
         if (!send_start(s, Json::str(r, "filename"), nlohmann::json::array(), code)) {
-            error = "L'imprimante n'a pas confirmé le démarrage.";
+            error = unconfirmed_text(s);
             return false;
         }
         if (code != 0) {
