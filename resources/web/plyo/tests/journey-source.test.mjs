@@ -264,3 +264,11 @@ test('la carte « Avant d’imprimer » est amenée dans la zone visible', () =>
   const on = page.slice(page.indexOf('function onPreflight'), page.indexOf('function resultCard'));
   assert.ok(/scrollToAnswerTop\(\$\('preflight-slot'\)\.firstChild\)/.test(on));
 });
+
+test('le panneau dit quand il change la machine d’Orca, sans supprimer ce changement', () => {
+  const page = read('index.html');
+  assert.ok(/orca !== q\.machine\.preset\) projectUI\.switchedFrom = orca/.test(page));
+  assert.ok(page.includes('Orca était sur « ') && page.includes('Choisir une autre machine'));
+  const q = page.slice(page.indexOf('function applyMachineQuestion'), page.indexOf('function proposeFilamentFromHabit'));
+  assert.ok(q.includes('pickPrinter(q.machine.preset'), 'le changement reste');
+});

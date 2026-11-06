@@ -1337,10 +1337,13 @@
   function updateLevelLabel() { $('m-level').textContent = fr('Mes explications : ' + (PlyoMachines.levelOf(habits) === 'short' ? 'courtes' : 'détaillées')); }
   // Début d'une impression : que demander pour la machine ? (voir PlyoMachines.machineQuestion)
   function applyMachineQuestion() {
-    if (!conv || !projectUI.printers) return;
+    if (!conv || !projectUI.printers || !lastValues) return; // sans les réglages lus, on ne sait pas encore sur quelle machine est Orca
     var p = conv.project, orca = lastValues && lastValues.context ? lastValues.context.printer : '';
     var q = PlyoMachines.machineQuestion(projectUI.printers, { orcaPreset: orca, lastPreset: habits.last, hidden: habits.hidden });
-    if (q.mode === 'auto' && (!p.printer || p.printer.proposed)) projectHandlers.pickPrinter(q.machine.preset, q.machine.label);
+    if (q.mode === 'auto' && (!p.printer || p.printer.proposed)) {
+      if (orca && orca !== q.machine.preset) projectUI.switchedFrom = orca; // dit à l'écran une fois le changement fait
+      projectHandlers.pickPrinter(q.machine.preset, q.machine.label);
+    }
     else if (q.mode === 'confirm' && !p.printer) { p.printer = { preset: q.machine.preset, name: q.machine.label, proposed: true }; renderProject(); }
   }
   function proposeFilamentFromHabit() {
@@ -1484,12 +1487,18 @@
   function onProjectPrinterSelected(msg) {
     var pend = projectUI.pending;
     projectUI.pending = null;
-    if (!msg.ok) { projectUI.error = { printer: 'Je n’ai pas pu sélectionner cette imprimante dans Orca.' }; renderProject(); return; }
+    if (!msg.ok) { projectUI.switchedFrom = null; projectUI.error = { printer: 'Je n’ai pas pu sélectionner cette imprimante dans Orca.' }; renderProject(); return; }
     var sameMachine = conv.project.filament && conv.project.printer && conv.project.printer.preset === pend.preset;
     conv.project.printer = { preset: pend.preset, name: pend.name };
     if (!sameMachine) conv.project.filament = null; // le filament dépend de la machine : « comme avant » est reproposé pour celle-ci
     projectUI.showList = false;
     projectChanged();
+    // Le panneau a changé la machine d'Orca : il le dit, et l'autre machine reste à un clic.
+    if (projectUI.switchedFrom) {
+      var tip = noteLine('Orca était sur « ' + projectUI.switchedFrom + ' » : je l’ai mis sur ' + pend.name + ', ta machine reliée.', '', 'info', 'guide');
+      projectUI.switchedFrom = null;
+      tip.appendChild(button('Choisir une autre machine', function () { tip.remove(); projectHandlers.change('printer'); }, 'link'));
+    }
   }
   function onProjectFilamentChosen(msg) {
     var pend = projectUI.pending;
@@ -3952,7 +3961,7 @@
       var firstValues = !lastValues;
       renderValues(msg);
       checkDivergence();
-      if (firstValues) askOutcome(); // au démarrage, une fois les libellés des réglages connus
+      if (firstValues) { askOutcome(); applyMachineQuestion(); } // au démarrage, une fois les libellés des réglages et la machine d'Orca connus
       window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
       drainPhoneQueue();
     } else if (msg.type === 'result') {
