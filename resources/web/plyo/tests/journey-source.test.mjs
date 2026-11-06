@@ -118,7 +118,8 @@ test('Canvas : vues sans bouton plein, fichiers inclus, rappel et relance à l�
   const cpp = fs.readFileSync(new URL('../../../../src/plyo/PlyoAssistant.cpp', import.meta.url), 'utf8');
   assert.ok(cpp.includes('"canvas-logic.js", "canvas-view.js"'), 'chargés par PlyoAssistant.cpp');
   const steps = read('journey-steps.js');
-  assert.ok(steps.includes('Changer les emplacements') && steps.includes('Laisser l’imprimante choisir'));
+  // Le nom du bouton est cité par les messages de refus du C++ (PlyoCC2.cpp, PlyoCC2Logic.cpp) : à changer ensemble.
+  assert.ok(steps.includes('Changer les emplacements') && steps.includes('Démarrer sans carte'));
   // L'envoi relit les emplacements avant de partir quand le projet en a.
   assert.ok(/kind === 'send'[\s\S]{0,200}sendWithCanvasCheck\(\)/.test(page));
 });
@@ -296,11 +297,10 @@ test('« Plus tard » n’éteint pas l’alerte de changement de machine', () =
   assert.ok(/if \(!setup\.preset\) projectUI\.adopt = false/.test(read('index.html')));
 });
 
-test('textes : pas d’accents graves bruts à l’installation, pas de numéro d’étape, « carte » n’est plus dit au débutant', () => {
+test('textes : pas d’accents graves bruts à l’installation, pas de numéro d’étape', () => {
   const page = read('index.html');
   assert.ok(/box\.appendChild\(rich\(setup\.found \?/.test(page), 'libellés Orca en surbrillance');
   assert.ok(!page.includes('(étape 3)'));
-  assert.ok(!read('journey-steps.js').includes('Démarrer sans carte'));
   assert.ok(!page.includes('Ta session a expiré.\''), 'phrase complète');
   assert.ok(read('project-card.js').includes('Je ne lis pas ton Canvas'));
 });

@@ -2515,7 +2515,7 @@
   // ---------- Modèle 3D joint : posé sur le plateau, conseils sur clic seulement ----------
   function onModelAdded(msg) {
     dropPlacing();
-    if (!msg.ok) { projectUI.reposing = false; noteLine(msg.text || 'Je n’ai pas pu poser cette pièce sur le plateau.', 'error', 'alert', 'guide'); return; }
+    if (!msg.ok) { projectUI.reposing = false; noteLine((msg.text || 'Je n’ai pas pu poser cette pièce sur le plateau.') + ' Je prends les fichiers STL, 3MF, OBJ, STEP et AMF.', 'error', 'alert', 'guide'); return; }
     if (msg.adaptation) { syncProjectNames(msg.adaptation.saved); if (msg.name) conv.project.adapted = msg.name; } // adapté dès l'import : pas une deuxième fois
     if (tourSignals) tourSignals.objects = Math.max(tourSignals.objects || 0, 1); // sans attendre le prochain signal
     if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
