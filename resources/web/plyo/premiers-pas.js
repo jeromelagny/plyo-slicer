@@ -65,6 +65,13 @@
   // Modèle 3D joint dans le panneau (le reste, photos comprises, suit le chemin des images).
   function isModelFile(name) { return /\.(stl|3mf|obj|step|stp|amf)$/i.test(String(name || '')); }
 
+  function isImageFile(name) { return /\.(jpe?g|png|webp|gif|heic|heif|bmp|tiff?)$/i.test(String(name || '')); }
+  // Un fichier ni modèle 3D ni image lisible : ce qui s'est passé et ce qu'il faut me donner.
+  function unreadableFileText(name) {
+    if (isImageFile(name)) return 'Je n’arrive pas à lire l’image « ' + name + ' » : prends plutôt du JPEG ou du PNG.';
+    return 'Je ne sais pas ouvrir « ' + name + ' ». Pour une pièce, prends un fichier STL, 3MF, OBJ, STEP ou AMF ; pour une photo, du JPEG ou du PNG.';
+  }
+
   function dims(v) { return v.map(function (n) { return Math.round(n); }).join(' × ') + ' mm'; }
 
   // Message affiché une fois le modèle posé : { text, warn } (warn : il ne tient pas sur le plateau).
@@ -75,7 +82,7 @@
   }
 
   var api = { matchSettingQuestion: matchSettingQuestion, judgeValue: judgeValue, TOUR_STEPS: TOUR_STEPS, nextTourStep: nextTourStep,
-    isModelFile: isModelFile, modelAddedText: modelAddedText };
+    isModelFile: isModelFile, modelAddedText: modelAddedText, unreadableFileText: unreadableFileText };
   root.PlyoFirstSteps = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

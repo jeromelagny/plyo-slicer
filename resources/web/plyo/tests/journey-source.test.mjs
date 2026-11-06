@@ -140,3 +140,29 @@ test('les températures de la bobine se saisissent là où le texte le dit', () 
   assert.ok(page.includes('id="spool-slot"') && page.includes('setSpoolRange:'), 'formulaire branché dans le corps du Guide');
   assert.ok(!/visite guidée|« Explique-moi »/.test(page), 'aucun texte ne cite un élément supprimé');
 });
+
+test('un message s’affiche dans l’onglet ouvert : aucune écriture directe dans le fil caché', () => {
+  const page = read('index.html');
+  const place = page.slice(page.indexOf('function placeInOpenTab'), page.indexOf('function noteLine'));
+  assert.ok(/viewUI\.tab === 'guide'/.test(place), 'l’onglet ouvert décide');
+  assert.ok(/classList\.add\('ghost'\)/.test(place), 'dans Étapes, les boutons d’un message restent secondaires');
+  assert.ok(/where === 'chat' \? placeInThread\(line\) : placeInOpenTab\(line\)/.test(page), 'noteLine suit l’onglet ouvert');
+  assert.ok(/noteLine\(entry\.text, entry\.tone, entry\.icon, 'chat'\)/.test(page), 'seule une conversation rouverte force le fil');
+  const login = page.slice(page.indexOf('function requireLogin'), page.indexOf('// ---------- Volets'));
+  assert.ok(login.includes('placeInOpenTab(loginCard)') && !login.includes('thread.appendChild'), 'la demande de connexion est visible à l’endroit du clic');
+  assert.ok(login.includes('dropLoginCard()'), 'une seule carte de connexion');
+  assert.ok(/function onExplain\(msg\) \{ applyTab\('show-chat'\)/.test(page), 'l’explication d’un réglage s’affiche');
+});
+
+test('pièce trop grande : la carte et « Réduire » sont dans l’étape, sans bouton plein, et survivent au passage d’étape', () => {
+  const page = read('index.html');
+  const card = page.slice(page.indexOf('function showTooBig'), page.indexOf('function renderModel'));
+  assert.ok(card.includes("$('project-alert').appendChild(box)"), 'pas dans les messages d’étape, effacés au changement d’étape');
+  assert.ok(card.includes('Réduire pour qu’il tienne') && card.includes('Garder cette taille'));
+  assert.ok(!/,\s*['"]btn(?: sm)?['"]/.test(card), 'pas de bouton plein dans la carte');
+});
+
+test('import raté : « Je pose… » est retiré à la réponse', () => {
+  const page = read('index.html');
+  assert.ok(/function onModelAdded\(msg\) \{\s*dropPlacing\(\);/.test(page));
+});
