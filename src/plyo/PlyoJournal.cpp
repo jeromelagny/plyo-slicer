@@ -19,7 +19,7 @@ nlohmann::json load()
 
 std::string text(const nlohmann::json& e, const char* key, size_t max)
 {
-    return e.contains(key) && e[key].is_string() ? e[key].get<std::string>().substr(0, max) : std::string();
+    return Json::str(e, key, max); // ne coupe pas un caractère accentué en deux
 }
 
 // Dernière entrée de `conv` qui vérifie `pred`, ou nullptr.

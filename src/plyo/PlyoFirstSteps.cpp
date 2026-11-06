@@ -275,7 +275,7 @@ nlohmann::json tour_signals()
         std::string                name  = first->name;
         if (name.empty())
             name = boost::filesystem::path(first->input_file).filename().string();
-        signals["part_name"] = name.substr(0, 120);
+        signals["part_name"] = Json::utf8_prefix(name, 120);
     }
     Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
     if (plate != nullptr && plate->is_slice_result_valid()) {
