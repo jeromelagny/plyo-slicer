@@ -1353,13 +1353,15 @@
       projectUI.pending = { kind: 'filament', type: type };
       window.orca.postMessage({ type: 'filament_choose', material: type });
     },
-    setTemps: function (nozzle, bed) {
+    // `done(ok, texte)` : la réponse d'Orca ; sans `done`, seul un refus est dit.
+    setTemps: function (nozzle, bed, done) {
       var f = conv.project.filament;
       if (!f) return;
       var n = labelTemp(nozzle), b = labelTemp(bed), changes = [];
       if (n !== null) changes.push({ id: 'nozzle_temp', value: n }, { id: 'nozzle_temp_initial', value: n });
       if (b !== null) changes.push({ id: 'bed_temp', value: b }, { id: 'bed_temp_initial', value: b });
-      if (!changes.length) { renderProject(); return; }
+      if (!changes.length) { renderProject(); if (done) done(true); return; }
+      pendingSheet = { kind: 'apply', onResult: function (ok, text) { if (done) done(ok, text); else if (!ok) noteLine(text, 'error', 'alert', 'guide'); } };
       window.orca.postMessage({ type: 'apply', project_edit: true, changes: changes, why: 'Étiquette de la bobine' });
       projectUI.pending = { kind: 'temps' };
       window.orca.postMessage({ type: 'project_state' });
@@ -1378,11 +1380,15 @@
       if (!parsed.ok) { sp.error = parsed.text; renderProject(); return; }
       if (!Object.keys(parsed.limits).length) { sp.error = 'Entre au moins une température.'; renderProject(); return; }
       var t = window.PlyoLogic.tempsFromRange({ nozzle: f.nozzle_temp, bed: f.bed_temp }, parsed.limits);
-      window.orca.postMessage({ type: 'limits_set', limits: parsed.limits });
-      sp.open = false;
-      sp.error = '';
-      noteLine('Températures de ta bobine enregistrées : buse ' + (t.nozzle != null ? t.nozzle : f.nozzle_temp) + ' °C, plateau ' + (t.bed != null ? t.bed : f.bed_temp) + ' °C. L’assistant restera dans cette plage.', 'ok', 'check', 'guide');
-      projectHandlers.setTemps(t.nozzle != null ? String(t.nozzle) : '', t.bed != null ? String(t.bed) : '');
+      // Rien n'est annoncé ni gardé avant la réponse d'Orca : s'il refuse, le formulaire reste ouvert avec ta saisie et la raison.
+      projectHandlers.setTemps(t.nozzle != null ? String(t.nozzle) : '', t.bed != null ? String(t.bed) : '', function (ok, text) {
+        if (!ok) { sp.error = text; renderProject(); return; }
+        window.orca.postMessage({ type: 'limits_set', limits: parsed.limits });
+        sp.open = false;
+        sp.error = '';
+        noteLine('Températures de ta bobine enregistrées : buse ' + (t.nozzle != null ? t.nozzle : f.nozzle_temp) + ' °C, plateau ' + (t.bed != null ? t.bed : f.bed_temp) + ' °C. L’assistant restera dans cette plage.', 'ok', 'check', 'guide');
+        renderProject();
+      });
     },
     importPart: function () { pickFiles(); },
     keepOldPart: function () {

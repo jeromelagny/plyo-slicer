@@ -210,3 +210,14 @@ test('« Aucun risque détecté » distingue vérifié, ignoré et pas vérifié
   const restore = page.slice(page.indexOf('function restoreConversation'), page.indexOf('function renderEntry'));
   assert.ok(/tourSignals\.sliced\) window\.orca\.postMessage\(\{ type: 'preflight' \}\)/.test(restore));
 });
+
+test('formulaire de la bobine : pas de redessin pendant la saisie, et succès annoncé seulement après la réponse d’Orca', () => {
+  const card = read('project-card.js');
+  const editor = card.slice(card.indexOf('function renderSpoolEditor'), card.indexOf('function renderChoices'));
+  assert.ok(/wasOpen && slot\.spoolKey === key\) return/.test(editor), 'formulaire gardé');
+  assert.ok(/if \(!wasOpen\) setTimeout/.test(editor), 'le curseur n’est placé qu’à l’ouverture');
+  const page = read('index.html');
+  const range = page.slice(page.indexOf('setSpoolRange: function'), page.indexOf('importPart: function'));
+  assert.ok(range.indexOf('function (ok, text)') < range.indexOf('limits_set') && range.indexOf('function (ok, text)') < range.indexOf('enregistrées'), 'limits_set et le message viennent après la réponse');
+  assert.ok(/if \(!ok\) \{ sp\.error = text/.test(range), 'refus dit dans le formulaire');
+});
