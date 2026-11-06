@@ -1040,3 +1040,48 @@ TEST_CASE("Profiles: nom du profil de la connexion, sans jamais écraser un « M
     CHECK(link_profile_name("K2", true, {"K2", "Ma K2", "Ma K2 (Plyo)"}) == "Ma K2 (Plyo 2)");
 }
 
+TEST_CASE("Catalog: plafonds Plyo des températures, absolus, cités dans le refus, même confirmés")
+{
+    using namespace Plyo::Catalog;
+    REQUIRE(temperature_cap("nozzle_temperature").has_value());
+    CHECK(*temperature_cap("nozzle_temperature") == 320);
+    CHECK(*temperature_cap("nozzle_temperature_initial_layer") == 320);
+    CHECK(*temperature_cap("hot_plate_temp") == 130);
+    CHECK(*temperature_cap("textured_cool_plate_temp_initial_layer") == 130);
+    CHECK(*temperature_cap("chamber_temperature") == 130);
+    CHECK_FALSE(temperature_cap("layer_height").has_value());
+    CHECK_FALSE(temperature_cap("activate_chamber_temp_control").has_value());
+
+    // Filaments techniques légitimes : jamais refusés.
+    CHECK(check_temperature_cap("Buse", "nozzle_temperature", 320).ok);
+    CHECK(check_temperature_cap("Plateau", "hot_plate_temp", 130).ok);
+    CHECK(check_temperature_cap("Plateau", "hot_plate_temp", 0).ok);
+    CHECK(check_temperature_cap("Attente", "filament_tower_interface_print_temp", -1).ok);
+
+    const CheckResult nozzle = check_temperature_cap("Buse", "nozzle_temperature", 321);
+    CHECK_FALSE(nozzle.ok);
+    CHECK(nozzle.text.find("320") != std::string::npos);
+    const CheckResult bed = check_temperature_cap("Plateau", "hot_plate_temp", 200);
+    CHECK_FALSE(bed.ok);
+    CHECK(bed.text.find("130") != std::string::npos);
+    // Autre réglage : pas concerné, quelle que soit la valeur.
+    CHECK(check_temperature_cap("Vitesse", "outer_wall_speed", 500).ok);
+}
+
+TEST_CASE("Catalog: toutes les températures du catalogue livré ont un plafond")
+{
+    const fs::path file = fs::path(__FILE__).parent_path() / "../../../../resources/plyo/catalog-keys.json";
+    boost::nowide::ifstream in(file.string());
+    REQUIRE(in.good());
+    const nlohmann::json keys = nlohmann::json::parse(in);
+    int checked = 0;
+    for (const char* scope : {"print", "filament"})
+        for (const auto& [key, kind] : keys.at(scope).items())
+            if (key.find("temp") != std::string::npos && kind != "bool") {
+                INFO(key);
+                CHECK(Plyo::Catalog::temperature_cap(key).has_value());
+                ++checked;
+            }
+    CHECK(checked > 10);
+}
+

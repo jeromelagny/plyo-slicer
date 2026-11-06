@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iomanip>
 #include <locale>
+#include <map>
 #include <sstream>
 
 namespace Plyo { namespace Catalog {
@@ -183,6 +184,36 @@ std::string to_serialized(const OptionInfo& info, const nlohmann::json& value)
     if (info.kind == "float_or_percent" && is_percent_text(value))
         return plain(*number) + "%";
     return plain(*number);
+}
+
+std::optional<double> temperature_cap(const std::string& key)
+{
+    constexpr double NOZZLE_MAX = 320; // PA-CF, PC, PPS peuvent monter haut
+    constexpr double BED_MAX    = 130; // plateau et enceinte
+    static const std::map<std::string, double> CAPS = {
+        {"nozzle_temperature", NOZZLE_MAX},
+        {"nozzle_temperature_initial_layer", NOZZLE_MAX},
+        {"idle_temperature", NOZZLE_MAX},
+        {"filament_tower_interface_print_temp", NOZZLE_MAX},
+        {"standby_temperature_delta", NOZZLE_MAX},
+        {"temperature_vitrification", NOZZLE_MAX}, // propriété de la matière : au-delà de 130 °C pour un PC ou un PEEK
+        {"chamber_temperature", BED_MAX},
+        {"chamber_minimal_temperature", BED_MAX},
+    };
+    if (const auto it = CAPS.find(key); it != CAPS.end())
+        return it->second;
+    if (const std::string id = limit_id_of(key); id == "bed_temp" || id == "bed_temp_initial") // une clé par type de plateau
+        return BED_MAX;
+    return std::nullopt;
+}
+
+CheckResult check_temperature_cap(const std::string& label, const std::string& key, const nlohmann::json& value)
+{
+    const std::optional<double> cap    = temperature_cap(key);
+    const std::optional<double> number = number_of(value);
+    if (!cap || !number || !(*number > *cap))
+        return {};
+    return refuse(label, "à " + plain(*number) + " °C dépasse le plafond de Plyo (" + plain(*cap) + " °C).");
 }
 
 std::string limit_id_of(const std::string& key)

@@ -61,6 +61,12 @@ struct CheckResult
 CheckResult check_change(const std::string& label, const OptionInfo& info, const nlohmann::json& value, const Limits::Range& limits,
                          const std::string& limit_id, bool confirmed_outside);
 
+// Plafond Plyo (°C) d'une clé de température, absent pour les autres clés. Dernière barrière, large : les bornes d'Orca vont
+// jusqu'à 1500 °C (buse) et 300 °C (plateau), et les limites du fabricant peuvent manquer ou être passées par une confirmation.
+std::optional<double> temperature_cap(const std::string& key);
+// Refus si la valeur dépasse ce plafond, confirmation ou non. Une valeur non numérique est laissée à check_change.
+CheckResult check_temperature_cap(const std::string& label, const std::string& key, const nlohmann::json& value);
+
 // Valeur comme Orca la relit (point décimal, « 15% » pour un pourcentage, 1/0 pour un booléen). Vide si le type ne convient pas.
 std::string to_serialized(const OptionInfo& info, const nlohmann::json& value);
 

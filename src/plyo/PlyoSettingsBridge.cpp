@@ -552,6 +552,9 @@ nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::s
         const std::string label = Json::str(change, "label").empty() ? key : Json::str(change, "label");
         const nlohmann::json value = change.contains("value") ? change["value"] : nlohmann::json();
         const bool confirmed = change.contains("confirmed_outside_range") && change["confirmed_outside_range"] == true;
+        // Plafond Plyo : s'applique même avec une sortie de plage confirmée.
+        if (const Catalog::CheckResult capped = Catalog::check_temperature_cap(label, key, value); !capped.ok)
+            return refused(capped.text);
         const Catalog::CheckResult checked = Catalog::check_change(label, info, value, limits, Catalog::limit_id_of(key), confirmed);
         if (!checked.ok)
             return refused(checked.text);
