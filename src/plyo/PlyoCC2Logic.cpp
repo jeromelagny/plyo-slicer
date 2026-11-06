@@ -294,6 +294,15 @@ StartReply parse_start_reply(const std::string& payload, int id)
     return out;
 }
 
+std::string plain_start_refusal(const nlohmann::json& refused, const std::string& profile_host)
+{
+    if (!refused.is_object())
+        return "Aucune impression en attente sur la CC2.";
+    if (profile_host.empty() || Json::str(refused, "host") != profile_host)
+        return "L'imprimante choisie n'est pas celle qui a refusé le départ : rien n'est envoyé. Relance l'impression depuis l'étape Imprimer.";
+    return std::string();
+}
+
 std::string error_text(int error_code)
 {
     switch (error_code) {

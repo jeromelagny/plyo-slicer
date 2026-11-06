@@ -32,8 +32,11 @@ void on_orca_state(OrcaState provider);
 void on_refused(std::function<void(const std::string&)> callback);
 // {host, serial, filename} du dernier départ refusé avec une carte, ou null.
 nlohmann::json last_refused();
-// Relance ce départ sans carte (l'imprimante choisit). Bloquant.
-bool start_again_plain(const std::string& access_code, std::string& error);
+// Oublie ce départ refusé (changement de projet : le fichier en attente n'est plus celui de la pièce affichée).
+void clear_refused();
+// Relance ce départ sans carte (l'imprimante choisit), seulement si `profile_host` (adresse de l'imprimante du profil, celle
+// dont `access_code` est le code) est bien celle qui a refusé. Bloquant.
+bool start_again_plain(const std::string& profile_host, const std::string& access_code, std::string& error);
 
 // Emplacements du Canvas (voir CC2Logic::parse_canvas_reply), null en cas d'échec (`error` dit pourquoi). Bloquant.
 nlohmann::json read_canvas(const std::string& host, const std::string& access_code, const std::string& serial, std::string& error);

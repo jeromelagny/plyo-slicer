@@ -61,6 +61,10 @@ struct MapDecision
 // refus si la relecture manque, si un emplacement a disparu ou changé de type, ou si une couleur a changé de profil.
 MapDecision decide_map(const nlohmann::json& planned, const nlohmann::json& canvases, const std::vector<std::string>& presets);
 
+// Pourquoi « Démarrer sans carte » ne peut pas partir (vide : il peut). `refused` : voir CC2::last_refused ; `profile_host` :
+// adresse nue de l'imprimante du profil en cours, dont le code d'accès serait envoyé en clair à l'adresse du refus.
+std::string plain_start_refusal(const nlohmann::json& refused, const std::string& profile_host);
+
 // Numéro de série dans la réponse de découverte (méthode 7000) ; vide s'il n'y est pas.
 std::string serial_from_discovery(const std::string& datagram);
 

@@ -573,6 +573,7 @@ wxWindow* create_topbar_button(wxWindow* parent)
 void on_project_changed()
 {
     Canvas::clear_plan(); // la carte des emplacements visait la pièce d'avant
+    CC2::clear_refused(); // « Démarrer sans carte » lancerait le fichier de la pièce d'avant
     send({{"type", "project_changed"}});
 }
 

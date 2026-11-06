@@ -1020,3 +1020,13 @@ TEST_CASE("Calibration: kept_note signale les pièces gardées sur le disque")
     const std::string note = kept_note({"/plyo/avant-calibration-1.3mf"});
     CHECK(note.find("/plyo/avant-calibration-1.3mf") != std::string::npos);
 }
+
+TEST_CASE("CC2: « Démarrer sans carte » n'envoie le code d'accès qu'à l'imprimante qui a refusé")
+{
+    using Plyo::CC2Logic::plain_start_refusal;
+    const nlohmann::json refused = {{"host", "192.168.1.20"}, {"serial", "S"}, {"filename", "a.gcode"}};
+    CHECK(plain_start_refusal(refused, "192.168.1.20").empty());
+    CHECK_FALSE(plain_start_refusal(refused, "192.168.1.30").empty()); // profil passé sur une autre imprimante
+    CHECK_FALSE(plain_start_refusal(refused, "").empty());             // profil sans adresse
+    CHECK_FALSE(plain_start_refusal(nullptr, "192.168.1.20").empty()); // refus effacé (nouveau projet)
+}

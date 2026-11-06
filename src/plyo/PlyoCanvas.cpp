@@ -225,9 +225,9 @@ void clear_plan() { CC2::clear_plan(); }
 void start_plain(const std::string& printer_preset, std::function<void(nlohmann::json)> done)
 {
     const Target t = target_of(printer_preset);
-    std::thread([code = t.code, done = std::move(done)]() {
+    std::thread([host = t.host, code = t.code, done = std::move(done)]() {
         std::string error;
-        const bool  ok = CC2::start_again_plain(code, error);
+        const bool  ok = CC2::start_again_plain(host, code, error);
         const nlohmann::json out = {{"ok", ok}, {"text", ok ? std::string("L'impression a démarré ; l'imprimante a choisi les emplacements.") : error}};
         wxGetApp().CallAfter([done, out] { done(out); });
     }).detach();

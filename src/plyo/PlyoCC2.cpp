@@ -289,11 +289,17 @@ nlohmann::json last_refused()
     return g_refused;
 }
 
-bool start_again_plain(const std::string& access_code, std::string& error)
+void clear_refused()
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_refused = nullptr;
+}
+
+bool start_again_plain(const std::string& profile_host, const std::string& access_code, std::string& error)
 {
     nlohmann::json r = last_refused();
-    if (!r.is_object()) {
-        error = "Aucune impression en attente sur la CC2.";
+    if (const std::string refusal = CC2Logic::plain_start_refusal(r, profile_host); !refusal.empty()) {
+        error = refusal;
         return false;
     }
     try {
