@@ -1043,7 +1043,7 @@
   var plateChecked = ''; // résultat de la vérification de la découpe en cours : 'clean', 'open', 'ignored' ; '' tant qu'elle n'a pas eu lieu
   var preflightFix = null; // lance « Tout corriger » de la carte de vérification affichée (rend faux s'il n'y a rien à faire)
   function journeyCtx() {
-    var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, checked: plateChecked,
+    var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, checked: plateChecked, slicing: slicing.conv === conv && !!conv,
       plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
     else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
@@ -2346,7 +2346,23 @@
   var plateRequest = 0;
   var plateUndoLinks = [];   // un seul « Annuler » actif : celui de la dernière action
   var plateCounts = {};      // demande → nombre de pièces concernées (singulier ou pluriel du texte affiché)
+  // Découpe demandée : le bouton attend le résultat. Sans résultat au bout d'un délai (Orca refuse sans le dire au panneau,
+  // découpe très longue), il redevient cliquable et le panneau le dit.
+  var SLICE_WAIT_MS = 120000;
+  var slicing = { conv: null, timer: null };
+  function stopSlicing() { clearTimeout(slicing.timer); slicing = { conv: null, timer: null }; }
+  function startSlicing() {
+    stopSlicing();
+    slicing = { conv: conv, timer: setTimeout(function () {
+      var mine = slicing.conv === conv;
+      stopSlicing();
+      if (!mine) return;
+      noteLine('La découpe prend plus longtemps que prévu. Si Orca affiche un message, lis-le ; sinon, reclique sur « Découper ».', 'warn', 'alert', 'guide');
+      renderProject();
+    }, SLICE_WAIT_MS) };
+  }
   function plateAction(kind, after, extra, count) {
+    if (kind === 'slice') { if (slicing.conv === conv) { if (after) after(true); return; } startSlicing(); }
     var id = ++plateRequest;
     plateWaiters[id] = after || null;
     plateCounts[id] = count;
@@ -2355,6 +2371,7 @@
   function onPlateAction(msg) {
     var after = plateWaiters[msg.request];
     delete plateWaiters[msg.request];
+    if (msg.kind === 'slice') { if (!msg.ok) stopSlicing(); renderProject(); }
     var text = Logic.plateText(msg, plateCounts[msg.request]);
     delete plateCounts[msg.request];
     var line = noteLine(text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert', 'guide');
@@ -3286,6 +3303,7 @@
   }
 
   function onTourSignals(signals) {
+    if (signals.sliced) stopSlicing();
     watchSlice(signals);
     var hadSummary = !!printSummary();
     var wasLinked = !!(tourSignals && tourSignals.linked);

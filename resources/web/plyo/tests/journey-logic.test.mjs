@@ -258,3 +258,12 @@ test('« Tout est bon » n’est dit que si la plaque a été vérifiée sans ri
   assert.ok(!J.prompt('preparer', { sliced: true, risks: 0, checked: 'ignored' }).includes('Tout est bon'));
   assert.ok(!J.prompt('preparer', { sliced: true, risks: 0, checked: '' }).includes('Tout est bon'));
 });
+
+test('découpe en cours : bouton inactif et état dit à l’écran', () => {
+  const a = J.primaryAction('preparer', { slicing: true });
+  assert.equal(a.enabled, false);
+  assert.equal(a.label, 'Je découpe…');
+  assert.equal(J.prompt('preparer', { slicing: true }), 'Je découpe ta plaque…');
+  assert.equal(J.primaryAction('imprimer', { slicing: true }).enabled, false);
+  assert.equal(J.primaryAction('preparer', {}).enabled, true);
+});

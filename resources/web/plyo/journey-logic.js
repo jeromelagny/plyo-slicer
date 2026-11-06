@@ -47,7 +47,7 @@
     }
     // Fiche remplie mais plateau vide (relance d'Orca, pièce supprimée) : remettre la pièce passe avant tout.
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return { label: 'Choisir un fichier', kind: 'importPart', enabled: true };
-    var slice = { label: 'Découper', kind: 'slice', enabled: true };
+    var slice = c.slicing ? { label: 'Je découpe…', kind: 'slice', enabled: false } : { label: 'Découper', kind: 'slice', enabled: true };
     if (step === 'preparer') {
       // Questions d'intention : on répond avec les choix ; au résumé, un seul bouton applique et prépare.
       if (!c.sliced && c.intent === 'asking') return { label: '', kind: 'none', enabled: false };
@@ -84,6 +84,7 @@
       case 'piece': return 'Ajoute la pièce à imprimer';
       case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
         if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';
+        if (!c.sliced && c.slicing) return 'Je découpe ta plaque…';
         return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler : coche ce que tu veux corriger ci-dessous'
           : c.checked === 'clean' ? 'Tout est bon, on passe à l’impression' : c.checked === 'ignored' ? 'Tu as ignoré des points : à toi de voir' : 'Je vérifie ta plaque…');
       case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : 'Prêt à imprimer';
