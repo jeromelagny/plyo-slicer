@@ -115,7 +115,8 @@
   function mapLabel(canvas, imposable) {
     if (!Array.isArray(canvas) || !canvas.length) return '';
     var sorted = canvas.slice().sort(function (a, b) { return a.t - b.t; });
-    var tail = imposable === false ? ' : à sélectionner sur l’imprimante' : '';
+    // La U1 n'a pas de répartition à choisir sur la machine : on y vérifie seulement.
+    var tail = imposable === false ? (sorted[0].system === 'u1' ? ' : à vérifier sur l’écran de la U1' : ' : à sélectionner sur l’imprimante') : '';
     if (sorted.length === 1) return words(sorted[0].system).Slot + ' ' + slotName(sorted[0]) + ' · ' + trayText(sorted[0].type, sorted[0].color) + tail;
     return sorted.map(function (e, i) {
       return (i ? 'couleur ' : 'Couleur ') + (e.t + 1) + ' → ' + words(e.system).slot + ' ' + slotName(e) + ' · ' + trayText(e.type, e.color);
@@ -137,12 +138,15 @@
     var first = canvas[0];
     if (!first.system || first.system === 'canvas') return '';
     var trial = first.validated === true ? '' : ' Plyo n’a pas encore été essayé sur cette marque : regarde sur l’écran de l’imprimante que la bonne bobine alimente.';
+    if (first.system === 'u1') return 'Ces couleurs sont sur tes têtes. Je ne change pas l’ordre des têtes : vérifie sur l’écran de la U1 laquelle imprime chaque couleur.' + trial;
     if (isImposed(canvas)) return 'Passe par « Envoyer et imprimer » : le bouton d’envoi d’Orca ouvre sa propre fenêtre et ne garde pas ce choix.' + trial;
     return 'Je lis ces emplacements, mais je ne les impose pas sur ta machine : choisis-les dans la fenêtre d’Orca à l’envoi.' + trial;
   }
 
   // Ce que dit le panneau quand Orca ouvre sa fenêtre d'envoi, s'il y a quelque chose à y vérifier (sinon vide : texte habituel).
   function orcaConfirm(canvas) {
+    if (Array.isArray(canvas) && canvas.length && canvas[0].system === 'u1')
+      return 'Orca te demande de confirmer : valide, puis vérifie sur l’écran de ta U1 quelle tête imprime chaque couleur.';
     if (Array.isArray(canvas) && canvas.length && canvas[0].system && canvas[0].system !== 'canvas' && !isImposed(canvas))
       return 'Orca te demande de confirmer : choisis les mêmes emplacements dans sa fenêtre, puis valide.';
     return '';

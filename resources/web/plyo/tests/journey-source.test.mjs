@@ -416,3 +416,13 @@ test('refus hors CC2 : « Relire les emplacements », et « Démarrer sans carte
   assert.ok(/canvas_refused[\s\S]{0,200}refusedPlain/.test(read('index.html')), 'seul le refus de la CC2 ouvre la relance sans carte');
   assert.ok(/refusedPlain = false/.test(read('index.html')));
 });
+
+test('U1 : le réordonnancement (T18 à T21) n’existe pas dans le panneau, et aucun texte ne le propose', () => {
+  for (const name of ['index.html', 'canvas-logic.js', 'canvas-view.js', 'journey-logic.js', 'journey-steps.js', 'project-card.js']) {
+    const src = read(name);
+    assert.ok(!/canvas_reorder|Ranger les couleurs|J’ai rangé|réordonn/i.test(src), name);
+  }
+  const view = read('canvas-view.js');
+  const u1 = view.slice(view.indexOf("system === 'u1'"), view.indexOf("system === 'u1'") + 300);
+  assert.ok(u1.includes('Ces couleurs sont sur tes têtes') && !/impos/i.test(u1), 'texte U1 sans « imposé »');
+});

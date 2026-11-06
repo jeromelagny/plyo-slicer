@@ -310,3 +310,18 @@ test('une carte d’emplacements saisie sans numéro lisible ne casse pas la fic
   const base = { printer: { preset: 'p' }, part: { name: 'x' }, filament: { type: 'PLA', preset: 'f' } };
   assert.equal(J.ficheSummary({ ...base, canvas: [{ t: 0, tray_id: 3, label: 'Ext', color: '' }] }), 'p · x · PLA · emplacement Ext');
 });
+
+test('U1 : on parle de têtes', () => {
+  const at = (canvas) => J.prompt('filament', { canvas });
+  assert.equal(at({ mode: 'loading', system: 'u1' }), 'Je lis les têtes de ta U1…');
+  assert.equal(at({ mode: 'single', system: 'u1' }), 'Quelle tête pour ta pièce ?');
+  assert.equal(at({ mode: 'multi', system: 'u1' }), 'Quelle tête pour chaque couleur ?');
+  assert.equal(at({ mode: 'tooMany', system: 'u1' }), 'Ta pièce a plus de couleurs que de têtes');
+  assert.equal(J.primaryAction('filament', { canvas: { mode: 'single', system: 'u1', proposal: { label: 'Tête 2 · PLA noir' } } }).label, 'Oui, la tête 2 · PLA noir');
+  assert.equal(J.primaryAction('filament', { canvas: { mode: 'multi', system: 'u1', complete: true } }).label, 'Utiliser ces têtes');
+});
+
+test('fiche : U1 : « tête 2 »', () => {
+  const base = { printer: { preset: 'p' }, part: { name: 'x' }, filament: { type: 'PLA', preset: 'f' } };
+  assert.equal(J.filledRows({ ...base, canvas: [{ t: 0, tray_id: 1, label: '2', color: '', system: 'u1' }] }).find(r => r.line === 'filament').text, 'PLA · tête 2');
+});

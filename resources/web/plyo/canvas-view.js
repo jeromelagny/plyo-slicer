@@ -15,21 +15,23 @@
     var w = root.PlyoCanvas.words(opts.system);
     slot.textContent = '';
     if (opts.error) body.appendChild(ui.el('p', 'project-error', opts.error));
-    if (opts.readOnly) body.appendChild(ui.el('p', 'muted small', 'Je lis ces emplacements, mais je ne peux pas imposer ton choix sur cette machine' + (opts.blocker ? ' (' + opts.blocker + ')' : '') + '. Il sert à régler le bon filament ; tu le sélectionneras à l’envoi.'));
+    var u1 = opts.system === 'u1';
+    if (opts.system === 'u1') body.appendChild(ui.el('p', 'muted small', 'Ces couleurs sont sur tes têtes. Vérifie sur l’écran de la U1 : je ne change pas l’ordre des têtes.' + (opts.trial ? ' Cette lecture n’a pas encore été essayée sur une vraie U1.' : '')));
+    else if (opts.readOnly) body.appendChild(ui.el('p', 'muted small', 'Je lis ces emplacements, mais je ne peux pas imposer ton choix sur cette machine' + (opts.blocker ? ' (' + opts.blocker + ')' : '') + '. Il sert à régler le bon filament ; tu le sélectionneras à l’envoi.'));
     else if (opts.trial) body.appendChild(ui.el('p', 'muted small', 'Plyo n’a pas encore été essayé sur cette marque : compare ces emplacements avec l’écran de ton imprimante.'));
     if (opts.mode === 'tooMany') {
       body.appendChild(ui.el('p', 'muted small', 'Ta pièce a ' + opts.colours.length + ' couleurs et ' + w.unit + ' ' + trays.length +
         ' ' + w.slots + '. Réduis le nombre de couleurs de la pièce dans Orca, puis reviens ici.'));
       body.appendChild(ui.button('Vérifier à nouveau', h.recheck, 'link'));
     } else if (opts.mode === 'multi') {
-      body.appendChild(ui.el('p', 'muted small', 'Je propose un emplacement par couleur d’après le type et la couleur. Change ceux qui ne te conviennent pas.'));
+      body.appendChild(ui.el('p', 'muted small', u1 ? 'Je propose une tête par couleur d’après le type et la couleur. Change celles qui ne te conviennent pas.' : 'Je propose un emplacement par couleur d’après le type et la couleur. Change ceux qui ne te conviennent pas.'));
       (opts.mapping || []).forEach(function (m) {
         var row = ui.el('label', 'canvas-row');
         row.appendChild(swatch(ui, m.color));
         row.appendChild(ui.el('span', 'canvas-colour', 'Couleur ' + (m.t + 1)));
         var select = ui.el('select', 'field canvas-select');
-        select.setAttribute('aria-label', 'Emplacement pour la couleur ' + (m.t + 1));
-        var none = ui.el('option', '', 'Choisir un emplacement…');
+        select.setAttribute('aria-label', (u1 ? 'Tête' : 'Emplacement') + ' pour la couleur ' + (m.t + 1));
+        var none = ui.el('option', '', u1 ? 'Choisir une tête…' : 'Choisir un emplacement…');
         none.value = '';
         select.appendChild(none);
         trays.forEach(function (t) {
@@ -44,7 +46,7 @@
         body.appendChild(row);
       });
     } else {
-      body.appendChild(ui.el('p', 'muted small', 'Tes emplacements, tels que réglés sur l’écran de l’imprimante. Touche celui où se trouve ton filament.'));
+      body.appendChild(ui.el('p', 'muted small', u1 ? 'Tes têtes, telles que réglées sur l’écran de l’imprimante. Touche celle où se trouve ton filament.' : 'Tes emplacements, tels que réglés sur l’écran de l’imprimante. Touche celui où se trouve ton filament.'));
       var acts = ui.el('div', 'printer-actions');
       var chosen = (opts.mapping || [])[0];
       trays.forEach(function (t) {
@@ -59,7 +61,7 @@
         body.appendChild(ui.el('p', 'muted small', '« vide ? » : l’imprimante pense que cet emplacement est vide. S’il est chargé, tu peux le choisir quand même.'));
     }
     if (opts.emptyBlocks && opts.mode !== 'tooMany' && trays.some(function (t) { return t.empty; })) {
-      body.appendChild(ui.el('p', 'muted small', 'Un emplacement vide ne peut pas être choisi : charge ta bobine, règle-la sur l’écran de l’imprimante, puis relis.'));
+      body.appendChild(ui.el('p', 'muted small', (u1 ? 'Une tête vide ne peut pas être choisie' : 'Un emplacement vide ne peut pas être choisi') + ' : charge ta bobine, règle-la sur l’écran de l’imprimante, puis relis.'));
       body.appendChild(ui.button('Vérifier à nouveau', h.recheck, 'link'));
     }
     body.appendChild(ui.button('Choisir un autre filament', h.useList, 'link'));

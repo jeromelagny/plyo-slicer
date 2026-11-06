@@ -41,8 +41,8 @@
     // (une couleur) ou un emplacement par couleur ; l'envoi attend que ce soit fait.
     if (c.canvas) {
       var cv = c.canvas;
-      if (cv.mode === 'single' && cv.proposal) return { label: 'Oui, l’emplacement ' + cv.proposal.label, kind: 'confirmCanvas', enabled: true };
-      if (cv.mode === 'multi') return { label: 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
+      if (cv.mode === 'single' && cv.proposal) return { label: cv.system === 'u1' ? 'Oui, la t' + cv.proposal.label.slice(1) : 'Oui, l’emplacement ' + cv.proposal.label, kind: 'confirmCanvas', enabled: true };
+      if (cv.mode === 'multi') return { label: cv.system === 'u1' ? 'Utiliser ces têtes' : 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
       return { label: '', kind: 'none', enabled: false };
     }
     // « changer » le filament en cours : on répond avec les choix, ou « Garder ce filament ».
@@ -73,13 +73,14 @@
   var SLOT_PROMPTS = {
     canvas: { loading: 'Je lis les emplacements de ta CC2…', one: 'Quel emplacement du Canvas pour ta pièce ?' },
     cfs: { loading: 'Je lis les emplacements de ton CFS…', one: 'Quel emplacement du CFS pour ta pièce ?' },
-    ifs: { loading: 'Je lis les emplacements de ton IFS…', one: 'Quel emplacement de l’IFS pour ta pièce ?' }
+    ifs: { loading: 'Je lis les emplacements de ton IFS…', one: 'Quel emplacement de l’IFS pour ta pièce ?' },
+    u1: { loading: 'Je lis les têtes de ta U1…', one: 'Quelle tête pour ta pièce ?', multi: 'Quelle tête pour chaque couleur ?', tooMany: 'Ta pièce a plus de couleurs que de têtes' }
   };
   function canvasPrompt(c) {
     var t = SLOT_PROMPTS[c.canvas.system] || SLOT_PROMPTS.canvas;
     if (c.canvas.mode === 'loading') return t.loading;
-    if (c.canvas.mode === 'multi') return 'Quel emplacement pour chaque couleur ?';
-    if (c.canvas.mode === 'tooMany') return 'Ta pièce a plus de couleurs que d’emplacements';
+    if (c.canvas.mode === 'multi') return t.multi || 'Quel emplacement pour chaque couleur ?';
+    if (c.canvas.mode === 'tooMany') return t.tooMany || 'Ta pièce a plus de couleurs que d’emplacements';
     return t.one;
   }
 
@@ -178,11 +179,11 @@
   // Ligne filament : avec les emplacements, la couleur et le numéro (« PLA blanc · emplacement 2 »).
   function filamentRow(p) {
     var cv = Array.isArray(p.canvas) ? p.canvas : [];
-    if (cv.length > 1) return { line: 'filament', text: p.filament.type + ' · ' + cv.length + ' emplacements' };
+    if (cv.length > 1) return { line: 'filament', text: p.filament.type + ' · ' + cv.length + (cv[0].system === 'u1' ? ' têtes' : ' emplacements') };
     if (cv.length === 1) {
       var C = (typeof window !== 'undefined' && window.PlyoCanvas) || null, name = C ? C.colourName(cv[0].color) : '';
       var slot = cv[0].label !== undefined && cv[0].label !== '' ? cv[0].label : cv[0].tray_id + 1; // numéro du traducteur (« 1A ») ; projet ancien : tray_id + 1
-      return { line: 'filament', text: p.filament.type + (name ? ' ' + name : '') + ' · emplacement ' + slot, swatch: cv[0].color };
+      return { line: 'filament', text: p.filament.type + (name ? ' ' + name : '') + (cv[0].system === 'u1' ? ' · tête ' : ' · emplacement ') + slot, swatch: cv[0].color };
     }
     return { line: 'filament', text: p.filament.type };
   }

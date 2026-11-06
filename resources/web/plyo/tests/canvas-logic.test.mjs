@@ -214,3 +214,26 @@ test('orcaConfirm : CC2 et machine sans emplacements : texte d’aujourd’hui ;
   assert.equal(C.orcaConfirm([{ t: 0, tray_id: 0 }]), '');
   assert.equal(C.orcaConfirm([readOnlyEntry]), 'Orca te demande de confirmer : choisis les mêmes emplacements dans sa fenêtre, puis valide.');
 });
+
+const u1Entry = { t: 0, canvas_id: 0, tray_id: 1, label: '2', type: 'PLA', color: '#000000', imposable: false, source: 'printer', system: 'u1', validated: false };
+
+test('U1 : lire sans imposer, jamais présenté comme imposé, aucun rangement proposé', () => {
+  const state = { ok: true, system: 'u1', source: 'printer', imposable: false, empty_blocks: true, start_plain: false, validated: false, canvases: [{ canvas_id: 0, connected: true, trays: [
+    { tray_id: 0, label: '1', type: 'PLA', color: '#AABBCC', status: 2 }, { tray_id: 1, label: '2', type: 'PETG-CF', color: '#112233', status: 2 }] }] };
+  assert.equal(C.trays(state)[1].label, 'Tête 2 · PETG-CF ' + C.colourName('#112233'));
+  assert.equal(C.sendRoute([u1Entry], state), 'orca');
+  assert.equal(C.isImposed([u1Entry]), false);
+  assert.equal(C.mapLabel([u1Entry], false), 'Tête 2 · PLA noir : à vérifier sur l’écran de la U1');
+  for (const text of [C.mapLabel([u1Entry], false), C.printNote([u1Entry]), C.orcaConfirm([u1Entry])]) {
+    assert.ok(text.length > 0);
+    assert.ok(!/impos/i.test(text), text);
+    assert.ok(!/rang/i.test(text), text);
+  }
+  assert.ok(C.printNote([u1Entry]).includes('Ces couleurs sont sur tes têtes'));
+  assert.ok(C.printNote([u1Entry]).includes('écran de la U1'));
+  assert.ok(C.orcaConfirm([u1Entry]).includes('écran de ta U1'));
+});
+
+test('U1 : l’état d’essai reste signalé à l’étape Imprimer', () => {
+  assert.ok(C.printNote([u1Entry]).includes('pas encore été essayé'));
+});
