@@ -335,23 +335,29 @@ nlohmann::json choose_filament(const std::string& type)
     const std::string name = best_filament(type);
     if (name.empty())
         return {{"ok", false}};
-    select_filament(name);
+    if (!select_filament(name))
+        return {{"ok", false}, {"cancelled", true}};
     return {{"ok", true}, {"name", name}};
 }
 
-void select_filament(const std::string& name)
+bool select_filament(const std::string& name)
 {
     Slic3r::PresetBundle& bundle = *wxGetApp().preset_bundle;
-    // Comme un choix dans la liste du plateau (Plater::priv::on_select_preset), pour le premier filament.
+    // L'onglet d'abord : Orca peut demander d'enregistrer un filament modifié, et l'utilisateur peut annuler. La liste du
+    // plateau ne change qu'ensuite, sinon elle et l'onglet ne diraient plus la même chose.
+    Slic3r::GUI::Tab* tab = wxGetApp().get_tab(Slic3r::Preset::TYPE_FILAMENT);
+    if (tab == nullptr || !tab->select_preset(name))
+        return false;
+    // Puis comme un choix dans la liste du plateau (Plater::priv::on_select_preset), pour le premier filament.
     bundle.set_filament_preset(0, name);
-    if (Slic3r::GUI::Tab* tab = wxGetApp().get_tab(Slic3r::Preset::TYPE_FILAMENT))
-        tab->select_preset(name);
     if (Slic3r::GUI::Plater* plater = wxGetApp().plater()) {
+        plater->sidebar().update_presets(Slic3r::Preset::TYPE_FILAMENT); // l'onglet l'a rafraîchie avec l'ancien nom
         plater->update_project_dirty_from_presets();
         plater->sidebar().update_dynamic_filament_list();
         plater->on_filament_change(0);
     }
     bundle.export_selections(*wxGetApp().app_config);
+    return true;
 }
 
 nlohmann::json start_print(bool export_file)

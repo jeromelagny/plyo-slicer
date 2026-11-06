@@ -89,12 +89,11 @@ void set_colour(size_t idx, const std::string& color)
     }
 }
 
-void set_preset(size_t idx, const std::string& name)
+// Faux seulement pour le premier filament, si l'utilisateur a annulé dans la fenêtre d'Orca.
+bool set_preset(size_t idx, const std::string& name)
 {
-    if (idx == 0) {
-        FirstSteps::select_filament(name); // le premier filament suit aussi l'onglet Filament
-        return;
-    }
+    if (idx == 0)
+        return FirstSteps::select_filament(name); // le premier filament suit aussi l'onglet Filament
     bundle().set_filament_preset(idx, name);
     if (Slic3r::GUI::Plater* plater = wxGetApp().plater()) {
         plater->update_project_dirty_from_presets();
@@ -102,6 +101,7 @@ void set_preset(size_t idx, const std::string& name)
         plater->on_filament_change(idx);
     }
     bundle().export_selections(*wxGetApp().app_config);
+    return true;
 }
 
 } // namespace
@@ -170,9 +170,14 @@ nlohmann::json apply(const nlohmann::json& entries)
             return {{"ok", false}, {"text", "Je n'ai pas trouvé de profil " + (type.empty() ? std::string("de filament") : type) + " pour cette imprimante. Choisis un autre emplacement ou un autre filament."}};
         presets.emplace_back(tv->get<size_t>(), name);
     }
+    // Le premier filament d'abord : c'est le seul choix que l'utilisateur peut annuler, et rien d'autre n'a alors changé.
+    for (const auto& [t, name] : presets)
+        if (t == 0 && !set_preset(t, name))
+            return {{"ok", false}, {"text", "Choix annulé : les emplacements et ton filament n'ont pas changé. Enregistre ou abandonne d'abord tes modifications du filament."}};
     nlohmann::json out = {{"ok", true}, {"presets", nlohmann::json::array()}};
     for (size_t i = 0; i < presets.size(); ++i) {
-        set_preset(presets[i].first, presets[i].second);
+        if (presets[i].first != 0)
+            set_preset(presets[i].first, presets[i].second);
         set_colour(presets[i].first, Json::str(entries[i], "color", 16));
         out["presets"].push_back({{"t", presets[i].first}, {"preset", presets[i].second}});
     }

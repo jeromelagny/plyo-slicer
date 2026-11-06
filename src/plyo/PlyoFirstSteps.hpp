@@ -26,8 +26,9 @@ nlohmann::json add_benchy();
 nlohmann::json choose_filament(const std::string& type);
 // Profil de filament compatible avec la machine en cours pour ce type exact (« PLA », « PLA-CF »…), le plus générique ; vide si aucun.
 std::string best_filament(const std::string& type);
-// Sélectionne ce profil de filament (le premier) dans Orca, comme un choix dans la liste du plateau.
-void select_filament(const std::string& name);
+// Sélectionne ce profil de filament (le premier) dans Orca, comme un choix dans la liste du plateau. Faux si l'utilisateur a
+// annulé dans la fenêtre d'Orca (filament modifié non enregistré) : rien n'a alors changé.
+bool select_filament(const std::string& name);
 
 // Bouton « Imprimer » du panneau : exactement comme « Imprimer la plaque » d'Orca (envoi à l'imprimante reliée, avec
 // la fenêtre de confirmation d'Orca), ou l'export du G-code si `export_file`. { ok, reason: "not_sliced" }
