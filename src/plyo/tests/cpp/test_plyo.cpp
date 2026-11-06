@@ -11,6 +11,7 @@
 #include "../../PlyoSlotsLogic.hpp"
 #include "../../PlyoCfsLogic.hpp"
 #include "../../PlyoIfsLogic.hpp"
+#include "../../PlyoU1Logic.hpp"
 #include "../../PlyoCanvasLogic.hpp"
 #include "../../PlyoLimitsLogic.hpp"
 #include "../../PlyoCatalogPolicy.hpp"
@@ -1748,4 +1749,72 @@ TEST_CASE("Slots::profile_refusal : l'envoi part avec le profil édité, il doit
     not_imposable.imposable = false;
     CHECK_FALSE(profile_refusal(plan, not_imposable, "192.168.1.5", "flashforge", "Flashforge AD5X").empty());
     CHECK_FALSE(profile_refusal(json(), good, "192.168.1.5", "flashforge", "Flashforge AD5X").empty());
+}
+
+// --- U1 (Snapmaker) : lecture sans imposer. Fixture tirée uniquement de SnapmakerPrinterAgent.cpp (tableaux parallèles de
+// print_task_config) : ce n'est PAS une réponse de machine, à remplacer par la capture de T17. ---
+namespace {
+const char* const U1_ORCA_SCHEMA = R"({"result":{"status":{"print_task_config":{
+  "filament_exist":[true,true,false,true],
+  "filament_type":["PLA","PETG","","pla"],
+  "filament_sub_type":["NONE","CF","","SILK"],
+  "filament_color_rgba":["AABBCCFF","112233FF","00000000","bad"],
+  "filament_vendor":["marque-a","marque-b","","marque-c"]}}}})";
+} // namespace
+
+TEST_CASE("U1::parse_query : têtes numérotées à partir de 1, couleur RRGGBBAA, type vide gardé vide")
+{
+    using namespace Plyo::U1Logic;
+    const json p = parse_query(U1_ORCA_SCHEMA);
+    REQUIRE(p["ok"].get<bool>());
+    REQUIRE(p["canvases"].size() == 1);
+    CHECK(p["canvases"][0]["canvas_id"] == 0);
+    CHECK(p["canvases"][0]["connected"] == true);
+    const json& t = p["canvases"][0]["trays"];
+    REQUIRE(t.size() == 4);
+    CHECK(t[0]["tray_id"] == 0);
+    CHECK(t[0]["label"] == "1");
+    CHECK(t[3]["label"] == "4");
+    CHECK(t[0]["type"] == "PLA");
+    CHECK(t[0]["color"] == "#AABBCC");
+    CHECK(t[0]["brand"] == "marque-a");
+    CHECK(t[0]["status"] == 2);
+    CHECK(t[1]["type"] == "PETG-CF");
+    CHECK(t[2]["status"] == 0);
+    CHECK(t[2]["type"] == "");
+    CHECK(t[3]["type"] == "PLA"); // en majuscules, sous-type ni CF ni GF ignoré
+    CHECK(t[3]["color"] == "");   // couleur d'une autre forme : pas devinée
+}
+
+TEST_CASE("U1::parse_query : type vide reste vide (pas de « PLA » par défaut), tableaux inégaux neutres, jamais d'exception")
+{
+    using namespace Plyo::U1Logic;
+    const auto parse = [](const json& cfg) { return parse_query(json{{"result", {{"status", {{"print_task_config", cfg}}}}}}.dump()); };
+    const json empty_type = parse({{"filament_exist", {true}}, {"filament_type", {""}}});
+    CHECK(empty_type["canvases"][0]["trays"][0]["type"] == "");
+    CHECK(empty_type["canvases"][0]["trays"][0]["status"] == 2);
+    const json uneven = parse({{"filament_exist", {true, true}}, {"filament_type", {"PLA"}}, {"filament_color_rgba", json::array()}, {"filament_sub_type", 3}, {"filament_vendor", {1, 2}}});
+    REQUIRE(uneven["canvases"][0]["trays"].size() == 2);
+    CHECK(uneven["canvases"][0]["trays"][0]["type"] == "PLA");
+    CHECK(uneven["canvases"][0]["trays"][1]["type"] == "");
+    CHECK(uneven["canvases"][0]["trays"][1]["color"] == "");
+    CHECK(uneven["canvases"][0]["trays"][0]["brand"] == "");
+    for (const char* bad : {"", "{", "[]", "null", "{\"result\":{}}", "{\"result\":{\"status\":{\"print_task_config\":3}}}"})
+        CHECK_FALSE(parse_query(bad)["ok"].get<bool>());
+    CHECK_FALSE(parse({{"filament_exist", json::array()}})["ok"].get<bool>());
+    CHECK_FALSE(parse({{"filament_exist", 3}})["ok"].get<bool>());
+    const json odd = parse({{"filament_exist", {1, "oui", true}}});
+    CHECK(odd["canvases"][0]["trays"][0]["status"] == 0); // autre chose qu'un booléen : vide
+    CHECK(odd["canvases"][0]["trays"][2]["status"] == 2);
+}
+
+TEST_CASE("U1::query_url : adresse du profil vers la requête d'Orca")
+{
+    using namespace Plyo::U1Logic;
+    const std::string path = "/printer/objects/query?print_task_config&filament_detect";
+    CHECK(query_url("192.168.1.8") == "http://192.168.1.8" + path);
+    CHECK(query_url("192.168.1.8:7125/") == "http://192.168.1.8:7125" + path);
+    CHECK(query_url("http://u1.local/") == "http://u1.local" + path);
+    CHECK(query_url("https://u1.local") == "https://u1.local" + path);
+    CHECK(query_url("") == "");
 }
