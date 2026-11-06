@@ -1213,3 +1213,83 @@ TEST_CASE("Slots::decide_map : emplacement vide refusé seulement avec empty_blo
     // La CC2 garde sa règle : son `status` n'est pas fiable.
     CHECK(SlotsLogic::decide_map(planned, slots_one_unit(1, "1A", 0, "", 0), {}).map.size() == 1);
 }
+
+// Choix du traducteur : le tableau du point 5 du plan. Comparaison exacte du modèle.
+namespace {
+Plyo::SlotsLogic::PrinterFacts facts(const std::string& model, const std::string& host_type, const std::string& agent = "", bool host = true, bool serial = false, bool code = false)
+{
+    Plyo::SlotsLogic::PrinterFacts f;
+    f.printer_model = model;
+    f.host_type     = host_type;
+    f.printer_agent = agent;
+    f.has_host      = host;
+    f.has_ff_serial = serial;
+    f.has_code      = code;
+    return f;
+}
+} // namespace
+
+TEST_CASE("Slots::detect : Centauri Carbon 2, règle existante")
+{
+    using namespace Plyo::SlotsLogic;
+    CHECK(detect(facts("Elegoo Centauri Carbon 2", "elegoolink")).kind == "canvas");
+    CHECK(detect(facts("Elegoo Centauri Carbon 2", "elegoolink")).imposable);
+    CHECK(detect(facts("Elegoo Centauri Carbon 2", "elegoolink", "", false)).kind == "none");
+    CHECK(detect(facts("Elegoo Centauri Carbon", "elegoolink")).kind == "none");
+}
+
+TEST_CASE("Slots::detect : CFS imposable seulement sur la liste blanche, comparaison exacte")
+{
+    using namespace Plyo::SlotsLogic;
+    for (const char* model : {"Creality K2", "Creality K2 Plus"}) {
+        const Detection d = detect(facts(model, "crealityprint", "crealityprint"));
+        CHECK(d.kind == "cfs");
+        CHECK(d.imposable);
+    }
+    for (const char* model : {"Creality K2 Pro", "Creality K2 SE", "Creality K1C", "Creality Hi", "Creality K1", ""}) {
+        const Detection d = detect(facts(model, "crealityprint", "crealityprint"));
+        CHECK(d.kind == "cfs");
+        CHECK_FALSE(d.imposable);
+    }
+    // printer_agent seul ne suffit pas : c'est host_type qui décide de la classe qui enverra.
+    CHECK(detect(facts("Creality K2", "octoprint", "crealityprint")).kind == "none");
+    CHECK(detect(facts("Creality K2", "crealityprint", "", false)).kind == "none");
+}
+
+TEST_CASE("Slots::detect : IFS imposable seulement sur une AD5X complète")
+{
+    using namespace Plyo::SlotsLogic;
+    const Detection full = detect(facts("Flashforge AD5X", "flashforge", "", true, true, true));
+    CHECK(full.kind == "ifs");
+    CHECK(full.imposable);
+    for (const auto& [serial, code] : std::vector<std::pair<bool, bool>>{{false, true}, {true, false}, {false, false}}) {
+        const Detection d = detect(facts("Flashforge AD5X", "flashforge", "", true, serial, code));
+        CHECK(d.kind == "none");
+        CHECK_FALSE(d.imposable);
+        CHECK(d.reason == "link_incomplete");
+    }
+    const Detection other = detect(facts("Flashforge Adventurer 5M Pro", "flashforge", "", true, true, true));
+    CHECK(other.kind == "ifs");
+    CHECK_FALSE(other.imposable);
+    CHECK(detect(facts("Flashforge Adventurer 5M Pro", "flashforge")).kind == "none");
+    CHECK(detect(facts("Flashforge Adventurer 5M Pro", "flashforge")).reason.empty());
+    // Le profil système AD5X est en octoprint : la détection lit le vrai host_type.
+    CHECK(detect(facts("Flashforge AD5X", "octoprint", "", true, true, true)).kind == "none");
+    CHECK(detect(facts("Flashforge AD5X", "flashforge", "", false, true, true)).kind == "none");
+}
+
+TEST_CASE("Slots::detect : U1 jamais imposable ; le reste sans traducteur")
+{
+    using namespace Plyo::SlotsLogic;
+    PrinterFacts u1 = facts("Snapmaker U1", "octoprint", "snapmaker");
+    CHECK(detect(u1).kind == "u1");
+    CHECK_FALSE(detect(u1).imposable);
+    u1.nozzles = {0.4, 0.6};
+    CHECK(detect(u1).kind == "u1");
+    CHECK_FALSE(detect(u1).imposable);
+    CHECK(detect(facts("Snapmaker U1", "octoprint", "moonraker")).kind == "none");
+    CHECK(detect(facts("Snapmaker U1", "octoprint", "snapmaker", false)).kind == "none");
+    CHECK(detect(facts("Voron 2.4", "moonraker", "moonraker")).kind == "none");
+    CHECK_FALSE(detect(facts("Voron 2.4", "moonraker", "moonraker")).imposable);
+    CHECK(detect(facts("", "")).kind == "none");
+}

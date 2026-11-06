@@ -38,6 +38,39 @@ struct DecideOptions
 MapDecision decide_map(const nlohmann::json& planned, const nlohmann::json& canvases, const std::vector<std::string>& presets,
                        const DecideOptions& opts = {});
 
+// --- Choix du traducteur ---
+
+// Décision ouverte 1 (Jérôme) : modèles sur lesquels la répartition peut être imposée. Réglage par défaut : K2 et K2 Plus
+// restent tous deux ; T13/T15 retirent tout modèle non essayé avant livraison. Comparaison exacte avec printer_model
+// (« Creality K2 SE » contient « Creality K2 »). Une seule liste à modifier.
+inline const std::vector<std::string>& cfs_imposable_models()
+{
+    static const std::vector<std::string> models = {"Creality K2", "Creality K2 Plus"};
+    return models;
+}
+inline const std::vector<std::string>& ifs_imposable_models()
+{
+    static const std::vector<std::string> models = {"Flashforge AD5X"};
+    return models;
+}
+
+struct PrinterFacts
+{
+    std::string         printer_model, host_type, printer_agent;
+    bool                has_host      = false;
+    bool                has_ff_serial = false;
+    bool                has_code      = false;
+    std::vector<double> nozzles; // diamètre par tête : ne change pas le traducteur, servira au réordonnancement U1 (T18)
+};
+struct Detection
+{
+    std::string kind = "none";    // canvas, cfs, ifs, u1, none
+    bool        imposable = false; // la répartition peut être imposée, sous réserve du contrôle vivant de chaque traducteur
+    std::string reason;           // link_incomplete : le panneau propose de relier à nouveau (décision ouverte 5)
+};
+// Une valeur inattendue baisse toujours vers « lire sans imposer » ou « sans traducteur », jamais l'inverse.
+Detection detect(const PrinterFacts& facts);
+
 // « #RRGGBB » en majuscules, ou vide si la valeur n'a pas cette forme.
 std::string hex_colour(const std::string& raw);
 

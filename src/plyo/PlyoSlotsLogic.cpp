@@ -135,4 +135,28 @@ MapDecision decide_map(const nlohmann::json& planned, const nlohmann::json& canv
     return out;
 }
 
+Detection detect(const PrinterFacts& f)
+{
+    Detection out;
+    if (!f.has_host)
+        return out;
+    const auto listed = [&](const std::vector<std::string>& list) { return std::find(list.begin(), list.end(), f.printer_model) != list.end(); };
+    if (f.printer_model.find("Centauri Carbon 2") != std::string::npos) {
+        out.kind      = "canvas";
+        out.imposable = true;
+    } else if (f.host_type == "crealityprint") {
+        out.kind      = "cfs";
+        out.imposable = listed(cfs_imposable_models());
+    } else if (f.host_type == "flashforge") {
+        const bool complete = f.has_ff_serial && f.has_code;
+        if (complete) {
+            out.kind      = "ifs";
+            out.imposable = listed(ifs_imposable_models());
+        } else if (listed(ifs_imposable_models()))
+            out.reason = "link_incomplete"; // sans série ou code, Flashforge::upload prend l'ancien chemin et ignore toute répartition
+    } else if (f.printer_model == "Snapmaker U1" && f.printer_agent == "snapmaker")
+        out.kind = "u1";
+    return out;
+}
+
 }} // namespace Plyo::SlotsLogic
