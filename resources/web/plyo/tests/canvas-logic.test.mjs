@@ -52,8 +52,8 @@ test('propose : une couleur va sur un emplacement du même type, puis de la coul
   assert.equal(two[0].tray_id, 1);
   assert.notEqual(two[1].tray_id, 1);
   assert.notEqual(two[1].tray_id, null);
-  // Un emplacement vu vide n'est proposé qu'en dernier recours.
-  assert.notEqual(C.propose([{ t: 0, color: '#FCEBD7', type: 'PLA' }], trays)[0].tray_id, 0);
+  // Un emplacement vu vide reste proposé (status non fiable, voir le design du 03/11 : « ne pas en déduire qu'il est inutilisable »).
+  assert.equal(C.propose([{ t: 0, color: '#FCEBD7', type: 'PLA' }], trays)[0].tray_id, 0);
   // Plus de couleurs que d'emplacements : les dernières restent sans emplacement.
   const five = C.propose([0, 1, 2, 3, 4].map(t => ({ t, color: '#808080' })), trays);
   assert.equal(five.filter(m => m.tray_id === null).length, 1);
@@ -97,4 +97,18 @@ test('mapLabel : rappel de l’étape Imprimer', () => {
   assert.equal(C.mapLabel([{ t: 0, tray_id: 3, type: 'PLA', color: '#7C4C00' }, { t: 1, tray_id: 2, type: 'ASA', color: '#898989' }]),
     'Couleur 1 → emplacement 4 · PLA brun, couleur 2 → emplacement 3 · ASA gris');
   assert.equal(C.mapLabel(null), '');
+});
+
+test('propose : un emplacement vu vide n’est pas écarté (status non fiable sur la CC2), il ne départage qu’à couleur égale', () => {
+  const list = [
+    { canvas_id: 0, tray_id: 0, type: 'PLA', color: '#101010', empty: false },
+    { canvas_id: 0, tray_id: 1, type: 'PLA', color: '#F5F5F5', empty: true },
+    { canvas_id: 0, tray_id: 2, type: 'PETG', color: '#D02020', empty: false }
+  ];
+  assert.equal(C.propose([{ t: 0, color: '#FFFFFF', type: 'PLA' }], list)[0].tray_id, 1, 'le PLA blanc, même vu vide');
+  const two = C.propose([{ t: 0, color: '#FFFFFF', type: 'PLA' }, { t: 1, color: '#000000', type: 'PLA' }], list);
+  assert.deepEqual(two.map((m) => m.tray_id), [1, 0], 'chaque couleur sur la bonne');
+  const tie = [{ canvas_id: 0, tray_id: 0, type: 'PLA', color: '#FFFFFF', empty: true }, { canvas_id: 0, tray_id: 1, type: 'PLA', color: '#FFFFFF', empty: false }];
+  assert.equal(C.propose([{ t: 0, color: '#FFFFFF', type: 'PLA' }], tie)[0].tray_id, 1, 'à égalité : celui vu chargé');
+  assert.equal(C.propose([{ t: 0, color: '', type: '' }], tie)[0].tray_id, 1, 'couleur inconnue : celui vu chargé');
 });

@@ -901,7 +901,7 @@
     // Déjà choisi pour ces couleurs : on le reprend ; sinon, proposition (une couleur : le type du filament du projet).
     if (Array.isArray(chosen) && chosen.length === colours.length && colours.every(function (c) { return chosen.some(function (e) { return e.t === c.t; }); }))
       return chosen.map(function (e) { return { t: e.t, color: (colours.filter(function (c) { return c.t === e.t; })[0] || {}).color, canvas_id: e.canvas_id, tray_id: e.tray_id }; });
-    var wanted = colours.length === 1 ? [{ t: colours[0].t, color: colours[0].color, type: conv.project.filament && !conv.project.filament.proposed ? conv.project.filament.type : '' }] : colours;
+    var wanted = colours.length === 1 ? [{ t: colours[0].t, color: colours[0].color, type: conv.project.filament && !conv.project.filament.proposed ? conv.project.filament.type : colours[0].type }] : colours;
     return PlyoCanvas.propose(wanted, trays);
   }
   function canvasCtx(step) {
@@ -912,7 +912,7 @@
       var trays = PlyoCanvas.trays(canvasUI.state), m = canvasUI.mapping || [];
       out.complete = PlyoCanvas.complete(m);
       var first = m[0], tray = first && trays.filter(function (t) { return t.tray_id === first.tray_id && t.canvas_id === first.canvas_id; })[0];
-      if (mode === 'single' && tray) out.proposal = { label: tray.label };
+      if (mode === 'single' && tray) out.proposal = { label: tray.label + (tray.empty ? ' · vide ?' : '') };
     }
     return out;
   }
