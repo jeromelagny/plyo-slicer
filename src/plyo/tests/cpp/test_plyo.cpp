@@ -12,6 +12,7 @@
 #include "../../PlyoLimitsLogic.hpp"
 #include "../../PlyoCatalogPolicy.hpp"
 #include "../../PlyoProfilesLogic.hpp"
+#include "../../PlyoCalibrationLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -973,4 +974,49 @@ TEST_CASE("Project: les réponses d'intention sont gardées, et rien d'autre")
     CHECK(p["intent"]["applied"] == true);
     CHECK(p.dump().find("SECRET") == std::string::npos);
     CHECK_FALSE(sanitize({{"intent", {{"use", std::string(300, 'x')}}}})["intent"].contains("use"));
+}
+
+// --- Calibration : la pièce de l'utilisateur n'est jamais écrasée ---
+
+TEST_CASE("Calibration: capture_step garde la capture tant qu'il reste un objet du test")
+{
+    using namespace Plyo::CalibrationLogic;
+    const std::vector<size_t> test{10, 11, 12};
+    CHECK(capture_step(false, {1, 2}, {}) == CaptureStep::First);
+    CHECK(capture_step(false, {}, {}) == CaptureStep::First);
+    CHECK(capture_step(true, test, test) == CaptureStep::Keep);
+    CHECK(capture_step(true, {}, test) == CaptureStep::Keep);
+    // Le cas du rapport : deux carrés supprimés sur le plateau de test, puis passe 2 du débit.
+    CHECK(capture_step(true, {10}, test) == CaptureStep::Keep);
+    // Plus aucun objet du test (autre projet ouvert, ou plateau de test coupé) : capture en plus, l'ancienne reste.
+    CHECK(capture_step(true, {20, 21}, test) == CaptureStep::Replace);
+}
+
+TEST_CASE("Calibration: free_capture_path ne rend jamais un fichier existant")
+{
+    using namespace Plyo::CalibrationLogic;
+    const fs::path dir = fresh_dir();
+    const fs::path first = free_capture_path(dir);
+    CHECK(first.filename().string() == "avant-calibration-1.3mf");
+    write_raw(first, "ma piece");
+    const fs::path second = free_capture_path(dir);
+    CHECK(second.filename().string() == "avant-calibration-2.3mf");
+    write_raw(second, "plateau de test");
+    write_raw(dir / "avant-calibration-3.3mf", "laissé par une session précédente");
+    CHECK(free_capture_path(dir).filename().string() == "avant-calibration-4.3mf");
+    boost::nowide::ifstream in(first.string());
+    std::string kept;
+    std::getline(in, kept);
+    CHECK(kept == "ma piece");
+    fs::remove(first);
+    CHECK(free_capture_path(dir).filename().string() == "avant-calibration-1.3mf"); // une place libre resert
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Calibration: kept_note signale les pièces gardées sur le disque")
+{
+    using namespace Plyo::CalibrationLogic;
+    CHECK(kept_note({}).empty());
+    const std::string note = kept_note({"/plyo/avant-calibration-1.3mf"});
+    CHECK(note.find("/plyo/avant-calibration-1.3mf") != std::string::npos);
 }

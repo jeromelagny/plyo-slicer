@@ -15,6 +15,7 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPhoneDialog.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibration.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibration.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibrationLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCommands.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCommands.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoFirstSteps.cpp

@@ -1,4 +1,5 @@
 #include "PlyoCalibration.hpp"
+#include "PlyoCalibrationLogic.hpp"
 #include "PlyoStore.hpp"
 #include "PlyoSanitize.hpp"
 #include "PlyoJson.hpp"
@@ -49,6 +50,7 @@ struct Snapshot
 {
     bool                     has_project = false;
     std::string              project_file; // fichier du projet de l'utilisateur ("" s'il n'était pas enregistré)
+    std::string              capture_file; // copie 3MF du plateau, dans plyo_dir() ("" si le plateau était vide)
     bool                     project_dirty = false;
     std::string              printer, print;
     std::vector<std::string> filaments;
@@ -57,6 +59,8 @@ struct Snapshot
 
 std::optional<Snapshot> s_before;
 std::vector<size_t>     s_test_objects; // objets du plateau de test (pour savoir si l'utilisateur a ouvert autre chose)
+std::vector<std::string> s_kept_files;  // captures remplacées par une plus récente : jamais effacées, signalées par restore()
+std::string              s_restored_file; // capture déjà remise sur le plateau : retirée du disque à la capture suivante
 
 std::vector<size_t> object_ids()
 {
@@ -93,13 +97,12 @@ std::string origin_filament(const std::string& name)
 std::string calibrated_name() { return origin_filament(filament_name()) + " — " + printer_name() + CALIBRATED_SUFFIX; }
 
 // Capture puis projet vide, sans fenêtre : Orca n'a plus de projet ni de préréglage modifié à signaler.
-// Un plateau qui n'est plus celui du test (l'utilisateur a ouvert autre chose entre-temps) est capturé à son tour.
+// Un plateau sans aucun objet du test (l'utilisateur a ouvert autre chose entre-temps) est capturé à son tour, dans un
+// nouveau fichier : celui de la capture d'avant reste sur le disque.
 // Renvoie false si le projet n'a pas pu être gardé : rien n'est alors effacé.
 bool capture()
 {
-    if (s_before && !plater()->model().objects.empty() && object_ids() != s_test_objects)
-        s_before.reset();
-    if (!s_before) {
+    if (CalibrationLogic::capture_step(s_before.has_value(), object_ids(), s_test_objects) != CalibrationLogic::CaptureStep::Keep) {
         Snapshot snap;
         snap.printer         = bundle().printers.get_selected_preset_name();
         snap.print           = bundle().prints.get_selected_preset_name();
@@ -110,13 +113,23 @@ bool capture()
         if (!plater()->model().objects.empty()) {
             boost::system::error_code ec;
             fs::create_directories(plyo_dir(), ec);
-            if (!plater()->export_3mf_copy(plyo_dir() / "avant-calibration.3mf"))
+            const fs::path file = CalibrationLogic::free_capture_path(plyo_dir());
+            if (file.empty() || !plater()->export_3mf_copy(file))
                 return false;
+            snap.capture_file  = file.string();
             snap.has_project   = true;
             snap.project_file  = plater()->get_project_filename(".3mf").ToUTF8().data();
             snap.project_dirty = plater()->is_project_dirty();
         }
+        if (s_before && !s_before->capture_file.empty())
+            s_kept_files.push_back(s_before->capture_file);
         s_before = std::move(snap);
+        // La pièce de la capture précédente est revenue sur le plateau depuis (et vient d'être recapturée si besoin).
+        if (!s_restored_file.empty()) {
+            boost::system::error_code ec;
+            fs::remove(s_restored_file, ec);
+            s_restored_file.clear();
+        }
     }
     discard_unsaved_changes();
     plater()->new_project(true, true);
@@ -475,7 +488,7 @@ nlohmann::json restore()
     discard_unsaved_changes();
     plater()->new_project(true, true);
     if (snap.has_project) {
-        plater()->load_project(wxString::FromUTF8((plyo_dir() / "avant-calibration.3mf").string()), "<loadall>");
+        plater()->load_project(wxString::FromUTF8(snap.capture_file), "<loadall>");
         if (plater()->model().objects.empty())
             return {{"ok", false}, {"text", "Ta pièce n'a pas pu être rechargée. Réessaie « Remettre ma pièce »."}};
         // Le projet redevient celui de l'utilisateur (pas la copie de Plyo), pour que l'enregistrer écrive au bon endroit.
@@ -484,6 +497,9 @@ nlohmann::json restore()
             plater()->take_snapshot("Pièce remise par Plyo"); // modifications non enregistrées : le projet reste à enregistrer
     }
     s_before.reset();
+    s_restored_file = snap.capture_file;
+    const std::string kept = CalibrationLogic::kept_note(s_kept_files);
+    s_kept_files.clear();
     s_active = nullptr;
     s_test_objects.clear();
 
@@ -501,7 +517,7 @@ nlohmann::json restore()
         if (Slic3r::GUI::Tab* tab = Slic3r::GUI::wxGetApp().get_tab(type))
             tab->load_config(*config);
     SettingsBridge::clear_undo();
-    return {{"ok", true}, {"text", snap.has_project ? "Ta pièce et tes réglages sont de retour." : "Tes réglages sont de retour."}};
+    return {{"ok", true}, {"text", (snap.has_project ? "Ta pièce et tes réglages sont de retour." : "Tes réglages sont de retour.") + kept}};
 }
 
 nlohmann::json history_for_current()
