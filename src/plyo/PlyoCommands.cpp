@@ -1,5 +1,6 @@
 #include "PlyoCommands.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoPlateActions.hpp"
 #include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
@@ -460,6 +461,7 @@ nlohmann::json run(const nlohmann::json& commands)
 
     nlohmann::json done = nlohmann::json::array();
     std::string    failure;
+    bool           orca_failed = false; // ordre interrompu par une erreur d'Orca : il a pu laisser un état partiel
     long long      undo_token = -1;
     const size_t   first_async = ordered.size() - background.size() - slicing.size();
     // Après les ordres immédiats : si des pièces se chevauchent, « Organiser » d'Orca les regroupe au plus près
@@ -496,11 +498,19 @@ nlohmann::json run(const nlohmann::json& commands)
             } catch (const std::exception& e) {
                 BOOST_LOG_TRIVIAL(error) << "Plyo: ordre " << Json::str(c, "op") << " en échec : " << e.what();
                 failure = "Orca n'a pas pu exécuter cet ordre.";
+                orca_failed = true;
                 break;
             }
         }
         if (first_async == ordered.size())
             rearrange_if_needed();
+    }
+    // Tout ou rien : un ordre refusé défait ceux du lot déjà exécutés (l'instantané ci-dessus couvre tout le lot). Si Orca
+    // ne peut pas annuler maintenant, le lot reste signalé tel quel, avec son bouton « Annuler ».
+    if (!failure.empty() && (!done.empty() || orca_failed) && Json::boolean(PlateActions::undo(undo_token), "ok", false)) {
+        done    = nlohmann::json::array();
+        skipped = nlohmann::json::array();
+        failure += " Rien n'a été modifié sur le plateau.";
     }
     canvas().set_as_dirty();
     nlohmann::json result{{"ok", failure.empty()}, {"done", done}, {"text", failure}, {"skipped", skipped}};
