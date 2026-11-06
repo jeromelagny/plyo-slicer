@@ -18,6 +18,7 @@
 #include <chrono>
 #include <exception>
 #include <future>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -30,6 +31,8 @@ using namespace std::chrono_literals;
 namespace {
 
 std::atomic<bool> s_running{false};
+std::mutex                         s_serials_mutex;
+std::map<std::string, std::string> s_serials; // adresse → numéro de série, en mémoire seulement
 
 // Adresse de l'ordinateur sur le réseau de la maison. « Connecter » un socket UDP ne fait que choisir la route :
 // aucun paquet ne part vers l'adresse publique utilisée comme repère.
@@ -187,6 +190,7 @@ std::vector<Printer> ask_flashforge()
         p.brand     = "Flashforge";
         p.host_type = "flashforge";
         p.host      = f.ip_address;
+        p.serial    = valid_serial(f.serial_number) ? f.serial_number : std::string();
         p.priority  = 3;
         found.push_back(p);
     }
@@ -262,6 +266,13 @@ bool start(std::function<void(std::vector<Printer>)> done)
             for (Printer& p : job.get())
                 all.push_back(std::move(p));
         std::vector<Printer> printers = merge(std::move(all));
+        {
+            std::lock_guard<std::mutex> lock(s_serials_mutex);
+            s_serials.clear();
+            for (const Printer& p : printers)
+                if (!p.serial.empty())
+                    s_serials[p.ip] = p.serial;
+        }
         BOOST_LOG_TRIVIAL(info) << "Plyo: recherche d'imprimantes terminée, " << printers.size() << " trouvée(s)";
         Slic3r::GUI::wxGetApp().CallAfter([done, printers]() mutable {
             s_running = false;
@@ -269,6 +280,13 @@ bool start(std::function<void(std::vector<Printer>)> done)
         });
     }).detach();
     return true;
+}
+
+std::string known_serial(const std::string& ip)
+{
+    std::lock_guard<std::mutex> lock(s_serials_mutex);
+    const auto                  it = s_serials.find(ip);
+    return it == s_serials.end() ? std::string() : it->second;
 }
 
 }} // namespace Plyo::Discovery

@@ -159,4 +159,10 @@ Detection detect(const PrinterFacts& f)
     return out;
 }
 
+bool link_needs_code(const std::string& host_type, const std::string& printer_model, bool has_serial, bool has_code)
+{
+    const auto& list = ifs_imposable_models();
+    return host_type == "flashforge" && has_serial && !has_code && std::find(list.begin(), list.end(), printer_model) != list.end();
+}
+
 }} // namespace Plyo::SlotsLogic

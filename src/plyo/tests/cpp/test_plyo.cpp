@@ -1579,3 +1579,45 @@ TEST_CASE("Ifs::same_material : majuscules, seulement lettres et chiffres")
     CHECK_FALSE(same_material("", ""));
     CHECK_FALSE(same_material("---", "---"));
 }
+
+// --- AD5X : liaison complète. La série reste côté C++ : jamais dans ce qui part au panneau. ---
+TEST_CASE("Discovery : valid_serial, seulement lettres et chiffres, 64 au plus")
+{
+    using namespace Plyo::Discovery;
+    CHECK(valid_serial("SNADVA5MX1234"));
+    CHECK(valid_serial(std::string(64, 'a')));
+    CHECK_FALSE(valid_serial(""));
+    CHECK_FALSE(valid_serial(std::string(65, 'a')));
+    CHECK_FALSE(valid_serial("abc 123"));
+    CHECK_FALSE(valid_serial("abc\";rm"));
+    CHECK_FALSE(valid_serial("é"));
+}
+
+TEST_CASE("Discovery : la série survit à la fusion mais ne part jamais au panneau")
+{
+    using namespace Plyo::Discovery;
+    Printer ff;
+    ff.ip = "192.168.1.9"; ff.name = "AD5X"; ff.brand = "Flashforge"; ff.host_type = "flashforge"; ff.host = "192.168.1.9"; ff.priority = 3;
+    ff.serial = "SERIALSECRET1";
+    Printer weak = ff;
+    weak.priority = 1; weak.serial = ""; weak.host_type = "moonraker";
+    CHECK(merge({weak, ff}).front().serial == "SERIALSECRET1");
+    CHECK(merge({ff, weak}).front().serial == "SERIALSECRET1");
+    Printer strong = ff;
+    strong.priority = 5; strong.serial = "";
+    CHECK(merge({ff, strong}).front().serial == "SERIALSECRET1");
+    CHECK(merge({strong, ff}).front().serial == "SERIALSECRET1");
+    const std::string sent = to_json({ff}).dump();
+    CHECK(sent.find("SERIALSECRET1") == std::string::npos);
+    CHECK(sent.find("serial") == std::string::npos);
+}
+
+TEST_CASE("Slots::link_needs_code : une AD5X avec série demande son code avant le test, sans changer les autres machines")
+{
+    using namespace Plyo::SlotsLogic;
+    CHECK(link_needs_code("flashforge", "Flashforge AD5X", true, false));
+    CHECK_FALSE(link_needs_code("flashforge", "Flashforge AD5X", true, true));
+    CHECK_FALSE(link_needs_code("flashforge", "Flashforge AD5X", false, false)); // sans série, pas de chemin local : link_incomplete ensuite
+    CHECK_FALSE(link_needs_code("flashforge", "Flashforge Adventurer 5M Pro", true, false));
+    CHECK_FALSE(link_needs_code("elegoolink", "Flashforge AD5X", true, false));
+}

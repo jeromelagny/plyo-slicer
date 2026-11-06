@@ -217,6 +217,13 @@ std::optional<Printer> from_elegoo_cc2(const std::string& ip, const std::string&
     return p;
 }
 
+bool valid_serial(const std::string& serial)
+{
+    if (serial.empty() || serial.size() > 64)
+        return false;
+    return std::all_of(serial.begin(), serial.end(), [](unsigned char c) { return c < 0x80 && std::isalnum(c) != 0; });
+}
+
 std::vector<Printer> merge(std::vector<Printer> found)
 {
     std::map<std::string, Printer> by_ip;
@@ -225,15 +232,18 @@ std::vector<Printer> merge(std::vector<Printer> found)
             continue;
         auto it = by_ip.find(p.ip);
         if (it == by_ip.end() || p.priority > it->second.priority) {
-            // La source plus précise garde un nom ou une marque que seule l'autre connaissait.
+            // La source plus précise garde un nom, une marque ou une série que seule l'autre connaissait.
             if (it != by_ip.end()) {
                 if (p.name.empty())
                     p.name = it->second.name;
                 if (p.brand.empty())
                     p.brand = it->second.brand;
+                if (p.serial.empty())
+                    p.serial = it->second.serial;
             }
             by_ip[p.ip] = std::move(p);
-        }
+        } else if (it->second.serial.empty())
+            it->second.serial = p.serial;
     }
     std::vector<Printer> out;
     for (auto& [ip, p] : by_ip)

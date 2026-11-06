@@ -21,6 +21,7 @@ struct Printer
     std::string host_type;
     std::string host;
     int         priority = 0; // en cas de doublon (même IP), la source la plus précise gagne
+    std::string serial = {};  // Flashforge : numéro de série, gardé côté C++ (ni panneau, ni journal)
 };
 
 // Adresse IPv4 privée de la maison (10.x, 172.16-31.x, 192.168.x) : seuls ces réseaux sont parcourus.
@@ -52,6 +53,7 @@ bool profile_matches(const std::string& printer_model, const std::string& hint);
 // Types de connexion que le panneau peut demander (liste blanche), et forme d'une adresse « ip » ou « ip:port ».
 bool allowed_host_type(const std::string& host_type);
 bool valid_host(const std::string& host);
+bool valid_serial(const std::string& serial);
 
 // Fusionne les résultats de toutes les sources : une entrée par IP (la plus prioritaire), triées par nom.
 std::vector<Printer> merge(std::vector<Printer> found);

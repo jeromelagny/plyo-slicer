@@ -1,9 +1,13 @@
 #pragma once
 
+#include "PlyoSlotsLogic.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <functional>
 #include <string>
+
+namespace Slic3r { class DynamicPrintConfig; }
 
 // Relier une imprimante trouvée sur le réseau local au profil d'imprimante d'Orca (la connexion est rangée dans
 // le profil : print_host, host_type). Le panneau envoie l'imprimante choisie ({ip, name, brand, host_type, host}) ;
@@ -30,6 +34,9 @@ nlohmann::json save(const nlohmann::json& printer, const std::string& webui, con
 // Préremplit la connexion puis ouvre la fenêtre « Connexion » d'Orca (clé ou code à saisir) : l'utilisateur
 // enregistre lui-même par OK. Annulée, la connexion d'avant est remise. { ok, saved }
 nlohmann::json open_dialog(const nlohmann::json& printer);
+
+// Ce que le choix du traducteur doit savoir d'un profil d'imprimante (voir SlotsLogic::detect).
+SlotsLogic::PrinterFacts facts_of(const Slic3r::DynamicPrintConfig& config);
 
 // Ouvre l'assistant de configuration d'Orca sur le choix des imprimantes (profil absent).
 void open_printer_wizard();

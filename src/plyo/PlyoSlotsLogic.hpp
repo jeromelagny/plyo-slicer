@@ -78,6 +78,9 @@ struct Detection
 };
 // Une valeur inattendue baisse toujours vers « lire sans imposer » ou « sans traducteur », jamais l'inverse.
 Detection detect(const PrinterFacts& facts);
+// Au moment de relier : sans code, Flashforge::test reste sur l'ancien chemin TCP et réussit quand même, et l'imprimante ne pourrait
+// ensuite recevoir aucune répartition. Seulement les modèles imposables : les autres Flashforge se relient comme avant.
+bool link_needs_code(const std::string& host_type, const std::string& printer_model, bool has_serial, bool has_code);
 
 // « #RRGGBB » en majuscules, ou vide si la valeur n'a pas cette forme.
 std::string hex_colour(const std::string& raw);
