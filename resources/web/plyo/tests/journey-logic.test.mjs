@@ -273,3 +273,8 @@ test('Résultat : une fois réussi, la suite devient l’action principale', () 
   assert.equal(J.primaryAction('resultat', { success: true }).kind, 'newPart');
   assert.ok(J.prompt('resultat', { success: true }).includes('réussi'));
 });
+
+test('suggestions : celles qui partent à l’IA le disent ; « changer » le filament n’offre pas de découper en même temps', () => {
+  for (const key of ['imprimer', 'resultat']) for (const s of J.suggestionsFor(key)) if (s.kind === 'ask') assert.ok(/jauge/.test(s.label), s.label);
+  assert.equal(J.primaryAction('preparer', { editing: true }).kind, 'none');
+});

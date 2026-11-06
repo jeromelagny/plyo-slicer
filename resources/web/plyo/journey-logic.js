@@ -45,6 +45,8 @@
       if (cv.mode === 'multi') return { label: 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
       return { label: '', kind: 'none', enabled: false };
     }
+    // « changer » le filament en cours : on répond avec les choix, ou « Garder ce filament ».
+    if (c.editing) return { label: '', kind: 'none', enabled: false };
     // Fiche remplie mais plateau vide (relance d'Orca, pièce supprimée) : remettre la pièce passe avant tout.
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return { label: 'Choisir un fichier', kind: 'importPart', enabled: true };
     var slice = c.slicing ? { label: 'Je découpe…', kind: 'slice', enabled: false } : { label: 'Découper', kind: 'slice', enabled: true };
@@ -77,6 +79,7 @@
   function prompt(step, ctx) {
     var c = ctx || {};
     if (c.canvas) return canvasPrompt(c);
+    if (c.editing) return 'Dis-moi quel filament est sur la bobine';
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return 'Ta pièce n’est plus sur le plateau';
     switch (step) {
       case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : 'Choisis ton imprimante';
@@ -143,9 +146,9 @@
   function suggestionsFor(step) {
     switch (step) {
       case 'preparer': return [{ label: 'Vérifier ma plaque', kind: 'open', value: 'check' }, { label: 'Voir mes réglages actuels', kind: 'open', value: 'values' }];
-      case 'imprimer': return [{ label: 'Que vérifier avant de lancer ?', kind: 'ask', value: 'Que dois-je vérifier sur mon imprimante juste avant de lancer l’impression ?' },
+      case 'imprimer': return [{ label: 'Que vérifier avant de lancer ? (utilise ta jauge)', kind: 'ask', value: 'Que dois-je vérifier sur mon imprimante juste avant de lancer l’impression ?' },
         { label: 'Températures de ma bobine', kind: 'open', value: 'limits' }];
-      case 'resultat': return [{ label: 'Mes pièces', kind: 'open', value: 'parts' }, { label: 'Ma pièce a un défaut', kind: 'ask', value: 'Ma pièce a un défaut, peux-tu m’aider ?' }];
+      case 'resultat': return [{ label: 'Mes pièces', kind: 'open', value: 'parts' }, { label: 'Ma pièce a un défaut (utilise ta jauge)', kind: 'ask', value: 'Ma pièce a un défaut, peux-tu m’aider ?' }];
       default: return [];
     }
   }

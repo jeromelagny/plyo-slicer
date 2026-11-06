@@ -304,3 +304,12 @@ test('textes : pas d’accents graves bruts à l’installation, pas de numéro 
   assert.ok(!page.includes('Ta session a expiré.\''), 'phrase complète');
   assert.ok(read('project-card.js').includes('Je ne lis pas ton Canvas'));
 });
+
+test('comportements : brouillon gardé, demande remise si la jauge est pleine, message de passage visible, carte refermée', () => {
+  const page = read('index.html');
+  assert.ok(/function clearNoteIfSent\(note\) \{ if \(noteInput\.value\.trim\(\) === note\)/.test(page));
+  assert.ok(/code === 'insufficient_credits' && !noteInput\.value/.test(page));
+  assert.ok(page.indexOf("setTourStep('print'); // d'abord") < page.indexOf('Pas de risque détecté : on passe'), 'message après le changement d’étape');
+  assert.ok(/skip: function \(\) \{ \$\('preflight-slot'\)\.textContent = ''/.test(page));
+  assert.ok(read('project-card.js').includes('Garder ce filament'));
+});

@@ -159,6 +159,7 @@
       if (fi) {
         body.appendChild(ui.el('p', 'muted small', 'J’ai mis les températures conseillées pour ce filament. Si l’étiquette de ta bobine indique autre chose, entre-les :'));
         body.appendChild(ui.button('Ma bobine indique d’autres températures', h.toggleSpool, 'link'));
+        if (ctx.editing === 'filament') body.appendChild(ui.button('Garder ce filament', h.cancelEdit, 'link'));
       }
     } else {
       body.appendChild(ui.el('p', 'muted small', 'Glisse ton fichier STL ou 3MF ici, ou choisis-le sur ton ordinateur. Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));

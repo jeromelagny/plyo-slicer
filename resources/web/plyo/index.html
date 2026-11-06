@@ -1046,7 +1046,7 @@
   // Questions reposées après la découpe : tant qu'on y répond, la plaque compte comme à redécouper.
   function plateSliced() { return !!(tourSignals && tourSignals.sliced) && !(conv && conv.project.intent && conv.project.intent.reask); }
   function journeyCtx() {
-    var p = conv && conv.project || {}, ctx = { sliced: plateSliced(), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, checked: plateChecked, success: !!p.success, slicing: slicing.conv === conv && !!conv,
+    var p = conv && conv.project || {}, ctx = { sliced: plateSliced(), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, editing: projectUI.editing === 'filament', checked: plateChecked, success: !!p.success, slicing: slicing.conv === conv && !!conv,
       plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
     else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
@@ -1109,7 +1109,7 @@
       noteLine('Je démarre l’impression : l’imprimante choisit les emplacements.', '', 'info', 'guide');
       window.orca.postMessage({ type: 'canvas_start_plain', preset: conv.project.printer.preset });
     },
-    skip: function () { setTourStep('print'); },
+    skip: function () { $('preflight-slot').textContent = ''; preflightFix = null; plateChecked = 'ignored'; setTourStep('print'); },
     exportFile: function () { runAction('export'); },
     started: function () { rememberHabit(); delete conv.project.success; setTourStep('after'); },
     photo: function () { pickFiles(); },
@@ -1416,6 +1416,7 @@
       if (old) { conv.project.part = { name: old.label }; projectChanged(); }
     },
     expand: function () { journeyUI.ficheOpen = true; renderProject(); },
+    cancelEdit: function () { projectUI.editing = null; renderProject(); },
     toggleOthers: function () { projectUI.showOthers = !projectUI.showOthers; renderProject(); },
     openMachines: function () { openMachinesDrawer(); },
     toggleList: function () { projectUI.showList = !projectUI.showList; renderProject(); },
@@ -3166,8 +3167,8 @@
     renderPreflight(manual || fresh.length ? risks : [], data);
     // Découpe faite et aucun risque : on passe à l'impression sans demander.
     if (!manual && currentTourStep() === 'slice' && data && data.sliced && data.objects && data.objects.length && PlyoJourney.afterPreflight(openRisks) === 'advance') {
+      setTourStep('print'); // d'abord : le changement d'étape efface les messages de l'étape
       noteLine('Pas de risque détecté : on passe à l’impression.', 'ok', 'check', 'guide');
-      setTourStep('print');
     } else renderProject();
     // La carte doit se voir, surtout dans un panneau bas : son haut est amené dans la zone visible.
     if (risks.length && (manual || fresh.length) && viewUI.tab === 'guide' && $('preflight-slot').firstChild) scrollToAnswerTop($('preflight-slot').firstChild); // le badge « Voir la suite » invite à défiler jusqu'au bouton
@@ -3430,6 +3431,8 @@
     return entry;
   }
 
+  // Une suggestion envoyée ne doit pas effacer le brouillon : le champ n'est vidé que si c'est lui qui part.
+  function clearNoteIfSent(note) { if (noteInput.value.trim() === note) { noteInput.value = ''; growNote(); } }
   // `opts` : { photos (du téléphone), fromPhone, shown (la demande est déjà dans le fil) }.
   function send(text, opts) {
     opts = opts || {};
@@ -3446,11 +3449,11 @@
     var ficheKey = !opts.photos && !photos.length ? FS.matchSettingQuestion(note, window.PLYO_FICHES) : null;
     if (ficheKey) {
       if (!opts.shown) addMe(note, [], false);
-      noteInput.value = ''; growNote();
+      clearNoteIfSent(note);
       explain(ficheKey);
       return;
     }
-    if (!opts.photos) { attachments = []; renderAttachments(); noteInput.value = ''; growNote(); }
+    if (!opts.photos) { attachments = []; renderAttachments(); clearNoteIfSent(note); }
     if (!opts.shown) addMe(note, photos, opts.fromPhone);
     var again = { photos: photos, fromPhone: opts.fromPhone, shown: true };
     if (requireLogin('Pour te répondre, j’envoie ta demande à l’IA.', function () { send(note, again); })) return;
@@ -3499,6 +3502,7 @@
     function fail(code, data) {
       finish();
       if (code === 'cancel') { noteLine('Demande annulée.', '', 'info'); return; }
+      if (code === 'insufficient_credits' && !noteInput.value && !photos.length) { noteInput.value = note; growNote(); } // la demande reste à portée pour plus tard
       if (code === 'unauthorized') { logout(); requireLogin('Ta session a expiré : reconnecte-toi, ta demande repartira. Pas de mot de passe, tu reçois un code par e-mail.', function () { send(note, { photos: photos, shown: true }); }, true); return; }
       showError(code, function () { ask(note, photos); }, data);
     }
