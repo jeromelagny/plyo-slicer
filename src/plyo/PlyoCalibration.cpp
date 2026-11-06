@@ -165,14 +165,20 @@ std::string number(double v, int decimals)
 
 nlohmann::json section(int index, const std::string& label, double value) { return {{"index", index}, {"label", label}, {"value", value}}; }
 
-// Tour de température : un bloc tous les 5 °C, le plus chaud en bas (Plater::calib_temp).
-nlohmann::json temperature_test()
+// La tour qui convient au filament en cours (ou le refus), à partir de son type et des limites de son profil.
+CalibrationLogic::TempTower temperature_tower_now()
 {
-    static const std::map<std::string, std::pair<int, int>> ranges{{"PLA", {230, 190}}, {"PETG", {260, 220}}, {"ABS", {270, 230}},
-                                                                   {"ASA", {270, 230}}, {"TPU", {240, 200}}, {"PA", {290, 250}},
-                                                                   {"PC", {300, 260}}};
-    const auto it              = ranges.find(filament_type());
-    const auto [start, end]    = it != ranges.end() ? it->second : std::pair<int, int>{230, 190};
+    const Slic3r::DynamicPrintConfig& config = bundle().filaments.get_edited_preset().config;
+    const auto first_int = [&config](const char* key) {
+        const auto* v = config.option<Slic3r::ConfigOptionInts>(key);
+        return v != nullptr && !v->values.empty() ? v->values.front() : 0;
+    };
+    return CalibrationLogic::temperature_tower(filament_type(), first_int("nozzle_temperature_range_low"), first_int("nozzle_temperature_range_high"), first_int("nozzle_temperature"));
+}
+
+// Tour de température : un bloc tous les 5 °C, le plus chaud en bas (Plater::calib_temp).
+nlohmann::json temperature_test(int start, int end)
+{
     Slic3r::Calib_Params params;
     params.mode  = Slic3r::CalibMode::Calib_Temp_Tower;
     params.start = start;
@@ -390,12 +396,19 @@ nlohmann::json start_test(const std::string& test, int pass, double base_value)
     if (test == "flow" && pass == 2 && !CalibrationLogic::flow_base_valid(base_value))
         return {{"ok", false}, {"text", "Refusé : le débit de départ de la passe 2 doit rester entre 0,7 et 1,3."}};
 
+    CalibrationLogic::TempTower tower;
+    if (test == "temperature") {
+        tower = temperature_tower_now();
+        if (!tower.refusal.empty())
+            return {{"ok", false}, {"text", tower.refusal}};
+    }
+
     const ProjectNotificationsPause quiet; // capture et fonctions calib_* d'Orca : plusieurs « nouveau projet »
     if (!capture())
         return {{"ok", false}, {"text", "Ta pièce n'a pas pu être mise de côté : le test n'est pas lancé."}};
     nlohmann::json result;
     if (test == "temperature")
-        result = temperature_test();
+        result = temperature_test(tower.start, tower.end);
     else if (test == "flow")
         result = flow_test(pass == 2 ? 2 : 1, base_value);
     else if (test == "retraction")

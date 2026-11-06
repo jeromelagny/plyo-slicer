@@ -3,7 +3,9 @@
 #include <boost/filesystem.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Calibration guidée : la part sans Orca (testée par src/plyo/tests/cpp).
@@ -53,6 +55,56 @@ inline std::string kept_note(const std::vector<std::string>& files)
     for (const std::string& file : files)
         list += (list.empty() ? "" : ", ") + file;
     return " Un plateau d'avant un test précédent reste gardé (à rouvrir par Fichier > Ouvrir si besoin) : " + list + ".";
+}
+
+// Tour de température : `start` (le plus chaud, en bas) et `end`, par pas de 5 °C ; `refusal` non vide : on ne lance pas le test.
+struct TempTower
+{
+    int         start = 0, end = 0;
+    std::string refusal;
+};
+
+// Plage sûre du slicer pour une température de buse (voir keys_for dans PlyoCalibration.cpp) : au-delà, le résultat ne s'enregistrerait pas.
+constexpr int TOWER_MIN = 170, TOWER_MAX = 300;
+constexpr int TOWER_MIN_SPAN = 10, TOWER_MAX_SPAN = 60; // au moins 3 blocs, au plus 13
+
+// `filament_type` du profil (noms de Slic3r::MaterialType). Types connus : à l'intérieur de MATERIAL_RANGES de plyo-api (whitelist.ts),
+// mêmes familles que filamentFamily. Autres types : les limites du profil (`profile_low`, `profile_high`, et `profile_nozzle` pour vérifier
+// qu'elles veulent dire quelque chose) ; sans limites utilisables, un refus : mieux vaut pas de test qu'un test inadapté.
+inline TempTower temperature_tower(const std::string& filament_type, int profile_low, int profile_high, int profile_nozzle)
+{
+    static const std::vector<std::pair<std::pair<int, int>, std::vector<std::string>>> towers = {
+        {{230, 190}, {"PLA", "PLA-CF", "PLA-GF", "PLA-AERO"}},
+        {{260, 220}, {"PETG"}},
+        {{270, 240}, {"PETG-CF", "PETG-GF"}},
+        {{270, 250}, {"PCTG"}},
+        {{270, 230}, {"ABS", "ABS-CF", "ABS-GF", "ASA", "ASA-CF", "ASA-GF", "ASA-AERO"}},
+        {{280, 250}, {"PC-ABS"}},
+        {{260, 220}, {"HIPS"}},
+        {{240, 200}, {"TPU"}},
+        {{290, 250}, {"PA", "PA-CF", "PA-GF", "PA6", "PA6-CF", "PA6-GF", "PA11", "PA11-CF", "PA11-GF", "PA12", "PA12-CF", "PA12-GF", "PAHT", "PAHT-CF", "PAHT-GF"}},
+        {{300, 260}, {"PC", "PC-CF", "PC-PBT"}},
+        {{300, 260}, {"PET-CF"}},
+        {{250, 195}, {"PVA"}},
+    };
+    std::string type = filament_type;
+    std::transform(type.begin(), type.end(), type.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    for (const auto& row : towers)
+        if (std::find(row.second.begin(), row.second.end(), type) != row.second.end())
+            return {row.first.first, row.first.second, std::string()};
+
+    // Vers l'intérieur de la plage : jamais une température hors des limites du profil.
+    const int end   = (profile_low + 4) / 5 * 5;
+    const int start = profile_high / 5 * 5;
+    const bool usable = profile_low >= TOWER_MIN && profile_high <= TOWER_MAX && start - end >= TOWER_MIN_SPAN && start - end <= TOWER_MAX_SPAN &&
+                        profile_nozzle >= profile_low && profile_nozzle <= profile_high;
+    if (usable)
+        return {start, end, std::string()};
+    TempTower refused;
+    refused.refusal = "Je ne connais pas les bonnes températures du filament « " + filament_type + " » et son profil n'indique pas de plage utilisable (entre " +
+                      std::to_string(TOWER_MIN) + " et " + std::to_string(TOWER_MAX) + " °C) : je ne lance pas ce test, rien n'a changé. "
+                      "Vérifie la plage de température de la buse dans l'onglet Filament, puis réessaie.";
+    return refused;
 }
 
 }} // namespace Plyo::CalibrationLogic

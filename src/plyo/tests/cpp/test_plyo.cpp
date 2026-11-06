@@ -26,6 +26,7 @@
 #include <string>
 
 namespace fs = boost::filesystem;
+#include <tuple>
 using nlohmann::json;
 
 namespace {
@@ -1937,4 +1938,83 @@ TEST_CASE("Project: sanitize garde « validated » seulement s'il est lisible")
     REQUIRE(clean.size() == 2);
     CHECK(clean[0]["validated"] == false);
     CHECK_FALSE(clean[1].contains("validated"));
+}
+
+TEST_CASE("Calibration : la tour de température reste dans la plage de la matière")
+{
+    using Plyo::CalibrationLogic::temperature_tower;
+    // Plages de MATERIAL_RANGES (plyo-api/src/lib/whitelist.ts) : {famille, types d'Orca, min, max}.
+    struct Family { std::vector<std::string> types; int min, max; };
+    const std::vector<Family> families = {
+        {{"PLA", "PLA-CF", "PLA-AERO"}, 180, 240},
+        {{"PETG"}, 210, 260},
+        {{"PETG-CF", "PETG-GF"}, 240, 270},
+        {{"PCTG"}, 250, 270},
+        {{"ABS", "ABS-CF", "ABS-GF", "ASA", "ASA-CF", "ASA-GF", "ASA-AERO"}, 230, 280},
+        {{"PC-ABS"}, 250, 280},
+        {{"HIPS"}, 220, 260},
+        {{"TPU"}, 200, 245},
+        {{"PA", "PA-CF", "PA-GF", "PA6", "PA6-CF", "PA6-GF", "PA11", "PA11-CF", "PA11-GF", "PA12", "PA12-CF", "PA12-GF", "PAHT", "PAHT-CF", "PAHT-GF"}, 240, 300},
+        {{"PC", "PC-CF", "PC-PBT"}, 250, 300},
+        {{"PET-CF"}, 260, 300},
+        {{"PVA"}, 195, 250},
+    };
+    for (const Family& family : families)
+        for (const std::string& type : family.types) {
+            // Le profil n'a pas son mot à dire pour un type connu : un profil vide ou faux ne change rien.
+            const auto tower = temperature_tower(type, 0, 0, 0);
+            INFO(type);
+            CHECK(tower.refusal.empty());
+            CHECK(tower.start > tower.end);
+            CHECK(tower.start <= family.max);
+            CHECK(tower.end >= family.min);
+            CHECK((tower.start - tower.end) % 5 == 0);
+        }
+    // Les cas signalés : plus de tour 190–230 sous leur plage.
+    CHECK(temperature_tower("PETG-CF", 0, 0, 0).end == 240);
+    CHECK(temperature_tower("PCTG", 0, 0, 0).end == 250);
+    CHECK(temperature_tower("HIPS", 0, 0, 0).end == 220);
+    CHECK(temperature_tower("PC-ABS", 0, 0, 0).end == 250);
+    // Les tours d'avant ne changent pas.
+    CHECK(temperature_tower("PLA", 0, 0, 0).start == 230);
+    CHECK(temperature_tower("PLA", 0, 0, 0).end == 190);
+    CHECK(temperature_tower("PETG", 0, 0, 0).start == 260);
+    CHECK(temperature_tower("ABS", 0, 0, 0).end == 230);
+    CHECK(temperature_tower("PA", 0, 0, 0).start == 290);
+    CHECK(temperature_tower("PC", 0, 0, 0).start == 300);
+    CHECK(temperature_tower("TPU", 0, 0, 0).end == 200);
+    // Écriture en minuscules : même type.
+    CHECK(temperature_tower("petg-cf", 0, 0, 0).end == 240);
+}
+
+TEST_CASE("Calibration : type inconnu : la plage du profil, sinon un refus clair plutôt qu'un test inadapté")
+{
+    using Plyo::CalibrationLogic::temperature_tower;
+    // Limites du profil, ramenées à des pas de 5 °C vers l'intérieur.
+    auto t = temperature_tower("POM", 212, 248, 230);
+    CHECK(t.refusal.empty());
+    CHECK(t.start == 245);
+    CHECK(t.end == 215);
+    t = temperature_tower("PP", 200, 240, 220);
+    CHECK(t.start == 240);
+    CHECK(t.end == 200);
+    // Refus : profil sans plage, plage inversée, trop étroite ou trop large.
+    for (const auto& [low, high, nozzle] : std::vector<std::tuple<int, int, int>>{{0, 0, 220}, {240, 200, 220}, {220, 220, 220}, {219, 226, 220}, {180, 290, 220}}) {
+        INFO(low << " " << high);
+        t = temperature_tower("POM", low, high, nozzle);
+        CHECK_FALSE(t.refusal.empty());
+        CHECK(t.start == 0);
+    }
+    // Hors de ce que le slicer accepte d'enregistrer (170–300 °C) : PEEK, PCL.
+    CHECK_FALSE(temperature_tower("PEEK", 350, 460, 380).refusal.empty());
+    CHECK_FALSE(temperature_tower("PCL", 130, 170, 150).refusal.empty());
+    CHECK_FALSE(temperature_tower("POM", 165, 200, 180).refusal.empty());
+    CHECK_FALSE(temperature_tower("POM", 280, 310, 290).refusal.empty());
+    // Le profil se contredit (plage par défaut d'Orca, buse réglée à 380 °C) : on ne fait pas confiance à la plage.
+    CHECK_FALSE(temperature_tower("PEEK", 190, 240, 380).refusal.empty());
+    // Le refus nomme le filament et dit la suite, sans jargon.
+    const std::string text = temperature_tower("Bidule", 0, 0, 0).refusal;
+    CHECK(text.find("Bidule") != std::string::npos);
+    CHECK(text.find("onglet Filament") != std::string::npos);
+    CHECK(text.find("rien n'a changé") != std::string::npos);
 }
