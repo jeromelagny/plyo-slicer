@@ -1515,6 +1515,8 @@
     if (!conv.entries.length) return;
     showConversation();
     conv.entries.forEach(function (entry) { try { renderEntry(entry, true); } catch (e) { /* élément abîmé : ignoré */ } });
+    // Un vrai échange (question, réponse, explication) : on le montre ; une pièce posée seule reste sur Étapes.
+    if (conv.entries.some(function (entry) { return entry.kind === 'me' || entry.kind === 'answer' || entry.kind === 'fiche'; })) applyTab('show-chat');
     scrollDown();
   }
   function renderEntry(entry, archived) {

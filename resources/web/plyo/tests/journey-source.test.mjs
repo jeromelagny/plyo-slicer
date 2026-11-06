@@ -228,3 +228,9 @@ test('la suggestion « Températures de ma bobine » ouvre le formulaire de la f
   assert.ok(!page.includes('openLimits') && !page.includes('limitsView'), 'volet retiré');
   assert.ok(!page.includes('Limites du fabricant'), 'aucun texte ne le cite');
 });
+
+test('une conversation rouverte montre son échange', () => {
+  const page = read('index.html');
+  const restore = page.slice(page.indexOf('function restoreConversation'), page.indexOf('function renderEntry'));
+  assert.ok(/entry\.kind === 'me'[\s\S]{0,120}applyTab\('show-chat'\)/.test(restore));
+});
