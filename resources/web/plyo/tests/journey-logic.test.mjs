@@ -267,3 +267,9 @@ test('découpe en cours : bouton inactif et état dit à l’écran', () => {
   assert.equal(J.primaryAction('imprimer', { slicing: true }).enabled, false);
   assert.equal(J.primaryAction('preparer', {}).enabled, true);
 });
+
+test('Résultat : une fois réussi, la suite devient l’action principale', () => {
+  assert.equal(J.primaryAction('resultat', {}).kind, 'photo');
+  assert.equal(J.primaryAction('resultat', { success: true }).kind, 'newPart');
+  assert.ok(J.prompt('resultat', { success: true }).includes('réussi'));
+});

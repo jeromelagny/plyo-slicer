@@ -1046,7 +1046,7 @@
   // Questions reposées après la découpe : tant qu'on y répond, la plaque compte comme à redécouper.
   function plateSliced() { return !!(tourSignals && tourSignals.sliced) && !(conv && conv.project.intent && conv.project.intent.reask); }
   function journeyCtx() {
-    var p = conv && conv.project || {}, ctx = { sliced: plateSliced(), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, checked: plateChecked, slicing: slicing.conv === conv && !!conv,
+    var p = conv && conv.project || {}, ctx = { sliced: plateSliced(), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, checked: plateChecked, success: !!p.success, slicing: slicing.conv === conv && !!conv,
       plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
     else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
@@ -1111,9 +1111,11 @@
     },
     skip: function () { setTourStep('print'); },
     exportFile: function () { runAction('export'); },
-    started: function () { rememberHabit(); setTourStep('after'); },
+    started: function () { rememberHabit(); delete conv.project.success; setTourStep('after'); },
     photo: function () { pickFiles(); },
-    reprint: function () { setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
+    success: function () { conv.project.success = true; projectChanged(); },
+    newPart: function () { newConversation(); },
+    reprint: function () { delete conv.project.success; setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
     changeMachine: function () { projectHandlers.change('printer'); },
     recheck: function () { recheckMachine(); },
     answer: function (q, id) { intentHandlers.answer(q, id); }, idk: function () { intentHandlers.idk(); },
@@ -1171,6 +1173,7 @@
     if (kind === 'slice') plateAction('slice');
     else if (kind === 'photo') openPhone();
     else if (kind === 'importPart') pickFiles();
+    else if (kind === 'newPart') newConversation();
     else if (kind === 'send') {
       canvasUI.refused = '';
       if (!lockSend('print')) return;

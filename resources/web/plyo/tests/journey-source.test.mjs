@@ -181,7 +181,7 @@ test('« L’impression a démarré » suit l’acceptation d’Orca, et un refu
 test('Résultat n’est pas une impasse : on peut réimprimer, et « démarré » ne survit pas à l’étape', () => {
   assert.ok(read('journey-steps.js').includes('Réimprimer cette pièce'));
   const page = read('index.html');
-  assert.ok(/reprint: function \(\) \{ setTourStep\(/.test(page));
+  assert.ok(/reprint: function \(\) \{[^}]*setTourStep\(/.test(page));
   assert.ok(/if \(step !== 'imprimer'\) projectUI\.sentConv = null/.test(page));
   assert.ok(page.includes('retourne à l’onglet « Étapes »') && page.includes('id="tab-guide"'), 'le renvoi vise un onglet qui existe');
 });
@@ -271,4 +271,10 @@ test('le panneau dit quand il change la machine d’Orca, sans supprimer ce chan
   assert.ok(page.includes('Orca était sur « ') && page.includes('Choisir une autre machine'));
   const q = page.slice(page.indexOf('function applyMachineQuestion'), page.indexOf('function proposeFilamentFromHabit'));
   assert.ok(q.includes('pickPrinter(q.machine.preset'), 'le changement reste');
+});
+
+test('Résultat répond à sa question : « Oui, c’est réussi » et « Nouvelle pièce », sans bouton plein de plus', () => {
+  const steps = read('journey-steps.js');
+  assert.ok(steps.includes('Oui, c’est réussi') && steps.includes('Nouvelle pièce'));
+  assert.ok(/kind === 'newPart'\) newConversation\(\)/.test(read('index.html')));
 });

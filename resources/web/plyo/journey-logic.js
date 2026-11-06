@@ -60,7 +60,7 @@
       if (!c.sliced) return slice;
       return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: !c.sending } : { label: 'Exporter le fichier', kind: 'export', enabled: !c.sending };
     }
-    if (step === 'resultat') return { label: 'Envoyer une photo', kind: 'photo', enabled: true };
+    if (step === 'resultat') return c.success ? { label: 'Nouvelle pièce', kind: 'newPart', enabled: true } : { label: 'Envoyer une photo', kind: 'photo', enabled: true };
     // Machine et filament proposés (dernière machine, dernier filament) : confirmer d'un toucher.
     if (step === 'machine' && c.proposal) return { label: 'Oui, sur ' + c.proposal.name, kind: 'confirmMachine', enabled: true };
     if (step === 'filament' && c.proposal) return { label: 'Oui, du ' + c.proposal.name, kind: 'confirmFilament', enabled: true };
@@ -88,7 +88,7 @@
         return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler : coche ce que tu veux corriger ci-dessous'
           : c.checked === 'clean' ? 'Tout est bon, on passe à l’impression' : c.checked === 'ignored' ? 'Tu as ignoré des points : à toi de voir' : 'Je vérifie ta plaque…');
       case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : 'Prêt à imprimer';
-      default: return 'Alors, ça a marché ? Envoie-moi une photo';
+      default: return c.success ? 'Bravo, c’est réussi !' : 'Alors, ça a marché ? Envoie-moi une photo';
     }
   }
 
