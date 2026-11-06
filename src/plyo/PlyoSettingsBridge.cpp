@@ -7,6 +7,8 @@
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/PartPlate.hpp"
+#include "slic3r/GUI/Plater.hpp"
 #include "slic3r/GUI/Tab.hpp"
 
 #include <boost/log/trivial.hpp>
@@ -128,15 +130,21 @@ const Param* find_param(const std::string& id)
     return nullptr;
 }
 
-// Les clés de température de plateau dépendent du type de plateau choisi pour le projet.
+// Les clés de température de plateau dépendent du type de plateau : celui de la plaque en cours s'il lui est propre (réglages
+// de plaque), sinon celui du projet.
 std::string resolve_key(const Param& p)
 {
     if (*p.key != '\0')
         return p.key;
     const bool  initial = std::string(p.id) == "bed_temp_initial";
-    std::string key;
-    if (auto* opt = bundle().project_config.option<Slic3r::ConfigOptionEnum<Slic3r::BedType>>("curr_bed_type"))
-        key = initial ? Slic3r::get_bed_temp_1st_layer_key(opt->value) : Slic3r::get_bed_temp_key(opt->value);
+    Slic3r::BedType type = Slic3r::btDefault;
+    if (Slic3r::GUI::Plater* plater = Slic3r::GUI::wxGetApp().plater())
+        if (const Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate())
+            type = plate->get_bed_type();
+    if (type == Slic3r::btDefault)
+        if (auto* opt = bundle().project_config.option<Slic3r::ConfigOptionEnum<Slic3r::BedType>>("curr_bed_type"))
+            type = opt->value;
+    std::string key = initial ? Slic3r::get_bed_temp_1st_layer_key(type) : Slic3r::get_bed_temp_key(type);
     if (!key.empty())
         return key;
     return initial ? "hot_plate_temp_initial_layer" : "hot_plate_temp";
