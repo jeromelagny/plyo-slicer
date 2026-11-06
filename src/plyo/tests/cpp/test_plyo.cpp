@@ -1106,3 +1106,16 @@ TEST_CASE("Commands: un chevauchement déjà là (pièces imbriquées) ne décle
     CHECK(has_new_overlap({}, {{4, 5}}));              // une coupe : deux morceaux qui se touchent
 }
 
+TEST_CASE("Calibration: base de la passe 2 du débit bornée comme la valeur enregistrée")
+{
+    using Plyo::CalibrationLogic::flow_base_valid;
+    CHECK(flow_base_valid(0));   // absente : la passe part du débit du filament
+    CHECK(flow_base_valid(0.7));
+    CHECK(flow_base_valid(1.3));
+    CHECK(flow_base_valid(0.98));
+    CHECK_FALSE(flow_base_valid(50));
+    CHECK_FALSE(flow_base_valid(1.31));
+    CHECK_FALSE(flow_base_valid(0.69));
+    CHECK_FALSE(flow_base_valid(-1));
+}
+

@@ -40,6 +40,10 @@ inline boost::filesystem::path free_capture_path(const boost::filesystem::path& 
     return boost::filesystem::path();
 }
 
+// Gagnant de la passe 1 du débit donné à la passe 2 : même plage que l'enregistrement de ce réglage (0 : aucun, la passe part
+// du débit du filament).
+inline bool flow_base_valid(double base) { return base == 0 || (base >= 0.7 && base <= 1.3); }
+
 // Phrase ajoutée à « Remettre ma pièce » quand d'autres pièces sont restées de côté sur le disque ; vide s'il n'y en a pas.
 inline std::string kept_note(const std::vector<std::string>& files)
 {

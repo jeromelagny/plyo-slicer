@@ -384,6 +384,9 @@ nlohmann::json start_test(const std::string& test, int pass, double base_value)
     static const std::vector<std::string> known{"temperature", "flow", "retraction", "pressure_advance", "ironing"};
     if (std::find(known.begin(), known.end(), test) == known.end())
         return {{"ok", false}, {"text", "Test de calibration inconnu."}};
+    // Avant toute capture : rien n'est touché si la valeur est refusée.
+    if (test == "flow" && pass == 2 && !CalibrationLogic::flow_base_valid(base_value))
+        return {{"ok", false}, {"text", "Refusé : le débit de départ de la passe 2 doit rester entre 0,7 et 1,3."}};
 
     const ProjectNotificationsPause quiet; // capture et fonctions calib_* d'Orca : plusieurs « nouveau projet »
     if (!capture())
