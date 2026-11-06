@@ -27,6 +27,16 @@ inline std::string copy_name(const std::string& base, const std::vector<std::str
     }
 }
 
+// Nom du profil qui reçoit la connexion d'une imprimante : le profil en cours s'il est à l'utilisateur ; sinon (système ou
+// défaut, `must_copy`) « Ma <profil> », ou un nom libre si ce profil existe déjà : il peut porter des réglages personnels.
+inline std::string link_profile_name(const std::string& current, bool must_copy, const std::vector<std::string>& existing)
+{
+    if (!must_copy)
+        return current;
+    const std::string mine = "Ma " + current;
+    return std::find(existing.begin(), existing.end(), mine) == existing.end() ? mine : copy_name(mine, existing);
+}
+
 // Nom du fichier de la version fiable d'un couple « imprimante | filament » : empreinte FNV-1a de 16 chiffres
 // hexadécimaux (stable d'une exécution à l'autre, sans caractère dangereux pour un nom de fichier).
 inline std::string file_stem(const std::string& machine_key)

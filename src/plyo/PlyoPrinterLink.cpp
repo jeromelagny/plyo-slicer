@@ -1,6 +1,7 @@
 #include "PlyoPrinterLink.hpp"
 #include "PlyoDiscoveryLogic.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoProfilesLogic.hpp"
 
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -187,11 +188,27 @@ nlohmann::json save(const nlohmann::json& in, const std::string& webui, const st
     if (tab == nullptr)
         return {{"ok", false}};
     const Preset& current = wxGetApp().preset_bundle->printers.get_edited_preset();
-    // Profil à soi : on le met à jour. Profil système (non modifiable) : « Ma <profil> », plus parlant que « - Copie ».
-    const std::string name = current.is_system || current.is_default ? "Ma " + current.name : current.name;
+    // Profil à soi : on le met à jour. Profil système (non modifiable) : « Ma <profil> », plus parlant que « - Copie »,
+    // sans jamais écraser un « Ma <profil> » déjà là.
+    std::vector<std::string> existing;
+    for (const Preset& preset : wxGetApp().preset_bundle->printers.get_presets())
+        existing.push_back(preset.name);
+    const std::string name = Profiles::link_profile_name(current.name, current.is_system || current.is_default, existing);
+    // Valeurs d'avant, code d'accès compris : si Orca n'enregistre pas, la connexion ne reste pas en mémoire.
+    Slic3r::DynamicPrintConfig before;
+    for (const char* key : {"print_host", "host_type", "print_host_webui", "printhost_apikey"})
+        if (const Slic3r::ConfigOption* opt = current.config.option(key))
+            before.set_key_value(key, opt->clone());
     tab->load_config(connection(p.host_type, p.host, webui, access_code));
-    tab->save_preset(name);
-    const bool ok = wxGetApp().preset_bundle->printers.get_edited_preset().name == name;
+    bool ok = false;
+    try {
+        tab->save_preset(name);
+        ok = wxGetApp().preset_bundle->printers.get_edited_preset().name == name;
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "Plyo: enregistrement de la connexion impossible : " << e.what();
+    }
+    if (!ok)
+        tab->load_config(before);
     BOOST_LOG_TRIVIAL(info) << "Plyo: connexion de l'imprimante enregistrée dans « " << name << " » : " << (ok ? "oui" : "non");
     return {{"ok", ok}, {"profile", name}};
 }

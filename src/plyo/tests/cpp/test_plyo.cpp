@@ -1030,3 +1030,13 @@ TEST_CASE("CC2: « Démarrer sans carte » n'envoie le code d'accès qu'à l'imp
     CHECK_FALSE(plain_start_refusal(refused, "").empty());             // profil sans adresse
     CHECK_FALSE(plain_start_refusal(nullptr, "192.168.1.20").empty()); // refus effacé (nouveau projet)
 }
+
+TEST_CASE("Profiles: nom du profil de la connexion, sans jamais écraser un « Ma X » existant")
+{
+    using Plyo::Profiles::link_profile_name;
+    CHECK(link_profile_name("Ma K2", false, {"Ma K2", "K2"}) == "Ma K2"); // profil à soi : mis à jour
+    CHECK(link_profile_name("K2", true, {"K2"}) == "Ma K2");
+    CHECK(link_profile_name("K2", true, {"K2", "Ma K2"}) == "Ma K2 (Plyo)");
+    CHECK(link_profile_name("K2", true, {"K2", "Ma K2", "Ma K2 (Plyo)"}) == "Ma K2 (Plyo 2)");
+}
+
