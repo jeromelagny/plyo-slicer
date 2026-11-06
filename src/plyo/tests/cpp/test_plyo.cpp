@@ -10,6 +10,7 @@
 #include "../../PlyoCC2Logic.hpp"
 #include "../../PlyoSlotsLogic.hpp"
 #include "../../PlyoCfsLogic.hpp"
+#include "../../PlyoIfsLogic.hpp"
 #include "../../PlyoCanvasLogic.hpp"
 #include "../../PlyoLimitsLogic.hpp"
 #include "../../PlyoCatalogPolicy.hpp"
@@ -1479,4 +1480,102 @@ TEST_CASE("Cfs::color_match_info : tout doute est un refus, sans rien rendre")
     json off = unit(1, 0, ok_tray);
     off[0]["connected"] = false;
     CHECK(refused(t0_ok, off, 1));
+}
+
+// --- IFS (Flashforge AD5X) : schéma de Flashforge::parse_material_slots et de FlashforgePrintHostSendDialog::extendedInfo. Ce n'est PAS
+// une réponse de machine, à remplacer par la capture de T9. ---
+namespace {
+std::vector<Plyo::IfsLogic::Slot> ifs_orca_schema()
+{
+    using Plyo::IfsLogic::Slot;
+    return {Slot{1, true, "PLA", "#AABBCC"}, Slot{2, true, "PETG", "#ddeeff"}, Slot{3, false, "", ""}, Slot{4, true, "PLA-CF", "bizarre"}};
+}
+} // namespace
+
+TEST_CASE("Ifs::canvases_from_slots : une unité, numéro et libellé à partir de 1")
+{
+    using namespace Plyo::IfsLogic;
+    const json units = canvases_from_slots(ifs_orca_schema());
+    REQUIRE(units.size() == 1);
+    CHECK(units[0]["canvas_id"] == 0);
+    CHECK(units[0]["connected"] == true);
+    const json& trays = units[0]["trays"];
+    REQUIRE(trays.size() == 4);
+    CHECK(trays[1]["tray_id"] == 2);
+    CHECK(trays[1]["label"] == "2"); // jamais « 3 »
+    CHECK(trays[1]["type"] == "PETG");
+    CHECK(trays[1]["color"] == "#DDEEFF");
+    CHECK(trays[1]["raw_color"] == "#ddeeff");
+    CHECK(trays[1]["status"] == 2);
+    CHECK(trays[2]["status"] == 0);
+    CHECK(trays[3]["color"] == "");
+    CHECK(trays[3]["raw_color"] == "bizarre");
+    CHECK(canvases_from_slots({}).empty());
+    // Numéro impossible : écarté.
+    CHECK(canvases_from_slots({Slot{0, true, "PLA", "#AABBCC"}}).empty());
+}
+
+TEST_CASE("Ifs::live_imposable : poste de matière annoncé, numéros valables, sinon on lit sans imposer")
+{
+    using namespace Plyo::IfsLogic;
+    CHECK(live_imposable(true, ifs_orca_schema()));
+    CHECK_FALSE(live_imposable(false, ifs_orca_schema()));
+    CHECK_FALSE(live_imposable(true, {}));
+    CHECK_FALSE(live_imposable(true, {Slot{0, true, "PLA", "#AABBCC"}}));
+    CHECK_FALSE(live_imposable(true, {Slot{1, true, "PLA", "#AABBCC"}, Slot{1, true, "PETG", "#AABBCC"}}));
+    CHECK_FALSE(live_imposable(true, {Slot{-1, true, "PLA", "#AABBCC"}}));
+}
+
+TEST_CASE("Ifs::mapping_info : slotId à partir de 1, toolId à partir de 0, trous conservés")
+{
+    using namespace Plyo::IfsLogic;
+    const json canvases = canvases_from_slots(ifs_orca_schema());
+    const json tools    = json::array({{{"t", 0}, {"color", "#111111"}, {"type", "PLA"}}, {{"t", 2}, {"color", "#222222"}, {"type", "PETG"}}});
+    std::string refusal;
+    auto info = mapping_info(json::array({{{"t", 2}, {"canvas_id", 0}, {"tray_id", 2}}, {{"t", 0}, {"canvas_id", 0}, {"tray_id", 1}}}), canvases, tools, true, false, refusal);
+    CHECK(refusal.empty());
+    CHECK(info["levelingBeforePrint"] == "1");
+    CHECK(info["timeLapseVideo"] == "0");
+    CHECK(info["useMatlStation"] == "1");
+    CHECK(info["gcodeToolCnt"] == "2");
+    const json m = json::parse(info["materialMappings"]); // du JSON : upload_local_api fait lui-même le base64
+    REQUIRE(m.size() == 2);
+    CHECK(m[0] == json{{"toolId", 0}, {"slotId", 1}, {"materialName", "PLA"}, {"toolMaterialColor", "#111111"}, {"slotMaterialColor", "#AABBCC"}});
+    CHECK(m[1] == json{{"toolId", 2}, {"slotId", 2}, {"materialName", "PETG"}, {"toolMaterialColor", "#222222"}, {"slotMaterialColor", "#ddeeff"}});
+}
+
+TEST_CASE("Ifs::mapping_info : tout doute est un refus, sans rien rendre")
+{
+    using namespace Plyo::IfsLogic;
+    const json canvases = canvases_from_slots(ifs_orca_schema());
+    std::string refusal;
+    const auto refused = [&](const json& map, const json& tools) {
+        refusal.clear();
+        auto info = mapping_info(map, canvases, tools, true, false, refusal);
+        return !refusal.empty() && info.empty();
+    };
+    const auto tool = [](int t, const std::string& type) { return json{{"t", t}, {"color", "#111111"}, {"type", type}}; };
+    const auto to   = [](int t, int slot) { return json{{"t", t}, {"canvas_id", 0}, {"tray_id", slot}}; };
+    CHECK_FALSE(refused(json::array({to(0, 1)}), json::array({tool(0, "PLA")})));
+    CHECK(refused(json::array(), json::array({tool(0, "PLA")})));                                    // carte vide
+    CHECK(refused(json::array({to(0, 3)}), json::array({tool(0, "PLA")})));                          // emplacement vide
+    CHECK(refused(json::array({to(0, 9)}), json::array({tool(0, "PLA")})));                          // absent de la lecture
+    CHECK(refused(json::array({to(0, 2)}), json::array({tool(0, "PLA")})));                          // PLA sur PETG
+    CHECK(refused(json::array({to(0, 4)}), json::array({tool(0, "PLA")})));                          // découpé en PLA, chargé en PLA-CF
+    CHECK(refused(json::array({to(1, 1)}), json::array({tool(0, "PLA")})));                          // couleur hors de la pièce
+    CHECK(refused(json::array({to(0, 1), to(1, 1)}), json::array({tool(0, "PLA"), tool(1, "PLA")}))); // même emplacement deux fois
+    CHECK(refused(json::array({to(0, 1)}), json::array({{{"t", 0}, {"color", ""}, {"type", "PLA"}}}))); // couleur inconnue
+    CHECK(refused(json::array({to(0, 1)}), json::array({{{"t", 0}, {"color", "#111111"}, {"type", ""}}}))); // type inconnu
+    CHECK(refused(json::array({to(0, 1), to(0, 2)}), json::array({tool(0, "PLA")})));                // doublon de couleur
+}
+
+TEST_CASE("Ifs::same_material : majuscules, seulement lettres et chiffres")
+{
+    using namespace Plyo::IfsLogic;
+    CHECK(same_material("pla", "PLA"));
+    CHECK(same_material("PLA-CF", "pla cf"));
+    CHECK_FALSE(same_material("PLA-CF", "PLA"));
+    CHECK_FALSE(same_material("ASA", "ABS")); // Orca les confond ; ici le doute est un refus
+    CHECK_FALSE(same_material("", ""));
+    CHECK_FALSE(same_material("---", "---"));
 }
