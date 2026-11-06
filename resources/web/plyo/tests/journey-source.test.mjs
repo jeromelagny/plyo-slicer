@@ -246,3 +246,10 @@ test('« Appliquer et préparer » : un seul lot au double-clic, et un refus lai
   assert.ok(/function applyIntent\(again\) \{\s*if \(intentUI\.applying\) return;/.test(page));
   assert.ok(/if \(!ok\) \{ releaseIntent\(\); noteLine\(text/.test(page), 'le refus libère le verrou');
 });
+
+test('« Reposer les questions » fonctionne aussi après la découpe', () => {
+  const page = read('index.html');
+  assert.ok(/\{ reask: true \}/.test(page) && /function plateSliced\(\)/.test(page));
+  assert.ok(/ctx = \{ sliced: plateSliced\(\)/.test(page), 'la ligne d’action suit');
+  assert.ok(/delete p\.intent\.reask/.test(page), 'levé une fois les réponses appliquées');
+});

@@ -1042,8 +1042,10 @@
   var openRisks = 0; // risques de la vérification non ignorés
   var plateChecked = ''; // résultat de la vérification de la découpe en cours : 'clean', 'open', 'ignored' ; '' tant qu'elle n'a pas eu lieu
   var preflightFix = null; // lance « Tout corriger » de la carte de vérification affichée (rend faux s'il n'y a rien à faire)
+  // Questions reposées après la découpe : tant qu'on y répond, la plaque compte comme à redécouper.
+  function plateSliced() { return !!(tourSignals && tourSignals.sliced) && !(conv && conv.project.intent && conv.project.intent.reask); }
   function journeyCtx() {
-    var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, checked: plateChecked, slicing: slicing.conv === conv && !!conv,
+    var p = conv && conv.project || {}, ctx = { sliced: plateSliced(), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, checked: plateChecked, slicing: slicing.conv === conv && !!conv,
       plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
     else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
@@ -1078,7 +1080,7 @@
         error: projectUI.error, oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
       sent: projectUI.sentConv === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '',
-      intent: intentState(step, !!(tourSignals && tourSignals.sliced)),
+      intent: intentState(step, plateSliced()),
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     ensureRecheck(step);
@@ -1258,7 +1260,7 @@
   var intentHandlers = {
     answer: function (qid, id) { var p = conv.project; p.intent = p.intent || {}; p.intent[qid] = id; intentUI.idk = false; projectChanged(); },
     idk: function () { intentUI.idk = true; renderProject(); },
-    reset: function () { conv.project.intent = {}; intentUI.idk = false; intentUI.manual = null; projectChanged(); },
+    reset: function () { conv.project.intent = conv.project.intent && conv.project.intent.reask ? { reask: true } : {}; intentUI.idk = false; intentUI.manual = null; projectChanged(); },
     skip: function () {
       conv.project.intent = { skipped: true };
       habits = PlyoMachines.noteIntent(habits, true);
@@ -1273,7 +1275,7 @@
   };
   // Questions encore sans réponse, au format attendu par le service (les choix de « pref » dépendent de l'usage déjà choisi).
   function intentPending() {
-    var p = conv && conv.project, st = p ? intentState(PlyoJourney.currentStep(p), !!(tourSignals && tourSignals.sliced)) : null;
+    var p = conv && conv.project, st = p ? intentState(PlyoJourney.currentStep(p), plateSliced()) : null;
     if (!st || st.mode !== 'asking') return null;
     var a = st.answers, out = [], Q = PlyoIntent.QUESTIONS;
     var add = function (q) { out.push({ id: q.id, text: q.text, choices: q.choices.map(function (c) { return { id: c.id, label: c.label }; }) }); };
@@ -1308,6 +1310,7 @@
       intentUI.manual = null; // à relire pour le projet suivant
       p.intent.applied = true;
       delete p.intent.reapply;
+      delete p.intent.reask;
       habits = PlyoMachines.noteIntent(habits, false);
       saveHabits();
       projectChanged();
@@ -2155,7 +2158,13 @@
     menu.classList.add('hidden');
     habits = PlyoMachines.stopAsking(habits, false);
     saveHabits();
-    if (conv) { conv.project.intent = {}; intentUI.idk = false; intentUI.manual = null; projectChanged(); }
+    if (conv) {
+      var redo = PlyoProject.nextStep(conv.project) === 'ready';
+      // Plaque déjà découpée : retour à Préparer avec les questions ; la découpe sera refaite avec les nouvelles réponses.
+      conv.project.intent = redo && tourSignals && tourSignals.sliced ? { reask: true } : {};
+      if (redo) conv.project.step = 'slice';
+      intentUI.idk = false; intentUI.manual = null; projectChanged();
+    }
     applyTab('show-guide');
   });
   $('m-level').addEventListener('click', function () {
