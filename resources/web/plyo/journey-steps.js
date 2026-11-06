@@ -93,7 +93,7 @@
       }
       if (opts.refused) {
         body.appendChild(line(ui, 'alert', opts.refused, 'warn'));
-        body.appendChild(ui.button('Démarrer sans carte', h.startPlain, 'link'));
+        body.appendChild(ui.button('Laisser l’imprimante choisir', h.startPlain, 'link'));
       }
       body.appendChild(ui.el('p', 'muted small', 'Vérifie que le plateau est vide et propre, et que le filament est chargé.'));
       var acts = ui.el('div', 'printer-actions');

@@ -1078,7 +1078,7 @@
     else if (cmode === 'loading') { $('project-card').textContent = ''; }
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
-        error: projectUI.error, oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
+        error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
       sent: projectUI.sentConv === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '',
       intent: intentState(step, plateSliced()),
@@ -1106,7 +1106,7 @@
     changeSlots: function () { projectHandlers.change('filament'); canvasUI.preset = null; canvasUI.useList = false; renderProject(); },
     startPlain: function () {
       if (!conv || !conv.project.printer) return;
-      noteLine('Je démarre l’impression sans carte : l’imprimante choisit les emplacements.', '', 'info', 'guide');
+      noteLine('Je démarre l’impression : l’imprimante choisit les emplacements.', '', 'info', 'guide');
       window.orca.postMessage({ type: 'canvas_start_plain', preset: conv.project.printer.preset });
     },
     skip: function () { setTourStep('print'); },
@@ -1159,7 +1159,7 @@
   function onPrintStarted(msg) {
     if (!msg.ok) {
       unlockSend();
-      noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque (étape 3) : clique sur « Découper la plaque » en haut à droite.' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
+      noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque : clique sur « Découper ».' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
       return;
     }
     projectUI.sentConv = conv;
@@ -1646,11 +1646,12 @@
   var afterLogin = null;
   var loginCard = null; // une seule carte à la fois, retirée une fois connecté
   function dropLoginCard() { if (loginCard) { loginCard.remove(); loginCard = null; } }
-  function requireLogin(reason, retry) {
+  // `whole` : `reason` est déjà une phrase complète, qui dit de se connecter.
+  function requireLogin(reason, retry, whole) {
     if (session) return false;
     afterLogin = retry || null;
     dropLoginCard();
-    loginCard = alertBox('info', reason + ' Pour ça, connecte-toi : pas de mot de passe, tu reçois un code par e-mail.', 'info');
+    loginCard = alertBox('info', whole ? reason : reason + ' Pour ça, connecte-toi : pas de mot de passe, tu reçois un code par e-mail.', 'info');
     loginCard.body.appendChild(button('Me connecter', openLogin, 'btn sm'));
     placeInOpenTab(loginCard);
     return true;
@@ -2007,7 +2008,7 @@
       later = button('Passer cette étape', function () { setupPhase('done'); }, 'link');
     } else if (setup.phase === 'done') {
       box.appendChild(el('h3', '', 'Ton imprimante est prête'));
-      box.appendChild(el('p', '', setup.found ? 'Elle est installée et reliée : `Imprimer la plaque` lui enverra tes impressions.' :
+      box.appendChild(rich(setup.found ? 'Elle est installée et reliée : `Imprimer la plaque` lui enverra tes impressions.' :
         'Elle est installée. Pour imprimer : `Exporter le fichier G-code`, puis copie-le sur la clé USB ou la carte SD de ton imprimante.'));
       acts.appendChild(button('Continuer', endSetup, 'btn sm', 'check'));
       later = null;
@@ -3498,7 +3499,7 @@
     function fail(code, data) {
       finish();
       if (code === 'cancel') { noteLine('Demande annulée.', '', 'info'); return; }
-      if (code === 'unauthorized') { logout(); requireLogin('Ta session a expiré.', function () { send(note, { photos: photos, shown: true }); }); return; }
+      if (code === 'unauthorized') { logout(); requireLogin('Ta session a expiré : reconnecte-toi, ta demande repartira. Pas de mot de passe, tu reçois un code par e-mail.', function () { send(note, { photos: photos, shown: true }); }, true); return; }
       showError(code, function () { ask(note, photos); }, data);
     }
 

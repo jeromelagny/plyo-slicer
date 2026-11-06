@@ -149,6 +149,7 @@
       body.appendChild(ui.button('Autre matière', h.toggleKinds, 'link'));
     } else if (wantsFilament) {
       if (ctx.error && ctx.error.filament) body.appendChild(ui.el('p', 'project-error', ctx.error.filament));
+      if (ctx.noCanvas) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas ton Canvas pour l’instant : choisis la matière ici, l’imprimante choisira l’emplacement.'));
       body.appendChild(ui.el('p', 'muted small', 'Regarde ta bobine : la matière est écrite dessus. Pas sûr ? C’est presque toujours du PLA.'));
       var kinds = ui.el('div', 'printer-actions');
       MATERIALS.forEach(function (k) {
