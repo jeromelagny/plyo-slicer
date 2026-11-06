@@ -109,6 +109,11 @@
   }
 
   function afterPreflight(risks) { return risks === 0 ? 'advance' : 'stay'; }
+  // Message au passage à l'impression : « Pas de risque » seulement si la vérification n'a rien trouvé, même ignoré.
+  function advanceNote(allRisks) {
+    return allRisks > 0 ? { text: 'Tu as ignoré des points signalés : on passe à l’impression, à toi de voir.', tone: 'warn', icon: 'alert' }
+      : { text: 'Pas de risque détecté : on passe à l’impression.', tone: 'ok', icon: 'check' };
+  }
 
   function presetOf(project, key) { return project && project[key] && project[key].preset ? project[key].preset : ''; }
 
@@ -249,7 +254,7 @@
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
   var api = { shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
-    afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
+    afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

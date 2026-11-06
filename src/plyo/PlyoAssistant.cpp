@@ -368,7 +368,7 @@ void handle_page_message(const nlohmann::json& data)
             send_result(FirstSteps::add_benchy());
         else if (type == "model_add") {
             // Modèle 3D joint dans le panneau (trombone ou glisser-déposer).
-            nlohmann::json added = ModelImport::add(Json::str(data, "name"), Json::str(data, "data"), data.contains("project") ? data["project"] : nlohmann::json());
+            nlohmann::json added = ModelImport::add(Json::str(data, "name"), Json::str(data, "data"), data.contains("project") ? data["project"] : nlohmann::json(), Json::boolean(data, "replace", false));
             added["type"]        = "model_added";
             send(added);
         } else if (type == "model_adapt") {

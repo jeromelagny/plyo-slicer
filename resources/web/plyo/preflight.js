@@ -1,7 +1,7 @@
 // Vérification avant impression : à partir des mesures du plateau (PlyoPreflight.cpp), les risques à signaler,
 // chacun avec ses corrections en un clic. Aucun appel à l'IA.
 (function (root) {
-  var ORDER = ['fit', 'support', 'tall', 'contact'];
+  var ORDER = ['conflict', 'fit', 'support', 'tall', 'contact'];
   var BRIM = 5; // mm, largeur proposée
 
   function hasBrim(s) {
@@ -14,6 +14,16 @@
   }
 
   var ORIENT = { label: 'Orienter automatiquement', action: 'orient' };
+  var ARRANGE = { label: 'Ranger le plateau', action: 'arrange' };
+
+  // Conflit trouvé par la découpe d'Orca : deux objets (ou un objet et la tour de purge) dont les trajets se croisent.
+  function conflictNames(data) {
+    var c = data && data.conflict;
+    if (!c) return null;
+    var list = [c.a, c.b].filter(function (n) { return typeof n === 'string' && n; });
+    return list.length ? list : ['Ta plaque'];
+  }
+  var CONFLICT_TEXT = ' se chevauchent : la buse les heurterait à l’impression.';
 
   function names(list) {
     var q = list.map(function (n) { return '« ' + n + ' »'; });
@@ -58,8 +68,10 @@
     data.objects.filter(valid).forEach(function (o) {
       kindOf(o, s).forEach(function (k) { (byKind[k] = byKind[k] || []).push(o.name); });
     });
+    if (conflictNames(data)) byKind.conflict = conflictNames(data);
     return ORDER.filter(function (k) { return byKind[k]; }).map(function (k) {
       var list = byKind[k];
+      if (k === 'conflict') return { kind: k, objects: list, text: names(list) + CONFLICT_TEXT, fixes: [{ label: ARRANGE.label, action: ARRANGE.action }] };
       var fixes = k === 'fit' ? [{ label: 'Réduire pour que ça tienne', action: 'scale_to_fit' }]
         : k === 'support' ? [{ label: 'Activer les supports', changes: [{ id: 'support', value: true }] }, ORIENT]
         : k === 'tall' ? [brimFix(s)]
@@ -79,20 +91,26 @@
     tall: 'Haute et fine : sans bordure, elle risque de basculer.',
     contact: 'Touche peu le plateau : sans bordure, elle risque de se décoller.'
   };
-  var FIX_ORDER = ['fit', 'support', 'brim', 'orient'];
+  var FIX_ORDER = ['fit', 'support', 'brim', 'orient', 'arrange'];
 
   function preflightPlan(data) {
     var plan = { parts: [], fixes: [], count: 0 };
     if (!data || !data.settings || !Array.isArray(data.objects)) return plan;
     var s = data.settings;
-    var fixes = {};
+    var fixes = {}, involved = {};
     function want(key, objName, make) {
       var f = fixes[key] = fixes[key] || make();
       if (f.objects.indexOf(objName) < 0) f.objects.push(objName);
     }
+    var clash = conflictNames(data);
+    if (clash) {
+      plan.parts.push({ name: clash.join(' et '), issues: ['Ces pièces se chevauchent : la buse les heurterait à l’impression.'] });
+      clash.forEach(function (n) { involved[n] = true; want('arrange', n, function () { return { key: 'arrange', label: ARRANGE.label, action: ARRANGE.action, objects: [], checked: true }; }); });
+    }
     data.objects.filter(valid).forEach(function (o) {
       var kinds = kindOf(o, s);
       if (!kinds.length) return;
+      involved[o.name] = true;
       plan.parts.push({ name: o.name, issues: kinds.map(function (k) { return ISSUES[k]; }) });
       kinds.forEach(function (k) {
         if (k === 'fit') want('fit', o.name, function () { return { key: 'fit', label: 'Réduire pour que tout tienne sur le plateau', action: 'scale_to_fit', objects: [], checked: true }; });
@@ -104,7 +122,7 @@
       });
     });
     plan.fixes = FIX_ORDER.filter(function (k) { return fixes[k]; }).map(function (k) { return fixes[k]; });
-    plan.count = plan.parts.length;
+    plan.count = Object.keys(involved).length;
     return plan;
   }
 

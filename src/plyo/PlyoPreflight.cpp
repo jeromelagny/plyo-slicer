@@ -100,7 +100,14 @@ nlohmann::json measure()
                            {"needs_support", floating.count(object->id()) > 0},
                            {"fits", PlateActions::fits(size, bed)}});
     }
-    return {{"settings", settings}, {"objects", objects}, {"sliced", plate != nullptr && plate->is_slice_result_valid()}};
+    nlohmann::json result{{"settings", settings}, {"objects", objects}, {"sliced", plate->is_slice_result_valid()}};
+    // Conflit de trajets trouvé par la découpe (même source que l'alerte d'Orca, GLCanvas3D) : le panneau ne dit plus « pas de risque ».
+    if (plate->is_slice_result_valid())
+        if (const Slic3r::GCodeProcessorResult* gcode = plate->get_slice_result(); gcode != nullptr && gcode->conflict_result.has_value())
+            result["conflict"] = {{"a", Json::utf8_prefix(gcode->conflict_result->_objName1, 120)},
+                                  {"b", Json::utf8_prefix(gcode->conflict_result->_objName2, 120)},
+                                  {"height", std::round(gcode->conflict_result->_height * 10) / 10}};
+    return result;
 }
 
 }} // namespace Plyo::Preflight
