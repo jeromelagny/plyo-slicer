@@ -487,9 +487,18 @@ void handle_page_message(const nlohmann::json& data)
             send(r);
             send_values();
         } else if (type == "print_start") {
-            nlohmann::json r = FirstSteps::start_print(Json::boolean(data, "export", false));
-            r["type"]        = "print_started";
-            send(r);
+            if (Json::boolean(data, "export", false))
+                // La réponse ne part qu'à la fin réelle de l'export ; la fenêtre d'enregistrement s'ouvre dans cet appel, comme celle de connexion.
+                FirstSteps::export_file([](nlohmann::json r) {
+                    r["type"]   = "print_started";
+                    r["export"] = true;
+                    send(r);
+                });
+            else {
+                nlohmann::json r = FirstSteps::start_print();
+                r["type"]        = "print_started";
+                send(r);
+            }
         } else if (type == "setup_catalog") {
             send({{"type", "setup_catalog"}, {"catalog", PrinterSetup::catalog()}});
         } else if (type == "setup_install") {

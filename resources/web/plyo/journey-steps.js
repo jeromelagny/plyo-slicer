@@ -76,6 +76,8 @@
       if (c.sliced) body.appendChild(line(ui, c.risks > 0 ? 'alert' : 'check', c.risks > 0 ? c.risks + ' point' + (c.risks > 1 ? 's' : '') + ' à régler avant d’imprimer' : checkedLine(c.checked), c.risks > 0 || c.checked === 'ignored' ? 'warn' : c.checked === 'clean' ? 'ok' : ''));
       if (c.sliced && c.risks > 0) body.appendChild(ui.button('Imprimer quand même', h.skip, 'link'));
     } else if (opts.step === 'imprimer') {
+      // Dans l'étape et non en bas des messages : le texte entier reste lu, sous les suggestions rien n'est coupé.
+      if (opts.exported) body.appendChild(line(ui, 'check', opts.exported, 'ok exported'));
       if (opts.summary) body.appendChild(line(ui, 'check', opts.summary, 'ok'));
       // La machine est rappelée en lecture seule : en changer refait la préparation (réglages, filament, découpe).
       if (opts.machine) {

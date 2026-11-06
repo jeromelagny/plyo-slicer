@@ -376,6 +376,7 @@
   .printer-status { display: flex; flex-direction: column; gap: var(--s2); border-top: 1px solid var(--border); padding-top: var(--s2); }
   .printer-step { display: flex; gap: var(--s2); align-items: flex-start; margin: 0; }
   .printer-step .ic { margin-top: 3px; }
+  .printer-step.exported { overflow-wrap: anywhere; } /* un chemin long passe à la ligne au lieu d'être coupé */
   .printer-step .rich p { margin: 0; }
   .printer-step.ok .ic { color: var(--accent-text); }
   .printer-step.warn .ic { color: var(--warn-text); }
@@ -1204,7 +1205,7 @@
     if (!conv) return;
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
-    if (step !== 'imprimer') projectUI.sentConv = null; // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
+    if (step !== 'imprimer') { projectUI.sentConv = null; projectUI.exported = null; } // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
     if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; } }
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
@@ -1229,7 +1230,7 @@
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
-      sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
+      sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()),
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
@@ -1294,19 +1295,24 @@
   }
   // Un envoi à la fois : un double-clic ne part qu'une fois. La réponse d'Orca est immédiate (sa fenêtre s'ouvre ensuite) : le
   // verrou tient au moins le temps d'un double-clic après un succès, et tombe tout de suite après une erreur.
-  var SEND_LOCK_MS = 1500, SEND_WAIT_MS = 8000, SEND_ARMED_WAIT_MS = 30000; // sans réponse (panne), l'envoi redevient possible
+  var SEND_LOCK_MS = 1500, SEND_WAIT_MS = 8000, SEND_ARMED_WAIT_MS = 30000, EXPORT_WAIT_MS = 600000; // sans réponse (panne), l'envoi redevient possible ; un export attend la fenêtre d'enregistrement
   var sendLock = { on: false, kind: '', timer: null };
   function lockSend(kind) {
     if (sendLock.on) return false;
     sendLock = { on: true, kind: kind, timer: setTimeout(unlockSend, SEND_WAIT_MS), since: Date.now() };
     projectUI.sentConv = null; // « L'impression a démarré » ne vient qu'une fois l'envoi accepté
     projectUI.sentArmed = null;
+    projectUI.exported = null;
     renderProject();
     return true;
   }
   function waitLongerForSend() {
     clearTimeout(sendLock.timer);
     sendLock.timer = setTimeout(unlockSend, SEND_ARMED_WAIT_MS);
+  }
+  function waitForExport() {
+    clearTimeout(sendLock.timer);
+    sendLock.timer = setTimeout(unlockSend, EXPORT_WAIT_MS);
   }
   function unlockSend() {
     clearTimeout(sendLock.timer);
@@ -1319,17 +1325,44 @@
     if (sendLock.on) sendLock.timer = setTimeout(unlockSend, Math.max(0, SEND_LOCK_MS - (Date.now() - sendLock.since)));
   }
   function onPrintStarted(msg) {
+    repaintPanel(); // retour d'une fenêtre native : WebKit peut garder une image décalée du défilement
+    if (msg.export) { onExportDone(msg); return; }
     if (!msg.ok) {
       unlockSend();
       noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque : clique sur « Découper ».' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
       return;
     }
     projectUI.sentConv = conv;
-    if (sendLock.kind === 'export') noteLine('Choisis où enregistrer le fichier, puis copie-le sur ta clé USB ou ta carte SD.' + (PlyoCanvas.exportNote(conv && conv.project.canvas) ? ' ' + PlyoCanvas.exportNote(conv.project.canvas) : ''), '', 'info', 'guide');
-    else noteLine(PlyoCanvas.orcaConfirm(conv && conv.project.canvas) || 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
+    noteLine(PlyoCanvas.orcaConfirm(conv && conv.project.canvas) || 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
     unlockSendSoon();
     renderProject();
   }
+  // Fin réelle de l'export (la fenêtre d'enregistrement est fermée, le fichier écrit). Annulé : on revient à l'état d'avant, sans un mot.
+  function onExportDone(msg) {
+    unlockSend();
+    if (msg.cancelled) return;
+    if (!msg.ok) {
+      noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque : clique sur « Découper ».' : msg.text || 'L’export n’a pas abouti : aucun fichier n’a été écrit.', 'error', 'alert', 'guide');
+      return;
+    }
+    rememberHabit();
+    projectUI.sentConv = conv;
+    projectUI.exported = { conv: conv, text: Logic.exportedText(msg, PlyoCanvas.exportNote(conv && conv.project.canvas)) };
+    renderProject();
+    if (viewUI.tab === 'guide') $('project-card').scrollIntoView({ block: 'nearest' }); // le message entier, en haut de l'étape
+  }
+  // Force un rendu et recale le défilement. Effet à vérifier en vrai : le défaut n'existe que dans WebKit, au retour d'une fenêtre native.
+  function repaintPanel() {
+    var top = bodyEl.scrollTop;
+    void document.body.offsetHeight;
+    bodyEl.scrollTop = top + 1;
+    bodyEl.scrollTop = top;
+    requestAnimationFrame(function () {
+      bodyEl.style.transform = 'translateZ(0)';
+      requestAnimationFrame(function () { bodyEl.style.transform = ''; bodyEl.scrollTop = top; });
+    });
+  }
+  window.addEventListener('focus', repaintPanel);
   // Le bouton plein de la ligne d'action.
   function runAction(kind) {
     if (kind === 'slice') plateAction('slice');
@@ -1345,7 +1378,7 @@
     else if (kind === 'confirmCanvas') { if (canvasUI.mapping && PlyoCanvas.complete(canvasUI.mapping)) applyCanvas(canvasUI.mapping); }
     else if (kind === 'manualYes') { canvasUI.manual.confirmed = true; canvasUI.mapping = canvasProposal(); renderProject(); }
     else if (kind === 'manualSave') saveManual();
-    else if (kind === 'export') { canvasUI.refused = ''; if (!lockSend('export')) return; rememberHabit(); window.orca.postMessage({ type: 'print_start', export: true }); }
+    else if (kind === 'export') { canvasUI.refused = ''; if (!lockSend('export')) return; waitForExport(); window.orca.postMessage({ type: 'print_start', export: true }); }
     else if (kind === 'advance') setTourStep('print');
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
     else if (kind === 'applyIntent') applyIntent(false);

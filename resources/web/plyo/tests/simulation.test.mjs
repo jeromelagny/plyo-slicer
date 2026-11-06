@@ -110,3 +110,39 @@ test('B2 : une pièce trop haute ne « tient » pas sur l’autre machine propos
   assert.equal(M.machineThatFits([a, b, c], 'a', [40, 40, 300]).preset, 'c');
   assert.equal(M.machineThatFits([{ preset: 'a', linked: true, bed_mm: [100, 100] }, { preset: 'b', linked: true, bed_mm: [256, 256] }], 'a', [200, 40, 300]).preset, 'b', 'hauteur inconnue : on ne bloque pas');
 });
+
+test('G1 : l’export ne répond qu’à sa fin réelle ; annulé, rien ne bouge', () => {
+  const c = cpp('PlyoFirstSteps.cpp');
+  assert.ok(!/EVT_GLTOOLBAR_EXPORT_GCODE/.test(c), 'plus de réponse immédiate après un événement posté');
+  assert.match(c, /plater->export_gcode\(false\)[\s\S]{0,260}is_export_gcode_scheduled\(\)[\s\S]{0,160}"cancelled", true/);
+  const orca = fs.readFileSync(path.join(here, '..', '..', '..', '..', 'src', 'slic3r', 'GUI', 'Plater.cpp'), 'utf8');
+  assert.match(orca, /\/\/ PLYO:[^\n]*\n[^\n]*is_export_scheduled\(\)\)\n\s+Plyo::FirstSteps::on_export_done/);
+  const page = read('index.html');
+  const done = page.slice(page.indexOf('function onExportDone'), page.indexOf('function repaintPanel'));
+  assert.ok(done.indexOf('msg.cancelled) return') < done.indexOf('projectUI.sentConv = conv'), 'annulé : pas de « L’impression a démarré »');
+  assert.ok(done.indexOf('msg.cancelled) return') < done.indexOf('rememberHabit'), 'annulé : l’habitude n’est pas retenue');
+  assert.ok(!/Choisis où enregistrer/.test(page));
+});
+
+test('F10 : message final complet, dans l’étape, avec le chemin écrit', () => {
+  const t = L.exportedText({ ok: true, folder: '/Users/moi/Desktop', file: 'crochet_PLA_1h.gcode' }, '');
+  assert.match(t, /« crochet_PLA_1h\.gcode » est enregistré dans \/Users\/moi\/Desktop\./);
+  assert.match(t, /Copie-le sur ta clé USB ou ta carte SD, puis lance-le depuis l’écran de ton imprimante\.$/);
+  assert.match(L.exportedText({ ok: true, folder: '/x', file: '' }, 'Note.'), /^Le fichier est enregistré dans \/x\..*Note\.$/);
+  assert.match(read('journey-steps.js'), /opts\.exported/);
+  assert.match(read('index.html'), /\.printer-step\.exported \{ overflow-wrap: anywhere; \}/);
+});
+
+test('F9 : dossier proposé : le dernier choisi, sinon le Bureau, jamais plyo/modeles', () => {
+  const c = cpp('PlyoFirstSteps.cpp');
+  const fn = c.slice(c.indexOf('void prefer_user_folder'), c.indexOf('void export_file'));
+  assert.match(fn, /get_last_output_dir\(std::string\(\), false\)/);
+  assert.match(fn, /Dir_Desktop/);
+  assert.match(fn, /rfind\(inner, 0\) != 0\)\n\s+return;/, 'un dossier choisi hors de plyo/ est gardé');
+});
+
+test('G2 : rendu forcé au retour de la fenêtre native', () => {
+  const page = read('index.html');
+  assert.match(page, /function onPrintStarted\(msg\) \{\n\s+repaintPanel\(\);/);
+  assert.match(page, /window\.addEventListener\('focus', repaintPanel\)/);
+});
