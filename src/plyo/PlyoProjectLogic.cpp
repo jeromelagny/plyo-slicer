@@ -1,5 +1,6 @@
 #include "PlyoProjectLogic.hpp"
 
+#include "PlyoCatalogPolicy.hpp"
 #include "PlyoJson.hpp"
 
 #include <algorithm>
@@ -270,7 +271,7 @@ Adaptation adapt_3mf(const nlohmann::json& file_values, const nlohmann::json& pr
             continue;
         }
         const double value = it.value().get<double>();
-        if (value < Json::num(range, "min", value) || value > Json::num(range, "max", value))
+        if (value < Json::num(range, "min", value) - Catalog::BOUND_MARGIN || value > Json::num(range, "max", value) + Catalog::BOUND_MARGIN)
             out.dropped.push_back({{"key", key}, {"reason", "valeur hors de la plage sûre de l'assistant"}});
         else
             out.apply.push_back({{"key", key}, {"value", it.value()}});

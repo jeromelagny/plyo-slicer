@@ -56,6 +56,10 @@ struct CheckResult
     std::string text; // « Refusé : … » (français) quand !ok
 };
 
+// Les bornes d'Orca sont des float, lues en double : 0.1f vaut 0,1000000015. Cette marge accepte la valeur écrite dans la
+// définition (0,1) sans laisser passer une vraie sortie de plage.
+constexpr double BOUND_MARGIN = 1e-6;
+
 // Le slicer fait autorité : type, bornes d'Orca, puis limites du fabricant pour les températures (`limit_id` non vide).
 // `confirmed_outside` : l'utilisateur a coché lui-même une ligne hors plage du fabricant.
 CheckResult check_change(const std::string& label, const OptionInfo& info, const nlohmann::json& value, const Limits::Range& limits,

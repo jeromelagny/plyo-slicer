@@ -1119,3 +1119,26 @@ TEST_CASE("Calibration: base de la passe 2 du débit bornée comme la valeur enr
     CHECK_FALSE(flow_base_valid(-1));
 }
 
+TEST_CASE("Catalog: une borne d'Orca en float accepte sa valeur exacte")
+{
+    using Plyo::Catalog::check_change;
+    const double min_f = 0.1f; // 0,100000001… : la valeur 0,1 est juste en dessous
+    const double max_f = 0.7f; // 0,699999988… : la valeur 0,7 est juste au-dessus
+    CHECK(check_change("Échelle", info("float", min_f), 0.1, no_limits, "", false).ok);
+    CHECK(check_change("Échelle", info("float", {}, max_f), 0.7, no_limits, "", false).ok);
+    CHECK_FALSE(check_change("Échelle", info("float", min_f), 0.0999, no_limits, "", false).ok);
+    CHECK_FALSE(check_change("Échelle", info("float", {}, max_f), 0.7001, no_limits, "", false).ok);
+}
+
+TEST_CASE("Project: adapt_3mf accepte la valeur exacte d'une borne d'Orca en float")
+{
+    using namespace Plyo::ProjectLogic;
+    const auto range = [](const std::string&) { return nlohmann::json{{"min", 0.1f}, {"max", 0.7f}}; };
+    const Adaptation low = adapt_3mf({{"a", 0.1}, {"b", 0.7}}, nlohmann::json::object(), range);
+    CHECK(low.apply.size() == 2);
+    CHECK(low.dropped.empty());
+    const Adaptation out = adapt_3mf({{"a", 0.0999}, {"b", 0.7001}}, nlohmann::json::object(), range);
+    CHECK(out.apply.empty());
+    CHECK(out.dropped.size() == 2);
+}
+
