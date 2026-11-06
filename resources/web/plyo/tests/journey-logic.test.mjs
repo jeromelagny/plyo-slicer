@@ -252,3 +252,9 @@ test('plateau vide alors que la fiche a une pièce : on demande de la remettre, 
   assert.equal(J.primaryAction('resultat', { plateEmpty: true }).kind, 'photo', 'à Résultat, le plateau peut être vidé');
   assert.equal(J.primaryAction('preparer', {}).kind, 'slice');
 });
+
+test('« Tout est bon » n’est dit que si la plaque a été vérifiée sans risque', () => {
+  assert.ok(J.prompt('preparer', { sliced: true, risks: 0, checked: 'clean' }).includes('Tout est bon'));
+  assert.ok(!J.prompt('preparer', { sliced: true, risks: 0, checked: 'ignored' }).includes('Tout est bon'));
+  assert.ok(!J.prompt('preparer', { sliced: true, risks: 0, checked: '' }).includes('Tout est bon'));
+});

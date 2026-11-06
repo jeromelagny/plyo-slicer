@@ -57,6 +57,12 @@
     body.appendChild(ui.button('Changer une réponse', h.reset, 'link'));
   }
 
+  // « Aucun risque » n'est dit que si la vérification a vraiment eu lieu et n'a rien trouvé.
+  function checkedLine(checked) {
+    if (checked === 'clean') return 'Aucun risque détecté';
+    return checked === 'ignored' ? 'Points ignorés : ils restent à ta charge' : 'Vérification en cours';
+  }
+
   function render(slot, ui, opts) {
     var c = opts.ctx || {}, h = opts.handlers;
     slot.textContent = '';
@@ -67,7 +73,7 @@
       renderIntent(body, ui, opts.intent, h);
     } else if (opts.step === 'preparer') {
       body.appendChild(line(ui, c.sliced ? 'check' : 'info', c.sliced ? 'Découpe faite' : 'Découpe à faire', c.sliced ? 'ok' : ''));
-      if (c.sliced) body.appendChild(line(ui, c.risks > 0 ? 'alert' : 'check', c.risks > 0 ? c.risks + ' point' + (c.risks > 1 ? 's' : '') + ' à régler avant d’imprimer' : 'Aucun risque détecté', c.risks > 0 ? 'warn' : 'ok'));
+      if (c.sliced) body.appendChild(line(ui, c.risks > 0 ? 'alert' : 'check', c.risks > 0 ? c.risks + ' point' + (c.risks > 1 ? 's' : '') + ' à régler avant d’imprimer' : checkedLine(c.checked), c.risks > 0 || c.checked === 'ignored' ? 'warn' : c.checked === 'clean' ? 'ok' : ''));
       if (c.sliced && c.risks > 0) body.appendChild(ui.button('Imprimer quand même', h.skip, 'link'));
     } else if (opts.step === 'imprimer') {
       if (opts.summary) body.appendChild(line(ui, 'check', opts.summary, 'ok'));

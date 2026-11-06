@@ -200,3 +200,13 @@ test('un fichier déposé est prioritaire : le plateau ne le remplace pas, et il
   assert.ok(/if \(adopted\) conv\.project\.part = null/.test(page), 'une pièce seulement vue sur le plateau cède la place');
   assert.ok(read('project-card.js').includes('Garder cette pièce'), 'l’ancienne pièce reste récupérable, et le panneau le dit');
 });
+
+test('« Aucun risque détecté » distingue vérifié, ignoré et pas vérifié, et une réouverture revérifie', () => {
+  const steps = read('journey-steps.js');
+  assert.ok(/checked === 'clean'\) return 'Aucun risque détecté'/.test(steps));
+  assert.ok(steps.includes('Points ignorés'));
+  const page = read('index.html');
+  assert.ok(/openRisks = 0; plateChecked = 'ignored'/.test(page), 'croix et « En parler » : ignoré');
+  const restore = page.slice(page.indexOf('function restoreConversation'), page.indexOf('function renderEntry'));
+  assert.ok(/tourSignals\.sliced\) window\.orca\.postMessage\(\{ type: 'preflight' \}\)/.test(restore));
+});

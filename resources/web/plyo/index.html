@@ -777,6 +777,7 @@
   function newId() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6); }
   function startConversation(project) {
     openRisks = 0;
+    plateChecked = '';
     dropTooBig();
     if (typeof intentUI !== 'undefined') { intentUI.idk = false; intentUI.manual = null; }
     if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
@@ -1038,9 +1039,10 @@
   // Zone fixe (fiche, barre, ligne d'action) + contenu de l'étape en cours (premier bloc du corps qui défile).
   var journeyUI = { ficheOpen: false, lastStep: null };
   var openRisks = 0; // risques de la vérification non ignorés
+  var plateChecked = ''; // résultat de la vérification de la découpe en cours : 'clean', 'open', 'ignored' ; '' tant qu'elle n'a pas eu lieu
   var preflightFix = null; // lance « Tout corriger » de la carte de vérification affichée (rend faux s'il n'y a rien à faire)
   function journeyCtx() {
-    var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on,
+    var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, checked: plateChecked,
       plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
     else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
@@ -1496,11 +1498,14 @@
       project: c.project && typeof c.project === 'object' ? c.project : PlyoProject.emptyProject() };
     if (PlyoProject.nextStep(conv.project) === 'ready' && conv.project.part && !conv.project.adapted) conv.project.adapted = conv.project.part.name; // ancienne conversation : jamais réadaptée
     openRisks = 0;
+    plateChecked = '';
     dropTooBig();
     applyTab('reset');
     $('guide-notes').textContent = '';
     restoreProjectInOrca(false);
     renderProject();
+    // Plaque déjà découpée : aucune nouvelle découpe ne relancera la vérification, on la fait maintenant.
+    if (tourSignals && tourSignals.sliced) window.orca.postMessage({ type: 'preflight' });
     if (!conv.entries.length) return;
     showConversation();
     conv.entries.forEach(function (entry) { try { renderEntry(entry, true); } catch (e) { /* élément abîmé : ignoré */ } });
@@ -3105,13 +3110,17 @@
   // Après chaque nouveau découpage, le slicer mesure le plateau ; preflight.js en déduit les risques. Une carte
   // n'apparaît que s'il y en a. Rien n'est envoyé à l'IA, sauf si l'utilisateur clique « En parler à l'assistant ».
   var sliceSig = null;        // signature du dernier découpage vu (null : pas encore de signal)
+  var checkAskedFor = null;   // signature du découpage dont la vérification a été demandée
   var preflightManual = false;
   var dismissedRisks = {};    // risques ignorés pendant cette session
   setInterval(function () { window.orca.postMessage({ type: 'tour_signals' }); }, 2000);
   function watchSlice(signals) {
     var r = Logic.newSlice(sliceSig, signals);
     sliceSig = r.sig;
-    if (r.fire) window.orca.postMessage({ type: 'preflight' });
+    if (!signals.sliced) plateChecked = ''; // découpe périmée : ce qui avait été vérifié ne vaut plus
+    // Plaque déjà découpée en arrivant à l'étape (pièce reconnue sur le plateau) : aucune nouvelle découpe ne lancerait la vérification.
+    var unchecked = signals.sliced && !plateChecked && checkAskedFor !== r.sig && conv && PlyoProject.nextStep(conv.project) === 'ready';
+    if (r.fire || unchecked) { checkAskedFor = r.sig; window.orca.postMessage({ type: 'preflight' }); }
   }
   function checkPlate() {
     preflightManual = true;
@@ -3125,6 +3134,7 @@
     var risks = window.PlyoPreflight.preflightRisks(data);
     var fresh = risks.filter(function (r) { return !dismissedRisks[window.PlyoPreflight.riskKey(r)]; });
     openRisks = fresh.length;
+    plateChecked = !risks.length ? 'clean' : fresh.length ? 'open' : 'ignored';
     renderPreflight(manual || fresh.length ? risks : [], data);
     // Découpe faite et aucun risque : on passe à l'impression sans demander.
     if (!manual && currentTourStep() === 'slice' && data && data.sliced && data.objects && data.objects.length && PlyoJourney.afterPreflight(openRisks) === 'advance') {
@@ -3235,7 +3245,7 @@
     box.appendChild(talk);
 
     // Carte fermée : plus de risque ouvert, donc plus de bouton « Appliquer les correctifs » dans la ligne d'action.
-    function closeCard() { slot.textContent = ''; preflightFix = null; openRisks = 0; renderProject(); }
+    function closeCard() { slot.textContent = ''; preflightFix = null; openRisks = 0; plateChecked = 'ignored'; renderProject(); }
     preflightFix = function () { if (fixAll.disabled) return false; fixAll.click(); return true; };
     function picked() { return rows.filter(function (r) { return r.check.checked; }); }
     // « Tout corriger » tant que la sélection est celle conseillée ; sinon « Corriger » ce qui est coché.
