@@ -122,7 +122,33 @@
     }).join(', ') + tail;
   }
 
-  var api = { colourName: colourName, trays: trays, propose: propose, complete: complete, tooMany: tooMany,
+  // Après la relecture d'avant l'envoi : 'armed' (canvas_send, CFS et IFS), 'orca' (print_start : la fenêtre d'Orca, ou la carte de
+  // la CC2 dans son fil d'envoi), 'refuse' (choisi pour être imposé, plus possible : rien ne part en silence d'une autre façon).
+  function sendRoute(chosen, state) {
+    if (!isImposed(chosen)) return 'orca';
+    var system = state && state.system;
+    if (system !== 'cfs' && system !== 'ifs') return 'orca';
+    return state.imposable === true ? 'armed' : 'refuse';
+  }
+
+  // Ligne d'information de l'étape Imprimer, selon la nature des emplacements choisis (rien pour la CC2).
+  function printNote(canvas) {
+    if (!Array.isArray(canvas) || !canvas.length) return '';
+    var first = canvas[0];
+    if (!first.system || first.system === 'canvas') return '';
+    var trial = first.validated === true ? '' : ' Plyo n’a pas encore été essayé sur cette marque : regarde sur l’écran de l’imprimante que la bonne bobine alimente.';
+    if (isImposed(canvas)) return 'Passe par « Envoyer et imprimer » : le bouton d’envoi d’Orca ouvre sa propre fenêtre et ne garde pas ce choix.' + trial;
+    return 'Je lis ces emplacements, mais je ne les impose pas sur ta machine : choisis-les dans la fenêtre d’Orca à l’envoi.' + trial;
+  }
+
+  // Ce que dit le panneau quand Orca ouvre sa fenêtre d'envoi, s'il y a quelque chose à y vérifier (sinon vide : texte habituel).
+  function orcaConfirm(canvas) {
+    if (Array.isArray(canvas) && canvas.length && canvas[0].system && canvas[0].system !== 'canvas' && !isImposed(canvas))
+      return 'Orca te demande de confirmer : choisis les mêmes emplacements dans sa fenêtre, puis valide.';
+    return '';
+  }
+
+  var api = { sendRoute: sendRoute, printNote: printNote, orcaConfirm: orcaConfirm, colourName: colourName, trays: trays, propose: propose, complete: complete, tooMany: tooMany,
     checkBeforeSend: checkBeforeSend, profileTypes: profileTypes, mapLabel: mapLabel, distance: distance,
     words: words, slotName: slotName, isImposed: isImposed };
   root.PlyoCanvas = api;

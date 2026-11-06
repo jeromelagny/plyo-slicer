@@ -7,13 +7,16 @@
     return s;
   }
 
-  // opts : { mode: single|multi|tooMany, system, emptyBlocks, trays, colours, mapping, error, handlers: { pickTray(tray), setTray(t, key), recheck(), useList() } }
+  // readOnly : lire sans imposer, avec `blocker` (pourquoi) ; trial : lecture pas encore essayée sur une vraie machine (validated faux).
+  // opts : { mode: single|multi|tooMany, system, emptyBlocks, readOnly, blocker, trial, trays, colours, mapping, error, handlers: { pickTray(tray), setTray(t, key), recheck(), useList() } }
   // emptyBlocks : un emplacement vide sera refusé à l'envoi (CFS, IFS) : il ne se choisit pas. Sur la CC2 son « status » n'est pas fiable : « vide ? ».
   function render(slot, ui, opts) {
     var h = opts.handlers, trays = opts.trays || [], body = ui.el('div', 'project-body canvas-choices');
     var w = root.PlyoCanvas.words(opts.system);
     slot.textContent = '';
     if (opts.error) body.appendChild(ui.el('p', 'project-error', opts.error));
+    if (opts.readOnly) body.appendChild(ui.el('p', 'muted small', 'Je lis ces emplacements, mais je ne peux pas imposer ton choix sur cette machine' + (opts.blocker ? ' (' + opts.blocker + ')' : '') + '. Il sert à régler le bon filament ; tu le sélectionneras à l’envoi.'));
+    else if (opts.trial) body.appendChild(ui.el('p', 'muted small', 'Plyo n’a pas encore été essayé sur cette marque : compare ces emplacements avec l’écran de ton imprimante.'));
     if (opts.mode === 'tooMany') {
       body.appendChild(ui.el('p', 'muted small', 'Ta pièce a ' + opts.colours.length + ' couleurs et ' + w.unit + ' ' + trays.length +
         ' ' + w.slots + '. Réduis le nombre de couleurs de la pièce dans Orca, puis reviens ici.'));

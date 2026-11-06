@@ -166,8 +166,9 @@ nlohmann::json sanitize(const nlohmann::json& project)
             text(e, o, "preset");
             // Numéro affiché et nature de l'emplacement (CFS, IFS, U1, saisie manuelle). Une valeur illisible disparaît.
             text(e, o, "label");
-            if (const nlohmann::json* v = Json::field(e, "imposable"); v != nullptr && v->is_boolean())
-                o["imposable"] = *v;
+            for (const char* key : {"imposable", "validated"})
+                if (const nlohmann::json* v = Json::field(e, key); v != nullptr && v->is_boolean())
+                    o[key] = *v;
             const std::string source = Json::str(e, "source"), system = Json::str(e, "system");
             if (source == "printer" || source == "manual")
                 o["source"] = source;

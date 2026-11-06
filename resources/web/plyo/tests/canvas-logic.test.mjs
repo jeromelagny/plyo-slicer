@@ -178,3 +178,39 @@ test('isImposed : projet ancien (CC2) oui ; lu sans imposer ou saisi à la main 
   assert.equal(C.isImposed([]), false);
   assert.equal(C.isImposed(undefined), false);
 });
+
+const imposedEntry = { t: 0, canvas_id: 1, tray_id: 0, label: '1A', type: 'PLA', color: '#000000', imposable: true, source: 'printer', system: 'cfs' };
+const readOnlyEntry = Object.assign({}, imposedEntry, { imposable: false });
+
+test('sendRoute : envoi armé seulement si le choix et la relecture sont imposables sur CFS ou IFS', () => {
+  assert.equal(C.sendRoute([imposedEntry], { ok: true, system: 'cfs', imposable: true }), 'armed');
+  assert.equal(C.sendRoute([Object.assign({}, imposedEntry, { system: 'ifs' })], { ok: true, system: 'ifs', imposable: true }), 'armed');
+  // Choisi pour être imposé, plus possible à la relecture : on n'envoie pas en silence autre chose.
+  assert.equal(C.sendRoute([imposedEntry], { ok: true, system: 'cfs', imposable: false }), 'refuse');
+  assert.equal(C.sendRoute([imposedEntry], { ok: true, system: 'cfs' }), 'refuse');
+  // Lire sans imposer : la fenêtre habituelle d'Orca, sans plan.
+  assert.equal(C.sendRoute([readOnlyEntry], { ok: true, system: 'cfs', imposable: true }), 'orca');
+  // CC2 : print_start comme avant, la carte part dans le fil d'envoi (PlyoCC2).
+  assert.equal(C.sendRoute([{ t: 0, canvas_id: 0, tray_id: 0 }], { ok: true, system: 'canvas', imposable: true }), 'orca');
+  assert.equal(C.sendRoute([], { ok: true, system: 'cfs', imposable: true }), 'orca');
+});
+
+test('printNote : la CC2 n’a rien de plus ; ailleurs le panneau ne présente rien comme essayé sur machine', () => {
+  assert.equal(C.printNote([{ t: 0, tray_id: 0 }]), '');
+  assert.equal(C.printNote([]), '');
+  const imposed = C.printNote([imposedEntry]);
+  assert.ok(imposed.includes('« Envoyer et imprimer »'), 'le bouton d’Orca ne garde pas la répartition');
+  assert.ok(imposed.includes('pas encore été essayé'), 'validated faux');
+  assert.ok(!/vérifié|garanti/i.test(imposed));
+  const read = C.printNote([readOnlyEntry]);
+  assert.ok(read.includes('fenêtre d’Orca'));
+  assert.ok(!/impos[ée]+\b(?! sur)/.test(read.replace('je ne les impose pas', '')), 'aucune répartition présentée comme imposée');
+  assert.ok(!C.printNote([Object.assign({}, imposedEntry, { validated: true })]).includes('pas encore été essayé'), 'une marque validée perd la mention');
+});
+
+test('orcaConfirm : CC2 et machine sans emplacements : texte d’aujourd’hui ; lire sans imposer : dit quoi vérifier', () => {
+  assert.equal(C.orcaConfirm(undefined), '');
+  assert.equal(C.orcaConfirm([]), '');
+  assert.equal(C.orcaConfirm([{ t: 0, tray_id: 0 }]), '');
+  assert.equal(C.orcaConfirm([readOnlyEntry]), 'Orca te demande de confirmer : choisis les mêmes emplacements dans sa fenêtre, puis valide.');
+});

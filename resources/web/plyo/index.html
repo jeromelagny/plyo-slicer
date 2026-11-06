@@ -932,7 +932,7 @@
       entries.push({ t: m.t, type: tray.type, color: tray.color });
       var entry = { t: m.t, canvas_id: tray.canvas_id, tray_id: tray.tray_id, type: tray.type, color: tray.color };
       // Numéro du traducteur et nature de la lecture (la CC2 reste sans : son plan et ses projets ne changent pas).
-      if (st.system && st.system !== 'canvas') { entry.label = tray.slot; entry.imposable = st.imposable === true; entry.source = st.source; entry.system = st.system; }
+      if (st.system && st.system !== 'canvas') { entry.label = tray.slot; entry.imposable = st.imposable === true; entry.source = st.source; entry.system = st.system; entry.validated = st.validated === true; }
       full.push(entry);
     });
     if (!entries.length || entries.length !== mapping.length) { canvasUI.error = 'Choisis un emplacement pour chaque couleur.'; renderProject(); return; }
@@ -977,11 +977,53 @@
   }
   // Avant « Envoyer et imprimer » : relire les emplacements, bloquer si l'un a changé de type ou a disparu.
   function sendWithCanvasCheck() {
+    if (slotWordsKey() !== 'canvas') waitLongerForSend(); // la lecture CFS ou IFS peut prendre 10 s
     canvasUI.sendPending = true;
     canvasUI.readId += 1;
     canvasUI.loading = false;
     noteLine('Je relis les ' + slotWords().slots + ' ' + slotWords().of + ' avant d’envoyer…', '', 'info', 'guide');
     window.orca.postMessage({ type: 'canvas_read', preset: conv.project.printer.preset, send: true, id: canvasUI.readId });
+  }
+  // La relecture a échoué : rien ne part. La CC2 garde son texte ; ailleurs, le refus reste affiché avec « Relire les emplacements ».
+  function refuseReread(msg) {
+    if (!msg.system || msg.system === 'canvas') { noteLine('Je n’arrive pas à relire les emplacements de ta CC2 : rien n’est envoyé. Vérifie qu’elle est allumée, puis réessaie.', 'warn', 'alert', 'guide'); return; }
+    canvasUI.refused = 'Je n’arrive pas à relire ' + PlyoCanvas.words(msg.system).your + ' : rien n’est envoyé. Vérifie que ton imprimante est allumée, puis réessaie.';
+    canvasUI.refusedConv = conv;
+    canvasUI.refusedPlain = false;
+    renderProject();
+  }
+  function slotsCheck(msg) {
+    var chosen = conv.project.canvas || [], cols = Array.isArray(msg.colours) ? msg.colours : [];
+    var check = PlyoCanvas.checkBeforeSend(chosen, PlyoCanvas.trays(msg), { system: msg.system, empty_blocks: !!msg.empty_blocks });
+    if (cols.length && (cols.length !== chosen.length || cols.some(function (c) { return !chosen.some(function (e) { return e.t === c.t; }); })))
+      check.block.push('La pièce n’a plus les mêmes couleurs qu’au choix des emplacements.');
+    return check;
+  }
+  // Les emplacements ne correspondent plus : on rouvre le choix avec la lecture fraîche.
+  function slotsChanged(msg, check) {
+    check.block.forEach(function (t) { noteLine(t, 'warn', 'alert', 'guide'); });
+    noteLine('Choisis à nouveau les emplacements : rien n’est envoyé.', 'warn', 'alert', 'guide');
+    canvasUI.state = msg; canvasUI.preset = conv.project.printer.preset; canvasUI.loading = false; canvasUI.mapping = null; canvasUI.useList = false;
+    projectUI.editing = 'filament';
+    canvasUI.mapping = canvasProposal();
+    renderProject();
+  }
+  function onCanvasSent(msg) {
+    if (!msg.ok) {
+      unlockSend();
+      canvasUI.refused = msg.text || 'Je n’ai pas pu envoyer avec ces emplacements : rien n’est parti.';
+      canvasUI.refusedConv = conv;
+      canvasUI.refusedPlain = false;
+      if (conv) renderProject();
+      return;
+    }
+    // Orca a pris l'envoi, rien de plus : la machine ne répond pas à la répartition.
+    canvasUI.refused = '';
+    projectUI.sentConv = conv;
+    projectUI.sentArmed = conv;
+    noteLine(msg.text || 'J’envoie le fichier : la répartition part avec. Regarde l’écran de ton imprimante.', '', 'info', 'guide');
+    unlockSendSoon();
+    if (conv) renderProject();
   }
   function onCanvasState(msg) {
     if (msg.id !== canvasUI.readId) return; // réponse à une lecture remplacée depuis
@@ -989,26 +1031,35 @@
     if (canvasUI.sendPending && msg.send) {
       canvasUI.sendPending = false;
       if (!conv || !conv.project.printer || msg.preset !== conv.project.printer.preset) { unlockSend(); return; }
-      if (!msg.ok) { unlockSend(); noteLine(msg.system && msg.system !== 'canvas' ? 'Je n’arrive pas à relire ' + PlyoCanvas.words(msg.system).your + ' : rien n’est envoyé. Vérifie que ton imprimante est allumée, puis réessaie.' : 'Je n’arrive pas à relire les emplacements de ta CC2 : rien n’est envoyé. Vérifie qu’elle est allumée, puis réessaie.', 'warn', 'alert', 'guide'); return; }
-      var chosen = conv.project.canvas || [], cols = Array.isArray(msg.colours) ? msg.colours : [];
-      var check = PlyoCanvas.checkBeforeSend(chosen, PlyoCanvas.trays(msg), { system: msg.system, empty_blocks: !!msg.empty_blocks });
-      if (cols.length && (cols.length !== chosen.length || cols.some(function (c) { return !chosen.some(function (e) { return e.t === c.t; }); })))
-        check.block.push('La pièce n’a plus les mêmes couleurs qu’au choix des emplacements.');
-      if (check.block.length) {
-        unlockSend();
-        check.block.forEach(function (t) { noteLine(t, 'warn', 'alert', 'guide'); });
-        noteLine('Choisis à nouveau les emplacements : rien n’est envoyé.', 'warn', 'alert', 'guide');
-        canvasUI.state = msg; canvasUI.preset = conv.project.printer.preset; canvasUI.loading = false; canvasUI.mapping = null; canvasUI.useList = false;
-        projectUI.editing = 'filament';
-        canvasUI.mapping = canvasProposal();
-        renderProject();
-        return;
+      var chosen = conv.project.canvas || [], imposed = PlyoCanvas.isImposed(chosen);
+      if (!msg.ok && imposed) { unlockSend(); refuseReread(msg); return; }
+      // Lu sans imposer et illisible maintenant : rien n'était promis, la fenêtre d'Orca reste le juge.
+      if (!msg.ok) noteLine('Je n’arrive pas à relire tes emplacements : vérifie-les bien dans la fenêtre d’Orca.', 'warn', 'alert', 'guide');
+      var route = msg.ok ? PlyoCanvas.sendRoute(chosen, msg) : 'orca';
+      if (msg.ok) {
+        var check = slotsCheck(msg);
+        if (route === 'refuse') check.block.push('Je ne peux plus imposer ces emplacements sur cette machine' + (msg.blocker ? ' (' + msg.blocker + ')' : '') + '.');
+        if (check.block.length) { unlockSend(); slotsChanged(msg, check); return; }
+        check.notes.forEach(function (t) { noteLine(t, '', 'info', 'guide'); });
       }
-      check.notes.forEach(function (t) { noteLine(t, '', 'info', 'guide'); });
       syncCanvasPlan(true); // rafraîchit aussi les couleurs découpées de la plaque
       canvasUI.refused = '';
       rememberHabit();
-      window.orca.postMessage({ type: 'print_start', export: false });
+      if (route === 'armed') { waitLongerForSend(); window.orca.postMessage({ type: 'canvas_send', preset: conv.project.printer.preset }); }
+      else window.orca.postMessage({ type: 'print_start', export: false });
+      return;
+    }
+    if (canvasUI.rereading) {
+      canvasUI.rereading = false;
+      if (!conv || !conv.project.printer || msg.preset !== conv.project.printer.preset) { if (conv) renderProject(); return; }
+      if (!msg.ok) { refuseReread(msg); renderProject(); return; }
+      var again = slotsCheck(msg);
+      if (PlyoCanvas.sendRoute(conv.project.canvas, msg) === 'refuse') again.block.push('Je ne peux plus imposer ces emplacements sur cette machine' + (msg.blocker ? ' (' + msg.blocker + ')' : '') + '.');
+      if (again.block.length) { canvasUI.refused = ''; slotsChanged(msg, again); return; }
+      canvasUI.refused = '';
+      again.notes.forEach(function (t) { noteLine(t, '', 'info', 'guide'); });
+      noteLine('J’ai relu tes emplacements : ils n’ont pas changé. Clique sur « Envoyer et imprimer » pour réessayer.', 'ok', 'check', 'guide');
+      renderProject();
       return;
     }
     if (!conv || !conv.project.printer || msg.preset !== conv.project.printer.preset) { canvasUI.preset = null; if (conv) renderProject(); return; }
@@ -1089,13 +1140,13 @@
     syncCanvasPlan(false);
     var cmode = canvasMode(step);
     if (cmode && cmode !== 'loading')
-      PlyoCanvasView.render($('project-card'), ui, { mode: cmode, system: slotWordsKey(), emptyBlocks: !!canvasUI.state.empty_blocks, trays: PlyoCanvas.trays(canvasUI.state), colours: canvasColours(), mapping: canvasUI.mapping, error: canvasUI.error, handlers: canvasHandlers });
+      PlyoCanvasView.render($('project-card'), ui, { mode: cmode, system: slotWordsKey(), emptyBlocks: !!canvasUI.state.empty_blocks, readOnly: canvasUI.state.imposable === false, blocker: canvasUI.state.blocker || '', trial: canvasUI.state.validated === false, trays: PlyoCanvas.trays(canvasUI.state), colours: canvasColours(), mapping: canvasUI.mapping, error: canvasUI.error, handlers: canvasHandlers });
     else if (cmode === 'loading') { $('project-card').textContent = ''; }
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
-      sent: projectUI.sentConv === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '',
+      sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()),
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
@@ -1119,6 +1170,14 @@
   };
   var stepHandlers = {
     changeSlots: function () { projectHandlers.change('filament'); canvasUI.preset = null; canvasUI.useList = false; renderProject(); },
+    rereadSlots: function () {
+      if (!conv || !conv.project.printer) return;
+      canvasUI.rereading = true;
+      canvasUI.readId += 1;
+      canvasUI.loading = false;
+      noteLine('Je relis les ' + slotWords().slots + ' ' + slotWords().of + '…', '', 'info', 'guide');
+      window.orca.postMessage({ type: 'canvas_read', preset: conv.project.printer.preset, id: canvasUI.readId });
+    },
     startPlain: function () {
       if (!conv || !conv.project.printer) return;
       noteLine('Je démarre l’impression : l’imprimante choisit les emplacements.', '', 'info', 'guide');
@@ -1152,14 +1211,19 @@
   }
   // Un envoi à la fois : un double-clic ne part qu'une fois. La réponse d'Orca est immédiate (sa fenêtre s'ouvre ensuite) : le
   // verrou tient au moins le temps d'un double-clic après un succès, et tombe tout de suite après une erreur.
-  var SEND_LOCK_MS = 1500, SEND_WAIT_MS = 8000; // sans réponse (panne), l'envoi redevient possible
+  var SEND_LOCK_MS = 1500, SEND_WAIT_MS = 8000, SEND_ARMED_WAIT_MS = 30000; // sans réponse (panne), l'envoi redevient possible
   var sendLock = { on: false, kind: '', timer: null };
   function lockSend(kind) {
     if (sendLock.on) return false;
     sendLock = { on: true, kind: kind, timer: setTimeout(unlockSend, SEND_WAIT_MS), since: Date.now() };
     projectUI.sentConv = null; // « L'impression a démarré » ne vient qu'une fois l'envoi accepté
+    projectUI.sentArmed = null;
     renderProject();
     return true;
+  }
+  function waitLongerForSend() {
+    clearTimeout(sendLock.timer);
+    sendLock.timer = setTimeout(unlockSend, SEND_ARMED_WAIT_MS);
   }
   function unlockSend() {
     clearTimeout(sendLock.timer);
@@ -1179,7 +1243,7 @@
     }
     projectUI.sentConv = conv;
     if (sendLock.kind === 'export') noteLine('Choisis où enregistrer le fichier, puis copie-le sur ta clé USB ou ta carte SD.', '', 'info', 'guide');
-    else noteLine('Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
+    else noteLine(PlyoCanvas.orcaConfirm(conv && conv.project.canvas) || 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
     unlockSendSoon();
     renderProject();
   }
@@ -4104,9 +4168,12 @@
     } else if (msg.type === 'canvas_refused') {
       canvasUI.refused = msg.text || 'La CC2 a refusé les emplacements choisis.';
       canvasUI.refusedConv = conv;
+      canvasUI.refusedPlain = true;
       projectUI.sentConv = null; // refus après l'envoi : l'impression n'a pas démarré
       noteLine(canvasUI.refused, 'warn', 'alert', 'guide');
       if (conv) renderProject();
+    } else if (msg.type === 'canvas_sent') {
+      onCanvasSent(msg);
     } else if (msg.type === 'canvas_started') {
       noteLine(msg.text || '', msg.ok ? 'ok' : 'warn', msg.ok ? 'check' : 'alert', 'guide');
       if (msg.ok) { canvasUI.refused = ''; projectUI.sentConv = conv; if (conv) renderProject(); }

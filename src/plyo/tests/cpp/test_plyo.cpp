@@ -1929,3 +1929,12 @@ TEST_CASE("Slots::manual_with : ajoute, remplace, retire, refuse la 51e machine"
     manual_with(many, "P3", slot, known, ok);
     CHECK(ok); // une machine déjà là reste modifiable
 }
+
+TEST_CASE("Project: sanitize garde « validated » seulement s'il est lisible")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json clean = sanitize({{"canvas", {{{"t", 0}, {"canvas_id", 0}, {"tray_id", 0}, {"validated", false}}, {{"t", 1}, {"canvas_id", 0}, {"tray_id", 1}, {"validated", "oui"}}}}})["canvas"];
+    REQUIRE(clean.size() == 2);
+    CHECK(clean[0]["validated"] == false);
+    CHECK_FALSE(clean[1].contains("validated"));
+}

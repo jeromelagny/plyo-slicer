@@ -394,3 +394,25 @@ test('emplacements : le numéro affiché vient du traducteur partout (aucun tray
     assert.ok(!/tray_id \+ 1/.test(read(name)), name);
   assert.equal((read('canvas-logic.js').match(/tray_id \+ 1/g) || []).length, 2, 'canvas-logic.js : le commentaire de tête et slotName');
 });
+
+const readCpp = (rel) => fs.readFileSync(new URL('../../../../' + rel, import.meta.url), 'utf8');
+
+test('envoi CFS/IFS : canvas_send, jamais « démarré » dans les textes de cet envoi', () => {
+  const page = read('index.html');
+  assert.ok(/route === 'armed'[\s\S]{0,200}type: 'canvas_send'/.test(page), 'canvas_send seulement sur la route armée');
+  const finish = readCpp('src/plyo/PlyoCanvas.cpp');
+  const body = finish.slice(finish.indexOf('nlohmann::json finish_send'), finish.indexOf('void send_planned'));
+  assert.ok(body.includes("J'envoie le fichier"), 'le C++ dit « J’envoie »');
+  assert.ok(!/démarr/i.test(body), 'finish_send ne dit jamais « démarré »');
+  const handler = page.slice(page.indexOf('function onCanvasSent'), page.indexOf('function onCanvasState'));
+  assert.ok(handler.length > 0 && !/démarr/i.test(handler), 'onCanvasSent ne dit jamais « démarré »');
+  // Le geste de l'utilisateur après cet envoi dit ce qu'il voit, pas un fait que Plyo saurait.
+  assert.ok(read('journey-steps.js').includes('Oui, elle imprime'));
+});
+
+test('refus hors CC2 : « Relire les emplacements », et « Démarrer sans carte » seulement si offerPlain', () => {
+  const steps = read('journey-steps.js');
+  assert.ok(/offerPlain === false[\s\S]{0,120}Relire les emplacements/.test(steps));
+  assert.ok(/canvas_refused[\s\S]{0,200}refusedPlain/.test(read('index.html')), 'seul le refus de la CC2 ouvre la relance sans carte');
+  assert.ok(/refusedPlain = false/.test(read('index.html')));
+});

@@ -90,15 +90,19 @@
       if (opts.canvas) {
         body.appendChild(line(ui, 'palette', opts.canvas, ''));
         body.appendChild(ui.button('Changer les emplacements', h.changeSlots, 'link'));
+        if (opts.slotsNote) body.appendChild(ui.el('p', 'muted small', opts.slotsNote));
       }
+      // Hors CC2, le sens d'un départ sans carte n'est pas vérifié : on relit, ou on change d'emplacements (lien ci-dessus).
       if (opts.refused) {
         body.appendChild(line(ui, 'alert', opts.refused, 'warn'));
-        body.appendChild(ui.button('Démarrer sans carte', h.startPlain, 'link'));
+        if (opts.offerPlain === false) body.appendChild(ui.button('Relire les emplacements', h.rereadSlots, 'link'));
+        else body.appendChild(ui.button('Démarrer sans carte', h.startPlain, 'link'));
       }
       body.appendChild(ui.el('p', 'muted small', 'Vérifie que le plateau est vide et propre, et que le filament est chargé.'));
       var acts = ui.el('div', 'printer-actions');
       if (c.linked) { var ex = ui.button('Exporter le fichier plutôt', h.exportFile, 'btn ghost sm', 'folder'); ex.disabled = !!c.sending; acts.appendChild(ex); }
-      if (opts.sent) acts.appendChild(ui.button('L’impression a démarré', h.started, 'btn ghost sm', 'check'));
+      // sentArmed : Orca a seulement pris l'envoi (CFS, IFS) ; c'est l'utilisateur qui voit si elle imprime.
+      if (opts.sent) acts.appendChild(ui.button(opts.sentArmed ? 'Oui, elle imprime' : 'L’impression a démarré', h.started, 'btn ghost sm', 'check'));
       body.appendChild(acts);
     } else if (opts.step === 'resultat') {
       var after = ui.el('div', 'printer-actions');
