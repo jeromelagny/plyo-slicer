@@ -165,4 +165,26 @@ bool link_needs_code(const std::string& host_type, const std::string& printer_mo
     return host_type == "flashforge" && has_serial && !has_code && std::find(list.begin(), list.end(), printer_model) != list.end();
 }
 
+nlohmann::json state_fields(const std::string& kind, bool imposable)
+{
+    const bool cc2 = kind == "canvas";
+    return {{"system", kind},
+            {"source", "printer"},
+            {"imposable", imposable && (cc2 || kind == "cfs" || kind == "ifs")},
+            {"empty_blocks", !cc2 && EMPTY_SLOT_BLOCKS},
+            {"start_plain", cc2},
+            {"validated", cc2}};
+}
+
+DecideOptions decide_options(const std::string& kind)
+{
+    DecideOptions out;
+    if (kind == "canvas")
+        return out;
+    out.offer_plain  = false;
+    out.empty_blocks = EMPTY_SLOT_BLOCKS;
+    out.unit_name    = kind == "cfs" ? "la boîte CFS" : kind == "ifs" ? "l'IFS" : "l'imprimante";
+    return out;
+}
+
 }} // namespace Plyo::SlotsLogic

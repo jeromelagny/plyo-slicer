@@ -82,6 +82,13 @@ Detection detect(const PrinterFacts& facts);
 // ensuite recevoir aucune répartition. Seulement les modèles imposables : les autres Flashforge se relient comme avant.
 bool link_needs_code(const std::string& host_type, const std::string& printer_model, bool has_serial, bool has_code);
 
+// Champs communs de l'état lu : {system, source: "printer", imposable, empty_blocks, start_plain, validated}. `validated` : essayé
+// sur une vraie machine ; faux pour CFS, IFS et U1 tant que T9, T13, T14, T15 et T17 ne sont pas faits. La U1 n'impose jamais.
+nlohmann::json state_fields(const std::string& kind, bool imposable);
+// Options de decide_map pour ce traducteur : textes CC2 pour la CC2 ; ailleurs, pas de « Démarrer sans carte » tant que son sens
+// n'est pas vérifié sur la machine (T13, T15).
+DecideOptions decide_options(const std::string& kind);
+
 // « #RRGGBB » en majuscules, ou vide si la valeur n'a pas cette forme.
 std::string hex_colour(const std::string& raw);
 

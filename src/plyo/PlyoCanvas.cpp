@@ -3,8 +3,12 @@
 
 #include "PlyoCC2.hpp"
 #include "PlyoCanvasLogic.hpp"
+#include "PlyoCfs.hpp"
 #include "PlyoFirstSteps.hpp"
+#include "PlyoIfs.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoPrinterLink.hpp"
+#include "PlyoSlotsLogic.hpp"
 
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -27,24 +31,36 @@ namespace {
 
 Slic3r::PresetBundle& bundle() { return *wxGetApp().preset_bundle; }
 
+// L'imprimante d'un profil et son traducteur (SlotsLogic::detect). Le code d'accès ne sort jamais d'ici.
 struct Target
 {
-    bool        cc2 = false;
-    std::string host, code;
+    std::string kind = "none"; // canvas, cfs, ifs, u1, none
+    bool        imposable = false;
+    std::string reason;
+    std::string host, code, host_type, model;
+    std::shared_ptr<const Slic3r::DynamicPrintConfig> config; // copie : les lectures partent dans un autre fil
 };
+
+Target target_of_config(const Slic3r::DynamicPrintConfig& c)
+{
+    Target                         t;
+    const SlotsLogic::PrinterFacts facts = PrinterLink::facts_of(c);
+    const SlotsLogic::Detection    found = SlotsLogic::detect(facts);
+    t.kind      = found.kind;
+    t.imposable = found.imposable;
+    t.reason    = found.reason;
+    t.host_type = facts.host_type;
+    t.model     = facts.printer_model;
+    t.host      = c.has("print_host") ? bare_host(c.opt_string("print_host")) : std::string();
+    t.code      = c.has("printhost_apikey") ? c.opt_string("printhost_apikey") : std::string();
+    t.config    = std::make_shared<const Slic3r::DynamicPrintConfig>(c);
+    return t;
+}
 
 Target target_of(const std::string& printer_preset)
 {
-    Target                t;
     const Slic3r::Preset* p = bundle().printers.find_preset(printer_preset, false);
-    if (p == nullptr)
-        return t;
-    const auto& c = p->config;
-    const std::string model = c.has("printer_model") ? c.opt_string("printer_model") : std::string();
-    t.host = c.has("print_host") ? bare_host(c.opt_string("print_host")) : std::string();
-    t.code = c.has("printhost_apikey") ? c.opt_string("printhost_apikey") : std::string();
-    t.cc2  = model.find("Centauri Carbon 2") != std::string::npos && !t.host.empty();
-    return t;
+    return p != nullptr ? target_of_config(p->config) : Target();
 }
 
 // Numéros (à partir de 0) des filaments utilisés par la plaque en cours, y compris les changements de filament posés sur
@@ -108,6 +124,14 @@ bool set_preset(size_t idx, const std::string& name)
 
 std::string bare_host(const std::string& print_host) { return CanvasLogic::bare_host(print_host); }
 
+std::string translator_of(const Slic3r::DynamicPrintConfig& config, std::string* reason)
+{
+    const SlotsLogic::Detection found = SlotsLogic::detect(PrinterLink::facts_of(config));
+    if (reason != nullptr)
+        *reason = found.reason;
+    return found.kind == "none" ? std::string() : found.kind;
+}
+
 nlohmann::json colours()
 {
     nlohmann::json out  = nlohmann::json::array();
@@ -124,29 +148,66 @@ nlohmann::json colours()
     return out;
 }
 
-void read(const std::string& printer_preset, std::function<void(nlohmann::json)> done)
+namespace {
+
+// Lecture réseau du traducteur (hors du fil principal) : l'état commun, sans les couleurs de la plaque.
+// Une lecture qui échoue ou une valeur inattendue donnent toujours imposable faux.
+nlohmann::json read_unit(const Target& t)
 {
-    const Target t = target_of(printer_preset);
-    if (!t.cc2) {
-        done({{"ok", false}, {"reason", "not_cc2"}});
-        return;
-    }
-    const nlohmann::json cols = colours();
-    std::thread([t, cols, done = std::move(done)]() {
-        std::string    error;
-        nlohmann::json out = {{"ok", false}, {"reason", "unreachable"}};
+    std::string    error;
+    nlohmann::json units = nullptr;
+    bool           live  = false;
+    std::string    blocker;
+    if (t.kind == "canvas") {
         const std::string serial = CC2::serial_of(t.host);
         if (!serial.empty()) {
             const nlohmann::json canvas = CC2::read_canvas(t.host, t.code, serial, error);
             if (!canvas.is_null()) {
-                bool any = false;
-                for (const nlohmann::json& u : Json::arr(canvas, "canvases"))
-                    any = any || (Json::boolean(u, "connected", false) && !Json::arr(u, "trays").empty());
-                out = any ? nlohmann::json{{"ok", true}, {"canvases", canvas["canvases"]}} : nlohmann::json{{"ok", false}, {"reason", "no_canvas"}};
+                units = Json::arr(canvas, "canvases");
+                live  = true;
             } else
                 BOOST_LOG_TRIVIAL(info) << "Plyo: Canvas illisible : " << error;
         }
-        out["colours"] = cols;
+    } else if (t.config != nullptr) {
+        nlohmann::json r = nullptr;
+        if (t.kind == "cfs")
+            r = Cfs::read(*t.config, error);
+        else if (t.kind == "ifs")
+            r = Ifs::read(*t.config, error);
+        if (r.is_object()) {
+            units   = Json::arr(r, "canvases");
+            live    = Json::boolean(r, "imposable", false);
+            blocker = Json::str(r, "blocker");
+        } else
+            BOOST_LOG_TRIVIAL(info) << "Plyo: emplacements illisibles (" << t.kind << ") : " << error; // error ne contient jamais le corps des réponses
+    }
+    nlohmann::json out = {{"ok", false}, {"reason", "unreachable"}};
+    if (units.is_array()) {
+        bool any = false;
+        for (const nlohmann::json& u : units)
+            any = any || (Json::boolean(u, "connected", false) && !Json::arr(u, "trays").empty());
+        out = any ? nlohmann::json{{"ok", true}, {"canvases", units}} : nlohmann::json{{"ok", false}, {"reason", "no_canvas"}};
+    }
+    const bool readable = Json::boolean(out, "ok", false);
+    out.update(SlotsLogic::state_fields(t.kind, t.imposable && live && readable));
+    if (!blocker.empty())
+        out["blocker"] = blocker; // pourquoi on lit sans imposer
+    return out;
+}
+
+} // namespace
+
+void read(const std::string& printer_preset, std::function<void(nlohmann::json)> done)
+{
+    const Target t = target_of(printer_preset);
+    if (t.kind == "none") {
+        done({{"ok", false}, {"reason", t.reason.empty() ? std::string("no_translator") : t.reason}});
+        return;
+    }
+    const nlohmann::json cols = colours();
+    std::thread([t, cols, done = std::move(done)]() {
+        nlohmann::json out = read_unit(t);
+        out["colours"]     = cols;
         wxGetApp().CallAfter([done, out] { done(out); });
     }).detach();
 }
@@ -187,7 +248,7 @@ nlohmann::json apply(const nlohmann::json& entries)
 void plan(const std::string& printer_preset, const nlohmann::json& map)
 {
     const Target t = target_of(printer_preset);
-    if (!t.cc2 || !map.is_array() || map.empty()) {
+    if (t.kind != "canvas" || !map.is_array() || map.empty()) {
         CC2::clear_plan();
         return;
     }
@@ -230,6 +291,10 @@ void clear_plan() { CC2::clear_plan(); }
 void start_plain(const std::string& printer_preset, std::function<void(nlohmann::json)> done)
 {
     const Target t = target_of(printer_preset);
+    if (t.kind != "canvas") { // sur les autres marques, le sens d'un départ sans carte n'est pas vérifié
+        done({{"ok", false}, {"text", "Je ne peux pas démarrer sans répartition sur cette imprimante : rien n'est parti."}});
+        return;
+    }
     std::thread([host = t.host, code = t.code, done = std::move(done)]() {
         std::string error;
         const bool  ok = CC2::start_again_plain(host, code, error);

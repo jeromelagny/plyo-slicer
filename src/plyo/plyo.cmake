@@ -55,8 +55,12 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCC2Logic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSlotsLogic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSlotsLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCfs.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCfs.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCfsLogic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCfsLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoIfs.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoIfs.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoIfsLogic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoIfsLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCanvas.cpp

@@ -7,13 +7,21 @@
 #include <utility>
 #include <vector>
 
-// Emplacements du Canvas d'une Elegoo Centauri Carbon 2, côté Orca : lecture (réseau, hors du fil principal), choix des
-// profils et des couleurs de filament par numéro, plan d'envoi (carte des emplacements, voir PlyoCC2.hpp). Messages
-// canvas_* du panneau (PlyoAssistant.cpp). Le code d'accès est lu dans le profil d'imprimante et ne sort jamais d'ici.
+namespace Slic3r { class DynamicPrintConfig; }
+
+// Emplacements d'une imprimante, côté Orca : lecture (réseau, hors du fil principal), choix des profils et des couleurs de
+// filament par numéro, plan d'envoi (carte des emplacements, voir PlyoCC2.hpp). Messages canvas_* du panneau
+// (PlyoAssistant.cpp). Le code d'accès est lu dans le profil d'imprimante et ne sort jamais d'ici.
+// « canvas » désigne ici toute unité d'emplacements : Canvas de la Centauri Carbon 2, boîte CFS (Creality), IFS (Flashforge),
+// têtes de la Snapmaker U1. Le nom reste celui du premier traducteur, c'est un protocole interne (projets enregistrés).
+//
+// ÉTAT : seule la CC2 est validée sur une vraie machine. CFS, IFS et U1 ne le sont PAS : les essais T9, T13, T14, T15 et T17 ne
+// sont pas faits et cette branche n'est pas livrable tant qu'ils ne le sont pas (`validated` faux dans l'état lu).
 namespace Plyo { namespace Canvas {
 
 // Lit les emplacements de l'imprimante de ce profil ; `done` (fil principal) reçoit
-// {ok, reason?, canvases, colours:[{t, color, type}]} ; reason : not_cc2, unreachable, no_canvas.
+// {ok, reason?, canvases, colours:[{t, color, type}], system, source, imposable, empty_blocks, start_plain, validated, blocker?} ;
+// reason : no_translator, link_incomplete, unreachable, no_canvas. Sans traducteur, seulement {ok, reason}.
 void read(const std::string& printer_preset, std::function<void(nlohmann::json)> done);
 // Couleurs (filaments utilisés par la plaque en cours) : [{t, color, type}], t à partir de 0.
 nlohmann::json colours();
@@ -29,6 +37,8 @@ bool orca_state(std::vector<int>& sliced_t, std::vector<std::string>& presets);
 void start_plain(const std::string& printer_preset, std::function<void(nlohmann::json)> done);
 // Remet ces profils sur les filaments 2 et suivants (restauration du projet). Ignore un numéro hors de la plaque.
 void select_extra(const std::vector<std::pair<int, std::string>>& extra);
+// Traducteur de ce profil (canvas, cfs, ifs, u1), vide s'il n'y en a pas ; `reason` : link_incomplete.
+std::string translator_of(const Slic3r::DynamicPrintConfig& config, std::string* reason = nullptr);
 // Adresse sans schéma, chemin ni port (« http://192.168.1.29:80/ » → « 192.168.1.29 »), comme ElegooLink.
 std::string bare_host(const std::string& print_host);
 

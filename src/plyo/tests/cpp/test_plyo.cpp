@@ -1621,3 +1621,42 @@ TEST_CASE("Slots::link_needs_code : une AD5X avec série demande son code avant 
     CHECK_FALSE(link_needs_code("flashforge", "Flashforge Adventurer 5M Pro", true, false));
     CHECK_FALSE(link_needs_code("elegoolink", "Flashforge AD5X", true, false));
 }
+
+TEST_CASE("Slots::state_fields : ce que le panneau sait d'une lecture, sans faire croire à une validation")
+{
+    using namespace Plyo::SlotsLogic;
+    const json cc2 = state_fields("canvas", true);
+    CHECK(cc2["system"] == "canvas");
+    CHECK(cc2["source"] == "printer");
+    CHECK(cc2["imposable"] == true);
+    CHECK(cc2["empty_blocks"] == false);
+    CHECK(cc2["start_plain"] == true);
+    CHECK(cc2["validated"] == true);
+    for (const char* kind : {"cfs", "ifs", "u1"}) {
+        const json f = state_fields(kind, true);
+        CHECK(f["empty_blocks"] == EMPTY_SLOT_BLOCKS);
+        CHECK(f["start_plain"] == false);
+        CHECK(f["validated"] == false); // T9, T13, T14, T15, T17 : rien n'est validé tant qu'ils ne sont pas faits
+    }
+    CHECK(state_fields("cfs", true)["imposable"] == true);
+    CHECK(state_fields("cfs", false)["imposable"] == false);
+    CHECK(state_fields("u1", true)["imposable"] == false); // la U1 n'impose jamais
+    CHECK(state_fields("none", true)["imposable"] == false);
+    CHECK(state_fields("bizarre", true)["imposable"] == false);
+}
+
+TEST_CASE("Slots::decide_options : la CC2 garde ses textes, les autres ne proposent pas de départ sans carte")
+{
+    using namespace Plyo::SlotsLogic;
+    const DecideOptions cc2 = decide_options("canvas");
+    CHECK(cc2.unit_name == "le Canvas");
+    CHECK(cc2.offer_plain);
+    CHECK_FALSE(cc2.empty_blocks);
+    for (const char* kind : {"cfs", "ifs"}) {
+        const DecideOptions o = decide_options(kind);
+        CHECK_FALSE(o.offer_plain);
+        CHECK(o.empty_blocks == EMPTY_SLOT_BLOCKS);
+    }
+    CHECK(decide_options("cfs").unit_name == "la boîte CFS");
+    CHECK(decide_options("ifs").unit_name == "l'IFS");
+}
