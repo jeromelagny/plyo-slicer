@@ -124,9 +124,11 @@ bool capture()
         }
         if (s_before && !s_before->capture_file.empty())
             s_kept_files.push_back(s_before->capture_file);
+        const bool saved_plate = snap.has_project;
         s_before = std::move(snap);
-        // La pièce de la capture précédente est revenue sur le plateau depuis (et vient d'être recapturée si besoin).
-        if (!s_restored_file.empty()) {
+        // La capture déjà remise sur le plateau ne sert plus, une fois le plateau d'aujourd'hui gardé à son tour. Avec un
+        // plateau vide, rien ne la remplace : elle reste sur le disque.
+        if (saved_plate && !s_restored_file.empty()) {
             boost::system::error_code ec;
             fs::remove(s_restored_file, ec);
             s_restored_file.clear();
