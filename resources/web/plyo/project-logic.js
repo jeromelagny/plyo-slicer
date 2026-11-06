@@ -46,10 +46,13 @@
 
   // Pièce déjà posée sur le plateau d'Orca (import par le menu d'Orca, glisser-déposer sur le plateau…) alors que la fiche
   // attend la pièce : son nom, sinon null. `signals` : {objects, part_name} (tour_signals du slicer).
-  function partFromPlate(project, signals) {
+  // `old` : {name, objects} : la pièce du projet précédent, encore sur le plateau, n'est pas celle de ce projet-ci.
+  function partFromPlate(project, signals, old) {
     // Dès que la fiche n'a pas de pièce : une pièce déjà posée dans Orca est reconnue même avant le choix de la machine.
     var p = project && typeof project === 'object' ? project : {};
     if (chosen(p.part, 'name') || !signals || !(signals.objects > 0)) return null;
+    if (old && signals.part_name === old.name && signals.objects <= old.objects) return null;
+    if (old && signals.part_name === old.name) return 'Pièce posée sur le plateau'; // une pièce de plus : son nom n'est pas celui-là
     return typeof signals.part_name === 'string' && signals.part_name ? signals.part_name : 'Pièce posée sur le plateau';
   }
 

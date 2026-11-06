@@ -71,3 +71,11 @@ test('restorable : remettre le projet dans Orca ne demande que la machine, le fi
   assert.equal(P.restorable(P.emptyProject()), false);
   assert.equal(P.restorable(null), false);
 });
+
+test('partFromPlate : la pièce du projet précédent n’est pas reprise en silence', () => {
+  const old = { name: 'premier.stl', objects: 1 };
+  assert.equal(P.partFromPlate({}, { objects: 1, part_name: 'premier.stl' }, old), null);
+  assert.equal(P.partFromPlate({}, { objects: 1, part_name: 'neuf.stl' }, old), 'neuf.stl', 'une autre pièce est reconnue');
+  assert.equal(P.partFromPlate({}, { objects: 2, part_name: 'premier.stl' }, old), 'Pièce posée sur le plateau', 'une pièce de plus est reconnue');
+  assert.equal(P.partFromPlate({}, { objects: 1, part_name: 'premier.stl' }), 'premier.stl', 'sans projet précédent : comme avant');
+});

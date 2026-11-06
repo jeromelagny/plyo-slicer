@@ -45,7 +45,11 @@
       if (cv.mode === 'multi') return { label: 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
       return { label: '', kind: 'none', enabled: false };
     }
-    var slice = { label: 'Découper', kind: 'slice', enabled: true };
+    // « changer » le filament en cours : on répond avec les choix, ou « Garder ce filament ».
+    if (c.editing) return { label: '', kind: 'none', enabled: false };
+    // Fiche remplie mais plateau vide (relance d'Orca, pièce supprimée) : remettre la pièce passe avant tout.
+    if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return { label: 'Choisir un fichier', kind: 'importPart', enabled: true };
+    var slice = c.slicing ? { label: 'Je découpe…', kind: 'slice', enabled: false } : { label: 'Découper', kind: 'slice', enabled: true };
     if (step === 'preparer') {
       // Questions d'intention : on répond avec les choix ; au résumé, un seul bouton applique et prépare.
       if (!c.sliced && c.intent === 'asking') return { label: '', kind: 'none', enabled: false };
@@ -56,9 +60,9 @@
     }
     if (step === 'imprimer') {
       if (!c.sliced) return slice;
-      return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: true } : { label: 'Exporter le fichier', kind: 'export', enabled: true };
+      return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: !c.sending } : { label: 'Exporter le fichier', kind: 'export', enabled: !c.sending };
     }
-    if (step === 'resultat') return { label: 'Envoyer une photo', kind: 'photo', enabled: true };
+    if (step === 'resultat') return c.success ? { label: 'Nouvelle pièce', kind: 'newPart', enabled: true } : { label: 'Envoyer une photo', kind: 'photo', enabled: true };
     // Machine et filament proposés (dernière machine, dernier filament) : confirmer d'un toucher.
     if (step === 'machine' && c.proposal) return { label: 'Oui, sur ' + c.proposal.name, kind: 'confirmMachine', enabled: true };
     if (step === 'filament' && c.proposal) return { label: 'Oui, du ' + c.proposal.name, kind: 'confirmFilament', enabled: true };
@@ -75,15 +79,19 @@
   function prompt(step, ctx) {
     var c = ctx || {};
     if (c.canvas) return canvasPrompt(c);
+    if (c.editing) return 'Dis-moi quel filament est sur la bobine';
+    if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return 'Ta pièce n’est plus sur le plateau';
     switch (step) {
       case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : 'Choisis ton imprimante';
       case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : 'Dis-moi quel filament est sur la bobine';
       case 'piece': return 'Ajoute la pièce à imprimer';
       case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
         if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';
-        return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler : coche ce que tu veux corriger ci-dessous' : 'Tout est bon, on passe à l’impression');
+        if (!c.sliced && c.slicing) return 'Je découpe ta plaque…';
+        return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler : coche ce que tu veux corriger ci-dessous'
+          : c.checked === 'clean' ? 'Tout est bon, on passe à l’impression' : c.checked === 'ignored' ? 'Tu as ignoré des points : à toi de voir' : 'Je vérifie ta plaque…');
       case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : 'Prêt à imprimer';
-      default: return 'Alors, ça a marché ? Envoie-moi une photo';
+      default: return c.success ? 'Bravo, c’est réussi !' : 'Alors, ça a marché ? Envoie-moi une photo';
     }
   }
 
@@ -121,10 +129,16 @@
     return step === 'machine' || step === 'filament' || step === 'piece' ? 'choices' : 'steps';
   }
 
+  // La fiche repliée tient sur une ligne : un nom très long est coupé au milieu, pour que le filament reste visible.
+  function shortName(name) {
+    var n = String(name || '');
+    return n.length <= 28 ? n : n.slice(0, 18) + '…' + n.slice(-8);
+  }
+
   function ficheSummary(project) {
     var p = project || {}, parts = [];
     if (p.printer && (p.printer.name || p.printer.preset)) parts.push(p.printer.name || p.printer.preset);
-    if (p.part && p.part.name) parts.push(p.part.name);
+    if (p.part && p.part.name) parts.push(shortName(p.part.name));
     if (p.filament && p.filament.type && Array.isArray(p.canvas) && p.canvas.length) parts.push(filamentRow(p).text);
     else if (p.filament && p.filament.type) {
       var temps = p.filament.nozzle_temp != null && p.filament.bed_temp != null ? ' ' + p.filament.nozzle_temp + '/' + p.filament.bed_temp : '';
@@ -138,9 +152,9 @@
   function suggestionsFor(step) {
     switch (step) {
       case 'preparer': return [{ label: 'Vérifier ma plaque', kind: 'open', value: 'check' }, { label: 'Voir mes réglages actuels', kind: 'open', value: 'values' }];
-      case 'imprimer': return [{ label: 'Que vérifier avant de lancer ?', kind: 'ask', value: 'Que dois-je vérifier sur mon imprimante juste avant de lancer l’impression ?' },
+      case 'imprimer': return [{ label: 'Que vérifier avant de lancer ? (utilise ta jauge)', kind: 'ask', value: 'Que dois-je vérifier sur mon imprimante juste avant de lancer l’impression ?' },
         { label: 'Températures de ma bobine', kind: 'open', value: 'limits' }];
-      case 'resultat': return [{ label: 'Mes pièces', kind: 'open', value: 'parts' }, { label: 'Ma pièce a un défaut', kind: 'ask', value: 'Ma pièce a un défaut, peux-tu m’aider ?' }];
+      case 'resultat': return [{ label: 'Mes pièces', kind: 'open', value: 'parts' }, { label: 'Ma pièce a un défaut (utilise ta jauge)', kind: 'ask', value: 'Ma pièce a un défaut, peux-tu m’aider ?' }];
       default: return [];
     }
   }

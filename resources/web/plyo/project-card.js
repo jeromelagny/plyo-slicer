@@ -73,8 +73,15 @@
   // Formulaire de la plage de la bobine, dans le corps de l'onglet Étapes (la fiche en tête n'a pas la place).
   function renderSpoolEditor(slot, ui, ctx) {
     var h = ctx.handlers, sp = ctx.spool || {};
+    if (!sp.open) { slot.textContent = ''; return; }
+    // Le panneau se redessine souvent (signaux, redimensionnement) : le formulaire ouvert ne bouge pas tant que ce qu'il montre
+    // ne change pas, et ce que tu as déjà saisi est gardé quand il change.
+    var key = JSON.stringify([sp.limits || null, sp.error || '']);
+    var typed = {}, wasOpen = !!slot.firstChild;
+    if (wasOpen && slot.spoolKey === key) return;
+    slot.querySelectorAll('input').forEach(function (i) { typed[i.getAttribute('aria-label')] = i.value; });
+    slot.spoolKey = key;
     slot.textContent = '';
-    if (!sp.open) return;
     var wrap = ui.el('div', 'card project-spool');
     wrap.appendChild(ui.el('h3', '', 'Températures de ta bobine'));
     wrap.appendChild(ui.el('p', 'small', 'Recopie les températures écrites sur l’étiquette de ta bobine (souvent une plage, par exemple 190–220 °C). Laisse vide ce qui n’y est pas.'));
@@ -85,7 +92,7 @@
       var input = ui.el('input', 'field');
       input.type = 'text';
       input.inputMode = 'numeric';
-      input.value = typeof l[f[0]] === 'number' ? String(l[f[0]]) : '';
+      input.value = typed[f[1]] || (typeof l[f[0]] === 'number' ? String(l[f[0]]) : '');
       input.setAttribute('aria-label', f[1]);
       inputs[f[0]] = input;
       lab.appendChild(input);
@@ -102,7 +109,7 @@
     acts.appendChild(ui.button('Annuler', h.toggleSpool, 'link'));
     wrap.appendChild(acts);
     slot.appendChild(wrap);
-    setTimeout(function () { inputs.nozzle_min.focus(); }, 0);
+    if (!wasOpen) setTimeout(function () { inputs.nozzle_min.focus(); }, 0);
   }
 
   // Le contenu des étapes 1 à 3 (imprimante, filament, pièce) : des choix qui s'appliquent tout de suite.
@@ -142,6 +149,7 @@
       body.appendChild(ui.button('Autre matière', h.toggleKinds, 'link'));
     } else if (wantsFilament) {
       if (ctx.error && ctx.error.filament) body.appendChild(ui.el('p', 'project-error', ctx.error.filament));
+      if (ctx.noCanvas) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas ton Canvas pour l’instant : choisis la matière ici, l’imprimante choisira l’emplacement.'));
       body.appendChild(ui.el('p', 'muted small', 'Regarde ta bobine : la matière est écrite dessus. Pas sûr ? C’est presque toujours du PLA.'));
       var kinds = ui.el('div', 'printer-actions');
       MATERIALS.forEach(function (k) {
@@ -151,12 +159,17 @@
       if (fi) {
         body.appendChild(ui.el('p', 'muted small', 'J’ai mis les températures conseillées pour ce filament. Si l’étiquette de ta bobine indique autre chose, entre-les :'));
         body.appendChild(ui.button('Ma bobine indique d’autres températures', h.toggleSpool, 'link'));
+        if (ctx.editing === 'filament') body.appendChild(ui.button('Garder ce filament', h.cancelEdit, 'link'));
       }
     } else {
       body.appendChild(ui.el('p', 'muted small', 'Glisse ton fichier STL ou 3MF ici, ou choisis-le sur ton ordinateur. Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
       var pacts = ui.el('div', 'printer-actions');
       pacts.appendChild(ui.button('Choisir un fichier', h.importPart, 'btn ghost sm', 'folder'));
       body.appendChild(pacts);
+      if (ctx.oldPart) {
+        body.appendChild(ui.el('p', 'muted small', '« ' + ctx.oldPart + ' », la pièce de ton projet précédent, est encore sur le plateau d’Orca.'));
+        body.appendChild(ui.button('Garder cette pièce', h.keepOldPart, 'link'));
+      }
     }
     slot.appendChild(body);
   }

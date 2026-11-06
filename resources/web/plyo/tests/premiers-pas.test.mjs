@@ -86,3 +86,15 @@ test('message après la pose d’un modèle', () => {
   assert.match(big.text, /256 × 256 × 256 mm/);
   assert.doesNotMatch(big.text, /est sur le plateau \(/);
 });
+
+test('fichier illisible : le message dit quoi prendre, et ne parle d’image que pour une image', () => {
+  const { unreadableFileText } = require('../premiers-pas.js');
+  assert.ok(/STL, 3MF/.test(unreadableFileText('x.gcode')) && unreadableFileText('x.gcode').includes('x.gcode'));
+  assert.ok(/JPEG ou du PNG/.test(unreadableFileText('photo.heic')) && !/STL/.test(unreadableFileText('photo.heic')));
+});
+
+test('étape Résultat : retour à Préparer seulement après une correction qui périme la découpe', () => {
+  assert.equal(nextTourStep('after', { objects: 1, sliced: false }, true), 'slice');
+  assert.equal(nextTourStep('after', { objects: 1, sliced: true }, true), 'after');
+  assert.equal(nextTourStep('after', { objects: 1, sliced: false }, false), 'after', 'sans correction, rien ne bouge (plateau vidé après l’impression)');
+});

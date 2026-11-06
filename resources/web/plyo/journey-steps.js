@@ -57,15 +57,23 @@
     body.appendChild(ui.button('Changer une réponse', h.reset, 'link'));
   }
 
+  // « Aucun risque » n'est dit que si la vérification a vraiment eu lieu et n'a rien trouvé.
+  function checkedLine(checked) {
+    if (checked === 'clean') return 'Aucun risque détecté';
+    return checked === 'ignored' ? 'Points ignorés : ils restent à ta charge' : 'Vérification en cours';
+  }
+
   function render(slot, ui, opts) {
     var c = opts.ctx || {}, h = opts.handlers;
     slot.textContent = '';
     var body = ui.el('div', 'project-body');
-    if (opts.step === 'preparer' && opts.intent && !c.sliced) {
+    if (c.plateEmpty && (opts.step === 'preparer' || opts.step === 'imprimer')) {
+      body.appendChild(ui.el('p', '', 'Choisis le même fichier : je le repose sur le plateau et on reprend ton projet.'));
+    } else if (opts.step === 'preparer' && opts.intent && !c.sliced) {
       renderIntent(body, ui, opts.intent, h);
     } else if (opts.step === 'preparer') {
-      body.appendChild(line(ui, c.sliced ? 'check' : 'info', c.sliced ? 'Découpe faite' : 'Découpe à faire', c.sliced ? 'ok' : ''));
-      if (c.sliced) body.appendChild(line(ui, c.risks > 0 ? 'alert' : 'check', c.risks > 0 ? c.risks + ' point' + (c.risks > 1 ? 's' : '') + ' à régler avant d’imprimer' : 'Aucun risque détecté', c.risks > 0 ? 'warn' : 'ok'));
+      body.appendChild(line(ui, c.sliced ? 'check' : 'info', c.sliced ? 'Découpe faite' : c.slicing ? 'Découpe en cours' : 'Découpe à faire', c.sliced ? 'ok' : ''));
+      if (c.sliced) body.appendChild(line(ui, c.risks > 0 ? 'alert' : 'check', c.risks > 0 ? c.risks + ' point' + (c.risks > 1 ? 's' : '') + ' à régler avant d’imprimer' : checkedLine(c.checked), c.risks > 0 || c.checked === 'ignored' ? 'warn' : c.checked === 'clean' ? 'ok' : ''));
       if (c.sliced && c.risks > 0) body.appendChild(ui.button('Imprimer quand même', h.skip, 'link'));
     } else if (opts.step === 'imprimer') {
       if (opts.summary) body.appendChild(line(ui, 'check', opts.summary, 'ok'));
@@ -89,12 +97,19 @@
       }
       body.appendChild(ui.el('p', 'muted small', 'Vérifie que le plateau est vide et propre, et que le filament est chargé.'));
       var acts = ui.el('div', 'printer-actions');
-      if (c.linked) acts.appendChild(ui.button('Exporter le fichier plutôt', h.exportFile, 'btn ghost sm', 'folder'));
+      if (c.linked) { var ex = ui.button('Exporter le fichier plutôt', h.exportFile, 'btn ghost sm', 'folder'); ex.disabled = !!c.sending; acts.appendChild(ex); }
       if (opts.sent) acts.appendChild(ui.button('L’impression a démarré', h.started, 'btn ghost sm', 'check'));
       body.appendChild(acts);
     } else if (opts.step === 'resultat') {
-      body.appendChild(ui.el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer.'));
-      body.appendChild(ui.button('Ajouter une photo depuis l’ordinateur', h.photo, 'btn ghost sm', 'camera'));
+      var after = ui.el('div', 'printer-actions');
+      if (!c.success) {
+        body.appendChild(ui.el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer.'));
+        after.appendChild(ui.button('Oui, c’est réussi', h.success, 'btn ghost sm', 'check'));
+        after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
+        after.appendChild(ui.button('Ajouter une photo depuis l’ordinateur', h.photo, 'btn ghost sm', 'camera'));
+      }
+      body.appendChild(after);
+      body.appendChild(ui.button('Réimprimer cette pièce', h.reprint, 'link'));
     }
     if (body.childNodes.length) slot.appendChild(body);
   }

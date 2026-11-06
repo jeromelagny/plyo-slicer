@@ -237,3 +237,51 @@ test('divergenceNames : deux profils de la même machine restent distinguables',
     { from: 'Ma Elegoo Centauri Carbon 2 0.4 nozzle', to: 'Elegoo Centauri Carbon 2 0.4 nozzle' });
   assert.deepEqual(J.divergenceNames({ preset: 'Ma K2', name: 'K2' }, 'Bambu Lab A1'), { from: 'K2', to: 'Bambu Lab A1' });
 });
+
+test('pendant un envoi, le bouton de l’étape Imprimer est inactif ; il revient ensuite', () => {
+  assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true, sending: true }).enabled, false);
+  assert.equal(J.primaryAction('imprimer', { sliced: true, linked: false, sending: true }).enabled, false);
+  assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true }).enabled, true);
+});
+
+test('plateau vide alors que la fiche a une pièce : on demande de la remettre, à Préparer comme à Imprimer', () => {
+  for (const step of ['preparer', 'imprimer']) {
+    assert.equal(J.primaryAction(step, { plateEmpty: true }).kind, 'importPart', step);
+    assert.equal(J.prompt(step, { plateEmpty: true }), 'Ta pièce n’est plus sur le plateau', step);
+  }
+  assert.equal(J.primaryAction('resultat', { plateEmpty: true }).kind, 'photo', 'à Résultat, le plateau peut être vidé');
+  assert.equal(J.primaryAction('preparer', {}).kind, 'slice');
+});
+
+test('« Tout est bon » n’est dit que si la plaque a été vérifiée sans risque', () => {
+  assert.ok(J.prompt('preparer', { sliced: true, risks: 0, checked: 'clean' }).includes('Tout est bon'));
+  assert.ok(!J.prompt('preparer', { sliced: true, risks: 0, checked: 'ignored' }).includes('Tout est bon'));
+  assert.ok(!J.prompt('preparer', { sliced: true, risks: 0, checked: '' }).includes('Tout est bon'));
+});
+
+test('découpe en cours : bouton inactif et état dit à l’écran', () => {
+  const a = J.primaryAction('preparer', { slicing: true });
+  assert.equal(a.enabled, false);
+  assert.equal(a.label, 'Je découpe…');
+  assert.equal(J.prompt('preparer', { slicing: true }), 'Je découpe ta plaque…');
+  assert.equal(J.primaryAction('imprimer', { slicing: true }).enabled, false);
+  assert.equal(J.primaryAction('preparer', {}).enabled, true);
+});
+
+test('Résultat : une fois réussi, la suite devient l’action principale', () => {
+  assert.equal(J.primaryAction('resultat', {}).kind, 'photo');
+  assert.equal(J.primaryAction('resultat', { success: true }).kind, 'newPart');
+  assert.ok(J.prompt('resultat', { success: true }).includes('réussi'));
+});
+
+test('suggestions : celles qui partent à l’IA le disent ; « changer » le filament n’offre pas de découper en même temps', () => {
+  for (const key of ['imprimer', 'resultat']) for (const s of J.suggestionsFor(key)) if (s.kind === 'ask') assert.ok(/jauge/.test(s.label), s.label);
+  assert.equal(J.primaryAction('preparer', { editing: true }).kind, 'none');
+});
+
+test('fiche repliée : un nom très long est coupé, le filament reste', () => {
+  const long = 'une-piece-avec-un-nom-de-fichier-vraiment-tres-tres-long.stl';
+  const text = J.ficheSummary({ printer: { name: 'K1C', preset: 'k' }, part: { name: long }, filament: { type: 'PLA', preset: 'p' } });
+  assert.ok(text.endsWith('PLA') && !text.includes(long) && text.includes('.stl'), text);
+  assert.ok(text.length < 50, text);
+});

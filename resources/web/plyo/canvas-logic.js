@@ -51,10 +51,13 @@
     return (colours || []).slice().sort(function (a, b) { return a.t - b.t; }).map(function (c) {
       var free = (list || []).filter(function (t) { return !used[t.canvas_id + ':' + t.tray_id]; });
       if (c.type) free = free.filter(function (t) { return upper(t.type) === upper(c.type); });
-      var full = free.filter(function (t) { return !t.empty; });
-      var pool = full.length ? full : free;
+      // Même type puis couleur la plus proche. Le status de la CC2 n'est pas fiable (un emplacement chargé peut valoir 0) : il ne
+      // départage que deux couleurs à égalité ; un emplacement vu vide reste proposé, avec la mention « vide ? » à l'écran.
       var best = null;
-      pool.forEach(function (t) { if (!best || distance(c.color, t.color) < distance(c.color, best.color)) best = t; });
+      free.forEach(function (t) {
+        var d = best ? distance(c.color, t.color) - distance(c.color, best.color) : -1;
+        if (!best || d < 0 || ((d === 0 || isNaN(d)) && best.empty && !t.empty)) best = t;
+      });
       if (best) used[best.canvas_id + ':' + best.tray_id] = true;
       return { t: c.t, color: c.color, canvas_id: best ? best.canvas_id : null, tray_id: best ? best.tray_id : null };
     });

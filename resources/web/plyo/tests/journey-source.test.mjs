@@ -118,6 +118,7 @@ test('Canvas : vues sans bouton plein, fichiers inclus, rappel et relance à l�
   const cpp = fs.readFileSync(new URL('../../../../src/plyo/PlyoAssistant.cpp', import.meta.url), 'utf8');
   assert.ok(cpp.includes('"canvas-logic.js", "canvas-view.js"'), 'chargés par PlyoAssistant.cpp');
   const steps = read('journey-steps.js');
+  // Le nom du bouton est cité par les messages de refus du C++ (PlyoCC2.cpp, PlyoCC2Logic.cpp) : à changer ensemble.
   assert.ok(steps.includes('Changer les emplacements') && steps.includes('Démarrer sans carte'));
   // L'envoi relit les emplacements avant de partir quand le projet en a.
   assert.ok(/kind === 'send'[\s\S]{0,200}sendWithCanvasCheck\(\)/.test(page));
@@ -197,4 +198,182 @@ test('saisie manuelle : ne touche jamais au plan ni à la dernière lecture de l
   const start = assistant.indexOf('type == "slots_manual_get"');
   const body = assistant.slice(start, assistant.indexOf('type == "canvas_send"', start));
   assert.ok(start >= 0 && !/Canvas::plan|send_planned|http|Http/.test(body), 'les messages de saisie ne planifient rien et ne sortent pas');
+});
+
+test('un message s’affiche dans l’onglet ouvert : aucune écriture directe dans le fil caché', () => {
+  const page = read('index.html');
+  const place = page.slice(page.indexOf('function placeInOpenTab'), page.indexOf('function noteLine'));
+  assert.ok(/viewUI\.tab === 'guide'/.test(place), 'l’onglet ouvert décide');
+  assert.ok(/classList\.add\('ghost'\)/.test(place), 'dans Étapes, les boutons d’un message restent secondaires');
+  assert.ok(/where === 'chat' \? placeInThread\(line\) : placeInOpenTab\(line\)/.test(page), 'noteLine suit l’onglet ouvert');
+  assert.ok(/noteLine\(entry\.text, entry\.tone, entry\.icon, 'chat'\)/.test(page), 'seule une conversation rouverte force le fil');
+  const login = page.slice(page.indexOf('function requireLogin'), page.indexOf('// ---------- Volets'));
+  assert.ok(login.includes('placeInOpenTab(loginCard)') && !login.includes('thread.appendChild'), 'la demande de connexion est visible à l’endroit du clic');
+  assert.ok(login.includes('dropLoginCard()'), 'une seule carte de connexion');
+  assert.ok(/function onExplain\(msg\) \{ applyTab\('show-chat'\)/.test(page), 'l’explication d’un réglage s’affiche');
+});
+
+test('pièce trop grande : la carte et « Réduire » sont dans l’étape, sans bouton plein, et survivent au passage d’étape', () => {
+  const page = read('index.html');
+  const card = page.slice(page.indexOf('function showTooBig'), page.indexOf('function renderModel'));
+  assert.ok(card.includes("$('project-alert').appendChild(box)"), 'pas dans les messages d’étape, effacés au changement d’étape');
+  assert.ok(card.includes('Réduire pour qu’il tienne') && card.includes('Garder cette taille'));
+  assert.ok(!/,\s*['"]btn(?: sm)?['"]/.test(card), 'pas de bouton plein dans la carte');
+});
+
+test('import raté : « Je pose… » est retiré à la réponse', () => {
+  const page = read('index.html');
+  assert.ok(/function onModelAdded\(msg\) \{\s*dropPlacing\(\);/.test(page));
+});
+
+test('« L’impression a démarré » suit l’acceptation d’Orca, et un refus libère l’envoi', () => {
+  const page = read('index.html');
+  const run = page.slice(page.indexOf('function runAction'), page.indexOf("window.addEventListener('resize', function () { if (conv)"));
+  assert.ok(!run.includes('sentConv = conv'), 'cliquer ne suffit plus');
+  const started = page.slice(page.indexOf('function onPrintStarted'), page.indexOf('function runAction'));
+  assert.ok(/if \(!msg\.ok\) \{\s*unlockSend\(\);/.test(started), 'refus : verrou levé tout de suite');
+  assert.ok(started.indexOf('sentConv = conv') > started.indexOf('!msg.ok'), 'sentConv seulement après un succès');
+  assert.ok(/sentConv = conv[\s\S]*renderProject\(\)/.test(started), 'et le bouton s’affiche sans attendre');
+  assert.ok(/kind === 'send'[\s\S]{0,60}lockSend\('print'\)/.test(run) && /lockSend\('export'\)/.test(run), 'double-clic : un seul départ');
+});
+
+test('Résultat n’est pas une impasse : on peut réimprimer, et « démarré » ne survit pas à l’étape', () => {
+  assert.ok(read('journey-steps.js').includes('Réimprimer cette pièce'));
+  const page = read('index.html');
+  assert.ok(/reprint: function \(\) \{[^}]*setTourStep\(/.test(page));
+  assert.ok(/if \(step !== 'imprimer'\) projectUI\.sentConv = null/.test(page));
+  assert.ok(page.includes('retourne à l’onglet « Étapes »') && page.includes('id="tab-guide"'), 'le renvoi vise un onglet qui existe');
+});
+
+test('reprise d’un projet : le même fichier est reposé sans proposer un nouveau projet', () => {
+  const page = read('index.html');
+  const send = page.slice(page.indexOf('function sendModel'), page.indexOf('function offerNewProject'));
+  assert.ok(/part && file\.name !== part\) \{ offerNewProject/.test(send), 'seul un autre nom ouvre un autre projet');
+  assert.ok(send.includes('déjà sur le plateau'), 'pas de doublon si la pièce est encore là');
+  assert.ok(/kind === 'importPart'\) pickFiles\(\)/.test(page), 'le bouton de l’étape ouvre le choix de fichier');
+});
+
+test('un fichier déposé est prioritaire : le plateau ne le remplace pas, et il est posé dès la machine choisie', () => {
+  const page = read('index.html');
+  assert.ok(/projectUI\.waitingFile \? null : PlyoProject\.partFromPlate\(/.test(page));
+  assert.ok(/if \(adopted\) conv\.project\.part = null/.test(page), 'une pièce seulement vue sur le plateau cède la place');
+  assert.ok(read('project-card.js').includes('Garder cette pièce'), 'l’ancienne pièce reste récupérable, et le panneau le dit');
+});
+
+test('« Aucun risque détecté » distingue vérifié, ignoré et pas vérifié, et une réouverture revérifie', () => {
+  const steps = read('journey-steps.js');
+  assert.ok(/checked === 'clean'\) return 'Aucun risque détecté'/.test(steps));
+  assert.ok(steps.includes('Points ignorés'));
+  const page = read('index.html');
+  assert.ok(/openRisks = 0; plateChecked = 'ignored'/.test(page), 'croix et « En parler » : ignoré');
+  const restore = page.slice(page.indexOf('function restoreConversation'), page.indexOf('function renderEntry'));
+  assert.ok(/tourSignals\.sliced\) window\.orca\.postMessage\(\{ type: 'preflight' \}\)/.test(restore));
+});
+
+test('formulaire de la bobine : pas de redessin pendant la saisie, et succès annoncé seulement après la réponse d’Orca', () => {
+  const card = read('project-card.js');
+  const editor = card.slice(card.indexOf('function renderSpoolEditor'), card.indexOf('function renderChoices'));
+  assert.ok(/wasOpen && slot\.spoolKey === key\) return/.test(editor), 'formulaire gardé');
+  assert.ok(/if \(!wasOpen\) setTimeout/.test(editor), 'le curseur n’est placé qu’à l’ouverture');
+  const page = read('index.html');
+  const range = page.slice(page.indexOf('setSpoolRange: function'), page.indexOf('importPart: function'));
+  assert.ok(range.indexOf('function (ok, text)') < range.indexOf('limits_set') && range.indexOf('function (ok, text)') < range.indexOf('enregistrées'), 'limits_set et le message viennent après la réponse');
+  assert.ok(/if \(!ok\) \{ sp\.error = text/.test(range), 'refus dit dans le formulaire');
+});
+
+test('la suggestion « Températures de ma bobine » ouvre le formulaire de la fiche : plus de volet « Limites du fabricant »', () => {
+  const page = read('index.html');
+  assert.ok(/what === 'limits'\) \{ if \(!projectUI\.spool\.open\) projectHandlers\.toggleSpool\(\)/.test(page));
+  assert.ok(!page.includes('openLimits') && !page.includes('limitsView'), 'volet retiré');
+  assert.ok(!page.includes('Limites du fabricant'), 'aucun texte ne le cite');
+});
+
+test('une conversation rouverte montre son échange', () => {
+  const page = read('index.html');
+  const restore = page.slice(page.indexOf('function restoreConversation'), page.indexOf('function renderEntry'));
+  assert.ok(/entry\.kind === 'me'[\s\S]{0,120}applyTab\('show-chat'\)/.test(restore));
+});
+
+test('« Mes conversations » : le nom de la pièce sert de titre, et un simple lancement n’enregistre rien', () => {
+  const page = read('index.html');
+  assert.ok(/function worthSaving\(c\) \{ return !!c && \(c\.entries\.length > 0 \|\| !!partName\(c\)\); \}/.test(page));
+  assert.ok(/title: c\.title \|\| partName\(c\)/.test(page));
+});
+
+test('« Appliquer et préparer » : un seul lot au double-clic, et un refus laisse réessayer', () => {
+  const page = read('index.html');
+  assert.ok(/function applyIntent\(again\) \{\s*if \(intentUI\.applying\) return;/.test(page));
+  assert.ok(/if \(!ok\) \{ releaseIntent\(\); noteLine\(text/.test(page), 'le refus libère le verrou');
+});
+
+test('« Reposer les questions » fonctionne aussi après la découpe', () => {
+  const page = read('index.html');
+  assert.ok(/\{ reask: true \}/.test(page) && /function plateSliced\(\)/.test(page));
+  assert.ok(/ctx = \{ sliced: plateSliced\(\)/.test(page), 'la ligne d’action suit');
+  assert.ok(/delete p\.intent\.reask/.test(page), 'levé une fois les réponses appliquées');
+});
+
+test('Canvas, trop de couleurs : « puis reviens ici » a un bouton qui relit', () => {
+  assert.ok(/Vérifier à nouveau', h\.recheck/.test(read('canvas-view.js')));
+  assert.ok(/recheck: function \(\) \{ canvasUI\.preset = null/.test(read('index.html')));
+});
+
+test('la carte « Avant d’imprimer » est amenée dans la zone visible', () => {
+  const page = read('index.html');
+  const on = page.slice(page.indexOf('function onPreflight'), page.indexOf('function resultCard'));
+  assert.ok(/scrollToAnswerTop\(\$\('preflight-slot'\)\.firstChild\)/.test(on));
+});
+
+test('le panneau dit quand il change la machine d’Orca, sans supprimer ce changement', () => {
+  const page = read('index.html');
+  assert.ok(/orca !== q\.machine\.preset\) projectUI\.switchedFrom = orca/.test(page));
+  assert.ok(page.includes('Orca était sur « ') && page.includes('Choisir une autre machine'));
+  const q = page.slice(page.indexOf('function applyMachineQuestion'), page.indexOf('function proposeFilamentFromHabit'));
+  assert.ok(q.includes('pickPrinter(q.machine.preset'), 'le changement reste');
+});
+
+test('Résultat répond à sa question : « Oui, c’est réussi » et « Nouvelle pièce », sans bouton plein de plus', () => {
+  const steps = read('journey-steps.js');
+  assert.ok(steps.includes('Oui, c’est réussi') && steps.includes('Nouvelle pièce'));
+  assert.ok(/kind === 'newPart'\) newConversation\(\)/.test(read('index.html')));
+});
+
+test('téléphone, service coupé : l’erreur s’affiche là où on a cliqué', () => {
+  const page = read('index.html');
+  assert.ok(/if \(!valid\) \{ if \(session\) showError\('network', openPhone, null, true\); return; \}/.test(page));
+  assert.ok(/if \(here\) \{ hereError = placeInOpenTab\(box\); return; \}/.test(page));
+});
+
+test('l’accueil ne promet pas de bouton qui n’existe pas dans les étapes', () => {
+  const welcome = read('welcome.html');
+  assert.ok(!/Montre-moi/.test(welcome), '« Montre-moi » n’est proposé que par l’IA');
+  assert.ok(!/passer une étape/.test(welcome), 'aucune étape n’a de bouton « Passer »');
+  for (const name of ['journey-steps.js', 'project-card.js', 'journey-view.js']) assert.ok(!/Montre-moi|Passer l/.test(read(name)), name);
+});
+
+test('« Plus tard » n’éteint pas l’alerte de changement de machine', () => {
+  assert.ok(/if \(!setup\.preset\) projectUI\.adopt = false/.test(read('index.html')));
+});
+
+test('textes : pas d’accents graves bruts à l’installation, pas de numéro d’étape', () => {
+  const page = read('index.html');
+  assert.ok(/box\.appendChild\(rich\(setup\.found \?/.test(page), 'libellés Orca en surbrillance');
+  assert.ok(!page.includes('(étape 3)'));
+  assert.ok(!page.includes('Ta session a expiré.\''), 'phrase complète');
+  assert.ok(read('project-card.js').includes('Je ne lis pas ton Canvas'));
+});
+
+test('comportements : brouillon gardé, demande remise si la jauge est pleine, message de passage visible, carte refermée', () => {
+  const page = read('index.html');
+  assert.ok(/function clearNoteIfSent\(note\) \{ if \(noteInput\.value\.trim\(\) === note\)/.test(page));
+  assert.ok(/code === 'insufficient_credits' && !noteInput\.value/.test(page));
+  assert.ok(page.indexOf("setTourStep('print'); // d'abord") < page.indexOf('Pas de risque détecté : on passe'), 'message après le changement d’étape');
+  assert.ok(/skip: function \(\) \{ \$\('preflight-slot'\)\.textContent = ''/.test(page));
+  assert.ok(read('project-card.js').includes('Garder ce filament'));
+});
+
+test('réglages lus : pas de nom technique pour un débutant ; ligne décochée lisible', () => {
+  const page = read('index.html');
+  assert.ok(/fsState\.level === 'expert' \? p\.key : ''/.test(page));
+  assert.ok(!/\.row\.off \{ opacity/.test(page) && /\.row\.off input \{ opacity/.test(page));
 });
