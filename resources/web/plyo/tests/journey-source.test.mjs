@@ -242,7 +242,7 @@ test('Résultat n’est pas une impasse : on peut réimprimer, et « démarré �
   assert.ok(read('journey-steps.js').includes('Réimprimer cette pièce'));
   const page = read('index.html');
   assert.ok(/reprint: function \(\) \{[^}]*setTourStep\(/.test(page));
-  assert.ok(/if \(step !== 'imprimer'\) projectUI\.sentConv = null/.test(page));
+  assert.ok(/if \(step !== 'imprimer'\) \{ projectUI\.sentConv = null;/.test(page));
   assert.ok(page.includes('retourne à l’onglet « Étapes »') && page.includes('id="tab-guide"'), 'le renvoi vise un onglet qui existe');
 });
 
