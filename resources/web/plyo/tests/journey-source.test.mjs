@@ -185,3 +185,11 @@ test('Résultat n’est pas une impasse : on peut réimprimer, et « démarré �
   assert.ok(/if \(step !== 'imprimer'\) projectUI\.sentConv = null/.test(page));
   assert.ok(page.includes('retourne à l’onglet « Étapes »') && page.includes('id="tab-guide"'), 'le renvoi vise un onglet qui existe');
 });
+
+test('reprise d’un projet : le même fichier est reposé sans proposer un nouveau projet', () => {
+  const page = read('index.html');
+  const send = page.slice(page.indexOf('function sendModel'), page.indexOf('function offerNewProject'));
+  assert.ok(/part && file\.name !== part\) \{ offerNewProject/.test(send), 'seul un autre nom ouvre un autre projet');
+  assert.ok(send.includes('déjà sur le plateau'), 'pas de doublon si la pièce est encore là');
+  assert.ok(/kind === 'importPart'\) pickFiles\(\)/.test(page), 'le bouton de l’étape ouvre le choix de fichier');
+});

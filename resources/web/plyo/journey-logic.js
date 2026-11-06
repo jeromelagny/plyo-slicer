@@ -45,6 +45,8 @@
       if (cv.mode === 'multi') return { label: 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
       return { label: '', kind: 'none', enabled: false };
     }
+    // Fiche remplie mais plateau vide (relance d'Orca, pièce supprimée) : remettre la pièce passe avant tout.
+    if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return { label: 'Choisir un fichier', kind: 'importPart', enabled: true };
     var slice = { label: 'Découper', kind: 'slice', enabled: true };
     if (step === 'preparer') {
       // Questions d'intention : on répond avec les choix ; au résumé, un seul bouton applique et prépare.
@@ -75,6 +77,7 @@
   function prompt(step, ctx) {
     var c = ctx || {};
     if (c.canvas) return canvasPrompt(c);
+    if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return 'Ta pièce n’est plus sur le plateau';
     switch (step) {
       case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : 'Choisis ton imprimante';
       case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : 'Dis-moi quel filament est sur la bobine';

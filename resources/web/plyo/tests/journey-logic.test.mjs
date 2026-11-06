@@ -243,3 +243,12 @@ test('pendant un envoi, le bouton de l’étape Imprimer est inactif ; il revien
   assert.equal(J.primaryAction('imprimer', { sliced: true, linked: false, sending: true }).enabled, false);
   assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true }).enabled, true);
 });
+
+test('plateau vide alors que la fiche a une pièce : on demande de la remettre, à Préparer comme à Imprimer', () => {
+  for (const step of ['preparer', 'imprimer']) {
+    assert.equal(J.primaryAction(step, { plateEmpty: true }).kind, 'importPart', step);
+    assert.equal(J.prompt(step, { plateEmpty: true }), 'Ta pièce n’est plus sur le plateau', step);
+  }
+  assert.equal(J.primaryAction('resultat', { plateEmpty: true }).kind, 'photo', 'à Résultat, le plateau peut être vidé');
+  assert.equal(J.primaryAction('preparer', {}).kind, 'slice');
+});

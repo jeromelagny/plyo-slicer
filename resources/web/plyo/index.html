@@ -1037,7 +1037,8 @@
   var openRisks = 0; // risques de la vérification non ignorés
   var preflightFix = null; // lance « Tout corriger » de la carte de vérification affichée (rend faux s'il n'y a rien à faire)
   function journeyCtx() {
-    var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on };
+    var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on,
+      plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
     else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
     var cctx = conv ? canvasCtx(PlyoJourney.currentStep(conv.project)) : null;
@@ -1160,6 +1161,7 @@
   function runAction(kind) {
     if (kind === 'slice') plateAction('slice');
     else if (kind === 'photo') openPhone();
+    else if (kind === 'importPart') pickFiles();
     else if (kind === 'send') {
       canvasUI.refused = '';
       if (!lockSend('print')) return;
@@ -2285,7 +2287,11 @@
       noteLine('« ' + file.name + ' » attend : choisis d’abord ton imprimante, je le pose ensuite.', '', 'info', 'guide');
       return;
     }
-    if (conv.project.part && conv.project.part.name) { offerNewProject(file); return; }
+    var part = conv.project.part && conv.project.part.name;
+    if (part && file.name !== part) { offerNewProject(file); return; }
+    if (part && !(tourSignals && tourSignals.objects === 0)) { noteLine('« ' + part + ' » est déjà sur le plateau.', '', 'info', 'guide'); return; }
+    // La pièce de ce projet n'est plus sur le plateau (relance d'Orca, pièce supprimée) : on la repose, le projet continue.
+    projectUI.reposing = !!part;
     importModel(file);
   }
   // Une autre pièce, c'est un autre projet : on propose une nouvelle conversation avec sa propre fiche.
@@ -2460,9 +2466,11 @@
   // ---------- Modèle 3D joint : posé sur le plateau, conseils sur clic seulement ----------
   function onModelAdded(msg) {
     dropPlacing();
-    if (!msg.ok) { noteLine(msg.text || 'Je n’ai pas pu poser cette pièce sur le plateau.', 'error', 'alert', 'guide'); return; }
+    if (!msg.ok) { projectUI.reposing = false; noteLine(msg.text || 'Je n’ai pas pu poser cette pièce sur le plateau.', 'error', 'alert', 'guide'); return; }
     if (msg.adaptation) { syncProjectNames(msg.adaptation.saved); if (msg.name) conv.project.adapted = msg.name; } // adapté dès l'import : pas une deuxième fois
+    if (tourSignals) tourSignals.objects = Math.max(tourSignals.objects || 0, 1); // sans attendre le prochain signal
     if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
+    if (projectUI.reposing) { projectUI.reposing = false; renderProject(); noteLine('« ' + msg.name + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); }
     if (projectUI.newProjectFile) {
       projectUI.newProjectFile = false;
       noteLine('L’ancienne pièce est toujours sur le plateau d’Orca : supprime-la avant de découper, un projet = une pièce.', 'warn', 'alert', 'guide');
@@ -3113,11 +3121,12 @@
     var close = function () { slot.textContent = ''; };
     if (!data || !data.objects || !data.objects.length) {
       var empty = emptyState('cube', 'Ton plateau est vide', 'Ajoute une pièce : je la vérifie avant que tu lances l’impression.', 'Ajouter un modèle', function () { close(); pickFiles(); });
+      empty.querySelector('.btn').classList.add('ghost'); // le bouton plein de l'étape reste celui de la ligne d'action
       empty.appendChild(button('Fermer', close, 'link'));
       slot.appendChild(empty);
     } else if (!data.sliced) {
       slot.appendChild(resultCard('info', 'Rien à signaler pour l’instant', 'Découpe la plaque pour que je vérifie aussi les parties dans le vide.',
-        button('Découper la plaque', function () { close(); plateAction('slice'); }, 'btn sm', 'wand'), close));
+        button('Découper la plaque', function () { close(); plateAction('slice'); }, 'btn ghost sm', 'wand'), close));
     } else {
       slot.appendChild(resultCard('check', 'Ta plaque est prête à imprimer', 'Rien à signaler : les pièces tiennent, collent bien au plateau et ne sont pas dans le vide.', null, close));
     }
@@ -3282,7 +3291,7 @@
     // La découpe est périmée (un réglage a changé) : on redécoupe avant d'imprimer, y compris après une correction à l'étape Résultat.
     if ((step === 'print' || step === 'after') && FS.nextTourStep(step, signals, projectUI.fixedAfter === conv) === 'slice') { projectUI.fixedAfter = null; setTourStep('slice'); return; }
     // Le contenu des étapes 4 et 5 (temps, poids, machine reliée) dépend de ces signaux.
-    var sig = JSON.stringify([signals.sliced, signals.linked, signals.time_s]);
+    var sig = JSON.stringify([signals.sliced, signals.linked, signals.time_s, signals.objects === 0]);
     if (sig !== onTourSignals.last) { onTourSignals.last = sig; renderProject(); }
   }
 

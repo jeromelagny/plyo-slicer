@@ -61,7 +61,9 @@
     var c = opts.ctx || {}, h = opts.handlers;
     slot.textContent = '';
     var body = ui.el('div', 'project-body');
-    if (opts.step === 'preparer' && opts.intent && !c.sliced) {
+    if (c.plateEmpty && (opts.step === 'preparer' || opts.step === 'imprimer')) {
+      body.appendChild(ui.el('p', '', 'Choisis le même fichier : je le repose sur le plateau et on reprend ton projet.'));
+    } else if (opts.step === 'preparer' && opts.intent && !c.sliced) {
       renderIntent(body, ui, opts.intent, h);
     } else if (opts.step === 'preparer') {
       body.appendChild(line(ui, c.sliced ? 'check' : 'info', c.sliced ? 'Découpe faite' : 'Découpe à faire', c.sliced ? 'ok' : ''));
