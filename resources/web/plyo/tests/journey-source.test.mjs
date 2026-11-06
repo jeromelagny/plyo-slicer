@@ -234,3 +234,9 @@ test('une conversation rouverte montre son échange', () => {
   const restore = page.slice(page.indexOf('function restoreConversation'), page.indexOf('function renderEntry'));
   assert.ok(/entry\.kind === 'me'[\s\S]{0,120}applyTab\('show-chat'\)/.test(restore));
 });
+
+test('« Mes conversations » : le nom de la pièce sert de titre, et un simple lancement n’enregistre rien', () => {
+  const page = read('index.html');
+  assert.ok(/function worthSaving\(c\) \{ return !!c && \(c\.entries\.length > 0 \|\| !!partName\(c\)\); \}/.test(page));
+  assert.ok(/title: c\.title \|\| partName\(c\)/.test(page));
+});

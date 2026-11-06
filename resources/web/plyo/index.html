@@ -785,12 +785,13 @@
     if (typeof renderProject === 'function') renderProject();
     if (typeof applyMachineQuestion === 'function') { projectUI.showList = false; projectUI.showKinds = false; applyMachineQuestion(); }
   }
-  // Une conversation vaut d'être gardée dès qu'elle a des échanges ou un début de projet (imprimante choisie…).
-  function worthSaving(c) { return !!c && (c.entries.length > 0 || PlyoProject.nextStep(c.project) !== 'printer'); }
+  // Une conversation vaut d'être gardée dès qu'elle a des échanges ou une pièce : un simple lancement n'enregistre rien.
+  function partName(c) { return c && c.project && c.project.part && c.project.part.name || ''; }
+  function worthSaving(c) { return !!c && (c.entries.length > 0 || !!partName(c)); }
   function saveNow(c) {
     if (!worthSaving(c)) return;
     c.updated = new Date().toISOString();
-    window.orca.postMessage({ type: 'conv_save', id: c.id, conversation: { title: c.title, updated: c.updated, entries: c.entries, history: c.history, project: c.project } });
+    window.orca.postMessage({ type: 'conv_save', id: c.id, conversation: { title: c.title || partName(c), updated: c.updated, entries: c.entries, history: c.history, project: c.project } });
   }
   var saveTarget = null;
   function scheduleSave(c) {
