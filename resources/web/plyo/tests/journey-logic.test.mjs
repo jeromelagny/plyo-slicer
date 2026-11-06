@@ -237,3 +237,9 @@ test('divergenceNames : deux profils de la même machine restent distinguables',
     { from: 'Ma Elegoo Centauri Carbon 2 0.4 nozzle', to: 'Elegoo Centauri Carbon 2 0.4 nozzle' });
   assert.deepEqual(J.divergenceNames({ preset: 'Ma K2', name: 'K2' }, 'Bambu Lab A1'), { from: 'K2', to: 'Bambu Lab A1' });
 });
+
+test('pendant un envoi, le bouton de l’étape Imprimer est inactif ; il revient ensuite', () => {
+  assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true, sending: true }).enabled, false);
+  assert.equal(J.primaryAction('imprimer', { sliced: true, linked: false, sending: true }).enabled, false);
+  assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true }).enabled, true);
+});

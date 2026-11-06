@@ -968,13 +968,14 @@
     canvasUI.loading = false;
     if (canvasUI.sendPending && msg.send) {
       canvasUI.sendPending = false;
-      if (!conv || !conv.project.printer || msg.preset !== conv.project.printer.preset) return;
-      if (!msg.ok) { noteLine('Je n’arrive pas à relire les emplacements de ta CC2 : rien n’est envoyé. Vérifie qu’elle est allumée, puis réessaie.', 'warn', 'alert', 'guide'); return; }
+      if (!conv || !conv.project.printer || msg.preset !== conv.project.printer.preset) { unlockSend(); return; }
+      if (!msg.ok) { unlockSend(); noteLine('Je n’arrive pas à relire les emplacements de ta CC2 : rien n’est envoyé. Vérifie qu’elle est allumée, puis réessaie.', 'warn', 'alert', 'guide'); return; }
       var chosen = conv.project.canvas || [], cols = Array.isArray(msg.colours) ? msg.colours : [];
       var check = PlyoCanvas.checkBeforeSend(chosen, PlyoCanvas.trays(msg));
       if (cols.length && (cols.length !== chosen.length || cols.some(function (c) { return !chosen.some(function (e) { return e.t === c.t; }); })))
         check.block.push('La pièce n’a plus les mêmes couleurs qu’au choix des emplacements.');
       if (check.block.length) {
+        unlockSend();
         check.block.forEach(function (t) { noteLine(t, 'warn', 'alert', 'guide'); });
         noteLine('Choisis à nouveau les emplacements : rien n’est envoyé.', 'warn', 'alert', 'guide');
         canvasUI.state = msg; canvasUI.preset = conv.project.printer.preset; canvasUI.loading = false; canvasUI.mapping = null; canvasUI.useList = false;
@@ -1036,7 +1037,7 @@
   var openRisks = 0; // risques de la vérification non ignorés
   var preflightFix = null; // lance « Tout corriger » de la carte de vérification affichée (rend faux s'il n'y a rien à faire)
   function journeyCtx() {
-    var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks };
+    var p = conv && conv.project || {}, ctx = { sliced: !!(tourSignals && tourSignals.sliced), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on };
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
     else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
     var cctx = conv ? canvasCtx(PlyoJourney.currentStep(conv.project)) : null;
@@ -1120,18 +1121,51 @@
     if (off && !recheckTimer) recheckTimer = setInterval(function () { var q = conv && conv.project.printer; if (q) window.orca.postMessage({ type: 'project_reachable', preset: q.preset }); }, 8000);
     else if (!off && recheckTimer) { clearInterval(recheckTimer); recheckTimer = null; }
   }
+  // Un envoi à la fois : un double-clic ne part qu'une fois. La réponse d'Orca est immédiate (sa fenêtre s'ouvre ensuite) : le
+  // verrou tient au moins le temps d'un double-clic après un succès, et tombe tout de suite après une erreur.
+  var SEND_LOCK_MS = 1500, SEND_WAIT_MS = 8000; // sans réponse (panne), l'envoi redevient possible
+  var sendLock = { on: false, kind: '', timer: null };
+  function lockSend(kind) {
+    if (sendLock.on) return false;
+    sendLock = { on: true, kind: kind, timer: setTimeout(unlockSend, SEND_WAIT_MS), since: Date.now() };
+    projectUI.sentConv = null; // « L'impression a démarré » ne vient qu'une fois l'envoi accepté
+    renderProject();
+    return true;
+  }
+  function unlockSend() {
+    clearTimeout(sendLock.timer);
+    if (!sendLock.on) return;
+    sendLock.on = false;
+    if (conv) renderProject();
+  }
+  function unlockSendSoon() {
+    clearTimeout(sendLock.timer);
+    if (sendLock.on) sendLock.timer = setTimeout(unlockSend, Math.max(0, SEND_LOCK_MS - (Date.now() - sendLock.since)));
+  }
+  function onPrintStarted(msg) {
+    if (!msg.ok) {
+      unlockSend();
+      noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque (étape 3) : clique sur « Découper la plaque » en haut à droite.' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
+      return;
+    }
+    projectUI.sentConv = conv;
+    if (sendLock.kind === 'export') noteLine('Choisis où enregistrer le fichier, puis copie-le sur ta clé USB ou ta carte SD.', '', 'info', 'guide');
+    else noteLine('Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
+    unlockSendSoon();
+    renderProject();
+  }
   // Le bouton plein de la ligne d'action.
   function runAction(kind) {
     if (kind === 'slice') plateAction('slice');
     else if (kind === 'photo') openPhone();
     else if (kind === 'send') {
       canvasUI.refused = '';
-      projectUI.sentConv = conv;
+      if (!lockSend('print')) return;
       if (conv && Array.isArray(conv.project.canvas) && conv.project.canvas.length) sendWithCanvasCheck();
       else { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: false }); }
     }
     else if (kind === 'confirmCanvas') { if (canvasUI.mapping && PlyoCanvas.complete(canvasUI.mapping)) applyCanvas(canvasUI.mapping); }
-    else if (kind === 'export') { canvasUI.refused = ''; projectUI.sentConv = conv; rememberHabit(); window.orca.postMessage({ type: 'print_start', export: true }); }
+    else if (kind === 'export') { canvasUI.refused = ''; if (!lockSend('export')) return; rememberHabit(); window.orca.postMessage({ type: 'print_start', export: true }); }
     else if (kind === 'advance') setTourStep('print');
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
     else if (kind === 'applyIntent') applyIntent(false);
@@ -3922,8 +3956,7 @@
     } else if (msg.type === 'filament_chosen') {
       if (projectUI.pending && projectUI.pending.kind === 'filament') onProjectFilamentChosen(msg);
     } else if (msg.type === 'print_started') {
-      if (!msg.ok) noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque (étape 3) : clique sur « Découper la plaque » en haut à droite.' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
-      else noteLine('Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
+      onPrintStarted(msg);
     } else if (msg.type === 'setup_catalog') {
       onSetupCatalog(Array.isArray(msg.catalog) ? msg.catalog : []);
     } else if (msg.type === 'setup_installed') {
@@ -3973,11 +4006,12 @@
     } else if (msg.type === 'canvas_refused') {
       canvasUI.refused = msg.text || 'La CC2 a refusé les emplacements choisis.';
       canvasUI.refusedConv = conv;
+      projectUI.sentConv = null; // refus après l'envoi : l'impression n'a pas démarré
       noteLine(canvasUI.refused, 'warn', 'alert', 'guide');
       if (conv) renderProject();
     } else if (msg.type === 'canvas_started') {
       noteLine(msg.text || '', msg.ok ? 'ok' : 'warn', msg.ok ? 'check' : 'alert', 'guide');
-      if (msg.ok) { canvasUI.refused = ''; if (conv) renderProject(); }
+      if (msg.ok) { canvasUI.refused = ''; projectUI.sentConv = conv; if (conv) renderProject(); }
     } else if (msg.type === 'project_state') {
       onProjectState(msg);
     } else if (msg.type === 'project_reachable') {

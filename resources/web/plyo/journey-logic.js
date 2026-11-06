@@ -56,7 +56,7 @@
     }
     if (step === 'imprimer') {
       if (!c.sliced) return slice;
-      return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: true } : { label: 'Exporter le fichier', kind: 'export', enabled: true };
+      return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: !c.sending } : { label: 'Exporter le fichier', kind: 'export', enabled: !c.sending };
     }
     if (step === 'resultat') return { label: 'Envoyer une photo', kind: 'photo', enabled: true };
     // Machine et filament proposés (dernière machine, dernier filament) : confirmer d'un toucher.

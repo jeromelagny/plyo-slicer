@@ -166,3 +166,14 @@ test('import raté : « Je pose… » est retiré à la réponse', () => {
   const page = read('index.html');
   assert.ok(/function onModelAdded\(msg\) \{\s*dropPlacing\(\);/.test(page));
 });
+
+test('« L’impression a démarré » suit l’acceptation d’Orca, et un refus libère l’envoi', () => {
+  const page = read('index.html');
+  const run = page.slice(page.indexOf('function runAction'), page.indexOf("window.addEventListener('resize', function () { if (conv)"));
+  assert.ok(!run.includes('sentConv = conv'), 'cliquer ne suffit plus');
+  const started = page.slice(page.indexOf('function onPrintStarted'), page.indexOf('function runAction'));
+  assert.ok(/if \(!msg\.ok\) \{\s*unlockSend\(\);/.test(started), 'refus : verrou levé tout de suite');
+  assert.ok(started.indexOf('sentConv = conv') > started.indexOf('!msg.ok'), 'sentConv seulement après un succès');
+  assert.ok(/sentConv = conv[\s\S]*renderProject\(\)/.test(started), 'et le bouton s’affiche sans attendre');
+  assert.ok(/kind === 'send'[\s\S]{0,60}lockSend\('print'\)/.test(run) && /lockSend\('export'\)/.test(run), 'double-clic : un seul départ');
+});
