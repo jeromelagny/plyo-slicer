@@ -284,3 +284,10 @@ test('téléphone, service coupé : l’erreur s’affiche là où on a cliqué'
   assert.ok(/if \(!valid\) \{ if \(session\) showError\('network', openPhone, null, true\); return; \}/.test(page));
   assert.ok(/if \(here\) \{ hereError = placeInOpenTab\(box\); return; \}/.test(page));
 });
+
+test('l’accueil ne promet pas de bouton qui n’existe pas dans les étapes', () => {
+  const welcome = read('welcome.html');
+  assert.ok(!/Montre-moi/.test(welcome), '« Montre-moi » n’est proposé que par l’IA');
+  assert.ok(!/passer une étape/.test(welcome), 'aucune étape n’a de bouton « Passer »');
+  for (const name of ['journey-steps.js', 'project-card.js', 'journey-view.js']) assert.ok(!/Montre-moi|Passer l/.test(read(name)), name);
+});
