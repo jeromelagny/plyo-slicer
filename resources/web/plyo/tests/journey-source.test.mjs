@@ -278,3 +278,9 @@ test('Résultat répond à sa question : « Oui, c’est réussi » et « Nouvel
   assert.ok(steps.includes('Oui, c’est réussi') && steps.includes('Nouvelle pièce'));
   assert.ok(/kind === 'newPart'\) newConversation\(\)/.test(read('index.html')));
 });
+
+test('téléphone, service coupé : l’erreur s’affiche là où on a cliqué', () => {
+  const page = read('index.html');
+  assert.ok(/if \(!valid\) \{ if \(session\) showError\('network', openPhone, null, true\); return; \}/.test(page));
+  assert.ok(/if \(here\) \{ hereError = placeInOpenTab\(box\); return; \}/.test(page));
+});

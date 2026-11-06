@@ -2632,7 +2632,8 @@
   function openPhone() {
     if (requireLogin('Les photos du téléphone passent par le service Plyo.', openPhone)) return;
     refreshAccount().then(function (valid) {
-      if (!valid) return;
+      // Session expirée : logout l'a dit et demande la connexion. Service coupé : l'erreur, là où tu viens de cliquer.
+      if (!valid) { if (session) showError('network', openPhone, null, true); return; }
       if (!phoneLink && !phoneCreating) {
         phoneCreating = apiFetch('/api/phone-sessions', { method: 'POST' })
           .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
@@ -2648,7 +2649,7 @@
       var ready = phoneLink ? Promise.resolve(phoneLink) : phoneCreating;
       ready
         .then(function (link) { window.orca.postMessage({ type: 'phone', link: link }); })
-        .catch(function () { showError('network', openPhone); });
+        .catch(function () { showError('network', openPhone, null, true); });
     });
   }
 
@@ -3603,8 +3604,11 @@
   }
 
   // Erreur : ce qui s'est passé et l'action suivante. La demande est gardée pour « Réessayer ».
-  function showError(code, retry, data) {
-    showConversation();
+  // `here` : l'erreur d'un clic s'affiche dans l'onglet ouvert ; sinon elle suit la conversation (avec la pastille).
+  var hereError = null;
+  function showError(code, retry, data, here) {
+    if (hereError) { hereError.remove(); hereError = null; }
+    if (!here) showConversation();
     var view = Logic.errorView(code, data);
     var g = code === 'insufficient_credits' ? Logic.gaugeView(lastGauge) : null;
     // « Une autre demande est en cours » n'est pas une panne : simple information, sans bouton.
@@ -3632,6 +3636,7 @@
       }
     }
     box.body.appendChild(acts);
+    if (here) { hereError = placeInOpenTab(box); return; }
     thread.appendChild(box);
     scrollDown();
     applyTab('answer');
