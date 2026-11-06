@@ -60,16 +60,19 @@ nlohmann::json read_3mf_settings(const std::string& path_utf8)
     mz_zip_zero_struct(&zip);
     if (!Slic3r::open_zip_reader(&zip, path_utf8))
         return nlohmann::json::object();
-    nlohmann::json out  = nlohmann::json::object();
-    size_t         size = 0;
-    void*          data = mz_zip_reader_extract_file_to_heap(&zip, "Metadata/project_settings.config", &size, 0);
-    if (data != nullptr) {
-        if (size <= MAX_SETTINGS_BYTES) {
+    nlohmann::json out = nlohmann::json::object();
+    // Taille lue avant d'extraire : un 3MF piégé ne doit pas remplir la mémoire. miniz alloue d'après cette taille annoncée et
+    // échoue si le contenu réel la dépasse.
+    const int                index = mz_zip_reader_locate_file(&zip, "Metadata/project_settings.config", nullptr, 0);
+    mz_zip_archive_file_stat stat;
+    if (index >= 0 && mz_zip_reader_file_stat(&zip, static_cast<mz_uint>(index), &stat) && stat.m_uncomp_size <= MAX_SETTINGS_BYTES) {
+        size_t size = 0;
+        if (void* data = mz_zip_reader_extract_to_heap(&zip, static_cast<mz_uint>(index), &size, 0)) {
             const nlohmann::json parsed = nlohmann::json::parse(static_cast<const char*>(data), static_cast<const char*>(data) + size, nullptr, false);
             if (parsed.is_object())
                 out = parsed;
+            mz_free(data);
         }
-        mz_free(data);
     }
     Slic3r::close_zip_reader(&zip);
     return out;
