@@ -84,3 +84,11 @@ test('les emplacements du projet gardent leur numéro et leur nature à la copie
   const entry = { t: 0, canvas_id: 1, tray_id: 0, label: '1A', imposable: true, source: 'printer', system: 'cfs' };
   assert.deepEqual(P.confirm({ printer: null, filament: null, part: null, canvas: [entry] }).canvas, [entry]);
 });
+
+test('filamentChoiceError : un choix annulé dans la fenêtre d’Orca n’est pas un profil introuvable', () => {
+  assert.equal(P.filamentChoiceError({ ok: false }, 'PLA'), 'Je n’ai pas trouvé de profil PLA pour cette imprimante. Choisis un autre filament.');
+  const cancelled = P.filamentChoiceError({ ok: false, cancelled: true }, 'PLA');
+  assert.ok(!cancelled.includes('pas trouvé'), cancelled);
+  assert.ok(cancelled.includes('Choix annulé'));
+  assert.ok(cancelled.includes('ton filament n’a pas changé'));
+});

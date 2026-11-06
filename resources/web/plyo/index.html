@@ -1672,7 +1672,7 @@
     var pend = projectUI.pending;
     if (!msg.ok) {
       projectUI.pending = null;
-      projectUI.error = { filament: 'Je n’ai pas trouvé de profil ' + pend.type + ' pour cette imprimante. Choisis un autre filament.' };
+      projectUI.error = { filament: PlyoProject.filamentChoiceError(msg, pend.type) };
       renderProject();
       return;
     }

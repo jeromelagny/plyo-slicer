@@ -67,7 +67,13 @@
   // Remettre le projet dans Orca ne demande que la machine ; le filament est remis aussi s'il est déjà choisi.
   function restorable(project) { return !!project && typeof project === 'object' && chosen(project.printer, 'preset'); }
 
-  var api = { restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  // Réponse négative de filament_choose : fenêtre d'Orca annulée (`cancelled`, réglages non enregistrés gardés), ou pas de profil.
+  function filamentChoiceError(msg, type) {
+    if (msg && msg.cancelled) return 'Choix annulé : ton filament n’a pas changé. Enregistre ou abandonne d’abord tes modifications du filament, puis choisis à nouveau.';
+    return 'Je n’ai pas trouvé de profil ' + type + ' pour cette imprimante. Choisis un autre filament.';
+  }
+
+  var api = { filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
