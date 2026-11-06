@@ -15,6 +15,7 @@
     if (opts.mode === 'tooMany') {
       body.appendChild(ui.el('p', 'muted small', 'Ta pièce a ' + opts.colours.length + ' couleurs et le Canvas ' + trays.length +
         ' emplacements. Réduis le nombre de couleurs de la pièce dans Orca, puis reviens ici.'));
+      body.appendChild(ui.button('Vérifier à nouveau', h.recheck, 'link'));
     } else if (opts.mode === 'multi') {
       body.appendChild(ui.el('p', 'muted small', 'Je propose un emplacement par couleur d’après le type et la couleur. Change ceux qui ne te conviennent pas.'));
       (opts.mapping || []).forEach(function (m) {

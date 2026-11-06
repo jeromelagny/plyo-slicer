@@ -1013,6 +1013,7 @@
       });
       renderProject();
     },
+    recheck: function () { canvasUI.preset = null; renderProject(); }, // relit les emplacements et les couleurs de la pièce
     useList: function () { canvasUI.useList = true; delete conv.project.canvas; projectChanged(); renderProject(); }
   };
 

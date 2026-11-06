@@ -253,3 +253,8 @@ test('« Reposer les questions » fonctionne aussi après la découpe', () => {
   assert.ok(/ctx = \{ sliced: plateSliced\(\)/.test(page), 'la ligne d’action suit');
   assert.ok(/delete p\.intent\.reask/.test(page), 'levé une fois les réponses appliquées');
 });
+
+test('Canvas, trop de couleurs : « puis reviens ici » a un bouton qui relit', () => {
+  assert.ok(/Vérifier à nouveau', h\.recheck/.test(read('canvas-view.js')));
+  assert.ok(/recheck: function \(\) \{ canvasUI\.preset = null/.test(read('index.html')));
+});
