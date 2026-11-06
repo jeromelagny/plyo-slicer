@@ -187,4 +187,55 @@ DecideOptions decide_options(const std::string& kind)
     return out;
 }
 
+std::string used_refusal(const std::vector<int>& model_t, const std::vector<int>& cursor_t, const std::vector<int>& sliced_t, const std::vector<int>& plan_t)
+{
+    const auto sorted = [](std::vector<int> v) {
+        std::sort(v.begin(), v.end());
+        return v;
+    };
+    const std::vector<int> model = sorted(model_t), cursor = sorted(cursor_t), sliced = sorted(sliced_t), plan = sorted(plan_t);
+    const std::string nothing = " Rien n'est parti.";
+    if (plan.empty() || sliced.empty())
+        return "Je ne sais pas quels filaments la plaque utilise : découpe-la à nouveau, puis relance l'envoi." + nothing;
+    if (REFUSE_CURSOR_FILAMENT_CHANGES && model != cursor)
+        return "Cette plaque change de filament à une couche choisie dans l'aperçu : je ne sais pas encore l'envoyer avec une répartition. Envoie-la par le bouton d'Orca." + nothing;
+    if (cursor != sliced)
+        return "La découpe n'utilise pas les filaments prévus par les réglages (support, tour de purge, filament par zone) : vérifie tes réglages, ou envoie par le bouton d'Orca." + nothing;
+    if (plan != sliced)
+        return "Les emplacements choisis ne couvrent plus les couleurs de la pièce découpée : choisis à nouveau les emplacements." + nothing;
+    return std::string();
+}
+
+bool plan_allowed(const Detection& detection, const nlohmann::json& last_read, const std::string& host)
+{
+    return (detection.kind == "cfs" || detection.kind == "ifs") && detection.imposable && !host.empty() && Json::str(last_read, "host") == host &&
+           Json::boolean(last_read, "ok", false) && Json::boolean(last_read, "imposable", false) && Json::str(last_read, "source") == "printer";
+}
+
+nlohmann::json clean_send_map(const nlohmann::json& map)
+{
+    const nlohmann::json none = nlohmann::json::array();
+    if (!map.is_array() || map.empty())
+        return none;
+    nlohmann::json out = nlohmann::json::array();
+    for (const nlohmann::json& e : map) {
+        const std::string type = Json::str(e, "type", 30), preset = Json::str(e, "preset", 200);
+        if (!is_int(e, "t") || !is_int(e, "canvas_id") || !is_int(e, "tray_id") || type.empty() || preset.empty())
+            return none;
+        nlohmann::json clean = {{"t", e["t"]}, {"canvas_id", e["canvas_id"]}, {"tray_id", e["tray_id"]}, {"type", type}, {"preset", preset}};
+        if (const std::string label = Json::str(e, "label", 16); !label.empty())
+            clean["label"] = label;
+        out.push_back(clean);
+    }
+    return out;
+}
+
+std::string profile_refusal(const nlohmann::json& plan, const Detection& edited, const std::string& edited_host, const std::string& edited_host_type,
+                            const std::string& edited_model)
+{
+    const bool same = plan.is_object() && edited.imposable && !edited_host.empty() && edited.kind == Json::str(plan, "kind") && edited_host == Json::str(plan, "host") &&
+                      edited_host_type == Json::str(plan, "host_type") && edited_model == Json::str(plan, "model");
+    return same ? std::string() : "L'imprimante choisie dans Orca n'est plus celle des emplacements choisis : rien n'est parti. Remets-la, ou choisis à nouveau les emplacements.";
+}
+
 }} // namespace Plyo::SlotsLogic

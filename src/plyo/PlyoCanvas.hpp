@@ -3,6 +3,8 @@
 #include <nlohmann/json.hpp>
 
 #include <functional>
+#include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,6 +33,14 @@ nlohmann::json apply(const nlohmann::json& entries);
 // Plan d'envoi : carte [{t, canvas_id, tray_id}] pour l'imprimante de ce profil, avec les couleurs de la plaque.
 void plan(const std::string& printer_preset, const nlohmann::json& map);
 void clear_plan();
+// CFS et IFS : relit l'imprimante hors du fil principal, revérifie tout (lecture, découpe, profil édité, filaments réellement
+// utilisés, carte) puis lance Plater::send_gcode_legacy sans fenêtre, avec la répartition. Au moindre doute, rien n'est envoyé.
+// `done` (fil principal) reçoit {ok, text}. `ok` veut dire « Orca a pris l'envoi », jamais « l'impression a démarré » :
+// CrealityPrint::start_print n'attend aucune réponse. NON VALIDÉ sur machine (T13, T14, T15).
+void send_planned(const std::string& printer_preset, std::function<void(nlohmann::json)> done);
+// Pour Plater::send_gcode_legacy (fil principal) : la répartition armée par send_planned, une seule fois. Vide en dehors de cet
+// appel : le bouton d'Orca garde toujours sa fenêtre.
+std::optional<std::map<std::string, std::string>> take_armed_send();
 // Couleurs découpées de la plaque et profils de filament (voir CC2::OrcaState) ; depuis n'importe quel fil.
 bool orca_state(std::vector<int>& sliced_t, std::vector<std::string>& presets);
 // Relance sans carte un départ refusé ; `done` (fil principal) reçoit {ok, text}.

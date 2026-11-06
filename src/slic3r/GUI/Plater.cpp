@@ -1,5 +1,6 @@
 #include "Plater.hpp"
 #include "plyo/PlyoAssistant.hpp" // PLYO: prévenir le panneau Assistant d'un nouveau projet
+#include "plyo/PlyoCanvas.hpp" // PLYO: envoi armé par le panneau, voir send_gcode_legacy
 #include "../Utils/NetworkAgent.hpp"
 #include "IPrinterAgent.hpp"
 #include "CalibUtils.hpp"
@@ -21015,6 +21016,14 @@ void Plater::send_gcode_legacy(int plate_idx, Export3mfProgressFn proFn)
         }
     }
 
+    // PLYO: envoi lancé par le panneau avec une répartition vérifiée, pas de fenêtre d'envoi (voir src/plyo/PlyoCanvas.hpp)
+    if (const auto plyo_info = Plyo::Canvas::take_armed_send(); plyo_info) {
+        upload_job.upload_data.upload_path   = default_output_file.filename();
+        upload_job.upload_data.post_action   = PrintHostPostUploadAction::StartPrint;
+        upload_job.upload_data.extended_info = *plyo_info;
+        if (use_3mf) // comme la branche d'Orca ci-dessous : le profil AD5X a use_3mf à 1
+            upload_job.upload_data.extended_info["plateindex"] = std::to_string(resolved_plate_idx + 1);
+    } else
     {
         auto        preset_bundle = wxGetApp().preset_bundle;
         auto        config        = get_app_config();

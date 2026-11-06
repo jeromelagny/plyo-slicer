@@ -62,6 +62,10 @@ constexpr bool UNUSED_COLOUR_ON_FIRST_SLOT = true;
 // n'est pas fiable). À false, CFS et IFS suivraient la règle permissive de la CC2.
 constexpr bool EMPTY_SLOT_BLOCKS = true;
 
+// Filaments changés au curseur de l'aperçu (G-code ToolChange) : jamais essayés avec une répartition CFS/IFS. En cas de doute, on
+// refuse : à passer à false après T13/T15 si l'essai est bon. Les envois par la fenêtre d'Orca ne sont pas concernés.
+constexpr bool REFUSE_CURSOR_FILAMENT_CHANGES = true;
+
 struct PrinterFacts
 {
     std::string         printer_model, host_type, printer_agent;
@@ -81,6 +85,25 @@ Detection detect(const PrinterFacts& facts);
 // Au moment de relier : sans code, Flashforge::test reste sur l'ancien chemin TCP et réussit quand même, et l'imprimante ne pourrait
 // ensuite recevoir aucune répartition. Seulement les modèles imposables : les autres Flashforge se relient comme avant.
 bool link_needs_code(const std::string& host_type, const std::string& printer_model, bool has_serial, bool has_code);
+
+// --- Envoi armé CFS/IFS (décision ouverte 2 : relecture AVANT l'envoi du fichier, conséquence de l'absence de seconde fenêtre ; une
+// bobine changée pendant l'envoi échappe au contrôle). Numéros de filament à partir de 0, dans n'importe quel ordre. ---
+
+// Refus si les filaments ne sont pas exactement les mêmes partout (vide : on peut envoyer) :
+// `model_t` : PartPlate::get_extruders(false), ce que les objets et les réglages prévoient ;
+// `cursor_t` : get_extruders(true), le même avec les changements au curseur ; c'est ce que le panneau a réparti ;
+// `sliced_t` : PartPlate::get_used_filaments(), ce que la découpe a réellement utilisé (statistiques du G-code, 'tour' et purges comprises) ;
+// `plan_t` : ce que la carte couvre. Une couleur inutilisée part sur le premier emplacement (voir UNUSED_COLOUR_ON_FIRST_SLOT) : si
+// un support ou une tour s'en servait, elle irait au mauvais endroit, d'où la comparaison à la découpe réelle.
+std::string used_refusal(const std::vector<int>& model_t, const std::vector<int>& cursor_t, const std::vector<int>& sliced_t, const std::vector<int>& plan_t);
+// Un plan CFS/IFS n'est gardé que si le profil le permet et que la dernière lecture de cette imprimante, faite sur la machine
+// (`last_read` : {host, ok, imposable, source}), dit qu'on peut imposer. Jamais pour une saisie manuelle, la U1 ou une machine sans traducteur.
+bool plan_allowed(const Detection& detection, const nlohmann::json& last_read, const std::string& host);
+// [{t, canvas_id, tray_id, label?, type, preset}] si chaque entrée est complète (type et profil non vides) ; sinon un tableau vide.
+nlohmann::json clean_send_map(const nlohmann::json& map);
+// Refus (vide : on peut) si le profil édité, celui avec lequel Orca enverra, n'est plus celui du plan ({host, kind, host_type, model}).
+std::string profile_refusal(const nlohmann::json& plan, const Detection& edited, const std::string& edited_host, const std::string& edited_host_type,
+                            const std::string& edited_model);
 
 // Champs communs de l'état lu : {system, source: "printer", imposable, empty_blocks, start_plain, validated}. `validated` : essayé
 // sur une vraie machine ; faux pour CFS, IFS et U1 tant que T9, T13, T14, T15 et T17 ne sont pas faits. La U1 n'impose jamais.

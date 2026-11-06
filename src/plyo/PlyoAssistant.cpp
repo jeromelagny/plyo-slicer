@@ -436,6 +436,11 @@ void handle_page_message(const nlohmann::json& data)
                 Canvas::clear_plan();
             else
                 Canvas::plan(Json::str(data, "preset"), data.contains("map") ? data["map"] : nlohmann::json());
+        } else if (type == "canvas_send") {
+            Canvas::send_planned(Json::str(data, "preset"), [](nlohmann::json r) {
+                r["type"] = "canvas_sent";
+                send(r);
+            });
         } else if (type == "canvas_start_plain") {
             Canvas::start_plain(Json::str(data, "preset"), [](nlohmann::json r) {
                 r["type"] = "canvas_started";

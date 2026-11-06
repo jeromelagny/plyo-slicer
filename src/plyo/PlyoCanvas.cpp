@@ -12,7 +12,12 @@
 
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
+#include "PlyoCfsLogic.hpp"
+#include "PlyoIfsLogic.hpp"
+
+#include "libslic3r/AppConfig.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/PartPlate.hpp"
 #include "slic3r/GUI/Plater.hpp"
 
@@ -30,6 +35,29 @@ using Slic3r::GUI::wxGetApp;
 namespace {
 
 Slic3r::PresetBundle& bundle() { return *wxGetApp().preset_bundle; }
+
+// Tout ceci ne vit que sur le fil principal.
+nlohmann::json g_last_read = nullptr;  // {host, ok, imposable, source} de la dernière lecture sur la machine
+nlohmann::json g_send_plan = nullptr;  // plan CFS/IFS {host, kind, host_type, model, map}
+bool           g_send_busy = false;    // une relecture d'envoi est en cours
+
+std::optional<std::map<std::string, std::string>> g_armed;
+bool                                              g_armed_taken = false;
+
+// L'envoi armé ne survit jamais à l'appel à send_gcode_legacy, même si Orca s'arrête avant de le prendre.
+class ArmedSend
+{
+public:
+    explicit ArmedSend(std::map<std::string, std::string> info)
+    {
+        g_armed       = std::move(info);
+        g_armed_taken = false;
+    }
+    ~ArmedSend() { g_armed.reset(); }
+    ArmedSend(const ArmedSend&)            = delete;
+    ArmedSend& operator=(const ArmedSend&) = delete;
+    bool taken() const { return g_armed_taken; }
+};
 
 // L'imprimante d'un profil et son traducteur (SlotsLogic::detect). Le code d'accès ne sort jamais d'ici.
 struct Target
@@ -65,7 +93,7 @@ Target target_of(const std::string& printer_preset)
 
 // Numéros (à partir de 0) des filaments utilisés par la plaque en cours, y compris les changements de filament posés sur
 // le curseur de l'aperçu (true : Orca compte alors les G-codes personnalisés de type ToolChange).
-std::vector<int> used_filaments()
+std::vector<int> used_filaments(bool with_cursor_changes = true)
 {
     std::vector<int> out;
     Slic3r::GUI::Plater* plater = wxGetApp().plater();
@@ -74,7 +102,23 @@ std::vector<int> used_filaments()
     Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
     if (plate == nullptr)
         return out;
-    for (int e : plate->get_extruders(true))
+    for (int e : plate->get_extruders(with_cursor_changes))
+        if (e >= 1)
+            out.push_back(e - 1);
+    return out;
+}
+
+// Ce que la découpe a réellement utilisé (statistiques du G-code), à partir de 0 ; vide si inconnu.
+std::vector<int> sliced_filaments()
+{
+    std::vector<int> out;
+    Slic3r::GUI::Plater* plater = wxGetApp().plater();
+    if (plater == nullptr)
+        return out;
+    Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
+    if (plate == nullptr)
+        return out;
+    for (int e : plate->get_used_filaments())
         if (e >= 1)
             out.push_back(e - 1);
     return out;
@@ -208,7 +252,10 @@ void read(const std::string& printer_preset, std::function<void(nlohmann::json)>
     std::thread([t, cols, done = std::move(done)]() {
         nlohmann::json out = read_unit(t);
         out["colours"]     = cols;
-        wxGetApp().CallAfter([done, out] { done(out); });
+        wxGetApp().CallAfter([done, out, host = t.host] {
+            g_last_read = {{"host", host}, {"ok", Json::boolean(out, "ok", false)}, {"imposable", Json::boolean(out, "imposable", false)}, {"source", Json::str(out, "source")}};
+            done(out);
+        });
     }).detach();
 }
 
@@ -248,8 +295,17 @@ nlohmann::json apply(const nlohmann::json& entries)
 void plan(const std::string& printer_preset, const nlohmann::json& map)
 {
     const Target t = target_of(printer_preset);
+    g_send_plan    = nullptr;
     if (t.kind != "canvas" || !map.is_array() || map.empty()) {
         CC2::clear_plan();
+        // CFS/IFS : seulement après une lecture imposable sur la machine. Une saisie manuelle n'arrive jamais ici comme répartition
+        // (source: manual → SlotsLogic::plan_allowed faux), la U1 et les machines sans traducteur non plus.
+        SlotsLogic::Detection found;
+        found.kind      = t.kind;
+        found.imposable = t.imposable;
+        if (SlotsLogic::plan_allowed(found, g_last_read, t.host))
+            if (const nlohmann::json clean = SlotsLogic::clean_send_map(map); !clean.empty())
+                g_send_plan = {{"host", t.host}, {"kind", t.kind}, {"host_type", t.host_type}, {"model", t.model}, {"map", clean}};
         return;
     }
     nlohmann::json clean = nlohmann::json::array(); // {t, canvas_id, tray_id, type, preset} seulement
@@ -286,7 +342,130 @@ bool orca_state(std::vector<int>& sliced_t, std::vector<std::string>& presets)
     return true;
 }
 
-void clear_plan() { CC2::clear_plan(); }
+void clear_plan()
+{
+    CC2::clear_plan();
+    g_send_plan = nullptr;
+}
+
+std::optional<std::map<std::string, std::string>> take_armed_send()
+{
+    if (!wxIsMainThread() || !g_armed)
+        return std::nullopt;
+    auto info = std::move(g_armed);
+    g_armed.reset();
+    g_armed_taken = true;
+    return info;
+}
+
+namespace {
+
+// Fil principal, après la relecture : dernier contrôle, puis l'envoi. Tout refus laisse le plan en place et n'envoie rien.
+nlohmann::json finish_send(const Target& t, const nlohmann::json& state)
+{
+    const auto refuse = [](const std::string& text) { return nlohmann::json{{"ok", false}, {"text", text}}; };
+    const std::string nothing = " Rien n'est parti.";
+    if (!g_send_plan.is_object() || Json::str(g_send_plan, "host") != t.host || Json::str(g_send_plan, "kind") != t.kind)
+        return refuse("Je n'ai plus d'emplacements choisis pour cette imprimante : choisis-les à nouveau." + nothing);
+
+    const std::vector<std::string> ignored;
+    const SlotsLogic::DecideOptions opts = SlotsLogic::decide_options(t.kind);
+    if (!Json::boolean(state, "ok", false))
+        return refuse(SlotsLogic::decide_map(Json::arr(g_send_plan, "map"), nlohmann::json(), ignored, opts).refusal);
+    if (!Json::boolean(state, "imposable", false))
+        return refuse("Je lis cette imprimante, mais je ne peux pas y imposer les emplacements (" + Json::str(state, "blocker", 80) + ")." + nothing + " Envoie par le bouton d'Orca, sa fenêtre te laisse choisir.");
+
+    Slic3r::GUI::Plater*    plater = wxGetApp().plater();
+    Slic3r::GUI::MainFrame* frame  = wxGetApp().mainframe;
+    Slic3r::GUI::PartPlate* plate  = plater != nullptr ? plater->get_partplate_list().get_curr_plate() : nullptr;
+    if (frame == nullptr || plate == nullptr || !plate->is_slice_result_valid())
+        return refuse("La plaque n'est pas découpée ou sa découpe est périmée : découpe-la, puis relance l'envoi." + nothing);
+    plater->apply_background_progress(); // comme FirstSteps::start_print
+    if (!plate->is_slice_result_valid() || !plate->is_slice_result_ready_for_print() || !frame->get_enable_print_status())
+        return refuse("Orca n'est pas prêt à envoyer cette plaque : regarde les messages du plateau, découpe à nouveau au besoin, puis relance l'envoi." + nothing);
+
+    // L'envoi part avec le profil édité, pas forcément celui du plan.
+    const Slic3r::DynamicPrintConfig& edited_config = bundle().printers.get_edited_preset().config;
+    const Target                      edited        = target_of_config(edited_config);
+    SlotsLogic::Detection             edited_found;
+    edited_found.kind      = edited.kind;
+    edited_found.imposable = edited.imposable;
+    if (std::string refusal = SlotsLogic::profile_refusal(g_send_plan, edited_found, edited.host, edited.host_type, edited.model); !refusal.empty())
+        return refuse(refusal);
+
+    std::vector<int>         cursor_t;
+    std::vector<std::string> presets;
+    if (!orca_state(cursor_t, presets))
+        return refuse("Je n'ai pas pu vérifier la pièce dans Orca." + nothing);
+    std::vector<int> plan_t;
+    for (const nlohmann::json& e : Json::arr(g_send_plan, "map"))
+        plan_t.push_back(static_cast<int>(Json::integer(e, "t", -1)));
+    if (std::string refusal = SlotsLogic::used_refusal(used_filaments(false), cursor_t, sliced_filaments(), plan_t); !refusal.empty())
+        return refuse(refusal);
+
+    const nlohmann::json planned = SlotsLogic::map_for_send(g_send_plan, t.host, cursor_t);
+    if (planned.empty())
+        return refuse("Les emplacements choisis ne couvrent plus les couleurs de la pièce : choisis-les à nouveau." + nothing);
+    const nlohmann::json        canvases = Json::arr(state, "canvases");
+    const SlotsLogic::MapDecision decision = SlotsLogic::decide_map(planned, canvases, presets, opts);
+    if (!decision.refusal.empty())
+        return refuse(decision.refusal);
+
+    const auto* filament_colour = bundle().project_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+    const int   filament_count  = filament_colour != nullptr ? static_cast<int>(filament_colour->values.size()) : 0;
+    if (filament_count != static_cast<int>(presets.size()))
+        return refuse("Les filaments du projet ne sont pas cohérents dans Orca : recharge le projet, puis relance l'envoi." + nothing);
+
+    // Mêmes clés et mêmes défauts que les fenêtres d'Orca (PrintHostDialogs.hpp) ; un test de source vérifie qu'elles existent encore.
+    const auto recent = [](const char* key) { return wxGetApp().app_config->get("recent", key); };
+    std::string                        refusal;
+    std::map<std::string, std::string> info;
+    if (t.kind == "cfs") {
+        const std::string self_test = recent("crealityprint_enable_self_test");
+        info = CfsLogic::color_match_info(decision.map, canvases, filament_count, !self_test.empty() && self_test != "0", refusal);
+    } else {
+        const std::string leveling = recent("flashforge_leveling_before_print"), timelapse = recent("flashforge_timelapse_video");
+        info = IfsLogic::mapping_info(decision.map, canvases, colours(), leveling.empty() || leveling == "1", timelapse == "1", refusal);
+    }
+    if (!refusal.empty() || info.empty())
+        return refuse(refusal.empty() ? "Je n'ai pas pu préparer la répartition." + nothing : refusal);
+
+    BOOST_LOG_TRIVIAL(info) << "Plyo: envoi avec répartition (" << t.kind << ", " << decision.map.size() << " couleur(s)), marque non validée sur machine";
+    bool taken = false;
+    try {
+        ArmedSend armed(std::move(info));
+        plater->send_gcode_legacy(PLATE_CURRENT_IDX, nullptr);
+        taken = armed.taken();
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "Plyo: envoi avec répartition en échec : " << e.what();
+    }
+    if (!taken)
+        return refuse("Orca n'a pas lancé l'envoi." + nothing + " Regarde ses messages, puis réessaie.");
+    return {{"ok", true}, {"text", "J'envoie le fichier : la répartition part avec. Regarde l'écran de ton imprimante."}};
+}
+
+} // namespace
+
+void send_planned(const std::string& printer_preset, std::function<void(nlohmann::json)> done)
+{
+    const Target t = target_of(printer_preset);
+    if ((t.kind != "cfs" && t.kind != "ifs") || !t.imposable || !g_send_plan.is_object() || Json::str(g_send_plan, "host") != t.host) {
+        done({{"ok", false}, {"text", "Je n'ai pas d'emplacements à imposer pour cette imprimante : rien n'est parti."}});
+        return;
+    }
+    if (g_send_busy) {
+        done({{"ok", false}, {"text", "Un envoi est déjà en préparation : attends sa réponse."}});
+        return;
+    }
+    g_send_busy = true;
+    std::thread([t, done = std::move(done)]() {
+        const nlohmann::json state = read_unit(t);
+        wxGetApp().CallAfter([t, state, done] {
+            g_send_busy = false;
+            done(finish_send(t, state));
+        });
+    }).detach();
+}
 
 void start_plain(const std::string& printer_preset, std::function<void(nlohmann::json)> done)
 {

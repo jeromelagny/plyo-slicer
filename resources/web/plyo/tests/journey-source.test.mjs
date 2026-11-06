@@ -140,3 +140,50 @@ test('les températures de la bobine se saisissent là où le texte le dit', () 
   assert.ok(page.includes('id="spool-slot"') && page.includes('setSpoolRange:'), 'formulaire branché dans le corps du Guide');
   assert.ok(!/visite guidée|« Explique-moi »/.test(page), 'aucun texte ne cite un élément supprimé');
 });
+
+// C++ seulement : la retouche d'Orca pour l'envoi armé (T10) et les clés d'Orca qu'elle reprend. Une fusion d'Orca qui les renomme casse ce test.
+const root = path.join(dir, '..', '..', '..');
+const readRoot = (name) => fs.readFileSync(path.join(root, name), 'utf8');
+
+test('envoi armé : la retouche de send_gcode_legacy est en place et marquée', () => {
+  const plater = readRoot('src/slic3r/GUI/Plater.cpp');
+  const start = plater.indexOf('void Plater::send_gcode_legacy(');
+  assert.ok(start >= 0);
+  const end = plater.indexOf('int Plater::send_gcode(', start);
+  const body = plater.slice(start, end);
+  const armed = body.indexOf('Plyo::Canvas::take_armed_send()');
+  assert.ok(armed >= 0, 'take_armed_send dans send_gcode_legacy');
+  assert.ok(body.lastIndexOf('// PLYO:', armed) >= 0, 'marque PLYO: avant le bloc');
+  // Le bloc passe avant la création de la fenêtre, et la fenêtre reste dans la branche « else ».
+  const dialog = body.indexOf('pDlg->ShowModal()');
+  assert.ok(armed < dialog, 'avant la fenêtre');
+  assert.ok(/\}\s*else\s*\{\s*auto\s+preset_bundle\s*=/.test(body.slice(armed, dialog)), 'la fenêtre reste dans le else');
+  assert.ok(/plateindex/.test(body.slice(armed, dialog)), 'plateindex sur le chemin armé (use_3mf)');
+  const list = readRoot('docs/plyo/FICHIERS-MODIFIES.md');
+  assert.ok(list.includes('take_armed_send'), 'listée dans FICHIERS-MODIFIES.md');
+});
+
+test("envoi armé : les clés et paramètres repris d'Orca existent encore", () => {
+  const dialogs = readRoot('src/slic3r/GUI/PrintHostDialogs.hpp');
+  for (const key of ['crealityprint_enable_self_test', 'flashforge_leveling_before_print', 'flashforge_timelapse_video'])
+    assert.ok(dialogs.includes(key), key);
+  const canvas = readRoot('src/plyo/PlyoCanvas.cpp');
+  for (const key of ['crealityprint_enable_self_test', 'flashforge_leveling_before_print', 'flashforge_timelapse_video'])
+    assert.ok(canvas.includes(key), key + ' lue par le pont');
+  const creality = readRoot('src/slic3r/Utils/CrealityPrint.cpp');
+  assert.ok(creality.includes('"colorMatch_"'), 'colorMatch_ dans CrealityPrint');
+  assert.ok(creality.includes('enableSelfTest'));
+  const flashforge = readRoot('src/slic3r/Utils/Flashforge.cpp');
+  for (const key of ['materialMappings', 'useMatlStation', 'gcodeToolCnt', 'levelingBeforePrint', 'timeLapseVideo'])
+    assert.ok(flashforge.includes(key), key + ' dans Flashforge');
+  assert.ok(!canvas.includes('base64'), "materialMappings : du JSON, l'hôte fait le base64");
+});
+
+test('envoi armé : un plan CFS/IFS passe toujours par plan_allowed (jamais de saisie manuelle envoyée)', () => {
+  const canvas = readRoot('src/plyo/PlyoCanvas.cpp');
+  const start = canvas.indexOf('void plan(const std::string& printer_preset');
+  const body = canvas.slice(start, canvas.indexOf('bool orca_state(', start));
+  assert.ok(body.includes('SlotsLogic::plan_allowed('));
+  const assign = body.indexOf('g_send_plan = {');
+  assert.ok(assign > body.indexOf('SlotsLogic::plan_allowed('), 'le plan est rangé après la vérification');
+});

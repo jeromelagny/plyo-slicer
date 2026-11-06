@@ -1660,3 +1660,92 @@ TEST_CASE("Slots::decide_options : la CC2 garde ses textes, les autres ne propos
     CHECK(decide_options("cfs").unit_name == "la boîte CFS");
     CHECK(decide_options("ifs").unit_name == "l'IFS");
 }
+
+// --- Envoi armé CFS/IFS : contrôles purs avant d'armer ---
+TEST_CASE("Slots::used_refusal : le plan, les réglages et la découpe doivent dire la même chose")
+{
+    using namespace Plyo::SlotsLogic;
+    using V = std::vector<int>;
+    CHECK(used_refusal(V{0}, V{0}, V{0}, V{0}).empty());
+    CHECK(used_refusal(V{0, 2}, V{2, 0}, V{0, 2}, V{2, 0}).empty()); // l'ordre ne compte pas
+    CHECK_FALSE(used_refusal(V{}, V{}, V{}, V{}).empty());           // rien de connu : refus
+    CHECK_FALSE(used_refusal(V{0}, V{0}, V{}, V{0}).empty());        // découpe sans statistiques : refus
+    CHECK_FALSE(used_refusal(V{0}, V{0}, V{0, 1}, V{0}).empty());    // la découpe utilise un filament absent du plan (support, tour)
+    CHECK_FALSE(used_refusal(V{0, 1}, V{0, 1}, V{0}, V{0, 1}).empty()); // le réglage prévoit un filament que la découpe n'utilise pas
+    CHECK_FALSE(used_refusal(V{0}, V{0}, V{0}, V{1}).empty());       // le plan vise une autre couleur
+    if (REFUSE_CURSOR_FILAMENT_CHANGES)
+        CHECK_FALSE(used_refusal(V{0}, V{0, 1}, V{0, 1}, V{0, 1}).empty()); // changement posé au curseur : non essayé sur CFS/IFS
+    else
+        CHECK(used_refusal(V{0}, V{0, 1}, V{0, 1}, V{0, 1}).empty());
+}
+
+TEST_CASE("Slots::plan_allowed : un plan CFS/IFS demande une vraie lecture imposable de cette imprimante")
+{
+    using namespace Plyo::SlotsLogic;
+    Detection yes;
+    yes.kind      = "cfs";
+    yes.imposable = true;
+    const json read = {{"host", "192.168.1.5"}, {"ok", true}, {"imposable", true}, {"source", "printer"}};
+    CHECK(plan_allowed(yes, read, "192.168.1.5"));
+    CHECK_FALSE(plan_allowed(yes, read, "192.168.1.6"));
+    CHECK_FALSE(plan_allowed(yes, read, ""));
+    CHECK_FALSE(plan_allowed(yes, json(), "192.168.1.5"));
+    json bad = read;
+    bad["ok"] = false;
+    CHECK_FALSE(plan_allowed(yes, bad, "192.168.1.5"));
+    bad = read;
+    bad["imposable"] = false;
+    CHECK_FALSE(plan_allowed(yes, bad, "192.168.1.5"));
+    bad = read;
+    bad["source"] = "manual"; // une saisie manuelle n'est jamais envoyée comme répartition
+    CHECK_FALSE(plan_allowed(yes, bad, "192.168.1.5"));
+    Detection no = yes;
+    no.imposable = false;
+    CHECK_FALSE(plan_allowed(no, read, "192.168.1.5"));
+    for (const char* kind : {"u1", "none", "canvas", ""}) {
+        Detection other;
+        other.kind      = kind;
+        other.imposable = true;
+        CHECK_FALSE(plan_allowed(other, read, "192.168.1.5"));
+    }
+}
+
+TEST_CASE("Slots::clean_send_map : carte CFS/IFS complète ou rien")
+{
+    using namespace Plyo::SlotsLogic;
+    const json entry = {{"t", 0}, {"canvas_id", 1}, {"tray_id", 0}, {"label", "1A"}, {"type", "PLA"}, {"preset", "P"}, {"autre", 3}};
+    const json clean = clean_send_map(json::array({entry}));
+    REQUIRE(clean.size() == 1);
+    CHECK(clean[0] == json{{"t", 0}, {"canvas_id", 1}, {"tray_id", 0}, {"label", "1A"}, {"type", "PLA"}, {"preset", "P"}});
+    CHECK(clean_send_map(json()).empty());
+    CHECK(clean_send_map(json::array()).empty());
+    for (const char* key : {"t", "canvas_id", "tray_id", "type", "preset"}) {
+        json missing = entry;
+        missing.erase(key);
+        CHECK(clean_send_map(json::array({entry, missing})).empty());
+    }
+    json text_t = entry;
+    text_t["t"] = "0";
+    CHECK(clean_send_map(json::array({text_t})).empty());
+}
+
+TEST_CASE("Slots::profile_refusal : l'envoi part avec le profil édité, il doit être celui du plan")
+{
+    using namespace Plyo::SlotsLogic;
+    const json plan = {{"host", "192.168.1.5"}, {"kind", "ifs"}, {"host_type", "flashforge"}, {"model", "Flashforge AD5X"}};
+    Detection good;
+    good.kind      = "ifs";
+    good.imposable = true;
+    CHECK(profile_refusal(plan, good, "192.168.1.5", "flashforge", "Flashforge AD5X").empty());
+    CHECK_FALSE(profile_refusal(plan, good, "192.168.1.6", "flashforge", "Flashforge AD5X").empty());
+    CHECK_FALSE(profile_refusal(plan, good, "192.168.1.5", "octoprint", "Flashforge AD5X").empty());
+    CHECK_FALSE(profile_refusal(plan, good, "192.168.1.5", "flashforge", "Flashforge 5M").empty());
+    // Série effacée sur le profil édité : link_incomplete, plus de kind ifs.
+    Detection incomplete;
+    incomplete.reason = "link_incomplete";
+    CHECK_FALSE(profile_refusal(plan, incomplete, "192.168.1.5", "flashforge", "Flashforge AD5X").empty());
+    Detection not_imposable = good;
+    not_imposable.imposable = false;
+    CHECK_FALSE(profile_refusal(plan, not_imposable, "192.168.1.5", "flashforge", "Flashforge AD5X").empty());
+    CHECK_FALSE(profile_refusal(json(), good, "192.168.1.5", "flashforge", "Flashforge AD5X").empty());
+}
