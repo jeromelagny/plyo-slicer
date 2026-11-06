@@ -1387,6 +1387,9 @@
         window.orca.postMessage({ type: 'limits_set', limits: parsed.limits });
         sp.open = false;
         sp.error = '';
+        // Depuis l'étape Imprimer : la température a changé, la découpe est à refaire. Le passage d'étape vient avant le message, qu'il effacerait.
+        var moved = (t.nozzle != null && t.nozzle !== f.nozzle_temp) || (t.bed != null && t.bed !== f.bed_temp);
+        if (moved && currentTourStep() === 'print') { if (tourSignals) tourSignals.sliced = false; setTourStep('slice'); }
         noteLine('Températures de ta bobine enregistrées : buse ' + (t.nozzle != null ? t.nozzle : f.nozzle_temp) + ' °C, plateau ' + (t.bed != null ? t.bed : f.bed_temp) + ' °C. L’assistant restera dans cette plage.', 'ok', 'check', 'guide');
         renderProject();
       });
