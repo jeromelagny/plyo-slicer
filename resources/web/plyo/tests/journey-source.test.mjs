@@ -291,3 +291,7 @@ test('l’accueil ne promet pas de bouton qui n’existe pas dans les étapes', 
   assert.ok(!/passer une étape/.test(welcome), 'aucune étape n’a de bouton « Passer »');
   for (const name of ['journey-steps.js', 'project-card.js', 'journey-view.js']) assert.ok(!/Montre-moi|Passer l/.test(read(name)), name);
 });
+
+test('« Plus tard » n’éteint pas l’alerte de changement de machine', () => {
+  assert.ok(/if \(!setup\.preset\) projectUI\.adopt = false/.test(read('index.html')));
+});

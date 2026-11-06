@@ -1876,6 +1876,7 @@
   function setupPhase(phase) { setup.phase = phase; renderSetupFlow(); }
   function endSetup() {
     setup.phase = null;
+    if (!setup.preset) projectUI.adopt = false; // « Plus tard » : rien d'installé, l'alerte « Orca est passé sur… » reprend sa place
     renderSetupFlow();
     // Une imprimante vient d'être installée et sélectionnée dans Orca : elle devient celle du projet.
     if (projectUI.adopt && setup.preset) { window.orca.postMessage({ type: 'project_state' }); window.orca.postMessage({ type: 'project_printers' }); }
