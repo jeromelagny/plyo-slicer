@@ -65,3 +65,48 @@ test('B1 : la vérification C++ lit le conflit, le remplacement est une seule é
   assert.ok(imp.indexOf('TakeSnapshot snapshot') < imp.indexOf('delete_all_objects_from_model'));
   assert.match(imp, /plater->undo\(\); \/\/ le fichier ne s'ouvre pas/);
 });
+
+const L = require('../assistant-logic.js');
+const M = require('../machines-logic.js');
+
+test('B2 : la découpe est refusée avant d’être postée, et le panneau arrête d’attendre', () => {
+  const c = cpp('PlyoPlateActions.cpp');
+  const slice = c.slice(c.indexOf('if (kind == "slice")'));
+  assert.ok(slice.indexOf('slice_refusal') < slice.indexOf('wxPostEvent'), 'vérifié avant de poster');
+  assert.match(c, /"reason", "too_big"/);
+  const page = read('index.html');
+  assert.match(page, /if \(msg\.kind === 'slice'\) \{ if \(!msg\.ok\) stopSlicing\(\);/);
+  assert.match(page, /msg\.reason === 'too_big'[\s\S]{0,160}showTooBig\(\{ msg: msg, reduced: false \}, true\)/);
+});
+
+test('B2 : « J’ai réduit » seulement si la taille mesurée a changé', () => {
+  const c = cpp('PlyoPlateActions.cpp');
+  assert.match(c, /same_sizes\(sizes_before, sizes_after\)/);
+  const scale = c.slice(c.indexOf('if (kind == "scale_to_fit")'), c.indexOf('if (kind == "slice")'));
+  assert.ok(scale.indexOf('same_sizes') < scale.indexOf('done(before'), 'la mesure passe avant le succès');
+  assert.ok(scale.indexOf('all_fit(sizes_before') < scale.indexOf('scale_selection_to_fit_print_volume'), 'une pièce qui tient n’est jamais agrandie');
+});
+
+test('B2 : relances automatiques bornées', () => {
+  assert.equal(L.plateRetryDelay({ ok: true, kind: 'slice' }, 0), 0);
+  assert.equal(L.plateRetryDelay({ ok: false, kind: 'slice', reason: 'too_big' }, 0), 0);
+  assert.equal(L.plateRetryDelay({ ok: false, kind: 'slice', reason: 'busy' }, 0), 500);
+  assert.equal(L.plateRetryDelay({ ok: false, kind: 'slice', reason: 'busy' }, 20), 0);
+  assert.equal(L.plateRetryDelay({ ok: false, kind: 'undo', reason: 'busy' }, 0), 0);
+  assert.equal(L.plateRetryDelay({ ok: false, kind: 'scale_to_fit', reason: 'no_effect' }, 0), 600);
+  assert.equal(L.plateRetryDelay({ ok: false, kind: 'scale_to_fit', reason: 'no_effect' }, 1), 0);
+});
+
+test('B2 : la découpe repart une fois la réduction faite', () => {
+  const page = read('index.html');
+  assert.match(page, /projectUI\.sliceRefused === conv\) \{ projectUI\.sliceRefused = null; plateAction\('slice'\); \}/);
+  assert.match(page, /msg\.kind === 'scale_to_fit' && msg\.ok\) stopSlicing\(\)/, 'plus de découpe ignorée à cause d’une attente périmée');
+  assert.match(page, /refused \? 'Fermer' : 'Garder cette taille'/);
+});
+
+test('B2 : une pièce trop haute ne « tient » pas sur l’autre machine proposée', () => {
+  const a = { preset: 'a', linked: true, bed_mm: [220, 220, 220] }, b = { preset: 'b', linked: true, bed_mm: [256, 256, 250] }, c = { preset: 'c', linked: true, bed_mm: [256, 256, 320] };
+  assert.equal(M.machineThatFits([a, b], 'a', [40, 40, 300]), null);
+  assert.equal(M.machineThatFits([a, b, c], 'a', [40, 40, 300]).preset, 'c');
+  assert.equal(M.machineThatFits([{ preset: 'a', linked: true, bed_mm: [100, 100] }, { preset: 'b', linked: true, bed_mm: [256, 256] }], 'a', [200, 40, 300]).preset, 'b', 'hauteur inconnue : on ne bloque pas');
+});

@@ -65,10 +65,10 @@
   }
 
   // Pièce trop grande pour la machine choisie : une autre machine reliée dont le plateau (mm) l'accepte, sinon null.
-  // `size` : [x, y, z] de la pièce ; un plateau accepte la pièce à plat, dans un sens ou dans l'autre.
+  // `size` : [x, y, z] de la pièce ; un plateau accepte la pièce à plat, dans un sens ou dans l'autre, et la hauteur si elle est connue.
   function machineThatFits(printers, currentPreset, size) {
     if (!Array.isArray(printers) || !Array.isArray(size)) return null;
-    var fits = function (bed) { return Array.isArray(bed) && ((size[0] <= bed[0] && size[1] <= bed[1]) || (size[1] <= bed[0] && size[0] <= bed[1])); };
+    var fits = function (bed) { return Array.isArray(bed) && ((size[0] <= bed[0] && size[1] <= bed[1]) || (size[1] <= bed[0] && size[0] <= bed[1])) && !(bed[2] > 0 && size[2] > bed[2]); };
     var current = printers.filter(function (p) { return p.preset === currentPreset; })[0];
     if (current && fits(current.bed_mm)) return null;
     var found = printers.filter(function (p) { return p.preset !== currentPreset && p.linked && fits(p.bed_mm); })[0];

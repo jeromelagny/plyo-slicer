@@ -1523,6 +1523,8 @@
   var projectHandlers = {
     pickPrinter: function (preset, name) {
       projectUI.error = {};
+      dropTooBig(); // la taille est remesurée à la prochaine découpe, sur le plateau de cette machine
+      projectUI.sliceRefused = null;
       projectUI.pending = { kind: 'printer', preset: preset, name: name || preset };
       window.orca.postMessage({ type: 'printer_select_profile', name: preset });
     },
@@ -2550,6 +2552,7 @@
   var plateRequest = 0;
   var plateUndoLinks = [];   // un seul « Annuler » actif : celui de la dernière action
   var plateCounts = {};      // demande → nombre de pièces concernées (singulier ou pluriel du texte affiché)
+  var plateSent = {};        // demande → message envoyé et essais déjà faits (relance d'une action refusée pour un temps)
   // Découpe demandée : le bouton attend le résultat. Sans résultat au bout d'un délai (Orca refuse sans le dire au panneau,
   // découpe très longue), il redevient cliquable et le panneau le dit.
   var SLICE_WAIT_MS = 120000;
@@ -2571,12 +2574,26 @@
     var id = ++plateRequest;
     plateWaiters[id] = after || null;
     plateCounts[id] = count;
-    window.orca.postMessage(Object.assign({ type: 'plate_action', kind: kind, request: id }, extra || {}));
+    plateSent[id] = { message: Object.assign({ type: 'plate_action', kind: kind, request: id }, extra || {}), tries: 0 };
+    window.orca.postMessage(plateSent[id].message);
   }
   function onPlateAction(msg) {
+    var sent = plateSent[msg.request], wait = Logic.plateRetryDelay(msg, sent ? sent.tries : 99);
+    if (wait) { sent.tries += 1; setTimeout(function () { window.orca.postMessage(sent.message); }, wait); return; }
+    delete plateSent[msg.request];
     var after = plateWaiters[msg.request];
     delete plateWaiters[msg.request];
     if (msg.kind === 'slice') { if (!msg.ok) stopSlicing(); renderProject(); }
+    if (msg.kind === 'scale_to_fit' && msg.ok) stopSlicing(); // une découpe encore attendue ne doit pas bloquer celle d'après la réduction
+    // Découpe refusée parce que la pièce ne tient pas : dit tout de suite, avec la carte qui répare.
+    if (msg.kind === 'slice' && msg.reason === 'too_big') {
+      delete plateCounts[msg.request];
+      projectUI.sliceRefused = conv;
+      showTooBig({ msg: msg, reduced: false }, true);
+      record({ kind: 'note', text: msg.text, tone: 'error', icon: 'alert' });
+      if (after) after(false);
+      return;
+    }
     var text = Logic.plateText(msg, plateCounts[msg.request]);
     delete plateCounts[msg.request];
     var line = noteLine(text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert', 'guide');
@@ -2740,15 +2757,18 @@
         scheduleSave();
         dropTooBig();
         if (tooBigChat) { tooBigChat(); tooBigChat = null; }
+        // La découpe avait été refusée pour cette taille : elle repart seule, le parcours reprend.
+        if (projectUI.sliceRefused === conv) { projectUI.sliceRefused = null; plateAction('slice'); }
       }
       done(ok);
     }, null, entry.msg.count);
   }
-  function showTooBig(entry) {
+  // `refused` : Orca ne découpera pas tant que la pièce a cette taille ; garder la taille n'est donc plus une issue.
+  function showTooBig(entry, refused) {
     var msg = entry.msg, printer = conv.project.printer;
     var other = printer ? PlyoMachines.machineThatFits(projectUI.printers, printer.preset, msg.size_mm) : null;
     dropTooBig();
-    var box = alertBox('warn', FS.modelAddedText(msg).text + (other ? ' Il tient sur ' + other.label + '.' : ''), 'alert');
+    var box = alertBox('warn', (refused ? 'Je n’ai pas lancé la découpe. ' : '') + FS.modelAddedText(msg).text + (other ? ' Il tient sur ' + other.label + '.' : ''), 'alert');
     box.classList.add('too-big');
     var acts = el('div', 'printer-actions');
     var reduce = button('Réduire pour qu’il tienne', function () {
@@ -2756,8 +2776,8 @@
       reducePart(entry, function (ok) { if (!ok) reduce.disabled = false; });
     }, 'btn ghost sm', 'wand');
     acts.appendChild(reduce);
-    if (other) acts.appendChild(button('Refaire la préparation sur ' + other.label, function () { dropTooBig(); projectHandlers.pickPrinter(other.preset, other.label); }, 'btn ghost sm'));
-    acts.appendChild(button('Garder cette taille', dropTooBig, 'link'));
+    if (other) acts.appendChild(button('Refaire la préparation sur ' + other.label, function () { dropTooBig(); projectUI.sliceRefused = null; projectHandlers.pickPrinter(other.preset, other.label); }, 'btn ghost sm'));
+    acts.appendChild(button(refused ? 'Fermer' : 'Garder cette taille', dropTooBig, 'link'));
     box.body.appendChild(acts);
     $('project-alert').appendChild(box);
     box.scrollIntoView({ block: 'nearest' });
