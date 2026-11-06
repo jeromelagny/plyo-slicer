@@ -9,6 +9,7 @@
 #include "PlyoJson.hpp"
 #include "PlyoPrinterLink.hpp"
 #include "PlyoSlotsLogic.hpp"
+#include "PlyoU1.hpp"
 
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -218,6 +219,8 @@ nlohmann::json read_unit(const Target& t)
             r = Cfs::read(*t.config, error);
         else if (t.kind == "ifs")
             r = Ifs::read(*t.config, error);
+        else if (t.kind == "u1")
+            r = U1::read(*t.config, error);
         if (r.is_object()) {
             units   = Json::arr(r, "canvases");
             live    = Json::boolean(r, "imposable", false);

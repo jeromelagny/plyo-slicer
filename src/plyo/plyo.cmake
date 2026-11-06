@@ -63,6 +63,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoIfs.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoIfsLogic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoIfsLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoU1.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoU1.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoU1Logic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoU1Logic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCanvas.cpp
