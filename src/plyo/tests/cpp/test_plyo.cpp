@@ -9,6 +9,7 @@
 #include "../../PlyoProjectLogic.hpp"
 #include "../../PlyoCC2Logic.hpp"
 #include "../../PlyoSlotsLogic.hpp"
+#include "../../PlyoCfsLogic.hpp"
 #include "../../PlyoCanvasLogic.hpp"
 #include "../../PlyoLimitsLogic.hpp"
 #include "../../PlyoCatalogPolicy.hpp"
@@ -1292,4 +1293,107 @@ TEST_CASE("Slots::detect : U1 jamais imposable ; le reste sans traducteur")
     CHECK(detect(facts("Voron 2.4", "moonraker", "moonraker")).kind == "none");
     CHECK_FALSE(detect(facts("Voron 2.4", "moonraker", "moonraker")).imposable);
     CHECK(detect(facts("", "")).kind == "none");
+}
+
+// --- CFS (Creality) : lecture. Fixture tirée uniquement du schéma commenté de CrealityPrintAgent.cpp (parse_cfs_response) et de
+// CrealityPrintHostSendDialog::init : ce n'est PAS une réponse de machine, à remplacer par la capture de T9. ---
+namespace {
+const char* const CFS_ORCA_SCHEMA = R"({"boxsInfo":{"materialBoxs":[
+  {"id":0,"state":1,"type":1,"materials":[{"id":0,"state":1,"vendor":"marque-a","type":"PLA","name":"nom-a","color":"#0112233"}]},
+  {"id":1,"state":1,"type":0,"materials":[
+    {"id":0,"state":1,"vendor":"marque-b","type":"PLA","name":"nom-b","color":"#0AABBCC"},
+    {"id":1,"state":2,"vendor":"marque-c","type":"PETG","name":"nom-c","color":"#0DDEEFF"},
+    {"id":2,"state":0,"vendor":"","type":"","name":"","color":"#0000000"},
+    {"id":3,"state":1,"vendor":"","type":"","name":"","color":"#0FFFFFF"}]}]}})";
+json cfs_schema_with(const json& boxes) { return json{{"boxsInfo", {{"materialBoxs", boxes}}}}; }
+} // namespace
+
+TEST_CASE("Cfs::parse_boxes : garde l'id brut de la boîte et lit le format d'Orca")
+{
+    using namespace Plyo::CfsLogic;
+    const json p = parse_boxes(CFS_ORCA_SCHEMA);
+    REQUIRE(p["ok"].get<bool>());
+    CHECK(p["box_count"].get<int>() == 1);
+    CHECK(p["anomaly"].get<std::string>().empty());
+    const json& units = p["canvases"];
+    REQUIRE(units.size() == 2);
+    CHECK(units[0]["canvas_id"] == 0);
+    CHECK(units[0]["box_type"] == 1);
+    CHECK(units[0]["connected"] == true);
+    CHECK(units[0]["trays"][0]["label"] == "Ext");
+    CHECK(units[1]["canvas_id"] == 1); // jamais renuméroté à 0 : start_print prendrait la boîte pour le porte-bobine
+    CHECK(units[1]["box_type"] == 0);
+    const json& trays = units[1]["trays"];
+    REQUIRE(trays.size() == 4);
+    CHECK(trays[0]["tray_id"] == 0);
+    CHECK(trays[0]["label"] == "1A");
+    CHECK(trays[1]["label"] == "1B");
+    CHECK(trays[3]["label"] == "1D");
+    CHECK(trays[0]["color"] == "#AABBCC"); // #0RRGGBB → #RRGGBB
+    CHECK(trays[0]["type"] == "PLA");
+    CHECK(trays[0]["brand"] == "marque-b");
+    CHECK(trays[0]["name"] == "nom-b");
+    CHECK(trays[0]["status"] == 2);
+    CHECK(trays[1]["status"] == 2); // state 2 : chargé mais non sélectionné (K2 Plus)
+    CHECK(trays[2]["status"] == 0); // state 0
+    CHECK(trays[3]["status"] == 0); // ni marque ni type : vide quel que soit state
+}
+
+TEST_CASE("Cfs::parse_boxes : boîte inactive déconnectée, champs absents neutres, jamais d'exception")
+{
+    using namespace Plyo::CfsLogic;
+    const json inactive = parse_boxes(cfs_schema_with(json::array({{{"id", 2}, {"state", 0}, {"type", 0}, {"materials", json::array()}}})).dump());
+    CHECK(inactive["canvases"][0]["connected"] == false);
+    CHECK(inactive["box_count"] == 0);
+    for (const char* bad : {"", "{", "null", "[]", "{\"boxsInfo\":3}", "{\"boxsInfo\":{\"materialBoxs\":{}}}"}) {
+        const json p = parse_boxes(bad);
+        CHECK_FALSE(p["ok"].get<bool>());
+        CHECK(p["canvases"].empty());
+    }
+    // Couleur d'une autre forme : vide, pas devinée ; champs absents : neutres, emplacement vide.
+    const json odd = parse_boxes(cfs_schema_with(json::array({{{"id", 1}, {"state", 1}, {"type", 0},
+        {"materials", json::array({{{"id", 0}, {"state", 1}, {"vendor", "m"}, {"type", "PLA"}, {"color", "#FF112233"}}, {{"id", 1}}})}}})).dump());
+    CHECK(odd["canvases"][0]["trays"][0]["color"] == "");
+    CHECK(odd["canvases"][0]["trays"][1]["status"] == 0);
+    CHECK(odd["canvases"][0]["trays"][1]["type"] == "");
+    // Identifiants inattendus : l'entrée est écartée et le contrôle vivant saura qu'il y a une anomalie.
+    for (const json& box : {json{{"state", 1}, {"type", 0}}, json{{"id", "1"}, {"state", 1}, {"type", 0}}, json{{"id", 1}, {"state", 1}, {"type", 7}},
+                            json{{"id", 1}, {"state", 1}}, json{{"id", 1}, {"state", 1}, {"type", 0}, {"materials", json::array({{{"id", 26}}})}},
+                            json{{"id", 1}, {"state", 1}, {"type", 0}, {"materials", json::array({{{"id", -1}}})}}})
+        CHECK_FALSE(parse_boxes(cfs_schema_with(json::array({box})).dump())["anomaly"].get<std::string>().empty());
+}
+
+TEST_CASE("Cfs::live_imposable : tout écart baisse vers « lire sans imposer »")
+{
+    using namespace Plyo::CfsLogic;
+    const json good = parse_boxes(CFS_ORCA_SCHEMA);
+    CHECK(live_imposable("K2", "Creality K2", good));
+    CHECK(live_imposable("K2 Plus", "Creality K2 Plus", good));
+    CHECK(live_blocker("K2", "Creality K2", good).empty());
+    // Modèle vivant
+    for (const char* live : {"K2 Pro", "K1C", "unreachable", "unknown (F999)", ""})
+        CHECK_FALSE(live_imposable(live, "Creality K2", good));
+    // Modèle vivant incohérent avec le profil
+    CHECK_FALSE(live_imposable("K2 Plus", "Creality K2", good));
+    CHECK_FALSE(live_imposable("K2", "Creality K2 Plus", good));
+    CHECK_FALSE(live_imposable("K2", "Creality K2 Pro", good));
+    // Illisible
+    CHECK_FALSE(live_imposable("K2", "Creality K2", parse_boxes("{")));
+    const json holder = {{"id", 0}, {"state", 1}, {"type", 1}, {"materials", json::array()}};
+    const json box1   = {{"id", 1}, {"state", 1}, {"type", 0}, {"materials", json::array()}};
+    const json box2   = {{"id", 2}, {"state", 1}, {"type", 0}, {"materials", json::array()}};
+    const auto with   = [](const json& boxes) { return parse_boxes(cfs_schema_with(boxes).dump()); };
+    CHECK(live_imposable("K2", "Creality K2", with(json::array({holder, box1}))));
+    // Une seule boîte active, inactive tolérée
+    CHECK(live_imposable("K2", "Creality K2", with(json::array({holder, box1, {{"id", 2}, {"state", 0}, {"type", 0}}}))));
+    // Deux boîtes, aucune boîte
+    CHECK_FALSE(live_imposable("K2", "Creality K2", with(json::array({holder, box1, box2}))));
+    CHECK_FALSE(live_imposable("K2", "Creality K2", with(json::array({holder}))));
+    // Porte-bobine absent, ou pas en 0 ; boîte CFS en id 0 (start_print la prendrait pour le porte-bobine)
+    CHECK_FALSE(live_imposable("K2", "Creality K2", with(json::array({box1}))));
+    CHECK_FALSE(live_imposable("K2", "Creality K2", with(json::array({{{"id", 3}, {"state", 1}, {"type", 1}}, box1}))));
+    CHECK_FALSE(live_imposable("K2", "Creality K2", with(json::array({{{"id", 0}, {"state", 1}, {"type", 0}}}))));
+    CHECK_FALSE(live_imposable("K2", "Creality K2", with(json::array({holder, {{"id", 0}, {"state", 1}, {"type", 0}}}))));
+    // Anomalie de lecture
+    CHECK_FALSE(live_imposable("K2", "Creality K2", with(json::array({holder, box1, {{"id", 9}, {"state", 1}, {"type", 7}}}))));
 }
