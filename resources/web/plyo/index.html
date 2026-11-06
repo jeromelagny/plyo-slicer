@@ -889,7 +889,7 @@
     var known = knownPrinter();
     if (!known || !(step === 'filament' || projectUI.editing === 'filament')) return false;
     if (known.slots === 'canvas') return false;
-    if (!known.slots) return true;
+    if (!known.slots || !known.linked) return true;
     return !canvasUI.loading && canvasUI.preset === known.preset && !!canvasUI.state && !canvasUI.state.ok;
   }
   function ensureManualRead(step) {

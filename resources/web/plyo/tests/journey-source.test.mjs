@@ -469,3 +469,7 @@ test('annulation ou délai dépassé : la jauge est relue, une fois la facturati
   assert.ok(/Logic\.offTopicCostNote\(a\)/.test(page), 'le hors-sujet facturé est dit');
   assert.ok(!page.includes("noteLine('Demande annulée.'"), 'plus le texte seul');
 });
+
+test('saisie manuelle : une machine avec traducteur mais non reliée y a droit aussi', () => {
+  assert.ok(/!known\.slots \|\| !known\.linked\) return true/.test(read('index.html')));
+});

@@ -100,9 +100,7 @@ nlohmann::json printers()
         const bool linked = preset.config.has("print_host") && !preset.config.opt_string("print_host").empty();
         nlohmann::json item = {{"preset", preset.name}, {"name", preset.name}, {"linked", linked},
                                {"host", linked ? preset.config.opt_string("print_host") : std::string()}};
-        // Centauri Carbon 2 : l'étape Filament propose les emplacements de son Canvas.
-        item["cc2"] = preset.config.has("printer_model") && preset.config.opt_string("printer_model").find("Centauri Carbon 2") != std::string::npos;
-        // Traducteur des emplacements (canvas, cfs, ifs, u1). `cc2` reste tant que le panneau le lit (canvasWanted).
+        // Traducteur des emplacements (canvas, cfs, ifs, u1) : l'étape Filament propose alors de les lire.
         std::string slots_reason;
         if (const std::string slots = Canvas::translator_of(preset.config, &slots_reason); !slots.empty())
             item["slots"] = slots;
