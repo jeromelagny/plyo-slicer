@@ -2181,6 +2181,11 @@
       input.type = 'search';
       input.placeholder = 'Tape le nom de ton imprimante';
       input.setAttribute('aria-label', 'Nom de ton imprimante');
+      // Un nom de modèle n'est pas un mot : ni bulle de correction de macOS, ni correction à la frappe (« MK4 »).
+      input.setAttribute('autocorrect', 'off');
+      input.setAttribute('autocapitalize', 'off');
+      input.setAttribute('autocomplete', 'off');
+      input.setAttribute('spellcheck', 'false');
       input.value = setup.query;
       var results = el('div', 'setup-results');
       function refresh() {

@@ -190,3 +190,9 @@ test('G10 : les boutons de connexion restent dans la fenêtre après une erreur'
   assert.match(page, /footer \{ flex: none;/);
   assert.match(cpp('PlyoLoginDialog.cpp'), /wxSize\(460, 500\)/);
 });
+
+test('F1 : pas de correction automatique sur le nom de l’imprimante', () => {
+  const page = read('index.html');
+  assert.match(page, /setAttribute\('autocorrect', 'off'\)/);
+  assert.match(page, /setAttribute\('spellcheck', 'false'\)/);
+});
