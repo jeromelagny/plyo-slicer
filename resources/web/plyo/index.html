@@ -2228,8 +2228,8 @@
       later = button('Passer cette étape', function () { setupPhase('done'); }, 'link');
     } else if (setup.phase === 'done') {
       box.appendChild(el('h3', '', 'Ton imprimante est prête'));
-      box.appendChild(rich(setup.found ? 'Elle est installée et reliée : à la dernière étape, `Envoyer et imprimer` lui enverra tes impressions.' :
-        'Elle est installée. Pour imprimer : à la dernière étape, `Exporter le fichier`, puis copie-le sur la clé USB ou la carte SD de ton imprimante.'));
+      box.appendChild(rich(setup.found ? 'Elle est installée et reliée : à l’étape Imprimer, `Envoyer et imprimer` lui enverra tes impressions.' :
+        'Elle est installée. Pour imprimer : à l’étape Imprimer, `Exporter le fichier`, puis copie-le sur la clé USB ou la carte SD de ton imprimante.'));
       acts.appendChild(button('Continuer', endSetup, 'btn sm', 'check'));
       later = null;
     }
