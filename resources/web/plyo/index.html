@@ -491,7 +491,7 @@
       <div class="tools">
         <button class="icon-btn" id="btn-files" type="button" title="Joindre des photos ou un modèle 3D (STL, 3MF…)" aria-label="Joindre un fichier"></button>
         <button class="icon-btn" id="btn-phone" type="button" title="Prendre des photos avec mon téléphone" aria-label="Photos avec le téléphone"></button>
-        <span class="hint">Entrée pour envoyer</span>
+        <span class="hint" id="note-hint">Entrée pour envoyer</span>
         <button class="send" id="btn-send" type="button" title="Envoyer (Entrée) · Maj + Entrée pour aller à la ligne" aria-label="Envoyer"></button>
       </div>
     </div>
@@ -4232,7 +4232,11 @@
   sendButton.addEventListener('click', function () { send(noteInput.value); });
   // Entrée envoie, Maj + Entrée va à la ligne (pas pendant la saisie d'un caractère composé).
   // Le champ commence sur une ligne et grandit quand on écrit (six lignes au plus).
-  function growNote() { noteInput.style.height = 'auto'; noteInput.style.height = Math.min(noteInput.scrollHeight, 132) + 'px'; }
+  function growNote() {
+    noteInput.style.height = 'auto';
+    noteInput.style.height = Math.min(noteInput.scrollHeight, 132) + 'px';
+    $('note-hint').textContent = fr(Logic.noteHint(noteInput.value.length, noteInput.maxLength)); // près de la limite : le compteur, plutôt qu'un texte coupé sans le dire
+  }
   noteInput.addEventListener('input', growNote);
   noteInput.addEventListener('keydown', function (e) {
     if (Logic.isSendKey(e)) { e.preventDefault(); send(noteInput.value); }

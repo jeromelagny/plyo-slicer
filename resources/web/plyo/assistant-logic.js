@@ -306,6 +306,11 @@
     return msg.ok && count === 1 && SINGULAR[msg.kind] ? SINGULAR[msg.kind] : msg.text;
   }
 
+  // Sous le champ de question : le rappel d'Entrée, et le compteur à l'approche de la limite (le texte ne s'allonge plus au-delà).
+  function noteHint(length, max) {
+    return max > 0 && length >= max - 50 ? length + ' / ' + max + ' caractères' : 'Entrée pour envoyer';
+  }
+
   // Fin réelle d'un export : où est le fichier, et la suite. Sans nom (renommé par Orca), le dossier seul.
   function exportedText(msg, note) {
     var where = (msg.file ? '« ' + msg.file + ' »' : 'Le fichier') + ' est enregistré dans ' + (msg.folder || 'le dossier choisi') + '.';
@@ -445,7 +450,7 @@
     return box.bottom - port.bottom > 24;
   }
 
-  var api = { journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, savedText: savedText, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, savedText: savedText, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

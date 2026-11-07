@@ -268,3 +268,11 @@ test('M6 : « Garder ces emplacements » est grisé tant qu’une matière manqu
   assert.equal(J.primaryAction('filament', { canvas: { mode: 'manual', complete: true } }).enabled, true);
   assert.match(read('index.html'), /manualComplete\(m\.draft, m\.count\)\) return;/);
 });
+
+test('M8 : compteur de caractères près de la limite du champ', () => {
+  assert.equal(L.noteHint(10, 500), 'Entrée pour envoyer');
+  assert.equal(L.noteHint(449, 500), 'Entrée pour envoyer');
+  assert.equal(L.noteHint(450, 500), '450 / 500 caractères');
+  assert.equal(L.noteHint(500, 500), '500 / 500 caractères');
+  assert.match(read('index.html'), /noteInput\.addEventListener\('input', growNote\)/);
+});
