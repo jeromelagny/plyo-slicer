@@ -168,3 +168,18 @@ test('G5 : le suffixe « (Plyo) » ne fait pas croire à une autre imprimante ou
   assert.equal(L.reapplyChanges(e, { printer: 'Bambu Lab A1 0.4 nozzle', filament: 'Generic PETG @BBL A1' }), null);
   assert.equal(L.reapplyChanges(e, { printer: 'Autre', filament: 'Generic PLA @BBL A1' }), null);
 });
+
+test('G6 : une seule machine installée et non masquée : elle est prise, reliée ou non', () => {
+  const ender = { preset: 'Creality Ender-3 Pro 0.4 nozzle', name: 'Creality Ender-3 Pro 0.4 nozzle', linked: false };
+  const q = M.machineQuestion([ender], { orcaPreset: '', lastPreset: '', hidden: [] });
+  assert.equal(q.mode, 'auto');
+  assert.equal(q.machine.preset, ender.preset);
+  assert.equal(M.machineQuestion([ender], { orcaPreset: '', lastPreset: '', hidden: [ender.preset] }).mode, 'setup', 'masquée : jamais prise');
+  const a1 = { preset: 'Bambu Lab A1 0.4 nozzle', name: 'Bambu Lab A1 0.4 nozzle', linked: false };
+  assert.equal(M.machineQuestion([ender, a1], { hidden: [] }).mode, 'setup', 'deux non reliées : on demande');
+  assert.equal(M.machineQuestion([ender, a1], { hidden: [a1.preset] }).machine.preset, ender.preset, 'l’autre est masquée : une seule reste');
+  const linked = { preset: 'Ma K2', name: 'Ma K2', linked: true };
+  assert.equal(M.machineQuestion([ender, linked], { hidden: [] }).machine.preset, 'Ma K2', 'une reliée reste prioritaire');
+  assert.match(read('index.html'), /p\.printer\.proposed\) && !projectUI\.showList\)/, '« changer » ne se fait pas rattraper par le choix automatique');
+  assert.match(read('project-card.js'), /row\.line !== 'part'\) r\.appendChild\(ui\.button\('changer'/, '`changer` dans la fiche');
+});

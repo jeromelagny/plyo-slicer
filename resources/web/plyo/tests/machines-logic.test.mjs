@@ -14,7 +14,7 @@ const sys = { preset: 'Creality K2 0.4 nozzle', name: 'Creality K2 0.4 nozzle', 
 
 test('machineQuestion : aucune machine reliée → installation', () => {
   assert.equal(M.machineQuestion([], { orcaPreset: '', lastPreset: '', hidden: [] }).mode, 'setup');
-  assert.equal(M.machineQuestion([sys], { orcaPreset: '', lastPreset: '', hidden: [] }).mode, 'setup');
+  assert.equal(M.machineQuestion([sys, Object.assign({}, sys, { preset: 'Autre 0.4 nozzle', name: 'Autre 0.4 nozzle' })], { orcaPreset: '', lastPreset: '', hidden: [] }).mode, 'setup', 'plusieurs non reliées : la liste répond');
   assert.equal(M.machineQuestion(null, {}).mode, 'setup');
 });
 

@@ -1700,7 +1700,7 @@
     projectChanged();
     // Le panneau a changé la machine d'Orca : il le dit, et l'autre machine reste à un clic.
     if (projectUI.switchedFrom) {
-      var tip = noteLine('Orca était sur « ' + projectUI.switchedFrom + ' » : je l’ai mis sur ' + pend.name + ', ta machine reliée.', '', 'info', 'guide');
+      var tip = noteLine('Orca était sur « ' + projectUI.switchedFrom + ' » : je l’ai mis sur ' + pend.name + ', ta machine.', '', 'info', 'guide');
       projectUI.switchedFrom = null;
       tip.appendChild(button('Choisir une autre machine', function () { tip.remove(); projectHandlers.change('printer'); }, 'link'));
     }
