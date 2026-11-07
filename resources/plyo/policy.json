@@ -63,5 +63,19 @@
     "gap_infill_speed",
     "enable_overhang_speed"
   ],
-  "delta_exceptions": {}
+  "delta_exceptions": {},
+  "pending_keys": [
+    "counterbore_hole_bridging",
+    "wipe_tower_wall_type",
+    "toolchange_ordering",
+    "timelapse_type",
+    "overhang_fan_threshold"
+  ],
+  "allowed_values": {
+    "brim_type": [
+      "auto_brim",
+      "outer_only",
+      "no_brim"
+    ]
+  }
 }
