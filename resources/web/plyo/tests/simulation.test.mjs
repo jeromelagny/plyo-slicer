@@ -213,3 +213,13 @@ test('F5 : on dit quand le choix de la matière change le profil de filament', (
   assert.equal(J.profileChangeNote('', 'Generic PLA'), '');
   assert.match(read('index.html'), /profileBefore: lastValues && lastValues\.context/);
 });
+
+test('F6 et M7 : la fiche repliée parle simplement et tient sur une ligne', () => {
+  const base = { printer: { name: 'Bambu Lab A1 0.4 nozzle', preset: 'a' }, part: { name: 'support.stl' }, filament: { type: 'PLA', preset: 'f', nozzle_temp: 220, bed_temp: 65 } };
+  assert.equal(J.ficheSummary(base), 'Bambu Lab A1 · support.stl · PLA');
+  assert.ok(!/220|65/.test(J.ficheSummary(base)));
+  const slot = J.ficheSummary({ ...base, canvas: [{ t: 0, tray_id: 0, label: '1', color: '' }] });
+  assert.ok(!/emplacement/.test(slot), slot);
+  assert.match(J.ficheSummary({ ...base, canvas: [{ t: 0, tray_id: 0 }, { t: 1, tray_id: 1 }] }), /PLA · 2 bobines$/);
+  assert.match(J.ficheSummary({ ...base, canvas: [{ t: 0, tray_id: 0, system: 'u1' }, { t: 1, tray_id: 1, system: 'u1' }] }), /PLA · 2 têtes$/);
+});

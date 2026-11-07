@@ -160,13 +160,11 @@
 
   function ficheSummary(project) {
     var p = project || {}, parts = [];
-    if (p.printer && (p.printer.name || p.printer.preset)) parts.push(p.printer.name || p.printer.preset);
+    // Tenir sur une ligne : ni buse, ni mot « emplacement » coupé, ni températures en chiffres (elles sont dans la fiche dépliée).
+    if (p.printer && (p.printer.name || p.printer.preset)) parts.push(String(p.printer.name || p.printer.preset).replace(/\s+\d+(\.\d+)?\s*nozzle$/i, ''));
     if (p.part && p.part.name) parts.push(shortName(p.part.name));
-    if (p.filament && p.filament.type && Array.isArray(p.canvas) && p.canvas.length) parts.push(filamentRow(p).text);
-    else if (p.filament && p.filament.type) {
-      var temps = p.filament.nozzle_temp != null && p.filament.bed_temp != null ? ' ' + p.filament.nozzle_temp + '/' + p.filament.bed_temp : '';
-      parts.push(p.filament.type + temps);
-    }
+    if (p.filament && p.filament.type && Array.isArray(p.canvas) && p.canvas.length) parts.push(filamentRow(p).text.replace(/ · emplacement /, ' · n° ').replace(/ · (\d+) emplacements$/, ' · $1 bobines'));
+    else if (p.filament && p.filament.type) parts.push(p.filament.type);
     return parts.join(' · ');
   }
 
