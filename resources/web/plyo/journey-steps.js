@@ -81,7 +81,7 @@
       if (opts.summary) body.appendChild(line(ui, 'check', opts.summary, 'ok'));
       // La machine est rappelée en lecture seule : en changer refait la préparation (réglages, filament, découpe).
       if (opts.machine) {
-        body.appendChild(line(ui, 'wifi', 'Imprimer sur : ' + opts.machine.name, opts.machine.reachable === false ? 'warn' : ''));
+        body.appendChild(line(ui, c.linked ? 'wifi' : 'printer', 'Imprimer sur : ' + opts.machine.name, opts.machine.reachable === false ? 'warn' : ''));
         if (opts.machine.reachable === false) {
           body.appendChild(line(ui, 'alert', 'Elle ne répond pas. Allume-la et vérifie qu’elle est sur le même réseau : je revérifie toute seule.', 'warn'));
           body.appendChild(ui.button('Vérifier à nouveau', h.recheck, 'link'));

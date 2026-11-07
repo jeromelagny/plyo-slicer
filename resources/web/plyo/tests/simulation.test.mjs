@@ -223,3 +223,11 @@ test('F6 et M7 : la fiche repliée parle simplement et tient sur une ligne', () 
   assert.match(J.ficheSummary({ ...base, canvas: [{ t: 0, tray_id: 0 }, { t: 1, tray_id: 1 }] }), /PLA · 2 bobines$/);
   assert.match(J.ficheSummary({ ...base, canvas: [{ t: 0, tray_id: 0, system: 'u1' }, { t: 1, tray_id: 1, system: 'u1' }] }), /PLA · 2 têtes$/);
 });
+
+test('F8 : l’icône Wi-Fi seulement pour une machine reliée', () => {
+  assert.match(read('project-card.js'), /printer: ctx\.linked \? 'wifi' : 'printer'/);
+  assert.match(read('journey-steps.js'), /c\.linked \? 'wifi' : 'printer'/);
+  const page = read('index.html');
+  assert.match(page, /\n\s+printer: '<path/, 'l’icône existe');
+  assert.ok(!/Ma machine n’est pas dans la liste', icon: 'wifi'/.test(page));
+});

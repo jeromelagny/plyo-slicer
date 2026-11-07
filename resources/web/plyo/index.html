@@ -577,6 +577,7 @@
     bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
     target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+    printer: '<path d="M4 21h16M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/><path d="M6 8h12M12 8v5"/><path d="M10 13h4l-2 3z"/>',
     wifi: '<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>',
     pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
     folder: '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/>',
@@ -1209,12 +1210,12 @@
     if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; } }
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
-    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, handlers: projectHandlers });
+    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, handlers: projectHandlers });
     PlyoProjectCard.renderSpoolEditor($('spool-slot'), ui, { spool: projectUI.spool, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
-      extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'wifi', onClick: projectHandlers.setupPrinter } : null });
+      extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'plus', onClick: projectHandlers.setupPrinter } : null });
     ensureCanvasRead(step);
     ensureManualRead(step);
     syncCanvasPlan(false);

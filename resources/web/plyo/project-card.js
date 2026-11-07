@@ -22,7 +22,8 @@
       slot.appendChild(card);
       return;
     }
-    var icons = { printer: 'wifi', filament: 'palette', part: 'cube' };
+    // Le Wi-Fi seulement pour une machine reliée : les autres passent par un fichier.
+    var icons = { printer: ctx.linked ? 'wifi' : 'printer', filament: 'palette', part: 'cube' };
     rows.forEach(function (row) {
       var r = ui.el('div', 'project-row');
       var left = ui.el('div', 'project-label');
