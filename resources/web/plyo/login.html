@@ -124,6 +124,10 @@
     if (window.wx && window.wx.postMessage) window.wx.postMessage(JSON.stringify(message));
   }
 
+  // Internet peut très bien marcher : c'est le service qui ne répond pas. Fenêtre réduite : l'erreur est amenée à l'écran.
+  var SERVICE_DOWN = 'Le service Plyo ne répond pas. Vérifie ta connexion ou réessaie plus tard.';
+  function showError(text) { errorLine.textContent = text; errorLine.scrollIntoView({ block: 'nearest' }); }
+
   function postJson(path, body) {
     return fetch(PLYO_API_URL + path, {
       method: 'POST',
@@ -160,13 +164,13 @@
       .then(function (r) {
         setBusy(false, 'Recevoir le code');
         if (r.status === 204) showCodeStep(email);
-        else if (r.status === 429) errorLine.textContent = 'Trop de demandes d’un coup : réessaie dans une minute.';
-        else if (r.status === 400) errorLine.textContent = 'Cette adresse e-mail ne semble pas complète. Vérifie-la.';
-        else errorLine.textContent = 'Le code n’a pas pu partir. Réessaie dans un instant.';
+        else if (r.status === 429) showError('Trop de demandes d’un coup : réessaie dans une minute.');
+        else if (r.status === 400) showError('Cette adresse e-mail ne semble pas complète. Vérifie-la.');
+        else showError('Le code n’a pas pu partir. Réessaie dans un instant.');
       })
       .catch(function () {
         setBusy(false, 'Recevoir le code');
-        errorLine.textContent = 'Je n’arrive pas à joindre le service Plyo. Vérifie ta connexion à Internet, puis réessaie.';
+        showError(SERVICE_DOWN);
       });
   }
 
@@ -177,7 +181,7 @@
       .then(function (r) {
         if (r.ok) return r.json();
         setBusy(false, 'Se connecter');
-        errorLine.textContent = r.status === 401 ? 'Ce code ne marche pas : il est peut-être faux ou expiré. Vérifie-le, ou demande-en un nouveau.' : 'Le code fait 6 chiffres.';
+        showError(r.status === 401 ? 'Ce code ne marche pas : il est peut-être faux ou expiré. Vérifie-le, ou demande-en un nouveau.' : 'Le code fait 6 chiffres.');
         return null;
       })
       .then(function (session) {
@@ -185,7 +189,7 @@
       })
       .catch(function () {
         setBusy(false, 'Se connecter');
-        errorLine.textContent = 'Je n’arrive pas à joindre le service Plyo. Vérifie ta connexion à Internet, puis réessaie.';
+        showError(SERVICE_DOWN);
       });
   }
 

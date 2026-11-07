@@ -87,7 +87,7 @@
   var ERRORS = {
     insufficient_credits: { text: 'Ta jauge du mois est pleine : je ne peux pas lancer de nouvelle demande pour l’instant.', action: 'credits' },
     unauthorized: { text: 'Ta session a expiré : reconnecte-toi, ta demande est gardée.', action: 'login' },
-    network: { text: 'Je n’arrive pas à joindre le service Plyo. Vérifie ta connexion à Internet, puis réessaie.', action: 'retry' },
+    network: { text: 'Le service Plyo ne répond pas. Vérifie ta connexion ou réessaie plus tard.', action: 'retry' },
     timeout: { text: 'La réponse prend trop de temps. Réessaie : ta demande est gardée. Ce que l’IA a déjà fait peut compter sur ta jauge.', action: 'retry' },
     upstream_error: { text: 'L’IA est momentanément indisponible. Réessaie dans un instant.', action: 'retry' },
     assistant_unavailable: { text: 'Je n’ai pas pu répondre à cette demande. Essaie de la formuler autrement.', action: 'retry' },

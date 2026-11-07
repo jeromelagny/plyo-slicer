@@ -251,3 +251,10 @@ test('M4 : la carte de connexion part avec « Oui, c’est réussi » et au nouv
   assert.match(page, /success: function \(\) \{[^\n]*dropLoginCard\(\); afterLogin = null;/);
   assert.match(page, /function startConversation\(project\) \{[\s\S]{0,160}dropLoginCard\(\);/);
 });
+
+test('M5 : service coupé : on ne dit plus que c’est Internet', () => {
+  assert.ok(!/connexion à Internet/.test(read('login.html')));
+  assert.ok(!/connexion à Internet/.test(read('assistant-logic.js')));
+  assert.match(read('login.html'), /Le service Plyo ne répond pas\. Vérifie ta connexion ou réessaie plus tard\./);
+  assert.equal(L.errorView('network').text, 'Le service Plyo ne répond pas. Vérifie ta connexion ou réessaie plus tard.');
+});
