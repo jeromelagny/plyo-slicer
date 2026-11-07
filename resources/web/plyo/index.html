@@ -784,6 +784,7 @@
     plateChecked = '';
     dropTooBig();
     dropReplaced();
+    dropLoginCard();
     if (typeof intentUI !== 'undefined') { intentUI.idk = false; intentUI.manual = null; }
     if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
@@ -1272,7 +1273,7 @@
     exportFile: function () { runAction('export'); },
     started: function () { rememberHabit(); journalPart(''); delete conv.project.success; setTourStep('after'); },
     photo: function () { pickFiles(); },
-    success: function () { conv.project.success = true; journalPart('ok'); projectChanged(); },
+    success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
     newPart: function () { newConversation(); },
     reprint: function () { delete conv.project.success; setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
     changeMachine: function () { projectHandlers.change('printer'); },

@@ -245,3 +245,9 @@ test('M2 : les carrés de calibration sont rangés par valeur', () => {
 test('M3 : « Remettre ma pièce » reste visible après un choix', () => {
   assert.match(read('index.html'), /back\.scrollIntoView\(\{ block: 'nearest' \}\)/);
 });
+
+test('M4 : la carte de connexion part avec « Oui, c’est réussi » et au nouveau projet', () => {
+  const page = read('index.html');
+  assert.match(page, /success: function \(\) \{[^\n]*dropLoginCard\(\); afterLogin = null;/);
+  assert.match(page, /function startConversation\(project\) \{[\s\S]{0,160}dropLoginCard\(\);/);
+});
