@@ -1567,7 +1567,7 @@
     openManual: function () { openManual(); },
     pickFilament: function (type) {
       projectUI.error = {};
-      projectUI.pending = { kind: 'filament', type: type };
+      projectUI.pending = { kind: 'filament', type: type, profileBefore: lastValues && lastValues.context ? lastValues.context.filament : '' };
       window.orca.postMessage({ type: 'filament_choose', material: type });
     },
     // `done(ok, texte)` : la réponse d'Orca ; sans `done`, seul un refus est dit.
@@ -1682,7 +1682,11 @@
       projectUI.editing = null;
       var wanted = projectUI.keepTemps;
       projectUI.keepTemps = null;
-      if (wanted && (wanted.nozzle !== msg.nozzle_temp || wanted.bed !== msg.bed_temp)) { projectChanged(); projectHandlers.setTemps(wanted.nozzle, wanted.bed); return; }
+      var profileNote = PlyoJourney.profileChangeNote(pend.profileBefore, msg.filament_preset);
+      if (wanted && (wanted.nozzle !== msg.nozzle_temp || wanted.bed !== msg.bed_temp)) { projectChanged(); if (profileNote) noteLine(profileNote, '', 'info', 'guide'); projectHandlers.setTemps(wanted.nozzle, wanted.bed); return; }
+      projectChanged(); // d'abord : le changement d'étape efface les messages de l'étape
+      if (profileNote) noteLine(profileNote, '', 'info', 'guide');
+      return;
     } else if (pend.kind === 'temps' && conv.project.filament) {
       conv.project.filament.nozzle_temp = msg.nozzle_temp;
       conv.project.filament.bed_temp = msg.bed_temp;

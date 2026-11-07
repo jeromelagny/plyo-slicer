@@ -206,3 +206,10 @@ test('F2 : les textes citent les boutons du panneau, les mêmes sur toutes les m
   assert.match(page, /`Exporter le fichier`, puis copie-le/);
   assert.match(page, /`Envoyer et imprimer` lui enverra/);
 });
+
+test('F5 : on dit quand le choix de la matière change le profil de filament', () => {
+  assert.match(J.profileChangeNote('Bambu PLA Basic @BBL A1', 'Generic PLA @BBL A1'), /« Bambu PLA Basic @BBL A1 » devient « Generic PLA @BBL A1 »/);
+  assert.equal(J.profileChangeNote('Generic PLA @BBL A1 (Plyo)', 'Generic PLA @BBL A1'), '', 'même profil, simple copie');
+  assert.equal(J.profileChangeNote('', 'Generic PLA'), '');
+  assert.match(read('index.html'), /profileBefore: lastValues && lastValues\.context/);
+});

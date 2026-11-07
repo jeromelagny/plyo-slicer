@@ -108,6 +108,11 @@
     }
   }
 
+  // Choisir une matière peut changer le profil de filament d'Orca : on le dit, un profil modifié ou de marque n'est plus celui utilisé.
+  function profileChangeNote(before, after) {
+    if (!before || !after || baseName(before) === baseName(after)) return '';
+    return 'Profil de filament changé dans Orca : « ' + before + ' » devient « ' + after + ' ».';
+  }
   function afterPreflight(risks) { return risks === 0 ? 'advance' : 'stay'; }
   // Message au passage à l'impression : « Pas de risque » seulement si la vérification n'a rien trouvé, même ignoré.
   function advanceNote(allRisks) {
@@ -253,7 +258,7 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
