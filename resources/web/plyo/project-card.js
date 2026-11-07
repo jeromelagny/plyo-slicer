@@ -125,7 +125,7 @@
   }
   // Pas de question par défaut : le profil ne permet pas de reconnaître une machine à une bobine. Un lien discret, après les matières.
   function renderManualLink(body, ui, ctx) {
-    if (ctx.manualLink) body.appendChild(ui.button('Ma machine a plusieurs emplacements', ctx.handlers.openManual, 'link'));
+    if (ctx.manualLink) body.appendChild(ui.button('Ma machine a plusieurs bobines (AMS, CFS…)', ctx.handlers.openManual, 'link'));
   }
 
   // Le contenu des étapes 1 à 3 (imprimante, filament, pièce) : des choix qui s'appliquent tout de suite.

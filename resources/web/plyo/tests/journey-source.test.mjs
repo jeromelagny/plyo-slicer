@@ -441,7 +441,7 @@ test('saisie manuelle : messages du C++, vue sans bouton plein, jamais de plan n
   assert.ok(page.includes("type: 'slots_manual_get'") && page.includes("type: 'slots_manual_save'"));
   assert.ok(page.includes("msg.type === 'slots_manual_state'") && page.includes("msg.type === 'slots_manual_saved'"));
   assert.ok(!FULL_BUTTON.test(view));
-  assert.ok(/Ma machine a plusieurs emplacements/.test(read('project-card.js')));
+  assert.ok(/Ma machine a plusieurs bobines/.test(read('project-card.js')));
   assert.ok(view.includes('J’ai changé'));
   // Le C++ refuse aussi : Canvas::plan ne reçoit qu'une répartition isImposed (voir SlotsLogic::plan_allowed).
   assert.ok(/PlyoCanvas\.isImposed\(p\.canvas\)/.test(page), 'le plan passe par isImposed');

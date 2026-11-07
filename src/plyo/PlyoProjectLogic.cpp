@@ -90,8 +90,15 @@ bool can_restore(const nlohmann::json& project, const std::string& current_print
 std::string refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament)
 {
     const std::vector<std::string> todo = missing(project);
-    if (!todo.empty())
-        return "Complète d'abord la fiche du projet (imprimante, filament, pièce) : je ne change aucun réglage tant qu'elle est incomplète.";
+    if (!todo.empty()) {
+        std::string list;
+        for (size_t i = 0; i < todo.size(); ++i) {
+            if (i > 0)
+                list += i + 1 == todo.size() ? " et " : ", ";
+            list += todo[i] == "printer" ? "l'imprimante" : todo[i] == "part" ? "la pièce" : "le filament";
+        }
+        return "Il me manque " + list + " du projet avant de changer un réglage. Va dans l'onglet Étapes pour compléter, puis reviens ici.";
+    }
     if (Json::str(*Json::field(project, "printer"), "preset") != current_printer ||
         !same_filament(Json::str(*Json::field(project, "filament"), "preset"), current_filament))
         return "Orca n'est plus sur l'imprimante ou le filament de ce projet. Remets le projet dans Orca avant de changer des réglages.";
