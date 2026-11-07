@@ -183,3 +183,10 @@ test('G6 : une seule machine installée et non masquée : elle est prise, relié
   assert.match(read('index.html'), /p\.printer\.proposed\) && !projectUI\.showList\)/, '« changer » ne se fait pas rattraper par le choix automatique');
   assert.match(read('project-card.js'), /row\.line !== 'part'\) r\.appendChild\(ui\.button\('changer'/, '`changer` dans la fiche');
 });
+
+test('G10 : les boutons de connexion restent dans la fenêtre après une erreur', () => {
+  const page = read('login.html');
+  assert.match(page, /main \{ flex: 1 1 auto; min-height: 0; overflow-y: auto;/);
+  assert.match(page, /footer \{ flex: none;/);
+  assert.match(cpp('PlyoLoginDialog.cpp'), /wxSize\(460, 500\)/);
+});
