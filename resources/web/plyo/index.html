@@ -3080,6 +3080,7 @@
       action.textContent = fr(msg.test === 'flow' && msg.pass === 1 ? 'Lancer la passe fine' : 'Enregistrer ' + choice.label + ' pour ce filament');
       // Le choix fait, l'enregistrement devient l'action principale ; la photo reste possible en secondaire.
       photoBtn.classList.add('ghost');
+      back.scrollIntoView({ block: 'nearest' }); // « Remettre ma pièce » reste visible sous le nouveau bouton
     }
 
     function setPhotoButtons(enabled) { photoBtn.disabled = !enabled; phoneBtn.disabled = !enabled; }

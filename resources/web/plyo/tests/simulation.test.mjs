@@ -241,3 +241,7 @@ test('M2 : les carrés de calibration sont rangés par valeur', () => {
   const flow = c.slice(c.indexOf('nlohmann::json flow_test'), c.indexOf('nlohmann::json retraction_test'));
   assert.ok(flow.indexOf('std::sort(squares') < flow.indexOf('sections.push_back'), 'triés avant d’être numérotés');
 });
+
+test('M3 : « Remettre ma pièce » reste visible après un choix', () => {
+  assert.match(read('index.html'), /back\.scrollIntoView\(\{ block: 'nearest' \}\)/);
+});
