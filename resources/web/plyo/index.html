@@ -376,6 +376,7 @@
   .printer-status { display: flex; flex-direction: column; gap: var(--s2); border-top: 1px solid var(--border); padding-top: var(--s2); }
   .printer-step { display: flex; gap: var(--s2); align-items: flex-start; margin: 0; }
   .printer-step .ic { margin-top: 3px; }
+  .printer-step.exported { overflow-wrap: anywhere; } /* un chemin long passe à la ligne au lieu d'être coupé */
   .printer-step .rich p { margin: 0; }
   .printer-step.ok .ic { color: var(--accent-text); }
   .printer-step.warn .ic { color: var(--warn-text); }
@@ -490,7 +491,7 @@
       <div class="tools">
         <button class="icon-btn" id="btn-files" type="button" title="Joindre des photos ou un modèle 3D (STL, 3MF…)" aria-label="Joindre un fichier"></button>
         <button class="icon-btn" id="btn-phone" type="button" title="Prendre des photos avec mon téléphone" aria-label="Photos avec le téléphone"></button>
-        <span class="hint">Entrée pour envoyer</span>
+        <span class="hint" id="note-hint">Entrée pour envoyer</span>
         <button class="send" id="btn-send" type="button" title="Envoyer (Entrée) · Maj + Entrée pour aller à la ligne" aria-label="Envoyer"></button>
       </div>
     </div>
@@ -576,6 +577,7 @@
     bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
     target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+    printer: '<path d="M4 21h16M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/><path d="M6 8h12M12 8v5"/><path d="M10 13h4l-2 3z"/>',
     wifi: '<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>',
     pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
     folder: '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/>',
@@ -781,6 +783,8 @@
     openRisks = 0;
     plateChecked = '';
     dropTooBig();
+    dropReplaced();
+    dropLoginCard();
     if (typeof intentUI !== 'undefined') { intentUI.idk = false; intentUI.manual = null; }
     if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
@@ -956,6 +960,7 @@
     if (!mode) return null;
     var st = slotState() || {}, out = { mode: mode, system: mode === 'manual' ? 'manual' : st.system || slotWordsKey() };
     if (mode === 'recall') out.recall = PlyoCanvas.manualRecall(st);
+    if (mode === 'manual') out.complete = PlyoCanvas.manualComplete(canvasUI.manual.draft, canvasUI.manual.count);
     if (mode === 'single' || mode === 'multi') {
       var trays = PlyoCanvas.trays(st), m = canvasUI.mapping || [];
       out.complete = PlyoCanvas.complete(m);
@@ -1125,7 +1130,7 @@
     useList: function () { canvasUI.useList = true; delete conv.project.canvas; projectChanged(); renderProject(); },
     openManual: openManual,
     manualCount: function (n) { canvasUI.manual.count = n; renderProject(); },
-    manualSet: function (i, field, value) { canvasUI.manual.draft[i][field] = value; },
+    manualSet: function (i, field, value) { canvasUI.manual.draft[i][field] = value; renderProject(); }, // le formulaire reste tel quel, seule la ligne d'action suit
     manualCancel: function () { canvasUI.manual.form = false; canvasUI.manual.error = ''; renderProject(); }
   };
   function openManual() {
@@ -1141,6 +1146,7 @@
   function saveManual() {
     var m = canvasUI.manual;
     m.error = '';
+    if (!PlyoCanvas.manualComplete(m.draft, m.count)) return;
     window.orca.postMessage({ type: 'slots_manual_save', preset: conv.project.printer.preset, slots: PlyoCanvas.manualSlots(m.draft, m.count) });
   }
   function onManualSaved(msg) {
@@ -1203,16 +1209,16 @@
     if (!conv) return;
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
-    if (step !== 'imprimer') projectUI.sentConv = null; // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
+    if (step !== 'imprimer') { projectUI.sentConv = null; projectUI.exported = null; } // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
     if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; } }
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
-    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, handlers: projectHandlers });
+    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, handlers: projectHandlers });
     PlyoProjectCard.renderSpoolEditor($('spool-slot'), ui, { spool: projectUI.spool, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
-      extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'wifi', onClick: projectHandlers.setupPrinter } : null });
+      extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'plus', onClick: projectHandlers.setupPrinter } : null });
     ensureCanvasRead(step);
     ensureManualRead(step);
     syncCanvasPlan(false);
@@ -1228,7 +1234,7 @@
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
-      sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
+      sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()),
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
@@ -1267,9 +1273,9 @@
     },
     skip: function () { $('preflight-slot').textContent = ''; preflightFix = null; plateChecked = 'ignored'; setTourStep('print'); },
     exportFile: function () { runAction('export'); },
-    started: function () { rememberHabit(); delete conv.project.success; setTourStep('after'); },
+    started: function () { rememberHabit(); journalPart(''); delete conv.project.success; setTourStep('after'); },
     photo: function () { pickFiles(); },
-    success: function () { conv.project.success = true; projectChanged(); },
+    success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
     newPart: function () { newConversation(); },
     reprint: function () { delete conv.project.success; setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
     changeMachine: function () { projectHandlers.change('printer'); },
@@ -1293,19 +1299,24 @@
   }
   // Un envoi à la fois : un double-clic ne part qu'une fois. La réponse d'Orca est immédiate (sa fenêtre s'ouvre ensuite) : le
   // verrou tient au moins le temps d'un double-clic après un succès, et tombe tout de suite après une erreur.
-  var SEND_LOCK_MS = 1500, SEND_WAIT_MS = 8000, SEND_ARMED_WAIT_MS = 30000; // sans réponse (panne), l'envoi redevient possible
+  var SEND_LOCK_MS = 1500, SEND_WAIT_MS = 8000, SEND_ARMED_WAIT_MS = 30000, EXPORT_WAIT_MS = 600000; // sans réponse (panne), l'envoi redevient possible ; un export attend la fenêtre d'enregistrement
   var sendLock = { on: false, kind: '', timer: null };
   function lockSend(kind) {
     if (sendLock.on) return false;
     sendLock = { on: true, kind: kind, timer: setTimeout(unlockSend, SEND_WAIT_MS), since: Date.now() };
     projectUI.sentConv = null; // « L'impression a démarré » ne vient qu'une fois l'envoi accepté
     projectUI.sentArmed = null;
+    projectUI.exported = null;
     renderProject();
     return true;
   }
   function waitLongerForSend() {
     clearTimeout(sendLock.timer);
     sendLock.timer = setTimeout(unlockSend, SEND_ARMED_WAIT_MS);
+  }
+  function waitForExport() {
+    clearTimeout(sendLock.timer);
+    sendLock.timer = setTimeout(unlockSend, EXPORT_WAIT_MS);
   }
   function unlockSend() {
     clearTimeout(sendLock.timer);
@@ -1318,17 +1329,45 @@
     if (sendLock.on) sendLock.timer = setTimeout(unlockSend, Math.max(0, SEND_LOCK_MS - (Date.now() - sendLock.since)));
   }
   function onPrintStarted(msg) {
+    repaintPanel(); // retour d'une fenêtre native : WebKit peut garder une image décalée du défilement
+    if (msg.export) { onExportDone(msg); return; }
     if (!msg.ok) {
       unlockSend();
       noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque : clique sur « Découper ».' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
       return;
     }
     projectUI.sentConv = conv;
-    if (sendLock.kind === 'export') noteLine('Choisis où enregistrer le fichier, puis copie-le sur ta clé USB ou ta carte SD.' + (PlyoCanvas.exportNote(conv && conv.project.canvas) ? ' ' + PlyoCanvas.exportNote(conv.project.canvas) : ''), '', 'info', 'guide');
-    else noteLine(PlyoCanvas.orcaConfirm(conv && conv.project.canvas) || 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
+    noteLine(PlyoCanvas.orcaConfirm(conv && conv.project.canvas) || 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
     unlockSendSoon();
     renderProject();
   }
+  // Fin réelle de l'export (la fenêtre d'enregistrement est fermée, le fichier écrit). Annulé : on revient à l'état d'avant, sans un mot.
+  function onExportDone(msg) {
+    unlockSend();
+    if (msg.cancelled) return;
+    if (!msg.ok) {
+      noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque : clique sur « Découper ».' : msg.text || 'L’export n’a pas abouti : aucun fichier n’a été écrit.', 'error', 'alert', 'guide');
+      return;
+    }
+    rememberHabit();
+    journalPart('');
+    projectUI.sentConv = conv;
+    projectUI.exported = { conv: conv, text: Logic.exportedText(msg, PlyoCanvas.exportNote(conv && conv.project.canvas)) };
+    renderProject();
+    if (viewUI.tab === 'guide') $('project-card').scrollIntoView({ block: 'nearest' }); // le message entier, en haut de l'étape
+  }
+  // Force un rendu et recale le défilement. Effet à vérifier en vrai : le défaut n'existe que dans WebKit, au retour d'une fenêtre native.
+  function repaintPanel() {
+    var top = bodyEl.scrollTop;
+    void document.body.offsetHeight;
+    bodyEl.scrollTop = top + 1;
+    bodyEl.scrollTop = top;
+    requestAnimationFrame(function () {
+      bodyEl.style.transform = 'translateZ(0)';
+      requestAnimationFrame(function () { bodyEl.style.transform = ''; bodyEl.scrollTop = top; });
+    });
+  }
+  window.addEventListener('focus', repaintPanel);
   // Le bouton plein de la ligne d'action.
   function runAction(kind) {
     if (kind === 'slice') plateAction('slice');
@@ -1344,7 +1383,7 @@
     else if (kind === 'confirmCanvas') { if (canvasUI.mapping && PlyoCanvas.complete(canvasUI.mapping)) applyCanvas(canvasUI.mapping); }
     else if (kind === 'manualYes') { canvasUI.manual.confirmed = true; canvasUI.mapping = canvasProposal(); renderProject(); }
     else if (kind === 'manualSave') saveManual();
-    else if (kind === 'export') { canvasUI.refused = ''; if (!lockSend('export')) return; rememberHabit(); window.orca.postMessage({ type: 'print_start', export: true }); }
+    else if (kind === 'export') { canvasUI.refused = ''; if (!lockSend('export')) return; waitForExport(); window.orca.postMessage({ type: 'print_start', export: true }); }
     else if (kind === 'advance') setTourStep('print');
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
     else if (kind === 'applyIntent') applyIntent(false);
@@ -1481,7 +1520,9 @@
       habits = PlyoMachines.noteIntent(habits, false);
       saveHabits();
       projectChanged();
-      noteLine(again ? 'J’ai réappliqué tes choix sur cette machine. Je prépare l’impression.' : 'Réglages appliqués. Je prépare l’impression.', 'ok', 'check', 'guide');
+      // Une seule ligne, même si le filament change plusieurs fois de suite.
+      if (intentUI.doneLine) intentUI.doneLine.remove();
+      intentUI.doneLine = noteLine(again ? 'J’ai réappliqué tes choix sur cette machine. Je prépare l’impression.' : 'Réglages appliqués. Je prépare l’impression.', 'ok', 'check', 'guide');
       plateAction('slice');
     }
     if (!st.changes.length) { done(); return; }
@@ -1506,7 +1547,7 @@
     if (!conv || !projectUI.printers || !lastValues) return; // sans les réglages lus, on ne sait pas encore sur quelle machine est Orca
     var p = conv.project, orca = lastValues && lastValues.context ? lastValues.context.printer : '';
     var q = PlyoMachines.machineQuestion(projectUI.printers, { orcaPreset: orca, lastPreset: habits.last, hidden: habits.hidden });
-    if (q.mode === 'auto' && (!p.printer || p.printer.proposed)) {
+    if (q.mode === 'auto' && (!p.printer || p.printer.proposed) && !projectUI.showList) { // showList : « changer » vient de rouvrir la liste
       if (orca && orca !== q.machine.preset) projectUI.switchedFrom = orca; // dit à l'écran une fois le changement fait
       projectHandlers.pickPrinter(q.machine.preset, q.machine.label);
     }
@@ -1522,6 +1563,8 @@
   var projectHandlers = {
     pickPrinter: function (preset, name) {
       projectUI.error = {};
+      dropTooBig(); // la taille est remesurée à la prochaine découpe, sur le plateau de cette machine
+      projectUI.sliceRefused = null;
       projectUI.pending = { kind: 'printer', preset: preset, name: name || preset };
       window.orca.postMessage({ type: 'printer_select_profile', name: preset });
     },
@@ -1530,7 +1573,7 @@
     openManual: function () { openManual(); },
     pickFilament: function (type) {
       projectUI.error = {};
-      projectUI.pending = { kind: 'filament', type: type };
+      projectUI.pending = { kind: 'filament', type: type, profileBefore: lastValues && lastValues.context ? lastValues.context.filament : '' };
       window.orca.postMessage({ type: 'filament_choose', material: type });
     },
     // `done(ok, texte)` : la réponse d'Orca ; sans `done`, seul un refus est dit.
@@ -1645,7 +1688,11 @@
       projectUI.editing = null;
       var wanted = projectUI.keepTemps;
       projectUI.keepTemps = null;
-      if (wanted && (wanted.nozzle !== msg.nozzle_temp || wanted.bed !== msg.bed_temp)) { projectChanged(); projectHandlers.setTemps(wanted.nozzle, wanted.bed); return; }
+      var profileNote = PlyoJourney.profileChangeNote(pend.profileBefore, msg.filament_preset);
+      if (wanted && (wanted.nozzle !== msg.nozzle_temp || wanted.bed !== msg.bed_temp)) { projectChanged(); if (profileNote) noteLine(profileNote, '', 'info', 'guide'); projectHandlers.setTemps(wanted.nozzle, wanted.bed); return; }
+      projectChanged(); // d'abord : le changement d'étape efface les messages de l'étape
+      if (profileNote) noteLine(profileNote, '', 'info', 'guide');
+      return;
     } else if (pend.kind === 'temps' && conv.project.filament) {
       conv.project.filament.nozzle_temp = msg.nozzle_temp;
       conv.project.filament.bed_temp = msg.bed_temp;
@@ -1663,7 +1710,7 @@
     projectChanged();
     // Le panneau a changé la machine d'Orca : il le dit, et l'autre machine reste à un clic.
     if (projectUI.switchedFrom) {
-      var tip = noteLine('Orca était sur « ' + projectUI.switchedFrom + ' » : je l’ai mis sur ' + pend.name + ', ta machine reliée.', '', 'info', 'guide');
+      var tip = noteLine('Orca était sur « ' + projectUI.switchedFrom + ' » : je l’ai mis sur ' + pend.name + ', ta machine.', '', 'info', 'guide');
       projectUI.switchedFrom = null;
       tip.appendChild(button('Choisir une autre machine', function () { tip.remove(); projectHandlers.change('printer'); }, 'link'));
     }
@@ -1696,6 +1743,7 @@
     openRisks = 0;
     plateChecked = '';
     dropTooBig();
+    dropReplaced();
     applyTab('reset');
     $('guide-notes').textContent = '';
     restoreProjectInOrca(false);
@@ -2021,7 +2069,7 @@
   function onLinkSaved(msg) {
     if (!link) return;
     if (msg.ok) {
-      linkStep('C’est relié ! Ton profil d’imprimante s’appelle maintenant « ' + msg.profile + ' ». `Imprimer la plaque` enverra tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+      linkStep('C’est relié ! Ton profil d’imprimante s’appelle maintenant « ' + msg.profile + ' ». `Envoyer et imprimer` enverra tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
       if (link.onDone) link.onDone();
     }
     else linkStep('Je n’ai pas pu enregistrer la connexion. Réessaie, ou ouvre la fenêtre « Connexion » depuis le bouton Wi-Fi à côté de « Imprimante ».', 'error', 'alert');
@@ -2029,7 +2077,7 @@
   function onLinkDialogClosed(msg) {
     if (!link) return;
     if (msg.saved) {
-      linkStep('C’est relié ! `Imprimer la plaque` enverra maintenant tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+      linkStep('C’est relié ! `Envoyer et imprimer` enverra maintenant tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
       if (link.onDone) link.onDone();
     } else {
       var box = linkStep('Rien n’a été enregistré. Tu peux recommencer quand tu veux.', '', 'info');
@@ -2143,6 +2191,11 @@
       input.type = 'search';
       input.placeholder = 'Tape le nom de ton imprimante';
       input.setAttribute('aria-label', 'Nom de ton imprimante');
+      // Un nom de modèle n'est pas un mot : ni bulle de correction de macOS, ni correction à la frappe (« MK4 »).
+      input.setAttribute('autocorrect', 'off');
+      input.setAttribute('autocapitalize', 'off');
+      input.setAttribute('autocomplete', 'off');
+      input.setAttribute('spellcheck', 'false');
       input.value = setup.query;
       var results = el('div', 'setup-results');
       function refresh() {
@@ -2180,8 +2233,8 @@
       later = button('Passer cette étape', function () { setupPhase('done'); }, 'link');
     } else if (setup.phase === 'done') {
       box.appendChild(el('h3', '', 'Ton imprimante est prête'));
-      box.appendChild(rich(setup.found ? 'Elle est installée et reliée : `Imprimer la plaque` lui enverra tes impressions.' :
-        'Elle est installée. Pour imprimer : `Exporter le fichier G-code`, puis copie-le sur la clé USB ou la carte SD de ton imprimante.'));
+      box.appendChild(rich(setup.found ? 'Elle est installée et reliée : à l’étape Imprimer, `Envoyer et imprimer` lui enverra tes impressions.' :
+        'Elle est installée. Pour imprimer : à l’étape Imprimer, `Exporter le fichier`, puis copie-le sur la clé USB ou la carte SD de ton imprimante.'));
       acts.appendChild(button('Continuer', endSetup, 'btn sm', 'check'));
       later = null;
     }
@@ -2194,7 +2247,7 @@
   var journalTarget = null;
   function openJournal() {
     openDrawer('Mes pièces', function (body) {
-      body.appendChild(el('p', 'muted', 'Les pièces que tu as traitées avec l’assistant : le problème vu, les réglages appliqués et le résultat. Tout reste sur cet ordinateur.'));
+      body.appendChild(el('p', 'muted', 'Les pièces que tu as imprimées ou exportées avec l’assistant : le problème vu, les réglages appliqués et le résultat. Tout reste sur cet ordinateur.'));
       var list = el('div', 'journal-list');
       list.appendChild(el('p', 'muted', 'Chargement…'));
       body.appendChild(list);
@@ -2208,7 +2261,7 @@
     list.textContent = '';
     var groups = Logic.journalGroups(events);
     if (!groups.length) {
-      list.appendChild(emptyState('cube', 'Pas encore de pièce', 'Pose une question à l’assistant avec une pièce sur le plateau : elle apparaîtra ici, avec les réglages essayés et le résultat.',
+      list.appendChild(emptyState('cube', 'Pas encore de pièce', 'Exporte ou imprime une pièce, ou pose une question à son sujet : elle apparaîtra ici, avec les réglages essayés et le résultat.',
         'Poser une question', function () { closeDrawer(); noteInput.focus(); }));
       return;
     }
@@ -2227,7 +2280,7 @@
         var st = Logic.journalStatus(e);
         top.appendChild(el('span', 'badge-pill' + (st.tone ? ' ' + st.tone : ''), st.label));
         col.appendChild(top);
-        col.appendChild(el('p', 'problem', e.problem || 'Question à l’assistant'));
+        col.appendChild(el('p', 'problem', Logic.journalProblem(e)));
         var q = Logic.outcomeQuestion(e, function (id) { var p = paramOf(id); return p.label === id ? null : p; });
         if (q.changes.length) {
           var ul = el('ul', 'meta');
@@ -2480,7 +2533,7 @@
     var step = PlyoProject.nextStep(conv.project);
     var adopted = conv.project.part && conv.project.part.fromPlate;
     if (step === 'printer' && (adopted || !(conv.project.part && conv.project.part.name))) { // la machine d'abord : l'adaptation d'un 3MF en dépend
-      // Le fichier déposé est prioritaire sur ce qui traîne sur le plateau : l'ancienne pièce est signalée à l'import.
+      // Le fichier déposé est prioritaire sur ce qui traîne sur le plateau : l'ancienne pièce est retirée à l'import, avec « Annuler ».
       if (adopted) conv.project.part = null;
       projectUI.waitingFile = file;
       if (tourSignals && tourSignals.objects > 0) projectUI.newProjectFile = true;
@@ -2519,7 +2572,8 @@
     var reader = new FileReader();
     reader.onload = function () {
       var data = String(reader.result || '');
-      window.orca.postMessage({ type: 'model_add', name: file.name, data: data.slice(data.indexOf(',') + 1), project: conv.project });
+      window.orca.postMessage({ type: 'model_add', name: file.name, data: data.slice(data.indexOf(',') + 1), project: conv.project,
+        replace: PlyoProject.replacesPlate(conv.project, projectUI.oldPart, projectUI.newProjectFile) });
     };
     reader.onerror = function () { dropPlacing(); noteLine('« ' + file.name + ' » n’a pas pu être lu.', 'error', 'alert', 'guide'); };
     projectUI.placing = noteLine('Je pose « ' + file.name + ' » sur le plateau…', '', 'cube', 'guide');
@@ -2547,6 +2601,7 @@
   var plateRequest = 0;
   var plateUndoLinks = [];   // un seul « Annuler » actif : celui de la dernière action
   var plateCounts = {};      // demande → nombre de pièces concernées (singulier ou pluriel du texte affiché)
+  var plateSent = {};        // demande → message envoyé et essais déjà faits (relance d'une action refusée pour un temps)
   // Découpe demandée : le bouton attend le résultat. Sans résultat au bout d'un délai (Orca refuse sans le dire au panneau,
   // découpe très longue), il redevient cliquable et le panneau le dit.
   var SLICE_WAIT_MS = 120000;
@@ -2554,6 +2609,7 @@
   function stopSlicing() { clearTimeout(slicing.timer); slicing = { conv: null, timer: null }; }
   function startSlicing() {
     stopSlicing();
+    dropReplaced();
     slicing = { conv: conv, timer: setTimeout(function () {
       var mine = slicing.conv === conv;
       stopSlicing();
@@ -2567,12 +2623,26 @@
     var id = ++plateRequest;
     plateWaiters[id] = after || null;
     plateCounts[id] = count;
-    window.orca.postMessage(Object.assign({ type: 'plate_action', kind: kind, request: id }, extra || {}));
+    plateSent[id] = { message: Object.assign({ type: 'plate_action', kind: kind, request: id }, extra || {}), tries: 0 };
+    window.orca.postMessage(plateSent[id].message);
   }
   function onPlateAction(msg) {
+    var sent = plateSent[msg.request], wait = Logic.plateRetryDelay(msg, sent ? sent.tries : 99);
+    if (wait) { sent.tries += 1; setTimeout(function () { window.orca.postMessage(sent.message); }, wait); return; }
+    delete plateSent[msg.request];
     var after = plateWaiters[msg.request];
     delete plateWaiters[msg.request];
     if (msg.kind === 'slice') { if (!msg.ok) stopSlicing(); renderProject(); }
+    if (msg.kind === 'scale_to_fit' && msg.ok) stopSlicing(); // une découpe encore attendue ne doit pas bloquer celle d'après la réduction
+    // Découpe refusée parce que la pièce ne tient pas : dit tout de suite, avec la carte qui répare.
+    if (msg.kind === 'slice' && msg.reason === 'too_big') {
+      delete plateCounts[msg.request];
+      projectUI.sliceRefused = conv;
+      showTooBig({ msg: msg, reduced: false }, true);
+      record({ kind: 'note', text: msg.text, tone: 'error', icon: 'alert' });
+      if (after) after(false);
+      return;
+    }
     var text = Logic.plateText(msg, plateCounts[msg.request]);
     delete plateCounts[msg.request];
     var line = noteLine(text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert', 'guide');
@@ -2687,16 +2757,43 @@
     if (!msg.ok) { projectUI.reposing = false; noteLine((msg.text || 'Je n’ai pas pu poser cette pièce sur le plateau.') + ' Je prends les fichiers STL, 3MF, OBJ, STEP et AMF.', 'error', 'alert', 'guide'); return; }
     if (msg.adaptation) { syncProjectNames(msg.adaptation.saved); if (msg.name) conv.project.adapted = msg.name; } // adapté dès l'import : pas une deuxième fois
     if (tourSignals) tourSignals.objects = Math.max(tourSignals.objects || 0, 1); // sans attendre le prochain signal
-    if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
+    var old = projectUI.oldPart;
     projectUI.oldPart = null;
+    if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
     if (projectUI.reposing) { projectUI.reposing = false; renderProject(); noteLine('« ' + msg.name + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); }
-    if (projectUI.newProjectFile) {
-      projectUI.newProjectFile = false;
-      noteLine('L’ancienne pièce est toujours sur le plateau d’Orca : supprime-la avant de découper, un projet = une pièce.', 'warn', 'alert', 'guide');
-    }
+    projectUI.newProjectFile = false;
+    if (msg.replaced > 0) showReplaced(msg, old);
     var entry = record({ kind: 'model', msg: msg, reduced: false });
     renderModel(entry, false);
     if (msg.fits === false) showTooBig(entry);
+  }
+  // Nouveau projet : l'ancienne pièce a été retirée. La ligne et son « Annuler » restent visibles d'une étape à l'autre, jusqu'à la découpe.
+  function dropReplaced() { var b = $('project-alert').querySelector('.part-replaced'); if (b) b.remove(); }
+  function showReplaced(msg, old) {
+    dropReplaced();
+    var mine = conv, line = el('div', 'note-line part-replaced');
+    line.appendChild(icon('check', 14));
+    line.appendChild(el('span', 'note-text', PlyoProject.replacedText(old ? old.label : msg.replaced_name, msg.replaced)));
+    line.appendChild(undoButton('Annuler', function (b) {
+      plateAction('undo', function (ok) {
+        if (!ok) { b.disabled = false; return; }
+        line.remove();
+        if (conv !== mine) return;
+        // Retour à l'état d'avant le choix du fichier : l'ancienne pièce sur le plateau, la fiche qui attend une pièce.
+        conv.project.part = null;
+        delete conv.project.adapted;
+        delete conv.project.step;
+        delete conv.project.intent;
+        intentUI.idk = false;
+        dropTooBig();
+        projectUI.oldPart = old || { label: msg.replaced_name, name: msg.replaced_name, objects: msg.replaced };
+        projectChanged();
+        noteLine('« ' + projectUI.oldPart.label + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); // après le changement d'étape, qui efface les messages
+      }, { undo_token: msg.undo_token });
+    }));
+    plateUndoLinks.forEach(function (b) { b.remove(); });
+    plateUndoLinks = [line]; // un seul « Annuler » actif : une autre action sur le plateau le retire
+    $('project-alert').appendChild(line);
   }
   // Pièce trop grande : la carte reste dans l'étape en cours (elle survit au passage à l'étape suivante) jusqu'à ce que
   // tu réduises la pièce ou que tu gardes sa taille. La même carte est dans la discussion.
@@ -2709,15 +2806,18 @@
         scheduleSave();
         dropTooBig();
         if (tooBigChat) { tooBigChat(); tooBigChat = null; }
+        // La découpe avait été refusée pour cette taille : elle repart seule, le parcours reprend.
+        if (projectUI.sliceRefused === conv) { projectUI.sliceRefused = null; plateAction('slice'); }
       }
       done(ok);
     }, null, entry.msg.count);
   }
-  function showTooBig(entry) {
+  // `refused` : Orca ne découpera pas tant que la pièce a cette taille ; garder la taille n'est donc plus une issue.
+  function showTooBig(entry, refused) {
     var msg = entry.msg, printer = conv.project.printer;
     var other = printer ? PlyoMachines.machineThatFits(projectUI.printers, printer.preset, msg.size_mm) : null;
     dropTooBig();
-    var box = alertBox('warn', FS.modelAddedText(msg).text + (other ? ' Il tient sur ' + other.label + '.' : ''), 'alert');
+    var box = alertBox('warn', (refused ? 'Je n’ai pas lancé la découpe. ' : '') + FS.modelAddedText(msg).text + (other ? ' Il tient sur ' + other.label + '.' : ''), 'alert');
     box.classList.add('too-big');
     var acts = el('div', 'printer-actions');
     var reduce = button('Réduire pour qu’il tienne', function () {
@@ -2725,8 +2825,8 @@
       reducePart(entry, function (ok) { if (!ok) reduce.disabled = false; });
     }, 'btn ghost sm', 'wand');
     acts.appendChild(reduce);
-    if (other) acts.appendChild(button('Refaire la préparation sur ' + other.label, function () { dropTooBig(); projectHandlers.pickPrinter(other.preset, other.label); }, 'btn ghost sm'));
-    acts.appendChild(button('Garder cette taille', dropTooBig, 'link'));
+    if (other) acts.appendChild(button('Refaire la préparation sur ' + other.label, function () { dropTooBig(); projectUI.sliceRefused = null; projectHandlers.pickPrinter(other.preset, other.label); }, 'btn ghost sm'));
+    acts.appendChild(button(refused ? 'Fermer' : 'Garder cette taille', dropTooBig, 'link'));
     box.body.appendChild(acts);
     $('project-alert').appendChild(box);
     box.scrollIntoView({ block: 'nearest' });
@@ -2954,6 +3054,8 @@
       sheet.appendChild(row);
       return { radio: radio, row: row, s: s };
     });
+    // La liste vient du test posé : elle ne suit pas les carrés retirés ensuite du plateau.
+    if (msg.test === 'flow') sheet.appendChild(el('p', 'muted small', 'Si tu as retiré un carré du plateau, ne le choisis pas : il n’aura pas été imprimé.'));
     var status = el('div', 'status', 'Pas sûr ? Une fois le test imprimé, envoie-moi une photo : je t’aide à choisir.');
     sheet.appendChild(status);
     var footer = el('footer');
@@ -2983,6 +3085,7 @@
       action.textContent = fr(msg.test === 'flow' && msg.pass === 1 ? 'Lancer la passe fine' : 'Enregistrer ' + choice.label + ' pour ce filament');
       // Le choix fait, l'enregistrement devient l'action principale ; la photo reste possible en secondaire.
       photoBtn.classList.add('ghost');
+      back.scrollIntoView({ block: 'nearest' }); // « Remettre ma pièce » reste visible sous le nouveau bouton
     }
 
     function setPhotoButtons(enabled) { photoBtn.disabled = !enabled; phoneBtn.disabled = !enabled; }
@@ -3339,7 +3442,8 @@
     // Découpe faite et aucun risque : on passe à l'impression sans demander.
     if (!manual && currentTourStep() === 'slice' && data && data.sliced && data.objects && data.objects.length && PlyoJourney.afterPreflight(openRisks) === 'advance') {
       setTourStep('print'); // d'abord : le changement d'étape efface les messages de l'étape
-      noteLine('Pas de risque détecté : on passe à l’impression.', 'ok', 'check', 'guide');
+      var advance = PlyoJourney.advanceNote(risks.length); // une carte déjà ignorée compte : jamais « Pas de risque » avec un risque
+      noteLine(advance.text, advance.tone, advance.icon, 'guide');
     } else renderProject();
     // La carte doit se voir, surtout dans un panneau bas : son haut est amené dans la zone visible.
     if (risks.length && (manual || fresh.length) && viewUI.tab === 'guide' && $('preflight-slot').firstChild) scrollToAnswerTop($('preflight-slot').firstChild); // le badge « Voir la suite » invite à défiler jusqu'au bouton
@@ -3781,6 +3885,14 @@
     });
   }
 
+  // Chaque pièce imprimée ou exportée entre dans « Mes pièces », même sans question à l'IA.
+  function journalPart(outcome) {
+    var name = partName(conv), ctx = (lastValues && lastValues.context) || {};
+    if (!name) return;
+    window.orca.postMessage({ type: 'journal_add', conv: conv.id, parts: [name], printer: ctx.printer || '', filament: ctx.filament || '', problem: '', defect: '', thumb: '', outcome: outcome });
+    scheduleSave(); // « Conversation » rouvre le projet de cette pièce
+  }
+
   // Erreur : ce qui s'est passé et l'action suivante. La demande est gardée pour « Réessayer ».
   // `here` : l'erreur d'un clic s'affiche dans l'onglet ouvert ; sinon elle suit la conversation (avec la pastille).
   var hereError = null;
@@ -4122,7 +4234,11 @@
   sendButton.addEventListener('click', function () { send(noteInput.value); });
   // Entrée envoie, Maj + Entrée va à la ligne (pas pendant la saisie d'un caractère composé).
   // Le champ commence sur une ligne et grandit quand on écrit (six lignes au plus).
-  function growNote() { noteInput.style.height = 'auto'; noteInput.style.height = Math.min(noteInput.scrollHeight, 132) + 'px'; }
+  function growNote() {
+    noteInput.style.height = 'auto';
+    noteInput.style.height = Math.min(noteInput.scrollHeight, 132) + 'px';
+    $('note-hint').textContent = fr(Logic.noteHint(noteInput.value.length, noteInput.maxLength)); // près de la limite : le compteur, plutôt qu'un texte coupé sans le dire
+  }
   noteInput.addEventListener('input', growNote);
   noteInput.addEventListener('keydown', function (e) {
     if (Logic.isSendKey(e)) { e.preventDefault(); send(noteInput.value); }

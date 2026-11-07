@@ -80,7 +80,7 @@
     slot.textContent = '';
     var body = ui.el('div', 'project-body canvas-choices manual-form');
     if (opts.error) body.appendChild(ui.el('p', 'project-error', opts.error));
-    body.appendChild(ui.el('p', 'muted small', 'Dis-moi ce qui est chargé, tel que c’est sur ta machine. Je m’en souviens ici, sur cet ordinateur, et je te le rappelle la prochaine fois. Tu le sélectionneras toi-même sur l’imprimante.'));
+    body.appendChild(ui.el('p', 'muted small', 'Dis-moi ce qui est chargé, tel que c’est sur ta machine. Je m’en souviens ici, sur cet ordinateur, et je te le rappelle la prochaine fois. Tu le sélectionneras toi-même sur l’imprimante. Il me faut au moins la matière de chaque emplacement.'));
     var countRow = ui.el('label', 'canvas-row');
     countRow.appendChild(ui.el('span', 'canvas-colour', 'Combien ?'));
     var count = ui.el('select', 'field canvas-select');

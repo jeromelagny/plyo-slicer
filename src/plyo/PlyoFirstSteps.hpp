@@ -31,8 +31,14 @@ std::string best_filament(const std::string& type);
 bool select_filament(const std::string& name);
 
 // Bouton « Imprimer » du panneau : exactement comme « Imprimer la plaque » d'Orca (envoi à l'imprimante reliée, avec
-// la fenêtre de confirmation d'Orca), ou l'export du G-code si `export_file`. { ok, reason: "not_sliced" }
-nlohmann::json start_print(bool export_file);
+// la fenêtre de confirmation d'Orca). { ok, reason: "not_sliced" }
+nlohmann::json start_print();
+// Bouton « Exporter » : la fenêtre d'enregistrement d'Orca s'ouvre (dans cet appel), `done` n'est appelé qu'à la fin réelle :
+// { ok: true, path } fichier écrit ; { ok: false, cancelled: true } rien n'a été choisi ; { ok: false, reason, text } refus ou erreur.
+// Dossier proposé : le dernier choisi, sinon le Bureau, jamais le dossier interne des modèles posés par le panneau.
+void export_file(std::function<void(nlohmann::json)> done);
+// Appelé par Orca (Plater::priv::on_process_completed) à la fin d'un export.
+void on_export_done(bool finished, const std::string& error, const std::string& path);
 // Fiche d'un réglage : {key, label, tooltip, value, system_value, min, max, unit} (valeurs absentes : null).
 nlohmann::json explain(const std::string& key);
 // Appelé avec {key, label} quand l'utilisateur clique dans un champ d'un onglet de réglages.

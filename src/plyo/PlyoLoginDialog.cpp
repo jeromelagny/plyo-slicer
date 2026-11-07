@@ -15,7 +15,7 @@ namespace Plyo {
 LoginDialog::LoginDialog(wxWindow* parent)
     : WebViewHostDialog(parent, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxSYSTEM_MENU | wxCAPTION | wxCLOSE_BOX)
 {
-    if (!create_webview("web/plyo/login.html", wxString::FromUTF8("Connexion à Plyo"), wxSize(460, 440), wxSize(420, 400))) {
+    if (!create_webview("web/plyo/login.html", wxString::FromUTF8("Connexion à Plyo"), wxSize(460, 500), wxSize(420, 400))) {
         auto* sizer = new wxBoxSizer(wxVERTICAL);
         sizer->Add(new wxStaticText(this, wxID_ANY, wxS("wxWebView unavailable")), wxSizerFlags().Border(wxALL, FromDIP(20)));
         SetSizerAndFit(sizer);

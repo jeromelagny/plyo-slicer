@@ -1,5 +1,6 @@
 #include "PlyoModelImport.hpp"
 #include "PlyoFiles.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoPlateActions.hpp"
 #include "PlyoProject.hpp"
 
@@ -9,6 +10,7 @@
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/Utils/UndoRedo.hpp"
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/beast/core/detail/base64.hpp>
@@ -49,7 +51,7 @@ nlohmann::json size_of(const Slic3r::Vec3d& v)
 
 } // namespace
 
-nlohmann::json add(const std::string& name, const std::string& base64, const nlohmann::json& project)
+nlohmann::json add(const std::string& name, const std::string& base64, const nlohmann::json& project, bool replace)
 {
     const std::string file = safe_name(name);
     if (file.empty())
@@ -74,9 +76,21 @@ nlohmann::json add(const std::string& name, const std::string& base64, const nlo
         return {{"ok", false}, {"text", "Plateau indisponible."}};
     if (auto* frame = wxGetApp().mainframe)
         frame->select_tab(TAB_ID_PREPARE);
-    const std::vector<size_t> added = plater->load_files({path}, Slic3r::LoadStrategy::LoadModel);
-    if (added.empty())
+    // Nouveau projet : l'ancienne pièce part et la nouvelle arrive en une seule étape d'annulation (comme un Cmd+Z).
+    const size_t      replaced      = replace ? plater->model().objects.size() : 0;
+    const std::string replaced_name = replaced > 0 ? plater->model().objects.front()->name : std::string();
+    std::vector<size_t> added;
+    if (replaced > 0) {
+        Slic3r::GUI::Plater::TakeSnapshot snapshot(plater, "Plyo: nouvelle pièce");
+        plater->delete_all_objects_from_model();
+        added = plater->load_files({path}, Slic3r::LoadStrategy::LoadModel);
+    } else
+        added = plater->load_files({path}, Slic3r::LoadStrategy::LoadModel);
+    if (added.empty()) {
+        if (replaced > 0)
+            plater->undo(); // le fichier ne s'ouvre pas : l'ancienne pièce revient
         return {{"ok", false}, {"text", "Orca n'a pas pu ouvrir « " + fs::path(name).filename().string() + " »."}};
+    }
 
     Slic3r::BoundingBoxf3 box;
     for (size_t idx : added)
@@ -89,6 +103,11 @@ nlohmann::json add(const std::string& name, const std::string& base64, const nlo
     BOOST_LOG_TRIVIAL(info) << "Plyo: modèle joint posé sur le plateau : " << path.string();
     nlohmann::json result = {{"ok", true}, {"name", fs::path(name).filename().string()}, {"count", added.size()},
                              {"size_mm", size_of(size)}, {"bed_mm", size_of(bed)}, {"fits", fits}};
+    if (replaced > 0) {
+        result["replaced"]      = replaced;
+        result["replaced_name"] = Json::utf8_prefix(replaced_name, 120);
+        result["undo_token"]    = static_cast<long long>(plater->undo_redo_stack_main().active_snapshot_time());
+    }
     // Un 3MF arrive avec les réglages de son auteur : on les adapte à l'imprimante et au filament du projet.
     if (boost::algorithm::to_lower_copy(path.extension().string()) == ".3mf") {
         s_last_3mf = path.string();

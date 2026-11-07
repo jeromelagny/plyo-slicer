@@ -22,7 +22,8 @@
       slot.appendChild(card);
       return;
     }
-    var icons = { printer: 'wifi', filament: 'palette', part: 'cube' };
+    // Le Wi-Fi seulement pour une machine reliée : les autres passent par un fichier.
+    var icons = { printer: ctx.linked ? 'wifi' : 'printer', filament: 'palette', part: 'cube' };
     rows.forEach(function (row) {
       var r = ui.el('div', 'project-row');
       var left = ui.el('div', 'project-label');
@@ -186,7 +187,7 @@
       pacts.appendChild(ui.button('Choisir un fichier', h.importPart, 'btn ghost sm', 'folder'));
       body.appendChild(pacts);
       if (ctx.oldPart) {
-        body.appendChild(ui.el('p', 'muted small', '« ' + ctx.oldPart + ' », la pièce de ton projet précédent, est encore sur le plateau d’Orca.'));
+        body.appendChild(ui.el('p', 'muted small', '« ' + ctx.oldPart + ' », la pièce de ton projet précédent, est encore sur le plateau d’Orca. Si tu choisis un fichier, elle sera retirée, et tu pourras annuler.'));
         body.appendChild(ui.button('Garder cette pièce', h.keepOldPart, 'link'));
       }
     }

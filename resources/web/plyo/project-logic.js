@@ -73,7 +73,15 @@
     return 'Je n’ai pas trouvé de profil ' + type + ' pour cette imprimante. Choisis un autre filament.';
   }
 
-  var api = { filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  // Choisir un fichier remplace ce qui reste du projet précédent : jamais une pièce déjà dans la fiche (reprise, pièce à reposer).
+  function replacesPlate(project, oldPart, newProjectFile) {
+    return !chosen(project && project.part, 'name') && !!(oldPart || newProjectFile);
+  }
+  function replacedText(name, count) {
+    return count > 1 ? 'Les ' + count + ' pièces d’avant sont retirées du plateau.' : '« ' + (name || 'L’ancienne pièce') + ' » retirée du plateau.';
+  }
+
+  var api = { replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

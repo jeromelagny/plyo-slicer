@@ -86,7 +86,7 @@ test('la barre passe en pastilles sous 340 px et la fiche se réduit sur fenêtr
 });
 
 test('ficheSummary omet les parties absentes', () => {
-  assert.equal(J.ficheSummary(full()), 'Centauri Carbon 2 · flexyring.stl · PLA 215/60');
+  assert.equal(J.ficheSummary(full()), 'Centauri Carbon 2 · flexyring.stl · PLA');
   const partial = J.ficheSummary({ printer: printer });
   assert.equal(partial, 'Centauri Carbon 2');
   assert.ok(!/undefined|null/.test(J.ficheSummary(null)));
@@ -226,7 +226,7 @@ test('la fiche montre l’emplacement choisi sur le Canvas, avec sa couleur', ()
   const row = J.filledRows(one).find((r) => r.line === 'filament');
   assert.ok(row.text.startsWith('PLA') && row.text.endsWith('· emplacement 2'), row.text);
   assert.equal(row.swatch, '#FFFFFF');
-  assert.ok(J.ficheSummary(one).includes('emplacement 2'));
+  assert.ok(J.ficheSummary(one).includes('n° 2'));
   const two = full({ canvas: [{ t: 0, tray_id: 1, type: 'PLA', color: '#FFFFFF' }, { t: 1, tray_id: 3, type: 'PLA', color: '#2850DF' }] });
   assert.equal(J.filledRows(two).find((r) => r.line === 'filament').text, 'PLA · 2 emplacements');
   assert.equal(J.filledRows(full()).find((r) => r.line === 'filament').text, 'PLA');
@@ -308,7 +308,7 @@ test('fiche : le numéro affiché est celui du traducteur, tray_id + 1 pour un p
 
 test('une carte d’emplacements saisie sans numéro lisible ne casse pas la fiche', () => {
   const base = { printer: { preset: 'p' }, part: { name: 'x' }, filament: { type: 'PLA', preset: 'f' } };
-  assert.equal(J.ficheSummary({ ...base, canvas: [{ t: 0, tray_id: 3, label: 'Ext', color: '' }] }), 'p · x · PLA · emplacement Ext');
+  assert.equal(J.ficheSummary({ ...base, canvas: [{ t: 0, tray_id: 3, label: 'Ext', color: '' }] }), 'p · x · PLA · n° Ext');
 });
 
 test('U1 : on parle de têtes', () => {

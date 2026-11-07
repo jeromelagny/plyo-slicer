@@ -14,6 +14,28 @@ BY_KEY = {e["key"]: e for e in CATALOG["entries"]}
 
 
 class ParsingTest(unittest.TestCase):
+    def test_choix_ecrits_avec_emplace_back(self):
+        text = '''
+    def = this->add("demo_type", coEnum);
+    def->label = L("Demo");
+    def->enum_values.emplace_back("a");
+    def->enum_values.push_back("b");
+    def->enum_labels.emplace_back(L("Choix A"));
+    def->enum_labels.push_back(L("Choix B"));
+    def = this->add("autre", coFloat);
+'''
+        d = g.parse_definitions(text)["demo_type"]
+        self.assertEqual(d["values"], ["a", "b"])
+        self.assertEqual(d["value_labels"], ["Choix A", "Choix B"])
+
+    def test_type_de_bordure_limite_aux_choix_autorises(self):
+        self.assertEqual(BY_KEY["brim_type"]["values"], ["auto_brim", "outer_only", "no_brim"])
+        self.assertEqual(BY_KEY["brim_type"]["values_fr"][0], "Auto")
+
+    def test_reglages_a_decider_restent_hors_catalogue(self):
+        for key in POLICY["pending_keys"]:
+            self.assertNotIn(key, BY_KEY)
+
     def test_definition_complete(self):
         text = '''
     def = this->add("fan_cooling_layer_time", coFloats);

@@ -18,11 +18,15 @@
   }
 
   // Que demander au début d'une impression ? `printers` : liste du slicer ; `ctx` : { orcaPreset, lastPreset, hidden }.
-  // setup = aucune machine reliée ; auto = une seule (choisie sans question) ; confirm = plusieurs (confirmation en un toucher).
+  // setup = rien de reconnu (aucune reliée, et zéro ou plusieurs non reliées : la liste répond) ; auto = une seule (choisie sans
+  // question, `changer` reste dans la fiche), reliée ou non ; confirm = plusieurs reliées (confirmation en un toucher).
   function machineQuestion(printers, ctx) {
-    var c = ctx || {}, hidden = c.hidden || [];
-    var machines = J.groupPrinters(printers).main.filter(function (m) { return hidden.indexOf(m.preset) < 0; });
-    if (!machines.length) return { mode: 'setup', machine: null };
+    var c = ctx || {}, hidden = c.hidden || [], visible = function (m) { return hidden.indexOf(m.preset) < 0; };
+    var groups = J.groupPrinters(printers), machines = groups.main.filter(visible);
+    if (!machines.length) {
+      var others = groups.others.filter(visible);
+      return others.length === 1 ? { mode: 'auto', machine: others[0] } : { mode: 'setup', machine: null };
+    }
     if (machines.length === 1) return { mode: 'auto', machine: machines[0] };
     var pick = function (preset) { return machines.filter(function (m) { return m.preset === preset; })[0]; };
     return { mode: 'confirm', machine: pick(c.orcaPreset) || pick(c.lastPreset) || machines[0] };
@@ -65,10 +69,10 @@
   }
 
   // Pièce trop grande pour la machine choisie : une autre machine reliée dont le plateau (mm) l'accepte, sinon null.
-  // `size` : [x, y, z] de la pièce ; un plateau accepte la pièce à plat, dans un sens ou dans l'autre.
+  // `size` : [x, y, z] de la pièce ; un plateau accepte la pièce à plat, dans un sens ou dans l'autre, et la hauteur si elle est connue.
   function machineThatFits(printers, currentPreset, size) {
     if (!Array.isArray(printers) || !Array.isArray(size)) return null;
-    var fits = function (bed) { return Array.isArray(bed) && ((size[0] <= bed[0] && size[1] <= bed[1]) || (size[1] <= bed[0] && size[0] <= bed[1])); };
+    var fits = function (bed) { return Array.isArray(bed) && ((size[0] <= bed[0] && size[1] <= bed[1]) || (size[1] <= bed[0] && size[0] <= bed[1])) && !(bed[2] > 0 && size[2] > bed[2]); };
     var current = printers.filter(function (p) { return p.preset === currentPreset; })[0];
     if (current && fits(current.bed_mm)) return null;
     var found = printers.filter(function (p) { return p.preset !== currentPreset && p.linked && fits(p.bed_mm); })[0];

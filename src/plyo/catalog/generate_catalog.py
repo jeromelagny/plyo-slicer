@@ -57,8 +57,8 @@ def parse_definitions(text):
         for field in ("min", "max"):
             n = re.search(r"def->" + field + r"\s*=\s*(-?\d+(?:\.\d+)?)\s*;", block)
             d[field] = float(n.group(1)) if n else None
-        d["values"] = [unescape(v) for v in re.findall(r'def->enum_values\.push_back\("((?:[^"\\]|\\.)*)"\)', block)]
-        d["value_labels"] = ["".join(literals(v)) for v in re.findall(r"def->enum_labels\.push_back\((.*?)\);", block)]
+        d["values"] = [unescape(v) for v in re.findall(r'def->enum_values\.(?:push_back|emplace_back)\("((?:[^"\\]|\\.)*)"\)', block)]
+        d["value_labels"] = ["".join(literals(v)) for v in re.findall(r"def->enum_labels\.(?:push_back|emplace_back)\((.*?)\);", block)]
         out[m.group(1)] = d
     return out
 
@@ -148,9 +148,16 @@ def generate(root):
                 reason = "type non écrivable"
             elif kind == "enum" and not d["values"]:
                 reason = "choix inconnus"
+            elif key in policy.get("pending_keys", []):
+                reason = "à décider"
             if reason:
                 excluded[reason] = excluded.get(reason, 0) + 1
                 continue
+            # Choix limités par la politique : seules ces valeurs sont proposables à l'assistant.
+            allowed = policy.get("allowed_values", {}).get(key)
+            if allowed:
+                pairs = [(v, l) for v, l in zip(d["values"], d["value_labels"]) if v in allowed]
+                d = {**d, "values": [v for v, _ in pairs], "value_labels": [l for _, l in pairs]}
             source = d["full_label"] or d["label"]
             label = t(source) if source else key
             entries.append({

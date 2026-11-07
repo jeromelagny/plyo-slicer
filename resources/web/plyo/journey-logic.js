@@ -42,7 +42,7 @@
     if (c.canvas) {
       var cv = c.canvas;
       if (cv.mode === 'recall') return { label: 'Oui', kind: 'manualYes', enabled: true };
-      if (cv.mode === 'manual') return { label: 'Garder ces emplacements', kind: 'manualSave', enabled: true };
+      if (cv.mode === 'manual') return { label: 'Garder ces emplacements', kind: 'manualSave', enabled: cv.complete !== false };
       if (cv.mode === 'single' && cv.proposal) return { label: cv.system === 'u1' ? 'Oui, la t' + cv.proposal.label.slice(1) : 'Oui, l’emplacement ' + cv.proposal.label, kind: 'confirmCanvas', enabled: true };
       if (cv.mode === 'multi') return { label: cv.system === 'u1' ? 'Utiliser ces têtes' : 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
       return { label: '', kind: 'none', enabled: false };
@@ -108,7 +108,17 @@
     }
   }
 
+  // Choisir une matière peut changer le profil de filament d'Orca : on le dit, un profil modifié ou de marque n'est plus celui utilisé.
+  function profileChangeNote(before, after) {
+    if (!before || !after || baseName(before) === baseName(after)) return '';
+    return 'Profil de filament changé dans Orca : « ' + before + ' » devient « ' + after + ' ».';
+  }
   function afterPreflight(risks) { return risks === 0 ? 'advance' : 'stay'; }
+  // Message au passage à l'impression : « Pas de risque » seulement si la vérification n'a rien trouvé, même ignoré.
+  function advanceNote(allRisks) {
+    return allRisks > 0 ? { text: 'Tu as ignoré des points signalés : on passe à l’impression, à toi de voir.', tone: 'warn', icon: 'alert' }
+      : { text: 'Pas de risque détecté : on passe à l’impression.', tone: 'ok', icon: 'check' };
+  }
 
   function presetOf(project, key) { return project && project[key] && project[key].preset ? project[key].preset : ''; }
 
@@ -150,13 +160,11 @@
 
   function ficheSummary(project) {
     var p = project || {}, parts = [];
-    if (p.printer && (p.printer.name || p.printer.preset)) parts.push(p.printer.name || p.printer.preset);
+    // Tenir sur une ligne : ni buse, ni mot « emplacement » coupé, ni températures en chiffres (elles sont dans la fiche dépliée).
+    if (p.printer && (p.printer.name || p.printer.preset)) parts.push(String(p.printer.name || p.printer.preset).replace(/\s+\d+(\.\d+)?\s*nozzle$/i, ''));
     if (p.part && p.part.name) parts.push(shortName(p.part.name));
-    if (p.filament && p.filament.type && Array.isArray(p.canvas) && p.canvas.length) parts.push(filamentRow(p).text);
-    else if (p.filament && p.filament.type) {
-      var temps = p.filament.nozzle_temp != null && p.filament.bed_temp != null ? ' ' + p.filament.nozzle_temp + '/' + p.filament.bed_temp : '';
-      parts.push(p.filament.type + temps);
-    }
+    if (p.filament && p.filament.type && Array.isArray(p.canvas) && p.canvas.length) parts.push(filamentRow(p).text.replace(/ · emplacement /, ' · n° ').replace(/ · (\d+) emplacements$/, ' · $1 bobines'));
+    else if (p.filament && p.filament.type) parts.push(p.filament.type);
     return parts.join(' · ');
   }
 
@@ -248,8 +256,8 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
-    afterPreflight: afterPreflight, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
+  var api = { profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+    afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

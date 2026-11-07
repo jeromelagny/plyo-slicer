@@ -72,7 +72,7 @@ test('le panneau a deux onglets, et les messages d’étape vont dans le Guide',
   assert.ok(page.includes('id="view-guide"') && page.includes('id="view-chat"'), 'deux vues');
   assert.ok(page.includes('id="guide-notes"'), 'messages d’étape');
   assert.ok(/function noteLine\(text, tone, iconName, where\)/.test(page), 'noteLine accepte une destination');
-  for (const text of ['Je pose « \' + file.name', 'Pas de risque détecté', 'Orca te demande de confirmer'])
+  for (const text of ['Je pose « \' + file.name', 'advance.text', 'Orca te demande de confirmer'])
     assert.ok(new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^\\n]*\'guide\'').test(page), text + ' dans le Guide');
 });
 
@@ -242,7 +242,7 @@ test('Résultat n’est pas une impasse : on peut réimprimer, et « démarré �
   assert.ok(read('journey-steps.js').includes('Réimprimer cette pièce'));
   const page = read('index.html');
   assert.ok(/reprint: function \(\) \{[^}]*setTourStep\(/.test(page));
-  assert.ok(/if \(step !== 'imprimer'\) projectUI\.sentConv = null/.test(page));
+  assert.ok(/if \(step !== 'imprimer'\) \{ projectUI\.sentConv = null;/.test(page));
   assert.ok(page.includes('retourne à l’onglet « Étapes »') && page.includes('id="tab-guide"'), 'le renvoi vise un onglet qui existe');
 });
 
@@ -368,7 +368,7 @@ test('comportements : brouillon gardé, demande remise si la jauge est pleine, m
   const page = read('index.html');
   assert.ok(/function clearNoteIfSent\(note\) \{ if \(noteInput\.value\.trim\(\) === note\)/.test(page));
   assert.ok(/code === 'insufficient_credits' && !noteInput\.value/.test(page));
-  assert.ok(page.indexOf("setTourStep('print'); // d'abord") < page.indexOf('Pas de risque détecté : on passe'), 'message après le changement d’étape');
+  assert.ok(page.indexOf("setTourStep('print'); // d'abord") < page.indexOf('PlyoJourney.advanceNote(risks.length)'), 'message après le changement d’étape');
   assert.ok(/skip: function \(\) \{ \$\('preflight-slot'\)\.textContent = ''/.test(page));
   assert.ok(read('project-card.js').includes('Garder ce filament'));
 });

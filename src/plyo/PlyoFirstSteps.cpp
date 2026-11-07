@@ -8,6 +8,7 @@
 #include "PlyoWelcomeDialog.hpp"
 #include "PlyoPrinterSetup.hpp"
 
+#include "libslic3r/AppConfig.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/PresetBundle.hpp"
@@ -26,6 +27,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/log/trivial.hpp>
 
+#include <wx/stdpaths.h>
 #include <wx/timer.h>
 #include <wx/toplevel.h>
 
@@ -360,7 +362,75 @@ bool select_filament(const std::string& name)
     return true;
 }
 
-nlohmann::json start_print(bool export_file)
+namespace {
+
+std::function<void(nlohmann::json)> s_export_done; // export en cours : qui prévenir à sa fin
+
+// Orca propose le dernier dossier d'export, à défaut celui du projet, qui est ici le dossier interne des modèles posés
+// par le panneau (plyo/modeles). On lui donne le Bureau à la place, sans toucher à un dossier choisi par l'utilisateur.
+void prefer_user_folder()
+{
+    Slic3r::AppConfig& config  = *wxGetApp().app_config;
+    const std::string  current = config.get_last_output_dir(std::string(), false);
+    const std::string  inner   = (fs::path(Slic3r::data_dir()) / "plyo").string();
+    if (!current.empty() && current.rfind(inner, 0) != 0)
+        return;
+    const std::string desktop = wxStandardPaths::Get().GetUserDir(wxStandardPaths::Dir_Desktop).ToUTF8().data();
+    boost::system::error_code ec;
+    if (!desktop.empty() && fs::is_directory(desktop, ec))
+        config.update_last_output_dir(desktop, false);
+}
+
+} // namespace
+
+void export_file(std::function<void(nlohmann::json)> done)
+{
+    auto* plater = wxGetApp().plater();
+    if (plater == nullptr) {
+        done({{"ok", false}});
+        return;
+    }
+    Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
+    if (plate == nullptr || !plate->is_slice_result_valid()) {
+        done({{"ok", false}, {"reason", "not_sliced"}});
+        return;
+    }
+    if (s_export_done || plater->is_export_gcode_scheduled()) {
+        done({{"ok", false}, {"reason", "busy"}, {"text", "Un export est déjà en cours : attends qu'il se termine."}});
+        return;
+    }
+    prefer_user_folder();
+    s_export_done = std::move(done);
+    plater->export_gcode(false); // ouvre la fenêtre d'enregistrement et ne revient qu'à sa fermeture
+    // Rien de programmé : fenêtre annulée, ou plaque refusée par Orca (qui l'a dit dans sa propre fenêtre).
+    if (s_export_done && !plater->is_export_gcode_scheduled()) {
+        auto waiting = std::move(s_export_done);
+        s_export_done = nullptr;
+        waiting({{"ok", false}, {"cancelled", true}});
+    }
+}
+
+void on_export_done(bool finished, const std::string& error, const std::string& path)
+{
+    if (!s_export_done)
+        return; // export lancé depuis les menus d'Orca
+    auto waiting = std::move(s_export_done);
+    s_export_done = nullptr;
+    if (!finished) {
+        if (error.empty())
+            waiting({{"ok", false}, {"cancelled", true}}); // arrêté par « Annuler » d'Orca
+        else
+            waiting({{"ok", false}, {"reason", "error"}, {"text", Json::utf8_prefix(error, 400)}});
+        return;
+    }
+    // Orca peut renommer le fichier en le finalisant : si ce nom n'existe pas, on ne cite que le dossier.
+    boost::system::error_code ec;
+    const fs::path written(path);
+    waiting({{"ok", true}, {"folder", written.parent_path().string()},
+             {"file", fs::exists(written, ec) ? written.filename().string() : std::string()}});
+}
+
+nlohmann::json start_print()
 {
     auto* frame  = wxGetApp().mainframe;
     auto* plater = wxGetApp().plater();
@@ -369,10 +439,6 @@ nlohmann::json start_print(bool export_file)
     Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
     if (plate == nullptr || !plate->is_slice_result_valid())
         return {{"ok", false}, {"reason", "not_sliced"}};
-    if (export_file) {
-        wxPostEvent(plater, Slic3r::GUI::SimpleEvent(Slic3r::GUI::EVT_GLTOOLBAR_EXPORT_GCODE));
-        return {{"ok", true}};
-    }
     // Même chemin que le bouton « Imprimer la plaque » (MainFrame) : Orca vérifie la plaque et ouvre sa confirmation.
     plater->apply_background_progress();
     if (!frame->get_enable_print_status())

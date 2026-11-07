@@ -1,5 +1,6 @@
 #include "Plater.hpp"
 #include "plyo/PlyoAssistant.hpp" // PLYO: prévenir le panneau Assistant d'un nouveau projet
+#include "plyo/PlyoFirstSteps.hpp" // PLYO: fin réelle d'un export demandé par le panneau, voir on_process_completed()
 #include "plyo/PlyoCanvas.hpp" // PLYO: envoi armé par le panneau, voir send_gcode_legacy
 #include "../Utils/NetworkAgent.hpp"
 #include "IPrinterAgent.hpp"
@@ -13367,6 +13368,9 @@ void Plater::priv::on_process_completed(SlicingProcessCompletedEvent &evt)
     this->background_process.stop();
     notification_manager->set_slicing_progress_export_possible();
 
+    // PLYO: le panneau Assistant attend la fin réelle de l'export (fichier écrit, ou erreur) pour le dire.
+    if (this->background_process.is_export_scheduled())
+        Plyo::FirstSteps::on_export_done(evt.success(), evt.error() ? evt.format_error_message().first : std::string(), last_output_path);
     // Reset the "export G-code path" name, so that the automatic background processing will be enabled again.
     this->background_process.reset_export();
     // This bool stops showing export finished notification even when process_completed_with_error is false

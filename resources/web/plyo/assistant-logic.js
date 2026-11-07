@@ -87,7 +87,7 @@
   var ERRORS = {
     insufficient_credits: { text: 'Ta jauge du mois est pleine : je ne peux pas lancer de nouvelle demande pour l’instant.', action: 'credits' },
     unauthorized: { text: 'Ta session a expiré : reconnecte-toi, ta demande est gardée.', action: 'login' },
-    network: { text: 'Je n’arrive pas à joindre le service Plyo. Vérifie ta connexion à Internet, puis réessaie.', action: 'retry' },
+    network: { text: 'Le service Plyo ne répond pas. Vérifie ta connexion ou réessaie plus tard.', action: 'retry' },
     timeout: { text: 'La réponse prend trop de temps. Réessaie : ta demande est gardée. Ce que l’IA a déjà fait peut compter sur ta jauge.', action: 'retry' },
     upstream_error: { text: 'L’IA est momentanément indisponible. Réessaie dans un instant.', action: 'retry' },
     assistant_unavailable: { text: 'Je n’ai pas pu répondre à cette demande. Essaie de la formuler autrement.', action: 'retry' },
@@ -223,8 +223,15 @@
 
   // Statut affiché en pastille dans « Mes pièces ».
   function journalStatus(e) {
-    if (!e.changes || !e.changes.length) return { label: 'Sans réglage', tone: '' };
+    if (!e.changes || !e.changes.length) return e.outcome === 'ok' ? { label: 'Réussi', tone: 'ok' } : { label: 'Sans réglage', tone: '' };
     return e.outcome === 'ok' ? { label: 'Réussi', tone: 'ok' } : e.outcome === 'bad' ? { label: 'Pas réglé', tone: 'bad' } : { label: 'En attente', tone: 'warn' };
+  }
+
+  // Ligne d'une fiche : le défaut vu par l'IA, sinon ce qu'il s'est passé (pièce notée à l'export ou à « réussi », sans question).
+  function journalProblem(e) {
+    if (e.problem) return e.problem;
+    if (e.defect) return 'Question à l’assistant';
+    return e.outcome === 'ok' ? 'Imprimée, réussie' : 'Fichier préparé pour l’impression';
   }
 
   // Nom court de la machine pour une liste étroite : « Bambu Lab A1 0.4 nozzle » + « Bambu PLA Basic » →
@@ -243,7 +250,10 @@
   // Réglages à réappliquer (valeurs d'après), seulement pour l'imprimante et le filament où ils ont été trouvés,
   // et jamais s'ils n'ont pas réglé le problème.
   function reapplyChanges(e, context) {
-    if (!e.changes || !e.changes.length || e.outcome === 'bad' || !context || context.printer !== e.printer || context.filament !== e.filament) return null;
+    if (!e.changes || !e.changes.length || e.outcome === 'bad' || !context) return null;
+    // Orca passe sur la copie « (Plyo) » juste après une application : c'est le même profil.
+    var base = (root.PlyoJourney || require('./journey-logic.js')).baseName;
+    if (base(context.printer) !== base(e.printer) || base(context.filament) !== base(e.filament)) return null;
     return e.changes.map(function (c) { return { id: c.id, value: c.after }; });
   }
 
@@ -294,6 +304,26 @@
   };
   function plateText(msg, count) {
     return msg.ok && count === 1 && SINGULAR[msg.kind] ? SINGULAR[msg.kind] : msg.text;
+  }
+
+  // Sous le champ de question : le rappel d'Entrée, et le compteur à l'approche de la limite (le texte ne s'allonge plus au-delà).
+  function noteHint(length, max) {
+    return max > 0 && length >= max - 50 ? length + ' / ' + max + ' caractères' : 'Entrée pour envoyer';
+  }
+
+  // Fin réelle d'un export : où est le fichier, et la suite. Sans nom (renommé par Orca), le dossier seul.
+  function exportedText(msg, note) {
+    var where = (msg.file ? '« ' + msg.file + ' »' : 'Le fichier') + ' est enregistré dans ' + (msg.folder || 'le dossier choisi') + '.';
+    return where + ' Copie-le sur ta clé USB ou ta carte SD, puis lance-le depuis l’écran de ton imprimante.' + (note ? ' ' + note : '');
+  }
+
+  // Une action refusée vaut d'être relancée seule : Orca range encore le plateau (busy), ou la réduction n'a rien changé parce que la
+  // vue revenait d'une plaque refusée (un second essai réduit, vu en simulation). 0 : on s'arrête, le refus est affiché.
+  function plateRetryDelay(msg, tries) {
+    if (!msg || msg.ok) return 0;
+    if (msg.reason === 'busy' && msg.kind !== 'undo' && tries < 20) return 500;
+    if (msg.reason === 'no_effect' && msg.kind === 'scale_to_fit' && tries < 1) return 600;
+    return 0;
   }
 
   // Étages d'une tour de calibration (reçus du bas vers le haut) montrés comme on tient la tour : le haut en
@@ -420,7 +450,7 @@
     return box.bottom - port.bottom > 24;
   }
 
-  var api = { moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, savedText: savedText, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, savedText: savedText, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

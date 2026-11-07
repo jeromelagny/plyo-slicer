@@ -114,6 +114,8 @@ nlohmann::json printers()
                 y0 = std::min(y0, pt.y()); y1 = std::max(y1, pt.y());
             }
             item["bed_mm"] = {std::round(x1 - x0), std::round(y1 - y0)};
+            if (const auto* height = preset.config.option<Slic3r::ConfigOptionFloat>("printable_height"))
+                item["bed_mm"].push_back(std::round(height->value)); // une pièce trop haute ne tient pas non plus
         }
         out.push_back(item);
     }
