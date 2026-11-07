@@ -1520,7 +1520,9 @@
       habits = PlyoMachines.noteIntent(habits, false);
       saveHabits();
       projectChanged();
-      noteLine(again ? 'J’ai réappliqué tes choix sur cette machine. Je prépare l’impression.' : 'Réglages appliqués. Je prépare l’impression.', 'ok', 'check', 'guide');
+      // Une seule ligne, même si le filament change plusieurs fois de suite.
+      if (intentUI.doneLine) intentUI.doneLine.remove();
+      intentUI.doneLine = noteLine(again ? 'J’ai réappliqué tes choix sur cette machine. Je prépare l’impression.' : 'Réglages appliqués. Je prépare l’impression.', 'ok', 'check', 'guide');
       plateAction('slice');
     }
     if (!st.changes.length) { done(); return; }

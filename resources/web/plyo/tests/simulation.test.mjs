@@ -276,3 +276,7 @@ test('M8 : compteur de caractères près de la limite du champ', () => {
   assert.equal(L.noteHint(500, 500), '500 / 500 caractères');
   assert.match(read('index.html'), /noteInput\.addEventListener\('input', growNote\)/);
 });
+
+test('M9 : « J’ai réappliqué tes choix » remplace la ligne précédente', () => {
+  assert.match(read('index.html'), /if \(intentUI\.doneLine\) intentUI\.doneLine\.remove\(\);\n\s+intentUI\.doneLine = noteLine\(again/);
+});
