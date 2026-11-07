@@ -206,8 +206,8 @@ nlohmann::json flow_test(int pass, double base_value)
             tab->load_config(cfg);
     }
     const double   base     = pass == 2 && base_value > 0 ? base_value : ratio->values.front();
-    nlohmann::json sections = nlohmann::json::array();
-    int            i        = 0;
+    struct Square { double mod; std::string modifier; double value; };
+    std::vector<Square> squares;
     for (const Slic3r::ModelObject* obj : plater()->model().objects) {
         // Noms « flowrate_m5 », « flowrate_10 » : même lecture que Plater::calib_flowrate.
         if (obj->name.size() <= 9)
@@ -220,9 +220,14 @@ nlohmann::json flow_test(int pass, double base_value)
         in.imbue(std::locale::classic());
         if (!(in >> mod))
             continue;
-        const double value = std::round(base * (1.0 + mod / 100.0) * 1000.0) / 1000.0;
-        sections.push_back(section(i++, "carré « " + modifier + " » (" + number(value, 3) + ")", value));
+        squares.push_back({mod, modifier, std::round(base * (1.0 + mod / 100.0) * 1000.0) / 1000.0});
     }
+    // Rangés par valeur : Orca les crée dans un ordre qui ne se lit pas (20, 5, -10, -15, -20, -5).
+    std::sort(squares.begin(), squares.end(), [](const Square& a, const Square& b) { return a.mod < b.mod; });
+    nlohmann::json sections = nlohmann::json::array();
+    int            i        = 0;
+    for (const Square& square : squares)
+        sections.push_back(section(i++, "carré « " + square.modifier + " » (" + number(square.value, 3) + ")", square.value));
     if (sections.size() < 2)
         return {{"ok", false}, {"text", "Les carrés de débit n'ont pas pu être préparés."}};
     return {{"sections", sections},

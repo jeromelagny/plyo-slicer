@@ -235,3 +235,9 @@ test('F8 : l’icône Wi-Fi seulement pour une machine reliée', () => {
 test('M1 : la liste des carrés dit qu’un carré retiré ne compte pas', () => {
   assert.match(read('index.html'), /msg\.test === 'flow'\) sheet\.appendChild\(el\('p', 'muted small', 'Si tu as retiré un carré/);
 });
+
+test('M2 : les carrés de calibration sont rangés par valeur', () => {
+  const c = cpp('PlyoCalibration.cpp');
+  const flow = c.slice(c.indexOf('nlohmann::json flow_test'), c.indexOf('nlohmann::json retraction_test'));
+  assert.ok(flow.indexOf('std::sort(squares') < flow.indexOf('sections.push_back'), 'triés avant d’être numérotés');
+});
