@@ -3049,6 +3049,8 @@
       sheet.appendChild(row);
       return { radio: radio, row: row, s: s };
     });
+    // La liste vient du test posé : elle ne suit pas les carrés retirés ensuite du plateau.
+    if (msg.test === 'flow') sheet.appendChild(el('p', 'muted small', 'Si tu as retiré un carré du plateau, ne le choisis pas : il n’aura pas été imprimé.'));
     var status = el('div', 'status', 'Pas sûr ? Une fois le test imprimé, envoie-moi une photo : je t’aide à choisir.');
     sheet.appendChild(status);
     var footer = el('footer');

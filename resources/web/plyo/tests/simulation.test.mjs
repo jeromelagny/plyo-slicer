@@ -231,3 +231,7 @@ test('F8 : l’icône Wi-Fi seulement pour une machine reliée', () => {
   assert.match(page, /\n\s+printer: '<path/, 'l’icône existe');
   assert.ok(!/Ma machine n’est pas dans la liste', icon: 'wifi'/.test(page));
 });
+
+test('M1 : la liste des carrés dit qu’un carré retiré ne compte pas', () => {
+  assert.match(read('index.html'), /msg\.test === 'flow'\) sheet\.appendChild\(el\('p', 'muted small', 'Si tu as retiré un carré/);
+});
