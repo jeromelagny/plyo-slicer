@@ -193,9 +193,11 @@
     return out;
   }
   function manualCount(state) { return trays(state).length || 2; }
+  // « Garder » : une matière pour chaque emplacement (la couleur reste facultative).
+  function manualComplete(draft, count) { return draft.slice(0, count).every(function (d) { return !!d.type; }); }
   function manualSlots(draft, count) { return draft.slice(0, count).map(function (d) { return { type: d.type, color: d.color }; }); }
 
-  var api = { MANUAL_MAX: MANUAL_MAX, MANUAL_TYPES: MANUAL_TYPES, MANUAL_COLOURS: MANUAL_COLOURS, manualRecall: manualRecall, manualDraft: manualDraft, manualCount: manualCount, manualSlots: manualSlots, needsReread: needsReread, exportNote: exportNote, askSlots: askSlots, typeMismatch: typeMismatch, sendRoute: sendRoute, printNote: printNote, orcaConfirm: orcaConfirm, colourName: colourName, trays: trays, propose: propose, complete: complete, tooMany: tooMany,
+  var api = { MANUAL_MAX: MANUAL_MAX, MANUAL_TYPES: MANUAL_TYPES, MANUAL_COLOURS: MANUAL_COLOURS, manualRecall: manualRecall, manualDraft: manualDraft, manualCount: manualCount, manualComplete: manualComplete, manualSlots: manualSlots, needsReread: needsReread, exportNote: exportNote, askSlots: askSlots, typeMismatch: typeMismatch, sendRoute: sendRoute, printNote: printNote, orcaConfirm: orcaConfirm, colourName: colourName, trays: trays, propose: propose, complete: complete, tooMany: tooMany,
     checkBeforeSend: checkBeforeSend, profileTypes: profileTypes, mapLabel: mapLabel, distance: distance,
     words: words, slotName: slotName, isImposed: isImposed };
   root.PlyoCanvas = api;

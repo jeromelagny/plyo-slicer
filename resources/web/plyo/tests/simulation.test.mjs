@@ -258,3 +258,13 @@ test('M5 : service coupé : on ne dit plus que c’est Internet', () => {
   assert.match(read('login.html'), /Le service Plyo ne répond pas\. Vérifie ta connexion ou réessaie plus tard\./);
   assert.equal(L.errorView('network').text, 'Le service Plyo ne répond pas. Vérifie ta connexion ou réessaie plus tard.');
 });
+
+test('M6 : « Garder ces emplacements » est grisé tant qu’une matière manque', () => {
+  const C = require('../canvas-logic.js');
+  const draft = [{ type: 'PLA', color: '' }, { type: '', color: '' }, { type: '', color: '' }];
+  assert.equal(C.manualComplete(draft, 2), false);
+  assert.equal(C.manualComplete(draft, 1), true, 'les lignes au-delà du nombre choisi ne comptent pas');
+  assert.equal(J.primaryAction('filament', { canvas: { mode: 'manual', complete: false } }).enabled, false);
+  assert.equal(J.primaryAction('filament', { canvas: { mode: 'manual', complete: true } }).enabled, true);
+  assert.match(read('index.html'), /manualComplete\(m\.draft, m\.count\)\) return;/);
+});

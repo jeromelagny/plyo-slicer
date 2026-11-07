@@ -960,6 +960,7 @@
     if (!mode) return null;
     var st = slotState() || {}, out = { mode: mode, system: mode === 'manual' ? 'manual' : st.system || slotWordsKey() };
     if (mode === 'recall') out.recall = PlyoCanvas.manualRecall(st);
+    if (mode === 'manual') out.complete = PlyoCanvas.manualComplete(canvasUI.manual.draft, canvasUI.manual.count);
     if (mode === 'single' || mode === 'multi') {
       var trays = PlyoCanvas.trays(st), m = canvasUI.mapping || [];
       out.complete = PlyoCanvas.complete(m);
@@ -1129,7 +1130,7 @@
     useList: function () { canvasUI.useList = true; delete conv.project.canvas; projectChanged(); renderProject(); },
     openManual: openManual,
     manualCount: function (n) { canvasUI.manual.count = n; renderProject(); },
-    manualSet: function (i, field, value) { canvasUI.manual.draft[i][field] = value; },
+    manualSet: function (i, field, value) { canvasUI.manual.draft[i][field] = value; renderProject(); }, // le formulaire reste tel quel, seule la ligne d'action suit
     manualCancel: function () { canvasUI.manual.form = false; canvasUI.manual.error = ''; renderProject(); }
   };
   function openManual() {
@@ -1145,6 +1146,7 @@
   function saveManual() {
     var m = canvasUI.manual;
     m.error = '';
+    if (!PlyoCanvas.manualComplete(m.draft, m.count)) return;
     window.orca.postMessage({ type: 'slots_manual_save', preset: conv.project.printer.preset, slots: PlyoCanvas.manualSlots(m.draft, m.count) });
   }
   function onManualSaved(msg) {

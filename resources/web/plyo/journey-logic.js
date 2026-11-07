@@ -42,7 +42,7 @@
     if (c.canvas) {
       var cv = c.canvas;
       if (cv.mode === 'recall') return { label: 'Oui', kind: 'manualYes', enabled: true };
-      if (cv.mode === 'manual') return { label: 'Garder ces emplacements', kind: 'manualSave', enabled: true };
+      if (cv.mode === 'manual') return { label: 'Garder ces emplacements', kind: 'manualSave', enabled: cv.complete !== false };
       if (cv.mode === 'single' && cv.proposal) return { label: cv.system === 'u1' ? 'Oui, la t' + cv.proposal.label.slice(1) : 'Oui, l’emplacement ' + cv.proposal.label, kind: 'confirmCanvas', enabled: true };
       if (cv.mode === 'multi') return { label: cv.system === 'u1' ? 'Utiliser ces têtes' : 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
       return { label: '', kind: 'none', enabled: false };
