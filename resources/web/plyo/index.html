@@ -1541,7 +1541,7 @@
     if (!conv || !projectUI.printers || !lastValues) return; // sans les réglages lus, on ne sait pas encore sur quelle machine est Orca
     var p = conv.project, orca = lastValues && lastValues.context ? lastValues.context.printer : '';
     var q = PlyoMachines.machineQuestion(projectUI.printers, { orcaPreset: orca, lastPreset: habits.last, hidden: habits.hidden });
-    if (q.mode === 'auto' && (!p.printer || p.printer.proposed)) {
+    if (q.mode === 'auto' && (!p.printer || p.printer.proposed) && !projectUI.showList) { // showList : « changer » vient de rouvrir la liste
       if (orca && orca !== q.machine.preset) projectUI.switchedFrom = orca; // dit à l'écran une fois le changement fait
       projectHandlers.pickPrinter(q.machine.preset, q.machine.label);
     }

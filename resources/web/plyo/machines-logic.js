@@ -18,11 +18,15 @@
   }
 
   // Que demander au début d'une impression ? `printers` : liste du slicer ; `ctx` : { orcaPreset, lastPreset, hidden }.
-  // setup = aucune machine reliée ; auto = une seule (choisie sans question) ; confirm = plusieurs (confirmation en un toucher).
+  // setup = rien de reconnu (aucune reliée, et zéro ou plusieurs non reliées : la liste répond) ; auto = une seule (choisie sans
+  // question, `changer` reste dans la fiche), reliée ou non ; confirm = plusieurs reliées (confirmation en un toucher).
   function machineQuestion(printers, ctx) {
-    var c = ctx || {}, hidden = c.hidden || [];
-    var machines = J.groupPrinters(printers).main.filter(function (m) { return hidden.indexOf(m.preset) < 0; });
-    if (!machines.length) return { mode: 'setup', machine: null };
+    var c = ctx || {}, hidden = c.hidden || [], visible = function (m) { return hidden.indexOf(m.preset) < 0; };
+    var groups = J.groupPrinters(printers), machines = groups.main.filter(visible);
+    if (!machines.length) {
+      var others = groups.others.filter(visible);
+      return others.length === 1 ? { mode: 'auto', machine: others[0] } : { mode: 'setup', machine: null };
+    }
     if (machines.length === 1) return { mode: 'auto', machine: machines[0] };
     var pick = function (preset) { return machines.filter(function (m) { return m.preset === preset; })[0]; };
     return { mode: 'confirm', machine: pick(c.orcaPreset) || pick(c.lastPreset) || machines[0] };
