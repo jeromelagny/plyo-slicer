@@ -10,6 +10,7 @@
 #include "slic3r/GUI/I18N.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/GUI/Tab.hpp"
 #include "slic3r/GUI/UnsavedChangesDialog.hpp"
 
 #include <boost/algorithm/string.hpp>
@@ -118,6 +119,35 @@ nlohmann::json identify(const nlohmann::json& printer)
     return nullptr;
 }
 
+// Le profil d'une machine peut désigner un process au nom introuvable (K1C : « 0.20mm Standard @Creality K1C (0.4 nozzle) » pour
+// « 0.20mm Standard @Creality K1C »). Orca prend alors le premier compatible, 0,08 mm SuperDetail. Les profils d'Orca ne changent pas :
+// on choisit la même qualité sous son vrai nom, sinon un 0,20 mm. Catalogue contrôlé par src/plyo/tests/test_profile_defaults.py.
+static void fix_default_process(Slic3r::GUI::GUI_App& app)
+{
+    Slic3r::PresetBundle&  bundle = *app.preset_bundle;
+    const auto* wanted = bundle.printers.get_selected_preset().config.option<Slic3r::ConfigOptionString>("default_print_profile");
+    if (wanted == nullptr || wanted->value.empty() || bundle.prints.find_preset(wanted->value, false) != nullptr)
+        return;
+    const std::string quality = wanted->value.substr(0, wanted->value.find(" @")) + " @";
+    std::string       best;
+    int               best_score = 0;
+    for (const Slic3r::Preset& p : bundle.prints.get_presets()) {
+        if (!p.is_visible || !p.is_compatible || p.is_default)
+            continue;
+        const int score = p.name.rfind(quality, 0) == 0 ? 3 : p.name.rfind("0.20mm Standard", 0) == 0 ? 2 : p.name.rfind("0.20mm", 0) == 0 ? 1 : 0;
+        if (score > best_score) {
+            best       = p.name;
+            best_score = score;
+        }
+    }
+    if (best.empty() || best == bundle.prints.get_selected_preset_name())
+        return;
+    if (Slic3r::GUI::Tab* tab = app.get_tab(Slic3r::Preset::TYPE_PRINT)) {
+        BOOST_LOG_TRIVIAL(info) << "Plyo: process par défaut introuvable (« " << wanted->value << " »), « " << best << " » choisi";
+        tab->select_preset(best);
+    }
+}
+
 nlohmann::json install(const std::string& vendor, const std::string& name, const std::string& nozzle)
 {
     const Model* model = find_model(vendor, name);
@@ -153,6 +183,8 @@ nlohmann::json install(const std::string& vendor, const std::string& name, const
         plater->normalize_bed_types(false);
     // Fin de l'assistant d'Orca (GUI_App::run_wizard) : listes de profils et barre latérale rafraîchies.
     app.load_current_presets();
+    if (!keep_changes) // des modifications gardées à la demande de l'utilisateur ne sont pas remplacées
+        fix_default_process(app);
     app.update_publish_status();
     if (app.mainframe != nullptr)
         app.mainframe->refresh_plugin_tips();
