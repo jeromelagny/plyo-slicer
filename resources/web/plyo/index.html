@@ -2059,7 +2059,7 @@
   function onLinkSaved(msg) {
     if (!link) return;
     if (msg.ok) {
-      linkStep('C’est relié ! Ton profil d’imprimante s’appelle maintenant « ' + msg.profile + ' ». `Imprimer la plaque` enverra tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+      linkStep('C’est relié ! Ton profil d’imprimante s’appelle maintenant « ' + msg.profile + ' ». `Envoyer et imprimer` enverra tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
       if (link.onDone) link.onDone();
     }
     else linkStep('Je n’ai pas pu enregistrer la connexion. Réessaie, ou ouvre la fenêtre « Connexion » depuis le bouton Wi-Fi à côté de « Imprimante ».', 'error', 'alert');
@@ -2067,7 +2067,7 @@
   function onLinkDialogClosed(msg) {
     if (!link) return;
     if (msg.saved) {
-      linkStep('C’est relié ! `Imprimer la plaque` enverra maintenant tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+      linkStep('C’est relié ! `Envoyer et imprimer` enverra maintenant tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
       if (link.onDone) link.onDone();
     } else {
       var box = linkStep('Rien n’a été enregistré. Tu peux recommencer quand tu veux.', '', 'info');
@@ -2223,8 +2223,8 @@
       later = button('Passer cette étape', function () { setupPhase('done'); }, 'link');
     } else if (setup.phase === 'done') {
       box.appendChild(el('h3', '', 'Ton imprimante est prête'));
-      box.appendChild(rich(setup.found ? 'Elle est installée et reliée : `Imprimer la plaque` lui enverra tes impressions.' :
-        'Elle est installée. Pour imprimer : `Exporter le fichier G-code`, puis copie-le sur la clé USB ou la carte SD de ton imprimante.'));
+      box.appendChild(rich(setup.found ? 'Elle est installée et reliée : à la dernière étape, `Envoyer et imprimer` lui enverra tes impressions.' :
+        'Elle est installée. Pour imprimer : à la dernière étape, `Exporter le fichier`, puis copie-le sur la clé USB ou la carte SD de ton imprimante.'));
       acts.appendChild(button('Continuer', endSetup, 'btn sm', 'check'));
       later = null;
     }

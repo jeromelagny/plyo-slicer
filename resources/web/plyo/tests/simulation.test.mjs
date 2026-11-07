@@ -196,3 +196,13 @@ test('F1 : pas de correction automatique sur le nom de l’imprimante', () => {
   assert.match(page, /setAttribute\('autocorrect', 'off'\)/);
   assert.match(page, /setAttribute\('spellcheck', 'false'\)/);
 });
+
+test('F2 : les textes citent les boutons du panneau, les mêmes sur toutes les marques', () => {
+  const page = read('index.html');
+  assert.ok(!/Exporter le fichier G-code/.test(page), 'ce libellé n’existe pas sur les machines Bambu');
+  assert.ok(!/`Imprimer la plaque`/.test(page), 'le panneau cite son propre bouton');
+  assert.equal(J.primaryAction('imprimer', { sliced: true, linked: false }).label, 'Exporter le fichier');
+  assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true }).label, 'Envoyer et imprimer');
+  assert.match(page, /`Exporter le fichier`, puis copie-le/);
+  assert.match(page, /`Envoyer et imprimer` lui enverra/);
+});
