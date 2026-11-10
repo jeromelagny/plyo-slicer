@@ -609,6 +609,15 @@ TEST_CASE("Project: aucun secret ne sort de la logique du projet")
     CHECK(refusal(project, "B", "F").find("SECRET") == std::string::npos);
 }
 
+TEST_CASE("Project: sanitize garde la confirmation des températures de la bobine")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json ok = sanitize({{"filament", {{"type", "PLA"}, {"preset", "Generic PLA"}, {"temps_ok", true}}}});
+    CHECK(ok["filament"]["temps_ok"] == true);
+    CHECK_FALSE(sanitize({{"filament", {{"preset", "Generic PLA"}, {"temps_ok", false}}}})["filament"].contains("temps_ok"));
+    CHECK_FALSE(sanitize({{"filament", {{"preset", "Generic PLA"}, {"temps_ok", "oui"}}}})["filament"].contains("temps_ok"));
+}
+
 TEST_CASE("Project: sanitize garde les emplacements du Canvas")
 {
     using namespace Plyo::ProjectLogic;

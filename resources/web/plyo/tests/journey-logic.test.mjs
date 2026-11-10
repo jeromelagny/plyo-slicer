@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 const J = require('../journey-logic.js');
 
 const printer = { preset: 'Elegoo Centauri Carbon 2 0.4 nozzle', name: 'Centauri Carbon 2' };
-const filament = { type: 'PLA', preset: 'Generic PLA @ECC2', nozzle_temp: 215, bed_temp: 60 };
+const filament = { type: 'PLA', preset: 'Generic PLA @ECC2', nozzle_temp: 215, bed_temp: 60, temps_ok: true };
 const part = { name: 'flexyring.stl' };
 const full = (extra) => Object.assign({ printer: printer, filament: filament, part: part }, extra || {});
 
@@ -164,7 +164,7 @@ test('étape Préparer avec les questions d’intention : pas de bouton pendant 
 
 test('tabLabel : l’onglet Étapes porte la progression', () => {
   assert.equal(J.tabLabel({}), 'Étapes · 1/6');
-  const ready = { printer: { preset: 'CC2' }, part: { name: 'bague' }, filament: { preset: 'PLA' } };
+  const ready = { printer: { preset: 'CC2' }, part: { name: 'bague' }, filament: { preset: 'PLA', temps_ok: true } };
   assert.equal(J.tabLabel(ready), 'Étapes · 4/6');
   assert.equal(J.tabLabel(Object.assign({ step: 'after' }, ready)), 'Étapes · 6/6');
   assert.equal(J.tabLabel(null), 'Étapes');
@@ -332,4 +332,17 @@ test('saisie manuelle : un seul bouton plein par écran, consignes', () => {
   assert.deepEqual(J.primaryAction('filament', { canvas: { mode: 'manual', system: 'manual' } }), { label: 'Garder ces emplacements', kind: 'manualSave', enabled: true });
   assert.equal(J.prompt('filament', { canvas: { mode: 'manual', system: 'manual' } }), 'Décris tes emplacements');
   assert.equal(J.prompt('filament', { canvas: { mode: 'single', system: 'manual' } }), 'Quel emplacement pour ta pièce ?');
+});
+
+test('Filament : les températures de la bobine sont demandées avant de passer à Préparer', () => {
+  const unchecked = full({ filament: { type: 'PLA', preset: 'Generic PLA @ECC2', nozzle_temp: 215, bed_temp: 60 } });
+  assert.equal(J.tempsPending(unchecked), true);
+  assert.equal(J.currentStep(unchecked), 'filament');
+  const checked = full();
+  assert.equal(J.tempsPending(checked), false);
+  assert.equal(J.currentStep(checked), 'preparer');
+  // Projet déjà dans le parcours (ancienne conversation) : rien n'est redemandé.
+  assert.equal(J.currentStep(full({ step: 'print' })), 'imprimer');
+  assert.equal(J.prompt('filament', { temps: { nozzle: 220, bed: 60 } }), 'Quelles températures indique ta bobine ?');
+  assert.deepEqual(J.primaryAction('filament', { temps: { nozzle: 220, bed: 60 } }), { label: 'Garder 220 °C / 60 °C', kind: 'keepTemps', enabled: true });
 });

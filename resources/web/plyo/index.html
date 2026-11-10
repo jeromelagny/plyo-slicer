@@ -923,6 +923,7 @@
   }
   function canvasMode(step) {
     var m = canvasUI.manual;
+    if (conv && PlyoJourney.tempsPending(conv.project) && projectUI.editing !== 'filament') return null; // emplacement déjà choisi : on demande les températures
     if (m.form && (step === 'filament' || projectUI.editing === 'filament')) return 'manual';
     if (canvasUI.useList) return null;
     if (canvasWanted(step) && (canvasUI.loading || canvasUI.preset !== conv.project.printer.preset)) return 'loading';
@@ -1004,7 +1005,7 @@
     window.orca.postMessage({ type: 'project_state' });
     // Comme au choix d'une matière : les températures conseillées sont prises, la bobine peut en indiquer d'autres.
     // Le message est posé après le passage à l'étape suivante (qui efface les messages du guide) : voir renderProject.
-    projectUI.spoolHint = conv;
+    // (les températures de la bobine sont ensuite demandées à l'étape Filament : PlyoJourney.tempsPending)
   }
   function spoolHint() {
     var tip = noteLine('J’ai pris les températures conseillées pour ce filament.', '', 'info', 'guide');
@@ -1201,9 +1202,28 @@
     else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
     var cctx = conv ? canvasCtx(PlyoJourney.currentStep(conv.project)) : null;
     if (cctx) ctx.canvas = cctx;
+    else if (conv && PlyoJourney.tempsPending(p) && !ctx.editing) ctx.temps = { nozzle: p.filament.nozzle_temp, bed: p.filament.bed_temp };
     var st = conv ? intentState(PlyoJourney.currentStep(conv.project), ctx.sliced) : null;
     if (st) ctx.intent = st.mode;
     return ctx;
+  }
+  // Étape Filament, une fois la matière (ou l'emplacement) choisie : les températures conseillées sont prises, et on demande
+  // celles de l'étiquette de la bobine. « Garder … » (ligne d'action) ou le formulaire valident l'étape.
+  function renderTempsStep() {
+    var f = conv.project.filament, slot = $('project-card'), sp = projectUI.spool;
+    if (projectUI.tempsAsked !== conv) { projectUI.tempsAsked = conv; sp.open = true; sp.error = ''; window.orca.postMessage({ type: 'limits_get' }); }
+    slot.textContent = '';
+    var body = el('div', 'project-body');
+    body.appendChild(el('p', '', 'J’ai mis les températures conseillées pour du ' + f.type + ' : buse ' + (f.nozzle_temp != null ? f.nozzle_temp : '?') + ' °C, plateau ' + (f.bed_temp != null ? f.bed_temp : '?') + ' °C.'));
+    body.appendChild(el('p', 'muted small', 'Regarde l’étiquette de ta bobine : si le fabricant indique d’autres températures, entre-les ci-dessous. Sinon, garde celles-ci.'));
+    if (!sp.open) body.appendChild(button('Entrer les températures de ma bobine', projectHandlers.toggleSpool, 'link'));
+    slot.appendChild(body);
+  }
+  function confirmTemps() {
+    if (!conv || !conv.project.filament) return;
+    conv.project.filament.temps_ok = true;
+    projectUI.spool.open = false;
+    projectChanged();
   }
   function renderProject() {
     if (!conv) return;
@@ -1230,6 +1250,7 @@
     else if (cmode && cmode !== 'loading')
       PlyoCanvasView.render($('project-card'), ui, { mode: cmode, system: cst.system || slotWordsKey(), emptyBlocks: !!cst.empty_blocks, readOnly: cst.imposable === false && cst.source !== 'manual', blocker: cst.blocker || '', trial: cst.validated === false && cst.source !== 'manual', trays: PlyoCanvas.trays(cst), colours: canvasColours(), mapping: canvasUI.mapping, error: canvasUI.error, handlers: canvasHandlers });
     else if (cmode === 'loading') { $('project-card').textContent = ''; }
+    else if (step === 'filament' && PlyoJourney.tempsPending(conv.project) && projectUI.editing !== 'filament') renderTempsStep();
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
@@ -1385,6 +1406,7 @@
     else if (kind === 'manualSave') saveManual();
     else if (kind === 'export') { canvasUI.refused = ''; if (!lockSend('export')) return; waitForExport(); window.orca.postMessage({ type: 'print_start', export: true }); }
     else if (kind === 'advance') setTourStep('print');
+    else if (kind === 'keepTemps') confirmTemps();
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
     else if (kind === 'applyIntent') applyIntent(false);
     else if (kind === 'confirmFilament') projectHandlers.confirmFilament();
@@ -1607,13 +1629,14 @@
       projectHandlers.setTemps(t.nozzle != null ? String(t.nozzle) : '', t.bed != null ? String(t.bed) : '', function (ok, text) {
         if (!ok) { sp.error = text; renderProject(); return; }
         window.orca.postMessage({ type: 'limits_set', limits: parsed.limits });
+        if (conv.project.filament) conv.project.filament.temps_ok = true; // étape Filament validée
         sp.open = false;
         sp.error = '';
         // Depuis l'étape Imprimer : la température a changé, la découpe est à refaire. Le passage d'étape vient avant le message, qu'il effacerait.
         var moved = (t.nozzle != null && t.nozzle !== f.nozzle_temp) || (t.bed != null && t.bed !== f.bed_temp);
         if (moved && currentTourStep() === 'print') { if (tourSignals) tourSignals.sliced = false; setTourStep('slice'); }
+        projectChanged(); // enregistre la validation ; à l'étape Filament, passe à Préparer (avant le message, qui serait effacé)
         noteLine('Températures de ta bobine enregistrées : buse ' + (t.nozzle != null ? t.nozzle : f.nozzle_temp) + ' °C, plateau ' + (t.bed != null ? t.bed : f.bed_temp) + ' °C. L’assistant restera dans cette plage.', 'ok', 'check', 'guide');
-        renderProject();
       });
     },
     importPart: function () { pickFiles(); },

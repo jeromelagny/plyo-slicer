@@ -139,6 +139,9 @@ nlohmann::json sanitize(const nlohmann::json& project)
         number(*f, o, "nozzle_temp");
         number(*f, o, "bed_temp");
         flag(*f, o);
+        // Températures de la bobine vérifiées à l'étape Filament (panneau) : sinon la question est reposée.
+        if (const nlohmann::json* v = Json::field(*f, "temps_ok"); v != nullptr && v->is_boolean() && v->get<bool>())
+            o["temps_ok"] = true;
         out["filament"] = o;
     }
     if (const nlohmann::json* a = Json::field(project, "part"); a != nullptr && a->is_object()) {

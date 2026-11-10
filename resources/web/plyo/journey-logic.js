@@ -12,9 +12,16 @@
   var BY_FICHE = { printer: 'machine', filament: 'filament', part: 'piece' };
   var BY_STEP = { slice: 'preparer', print: 'imprimer', after: 'resultat' };
 
+  // Filament choisi mais températures de la bobine pas encore vérifiées (étape Filament, avant le parcours guidé).
+  function tempsPending(project) {
+    var f = project && project.filament;
+    return !!f && !f.proposed && !!f.preset && f.temps_ok !== true && !(project && project.step);
+  }
+
   function currentStep(project) {
     var next = P.nextStep(project);
     if (next !== 'ready') return BY_FICHE[next];
+    if (tempsPending(project)) return 'filament';
     return BY_STEP[project && project.step] || 'preparer';
   }
 
@@ -35,6 +42,8 @@
     return 'Étapes · ' + (i + 1) + '/' + STEPS.length;
   }
 
+  function tempText(t) { return (t.nozzle != null ? t.nozzle + ' °C' : '?') + ' / ' + (t.bed != null ? t.bed + ' °C' : '?'); }
+
   function primaryAction(step, ctx) {
     var c = ctx || {};
     // Canvas de la CC2 (étape Filament, ou emplacements repris depuis l'étape Imprimer) : on choisit un emplacement
@@ -49,6 +58,8 @@
     }
     // « changer » le filament en cours : on répond avec les choix, ou « Garder ce filament ».
     if (c.editing) return { label: '', kind: 'none', enabled: false };
+    // Températures de la bobine : garder celles conseillées, ou entrer celles de l'étiquette (formulaire de l'étape).
+    if (step === 'filament' && c.temps) return { label: 'Garder ' + tempText(c.temps), kind: 'keepTemps', enabled: true };
     // Fiche remplie mais plateau vide (relance d'Orca, pièce supprimée) : remettre la pièce passe avant tout.
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return { label: 'Choisir un fichier', kind: 'importPart', enabled: true };
     var slice = c.slicing ? { label: 'Je découpe…', kind: 'slice', enabled: false } : { label: 'Découper', kind: 'slice', enabled: true };
@@ -92,6 +103,7 @@
   function prompt(step, ctx) {
     var c = ctx || {};
     if (c.canvas) return canvasPrompt(c);
+    if (step === 'filament' && c.temps) return 'Quelles températures indique ta bobine ?';
     if (c.editing) return 'Dis-moi quel filament est sur la bobine';
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return 'Ta pièce n’est plus sur le plateau';
     switch (step) {
@@ -256,7 +268,7 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
