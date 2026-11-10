@@ -131,3 +131,16 @@ test('le niveau deviné ne redescend jamais tout seul vers « détaillées »', 
   assert.equal(M.levelOf(h), 'short');
   assert.equal(M.levelOf(M.guessLevel(M.emptyHabits(), 'detailed')), 'detailed');
 });
+
+test('searchModels : la marque seule montre tous ses modèles, une recherche précise en garde 8', () => {
+  const catalog = [];
+  for (let i = 1; i <= 30; i++) catalog.push({ vendor: 'Creality', model: 'Creality Modèle ' + String(i).padStart(2, '0'), nozzles: ['0.4'] });
+  catalog.push({ vendor: 'Creality', model: 'Creality CR-10 SE', nozzles: ['0.4'] }, { vendor: 'Elegoo', model: 'Elegoo Centauri Carbon 2', nozzles: ['0.4'] });
+  const brand = M.searchModels(catalog, 'Creality');
+  assert.equal(brand.length, 31, 'tous les modèles de la marque');
+  assert.ok(brand.some((m) => m.model === 'Creality CR-10 SE'));
+  assert.ok(brand.every((m) => m.vendor === 'Creality'));
+  assert.equal(M.searchModels(catalog, 'creality modele').length, 8);
+  assert.deepEqual(M.searchModels(catalog, 'cr 10 se').map((m) => m.model), ['Creality CR-10 SE']);
+  assert.deepEqual(M.searchModels(catalog, ''), []);
+});

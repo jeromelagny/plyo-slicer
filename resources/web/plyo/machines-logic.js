@@ -90,9 +90,24 @@
   function offerStopAsking(habits) { return askIntent(habits) && !!habits && (habits.intent_skips || 0) >= 3; }
   function stopAsking(habits, stop) { var h = clone(habits); if (stop) h.ask_intent = false; else { delete h.ask_intent; h.intent_skips = 0; } return h; }
 
+  // Recherche dans le catalogue d'Orca (modèles installables) : chaque mot doit apparaître. Une marque seule (« Creality »)
+  // montre tous ses modèles, triés, pour qu'on retrouve le sien en faisant défiler ; sinon les 8 premiers résultats.
+  function fold(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\-_]+/g, ' '); }
+  function searchModels(catalog, query) {
+    var words = fold(query).split(/\s+/).filter(Boolean);
+    if (!words.length || !Array.isArray(catalog)) return [];
+    var found = catalog.filter(function (m) {
+      var hay = fold(m.vendor + ' ' + m.model);
+      return words.every(function (w) { return hay.indexOf(w) >= 0; });
+    });
+    var brandOnly = words.length && fold(query).trim() && found.length && found.every(function (m) { return fold(m.vendor) === fold(query).trim(); });
+    if (!brandOnly) return found.slice(0, 8);
+    return found.slice().sort(function (a, b) { return a.model.localeCompare(b.model, 'fr', { numeric: true }); });
+  }
+
   var api = { levelOf: levelOf, guessLevel: guessLevel, chooseLevel: chooseLevel, askIntent: askIntent, noteIntent: noteIntent,
     offerStopAsking: offerStopAsking, stopAsking: stopAsking, machineThatFits: machineThatFits, visiblePrinters: visiblePrinters, isKnownHost: isKnownHost, machineQuestion: machineQuestion, habitFor: habitFor, rememberFilament: rememberFilament, replaceMachine: replaceMachine,
-    hideMachine: hideMachine, unhideMachine: unhideMachine, emptyHabits: emptyHabits };
+    hideMachine: hideMachine, unhideMachine: unhideMachine, emptyHabits: emptyHabits, searchModels: searchModels };
   root.PlyoMachines = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
