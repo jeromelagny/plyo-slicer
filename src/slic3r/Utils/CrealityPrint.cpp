@@ -275,6 +275,7 @@ static bool is_k1_family(const std::string& model)
         "K1 SE",
         "K1C",
         "K1_CFS-C",
+        "F003", // PLYO: CR-10 SE (code renvoyé par /info) : fichiers dans /usr/data, constaté sur la machine de Jérôme le 2026-11-10
     };
     return k1_models.count(model) > 0;
 }
