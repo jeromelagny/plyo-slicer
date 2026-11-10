@@ -38,6 +38,7 @@
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/format.hpp"
 #include "Http.hpp"
+#include "plyo/PlyoPrinterStatusLogic.hpp" // PLYO: dossier de démarrage lu sur l'imprimante
 #include "libslic3r/AppConfig.hpp"
 #include "slic3r/GUI/BonjourDialog.hpp"
 
@@ -360,7 +361,24 @@ bool CrealityPrint::start_print(wxString &msg, const std::string &filename, cons
 {
     try {
         const std::string data_root = is_k1_family(m_model) ? "/usr/data" : "/mnt/UDISK";
-        const std::string gcode_path = data_root + "/printer_data/gcodes/" + filename;
+        std::string gcode_path = data_root + "/printer_data/gcodes/" + filename;
+        // PLYO: le dossier vient de la liste de fichiers de l'imprimante elle-même (lecture seule) ; la liste de modèles
+        // ci-dessus ne sert plus que si elle ne répond pas. Une CR-10 SE inconnue d'Orca recevait le fichier sans démarrer.
+        try {
+            net::io_context list_ioc;
+            websocket::stream<beast::tcp_stream> list_ws{list_ioc};
+            ws_connect(list_ioc, list_ws, m_host, "9999");
+            beast::get_lowest_layer(list_ws).expires_after(std::chrono::seconds(6));
+            const std::string reply = ws_send_and_read(list_ws, json{{"method", "get"}, {"params", {{"reqGcodeFile", 1}}}}, "retGcodeFileInfo");
+            beast::error_code list_close;
+            list_ws.close(websocket::close_code::normal, list_close);
+            const std::string dir = Plyo::PrinterStatus::creality_file_dir(reply, filename);
+            if (!dir.empty())
+                gcode_path = dir + "/" + filename;
+            BOOST_LOG_TRIVIAL(info) << "CrealityPrint: start path " << (dir.empty() ? "from model table" : "from printer file list") << ": " << gcode_path;
+        } catch (const std::exception& e) {
+            BOOST_LOG_TRIVIAL(warning) << "CrealityPrint: file list unavailable, using model table: " << e.what();
+        }
 
         net::io_context ioc;
         websocket::stream<beast::tcp_stream> ws{ioc};

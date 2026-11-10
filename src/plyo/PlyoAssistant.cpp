@@ -21,6 +21,7 @@
 #include "PlyoPreflight.hpp"
 #include "PlyoProfiles.hpp"
 #include "PlyoPrinterLink.hpp"
+#include "PlyoPrinterStatus.hpp"
 #include "PlyoHabits.hpp"
 #include "PlyoProject.hpp"
 #include "PlyoProjectLogic.hpp"
@@ -455,6 +456,11 @@ void handle_page_message(const nlohmann::json& data)
                 r["type"] = "canvas_sent";
                 send(r);
             });
+        } else if (type == "print_watch_start") {
+            PrinterStatus::watch(Json::str(data, "preset"), [](nlohmann::json w) {
+                w["type"] = "print_watch";
+                send(w);
+            });
         } else if (type == "canvas_start_plain") {
             Canvas::start_plain(Json::str(data, "preset"), [](nlohmann::json r) {
                 r["type"] = "canvas_started";
@@ -498,6 +504,12 @@ void handle_page_message(const nlohmann::json& data)
                 nlohmann::json r = FirstSteps::start_print();
                 r["type"]        = "print_started";
                 send(r);
+                // Le démarrage est vérifié sur l'imprimante elle-même (état avant l'envoi, puis relu jusqu'au verdict).
+                if (Json::boolean(r, "ok", false) && !Json::str(data, "preset").empty())
+                    PrinterStatus::watch(Json::str(data, "preset"), [](nlohmann::json w) {
+                        w["type"] = "print_watch";
+                        send(w);
+                    });
             }
         } else if (type == "setup_catalog") {
             send({{"type", "setup_catalog"}, {"catalog", PrinterSetup::catalog()}});

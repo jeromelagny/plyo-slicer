@@ -2040,3 +2040,46 @@ TEST_CASE("Calibration : type inconnu : la plage du profil, sinon un refus clair
     CHECK(text.find("onglet Filament") != std::string::npos);
     CHECK(text.find("rien n'a changé") != std::string::npos);
 }
+
+#include "../../PlyoPrinterStatusLogic.hpp"
+
+TEST_CASE("PrinterStatus : dossier d'un fichier dans la liste d'une Creality")
+{
+    using namespace Plyo::PrinterStatus;
+    // Réponse réelle de la CR-10 SE (F003), raccourcie.
+    const std::string reply = R"({ "retGcodeFileInfo": { "totalNum": 2, "fileInfo": "\/usr\/data\/printer_data\/gcodes:ouvre canette_PETG_28m47s.gcode:5060725:0.000000:1786838890:0:\/tmp\/a.png;\/usr\/data\/printer_data\/gcodes:obj_1.stl_PLA_45m16s.gcode:2965082:0.000000:1777586916:0:\/tmp\/b.png" } })";
+    CHECK(creality_file_dir(reply, "ouvre canette_PETG_28m47s.gcode") == "/usr/data/printer_data/gcodes");
+    CHECK(creality_file_dir(reply, "obj_1.stl_PLA_45m16s.gcode") == "/usr/data/printer_data/gcodes");
+    CHECK(creality_file_dir(reply, "absent.gcode").empty());
+    CHECK(creality_file_dir("pas du json", "x.gcode").empty());
+    CHECK(creality_file_dir(R"({"retGcodeFileInfo":{"fileInfo":"../etc:x.gcode:1"}})", "x.gcode").empty()); // dossier qui n'est pas un chemin absolu propre
+}
+
+TEST_CASE("PrinterStatus : état d'impression lu, puis verdict après un envoi")
+{
+    using namespace Plyo::PrinterStatus;
+    // Messages réels de la CR-10 SE pendant une impression (champs utiles).
+    const Status printing = creality_status({{"state", "1"}, {"printFileName", "/usr/data/printer_data/gcodes/a.gcode"}, {"printProgress", "21"}});
+    CHECK(printing.state == "printing");
+    CHECK(printing.file == "a.gcode");
+    CHECK(printing.progress == 21);
+    CHECK(creality_status({{"state", 0}, {"printFileName", ""}}).state == "idle");
+    CHECK(creality_status(nlohmann::json::object()).state == "unknown");
+
+    CHECK(moonraker_status({{"result", {{"status", {{"print_stats", {{"state", "printing"}, {"filename", "b.gcode"}}}}}}}}).state == "printing");
+    CHECK(moonraker_status({{"result", {{"status", {{"print_stats", {{"state", "standby"}}}}}}}}).state == "idle");
+    CHECK(moonraker_status({{"result", {{"status", {{"print_stats", {{"state", "paused"}}}}}}}}).state == "paused");
+    CHECK(moonraker_status({{"result", {{"status", {{"print_stats", {{"state", "error"}}}}}}}}).state == "error");
+    CHECK(moonraker_status(nlohmann::json()).state == "unknown");
+
+    const Status idle{"idle", "", -1};
+    const Status other{"printing", "autre.gcode", 50};
+    const Status unknown{"unknown", "", -1};
+    CHECK(verdict(idle, printing) == "started");
+    CHECK(verdict(other, printing) == "started");   // une autre impression était finie, la nouvelle a pris sa place
+    CHECK(verdict(printing, printing) == "busy");   // elle imprimait déjà ce fichier avant l'envoi
+    CHECK(verdict(idle, idle) == "waiting");
+    CHECK(verdict(idle, Status{"error", "", -1}) == "error");
+    CHECK(verdict(unknown, printing) == "started");
+    CHECK(verdict(idle, unknown) == "unknown");
+}

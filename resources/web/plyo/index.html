@@ -1056,6 +1056,12 @@
     canvasUI.mapping = canvasProposal();
     renderProject();
   }
+  // Vérification du démarrage sur l'imprimante (PlyoPrinterStatus.cpp) : un seul message par envoi, une fois le verdict connu.
+  function onPrintWatch(msg) {
+    var name = conv && conv.project.printer ? PlyoJourney.machineLabel(conv.project.printer) : 'ton imprimante';
+    var line = PlyoJourney.watchText(msg.verdict, name, msg.file);
+    if (line) noteLine(line.text, line.tone, line.icon, 'guide');
+  }
   function onCanvasSent(msg) {
     if (!msg.ok) {
       unlockSend();
@@ -1070,6 +1076,7 @@
     projectUI.sentConv = conv;
     projectUI.sentArmed = conv;
     noteLine(msg.text || 'J’envoie le fichier : la répartition part avec. Regarde l’écran de ton imprimante.', '', 'info', 'guide');
+    if (conv && conv.project.printer) window.orca.postMessage({ type: 'print_watch_start', preset: conv.project.printer.preset });
     unlockSendSoon();
     if (conv) renderProject();
   }
@@ -1094,7 +1101,7 @@
       canvasUI.refused = '';
       rememberHabit();
       if (route === 'armed') { waitLongerForSend(); window.orca.postMessage({ type: 'canvas_send', preset: conv.project.printer.preset }); }
-      else window.orca.postMessage({ type: 'print_start', export: false });
+      else window.orca.postMessage({ type: 'print_start', export: false, preset: conv.project.printer.preset });
       return;
     }
     if (canvasUI.rereading) {
@@ -1399,7 +1406,7 @@
       canvasUI.refused = '';
       if (!lockSend('print')) return;
       if (conv && PlyoCanvas.needsReread(conv.project.canvas)) sendWithCanvasCheck();
-      else { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: false }); }
+      else { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: false, preset: conv && conv.project.printer ? conv.project.printer.preset : '' }); }
     }
     else if (kind === 'confirmCanvas') { if (canvasUI.mapping && PlyoCanvas.complete(canvasUI.mapping)) applyCanvas(canvasUI.mapping); }
     else if (kind === 'manualYes') { canvasUI.manual.confirmed = true; canvasUI.mapping = canvasProposal(); renderProject(); }
@@ -4402,6 +4409,8 @@
       onManualState(msg);
     } else if (msg.type === 'slots_manual_saved') {
       onManualSaved(msg);
+    } else if (msg.type === 'print_watch') {
+      onPrintWatch(msg);
     } else if (msg.type === 'canvas_sent') {
       onCanvasSent(msg);
     } else if (msg.type === 'canvas_started') {

@@ -346,3 +346,17 @@ test('Filament : les températures de la bobine sont demandées avant de passer 
   assert.equal(J.prompt('filament', { temps: { nozzle: 220, bed: 60 } }), 'Quelles températures indique ta bobine ?');
   assert.deepEqual(J.primaryAction('filament', { temps: { nozzle: 220, bed: 60 } }), { label: 'Garder 220 °C / 60 °C', kind: 'keepTemps', enabled: true });
 });
+
+test('watchText : ce que le panneau dit après avoir vérifié le démarrage sur l’imprimante', () => {
+  const ok = J.watchText('started', 'CR-10 SE', 'cube_PLA_20m.gcode');
+  assert.equal(ok.text, '✓ CR-10 SE a démarré l’impression (cube_PLA_20m.gcode).');
+  assert.equal(ok.tone, 'ok');
+  assert.match(J.watchText('busy', 'CR-10 SE', 'a.gcode').text, /imprimait déjà/);
+  assert.match(J.watchText('error', 'CR-10 SE', '').text, /erreur/);
+  const late = J.watchText('timeout', 'CR-10 SE', '');
+  assert.match(late.text, /n’a pas démarré/);
+  assert.match(late.text, /écran/);
+  assert.equal(late.tone, 'warn');
+  assert.match(J.watchText('unknown', 'CR-10 SE', '').text, /regarde son écran/);
+  assert.equal(J.watchText('bizarre', 'x', ''), null);
+});

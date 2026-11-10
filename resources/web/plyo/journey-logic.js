@@ -213,6 +213,19 @@
     return { line: 'filament', text: p.filament.type };
   }
 
+  // Verdict de la vérification du démarrage (PlyoPrinterStatus.cpp) → une ligne du guide ; null si rien à dire.
+  function watchText(verdict, name, file) {
+    var f = file ? ' (' + file + ')' : '';
+    switch (verdict) {
+      case 'started': return { text: '✓ ' + name + ' a démarré l’impression' + f + '.', tone: 'ok', icon: 'check' };
+      case 'busy': return { text: name + ' imprimait déjà ce fichier avant l’envoi.', tone: '', icon: 'info' };
+      case 'error': return { text: name + ' signale une erreur : regarde son écran.', tone: 'warn', icon: 'alert' };
+      case 'timeout': return { text: 'L’impression n’a pas démarré sur ' + name + '. Si le fichier est arrivé, lance-le depuis son écran ; sinon, vérifie qu’elle est allumée et renvoie-le.', tone: 'warn', icon: 'alert' };
+      case 'unknown': return { text: 'Je ne sais pas encore vérifier le démarrage sur ' + name + ' : regarde son écran.', tone: '', icon: 'info' };
+      default: return null;
+    }
+  }
+
   // Nom d'une machine : le nom du profil sans « Ma » devant ni « - Copie » derrière.
   function machineLabel(p) { return String(p && (p.name || p.preset) || '').replace(/^Ma\s+/i, '').replace(/\s*-\s*Copie.*$/i, '').trim(); }
 
@@ -268,7 +281,7 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
