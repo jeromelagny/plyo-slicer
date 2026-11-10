@@ -144,3 +144,10 @@ test('searchModels : la marque seule montre tous ses modèles, une recherche pr�
   assert.deepEqual(M.searchModels(catalog, 'cr 10 se').map((m) => m.model), ['Creality CR-10 SE']);
   assert.deepEqual(M.searchModels(catalog, ''), []);
 });
+
+test('linkSummary : à la liaison, ce que Plyo saura vérifier sur cette machine', () => {
+  assert.equal(M.linkSummary('crealityprint'), 'Après chaque envoi, je vérifie qu’elle démarre bien.');
+  assert.equal(M.linkSummary('moonraker'), 'Après chaque envoi, je vérifie qu’elle démarre bien.');
+  assert.match(M.linkSummary('elegoolink'), /regarde son écran/);
+  assert.match(M.linkSummary(''), /regarde son écran/);
+});

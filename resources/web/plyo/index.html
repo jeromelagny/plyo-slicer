@@ -2099,7 +2099,7 @@
   function onLinkSaved(msg) {
     if (!link) return;
     if (msg.ok) {
-      linkStep('C’est relié ! Ton profil d’imprimante s’appelle maintenant « ' + msg.profile + ' ». `Envoyer et imprimer` enverra tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+      linkStep('C’est relié ! Ton profil d’imprimante s’appelle maintenant « ' + msg.profile + ' ». `Envoyer et imprimer` enverra tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '. ' + PlyoMachines.linkSummary(link.printer.host_type), 'ok', 'check');
       if (link.onDone) link.onDone();
     }
     else linkStep('Je n’ai pas pu enregistrer la connexion. Réessaie, ou ouvre la fenêtre « Connexion » depuis le bouton Wi-Fi à côté de « Imprimante ».', 'error', 'alert');
@@ -2107,7 +2107,7 @@
   function onLinkDialogClosed(msg) {
     if (!link) return;
     if (msg.saved) {
-      linkStep('C’est relié ! `Envoyer et imprimer` enverra maintenant tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '.', 'ok', 'check');
+      linkStep('C’est relié ! `Envoyer et imprimer` enverra maintenant tes impressions directement à ' + (link.printer.name || 'ton imprimante') + '. ' + PlyoMachines.linkSummary(link.printer.host_type), 'ok', 'check');
       if (link.onDone) link.onDone();
     } else {
       var box = linkStep('Rien n’a été enregistré. Tu peux recommencer quand tu veux.', '', 'info');
@@ -2146,7 +2146,22 @@
     setupPhase('search');
   }
   // Choix d'un modèle (trouvé ou cherché) : la buse 0,4 mm (livrée avec presque toutes les imprimantes) d'office.
+  // Modèle choisi pour une imprimante au code inconnu (Creality « F003 »…) : gardé sur cet ordinateur et, avec un compte,
+  // partagé anonymement (le serveur ne garde qu'une empreinte et ne publie qu'un code confirmé par deux personnes).
+  function learnModel(printer, model) {
+    if (!printer || !printer.code || printer.match || !printer.brand || !model) return;
+    var report = { brand: printer.brand, code: printer.code, model: model };
+    window.orca.postMessage(Object.assign({ type: 'model_learned' }, report));
+    if (session) apiFetch('/api/printer-models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report) }).catch(function () {});
+  }
+  // Table partagée des codes confirmés : lue au démarrage, gardée par le slicer pour la recherche d'imprimantes.
+  function loadSharedModels() {
+    if (!PLYO_API_URL) return;
+    fetch(PLYO_API_URL + '/api/printer-models').then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (reply) { if (reply) window.orca.postMessage({ type: 'models_shared', reply: reply }); }).catch(function () {});
+  }
   function chooseModel(match, printer) {
+    learnModel(printer, match && match.model);
     setup.pick = match;
     setup.found = printer || null;
     setup.linkBox = null;
@@ -4438,6 +4453,7 @@
   showLoggedIn(false);
   window.orca.postMessage({ type: 'ready' });
   window.orca.postMessage({ type: 'session_load' });
+  loadSharedModels();
   window.orca.postMessage({ type: 'firststeps_state' });
 })();
 </script>

@@ -2083,3 +2083,36 @@ TEST_CASE("PrinterStatus : état d'impression lu, puis verdict après un envoi")
     CHECK(verdict(unknown, printing) == "started");
     CHECK(verdict(idle, unknown) == "unknown");
 }
+
+TEST_CASE("Discovery : modèles appris (code d'une imprimante → modèle du catalogue)")
+{
+    using namespace Plyo::Discovery;
+    CHECK(valid_learned("Creality", "F003", "Creality CR-10 SE"));
+    CHECK_FALSE(valid_learned("Creality", "F003; x", "Creality CR-10 SE"));
+    CHECK_FALSE(valid_learned("", "F003", "Creality CR-10 SE"));
+    CHECK_FALSE(valid_learned("Creality", "F003", "<b>"));
+    CHECK_FALSE(valid_learned("Creality", std::string(21, 'F'), "Creality CR-10 SE"));
+
+    // Fichier local : { local: {marque: {code: modèle}}, shared: {…} } ; le choix fait sur cet ordinateur l'emporte.
+    const nlohmann::json store = {{"local", {{"Creality", {{"F050", "Creality K1 Max"}}}}},
+                                  {"shared", {{"Creality", {{"F050", "Creality K1"}, {"F060", "Creality Hi"}}}}}};
+    const auto learned = learned_for(store, "Creality");
+    CHECK(learned.at("F050") == "Creality K1 Max");
+    CHECK(learned.at("F060") == "Creality Hi");
+    CHECK(learned_for(store, "Elegoo").empty());
+    CHECK(learned_for(nlohmann::json(), "Creality").empty());
+
+    CHECK(creality_mdns_name("F060", "", learned) == "Creality Hi");
+    CHECK(creality_mdns_name("F008", "K2 Plus", learned) == "Creality K2 Plus"); // ce qu'Orca sait passe d'abord
+    CHECK(creality_mdns_name("F999", "", learned) == "Imprimante Creality");
+
+    // Table partagée reçue du serveur : seules les lignes valides sont gardées.
+    const nlohmann::json shared = shared_from_server({{"models", {{{"brand", "Creality"}, {"code", "F060"}, {"model", "Creality Hi"}},
+                                                                 {{"brand", "Creality"}, {"code", "bad code!"}, {"model", "X"}}}}});
+    CHECK(shared == nlohmann::json({{"Creality", {{"F060", "Creality Hi"}}}}));
+    CHECK(shared_from_server("n'importe quoi").empty());
+
+    Printer withCode{"192.168.1.200", "Imprimante Creality", "Creality", "crealityprint", "192.168.1.200", 3};
+    withCode.code = "F003";
+    CHECK(to_json({withCode})[0]["code"] == "F003");
+}

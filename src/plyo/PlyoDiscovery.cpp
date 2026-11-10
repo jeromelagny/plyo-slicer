@@ -2,6 +2,7 @@
 #include "slic3r/Utils/Bonjour.hpp"
 
 #include "PlyoDiscovery.hpp"
+#include "PlyoStore.hpp"
 
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/Utils/CrealityHostDiscovery.hpp"
@@ -163,10 +164,13 @@ std::vector<Printer> ask_elegoo_cc2()
 std::vector<Printer> ask_creality()
 {
     std::vector<Printer> found;
+    // Codes appris (choix faits sur cet ordinateur et table partagée du serveur Plyo) : voir PlyoAssistant.cpp, model_learned.
+    const std::map<std::string, std::string> learned = learned_for(Store::read(Store::dir() / "modeles-appris.json"), "Creality");
     for (const Slic3r::CrealityHost& h : Slic3r::CrealityHostDiscovery::scan(true)) {
         Printer p;
         p.ip        = h.ip;
-        p.name      = creality_mdns_name(h.model_code, h.model_name); // jamais le « K2-xxxx » inventé par Orca
+        p.code      = h.model_code;
+        p.name      = creality_mdns_name(h.model_code, h.model_name, learned); // jamais le « K2-xxxx » inventé par Orca
         p.brand     = "Creality";
         p.host_type = "crealityprint";
         p.host      = h.ip;

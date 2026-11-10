@@ -22,6 +22,8 @@
 #include "PlyoProfiles.hpp"
 #include "PlyoPrinterLink.hpp"
 #include "PlyoPrinterStatus.hpp"
+#include "PlyoDiscoveryLogic.hpp"
+#include "PlyoStore.hpp"
 #include "PlyoHabits.hpp"
 #include "PlyoProject.hpp"
 #include "PlyoProjectLogic.hpp"
@@ -456,6 +458,18 @@ void handle_page_message(const nlohmann::json& data)
                 r["type"] = "canvas_sent";
                 send(r);
             });
+        } else if (type == "model_learned" || type == "models_shared") {
+            // Modèles appris : le choix fait ici (« local ») et la table partagée du serveur (« shared »), relus à la recherche.
+            const boost::filesystem::path file  = Store::dir() / "modeles-appris.json";
+            nlohmann::json                store = Store::read(file);
+            if (!store.is_object())
+                store = nlohmann::json::object();
+            if (type == "models_shared")
+                store["shared"] = Discovery::shared_from_server(data.contains("reply") ? data["reply"] : nlohmann::json());
+            else if (const std::string brand = Json::str(data, "brand"), code = Json::str(data, "code"), model = Json::str(data, "model");
+                     Discovery::valid_learned(brand, code, model))
+                store["local"][brand][code] = model;
+            Store::write(file, store);
         } else if (type == "print_watch_start") {
             PrinterStatus::watch(Json::str(data, "preset"), [](nlohmann::json w) {
                 w["type"] = "print_watch";

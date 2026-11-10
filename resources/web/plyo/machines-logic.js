@@ -105,9 +105,17 @@
     return found.slice().sort(function (a, b) { return a.model.localeCompare(b.model, 'fr', { numeric: true }); });
   }
 
+  // Phrase dite quand une machine vient d'être reliée : ce que Plyo vérifiera après un envoi (PlyoPrinterStatus.cpp lit
+  // l'état des Creality et des Klipper/Moonraker ; les autres connexions ne disent pas encore si l'impression a démarré).
+  var WATCHED = ['crealityprint', 'moonraker'];
+  function linkSummary(hostType) {
+    return WATCHED.indexOf(hostType) >= 0 ? 'Après chaque envoi, je vérifie qu’elle démarre bien.'
+      : 'Après un envoi, regarde son écran : je ne sais pas encore vérifier qu’elle démarre.';
+  }
+
   var api = { levelOf: levelOf, guessLevel: guessLevel, chooseLevel: chooseLevel, askIntent: askIntent, noteIntent: noteIntent,
     offerStopAsking: offerStopAsking, stopAsking: stopAsking, machineThatFits: machineThatFits, visiblePrinters: visiblePrinters, isKnownHost: isKnownHost, machineQuestion: machineQuestion, habitFor: habitFor, rememberFilament: rememberFilament, replaceMachine: replaceMachine,
-    hideMachine: hideMachine, unhideMachine: unhideMachine, emptyHabits: emptyHabits, searchModels: searchModels };
+    hideMachine: hideMachine, unhideMachine: unhideMachine, emptyHabits: emptyHabits, searchModels: searchModels, linkSummary: linkSummary };
   root.PlyoMachines = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
