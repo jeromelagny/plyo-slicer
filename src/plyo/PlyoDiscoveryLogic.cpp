@@ -58,6 +58,20 @@ std::vector<std::string> neighbours(const std::string& local_ip)
     return out;
 }
 
+std::string creality_mdns_name(const std::string& model_code, const std::string& orca_model_name)
+{
+    if (!orca_model_name.empty())
+        return "Creality " + orca_model_name;
+    // Codes de /info absents de la table d'Orca (qui ne connaît que les modèles à CFS). N'ajouter un code que constaté sur
+    // une vraie machine.
+    static const std::map<std::string, std::string> CODES = {
+        {"F003", "CR-10 SE"}, // CR-10 SE de Jérôme, 2026-11-10
+    };
+    if (const auto it = CODES.find(model_code); it != CODES.end())
+        return "Creality " + it->second;
+    return "Imprimante Creality";
+}
+
 std::string brand_from_name(const std::string& name)
 {
     const std::string n = lower(name);

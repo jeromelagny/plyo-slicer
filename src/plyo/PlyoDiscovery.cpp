@@ -166,7 +166,7 @@ std::vector<Printer> ask_creality()
     for (const Slic3r::CrealityHost& h : Slic3r::CrealityHostDiscovery::scan(true)) {
         Printer p;
         p.ip        = h.ip;
-        p.name      = !h.model_name.empty() ? "Creality " + h.model_name : h.hostname;
+        p.name      = creality_mdns_name(h.model_code, h.model_name); // jamais le « K2-xxxx » inventé par Orca
         p.brand     = "Creality";
         p.host_type = "crealityprint";
         p.host      = h.ip;

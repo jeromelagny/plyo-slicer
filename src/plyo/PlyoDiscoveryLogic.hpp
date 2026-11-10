@@ -40,6 +40,11 @@ std::optional<Printer> from_elegoo_sdcp(const std::string& datagram);
 // contient pas l'adresse : c'est celle de l'expéditeur du datagramme (`ip`).
 std::optional<Printer> from_elegoo_cc2(const std::string& ip, const std::string& datagram);
 
+// Nom d'une Creality trouvée par l'annonce mDNS de Creality (recherche d'Orca) : le modèle connu d'Orca, sinon notre table
+// des codes de /info, sinon « Imprimante Creality » (le modèle est alors demandé). Orca nomme ces machines « K2-xxxx »
+// quel que soit le modèle : ce nom-là n'est jamais repris.
+std::string creality_mdns_name(const std::string& model_code, const std::string& orca_model_name);
+
 // Marque devinée d'après un nom d'imprimante (« K1C-1A2B » → Creality) ; vide si rien ne correspond.
 std::string brand_from_name(const std::string& name);
 

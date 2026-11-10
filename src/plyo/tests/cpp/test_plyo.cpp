@@ -271,6 +271,19 @@ TEST_CASE("Discovery garde une entrée par IP, la source la plus précise")
     CHECK(to_json(m).size() == 2);
 }
 
+TEST_CASE("Discovery : nom d'une Creality annoncée en mDNS, sans « K2 » inventé")
+{
+    using namespace Plyo::Discovery;
+    CHECK(creality_mdns_name("F008", "K2 Plus") == "Creality K2 Plus");
+    CHECK(creality_mdns_name("F003", "") == "Creality CR-10 SE"); // code lu sur la CR-10 SE de Jérôme (2026-11-10)
+    CHECK(creality_mdns_name("F999", "") == "Imprimante Creality");
+    CHECK(creality_mdns_name("", "") == "Imprimante Creality");
+    Printer unknown{"192.168.1.30", creality_mdns_name("F999", ""), "Creality", "crealityprint", "192.168.1.30", 3};
+    CHECK(model_hint(unknown).empty()); // le modèle est demandé, jamais deviné
+    Printer cr10{"192.168.1.200", creality_mdns_name("F003", ""), "Creality", "crealityprint", "192.168.1.200", 3};
+    CHECK(profile_matches("Creality CR-10 SE", model_hint(cr10)));
+}
+
 TEST_CASE("Discovery reconnaît le modèle et le compare au profil")
 {
     using namespace Plyo::Discovery;
