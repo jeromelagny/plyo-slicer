@@ -360,3 +360,9 @@ test('watchText : ce que le panneau dit après avoir vérifié le démarrage sur
   assert.match(J.watchText('unknown', 'CR-10 SE', '').text, /regarde son écran/);
   assert.equal(J.watchText('bizarre', 'x', ''), null);
 });
+
+test('afterSliceFollow : après une découpe demandée à l’assistant, imprimer si la machine est reliée, sinon exporter', () => {
+  assert.equal(J.afterSliceFollow({ sliced: false, linked: true }), null);
+  assert.deepEqual(J.afterSliceFollow({ sliced: true, linked: true }), { label: 'Envoyer et imprimer', kind: 'send' });
+  assert.deepEqual(J.afterSliceFollow({ sliced: true, linked: false }), { label: 'Exporter le fichier', kind: 'export' });
+});

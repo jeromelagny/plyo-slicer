@@ -44,6 +44,13 @@
 
   function tempText(t) { return (t.nozzle != null ? t.nozzle + ' °C' : '?') + ' / ' + (t.bed != null ? t.bed + ' °C' : '?'); }
 
+  // Découpe lancée depuis une réponse de l'assistant : la suite à proposer sur cette réponse une fois la plaque découpée.
+  function afterSliceFollow(ctx) {
+    var c = ctx || {};
+    if (!c.sliced) return null;
+    return c.linked ? { label: 'Envoyer et imprimer', kind: 'send' } : { label: 'Exporter le fichier', kind: 'export' };
+  }
+
   function primaryAction(step, ctx) {
     var c = ctx || {};
     // Canvas de la CC2 (étape Filament, ou emplacements repris depuis l'étape Imprimer) : on choisit un emplacement
@@ -281,7 +288,7 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;

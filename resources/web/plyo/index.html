@@ -2783,7 +2783,11 @@
         if (a.kind === 'show') showMe(a.target);
         else if (a.kind === 'open_tool') window.orca.postMessage({ type: 'open_tool', tool: a.target });
         else if (a.kind === 'show_setting') showSetting(a.target);
-        else { b.disabled = true; plateAction(a.kind, function (ok) { if (!ok) b.disabled = false; }); }
+        else {
+          b.disabled = true;
+          if (a.kind === 'slice') assistSlice = { conv: conv, row: row };
+          plateAction(a.kind, function (ok) { if (!ok) { b.disabled = false; if (a.kind === 'slice') assistSlice = null; } });
+        }
       }, 'btn ghost sm', iconName);
       row.appendChild(b);
     });
@@ -3649,8 +3653,31 @@
     slot.appendChild(box);
   }
 
+  // Découpe demandée par le bouton d'une réponse : une fois faite, la même réponse propose la suite (imprimer ou exporter).
+  var assistSlice = null;
+  function followAssistSlice(signals) {
+    var pending = assistSlice;
+    if (!pending || !signals.sliced) return;
+    assistSlice = null;
+    if (pending.conv !== conv || !pending.row.isConnected) return;
+    var next = PlyoJourney.afterSliceFollow({ sliced: true, linked: !!signals.linked });
+    var b = button(next.label, function () {
+      if (conv !== pending.conv) return;
+      b.disabled = true;
+      // La vérification de la plaque passe avant l'envoi : sans son résultat, ou avec des risques ouverts, on montre le Guide.
+      var checked = plateChecked === 'clean' || plateChecked === 'ignored';
+      if (currentTourStep() === 'slice' && checked && openRisks === 0) setTourStep('print');
+      applyTab('show-guide');
+      var a = PlyoJourney.primaryAction(PlyoJourney.currentStep(conv.project), journeyCtx());
+      if (checked && (a.kind === 'send' || a.kind === 'export') && a.enabled) { runAction(a.kind); return; }
+      b.disabled = false;
+      noteLine(plateChecked === 'open' ? 'Regarde d’abord la vérification de ta plaque, ci-dessous.' : plateChecked === '' && plateSliced() ? 'Je vérifie ta plaque : le bouton d’impression apparaît ici juste après.' : 'Il reste une étape avant l’impression : je te la montre ici.', '', 'info', 'guide');
+    }, 'btn ghost sm', next.kind === 'send' ? 'send' : 'check');
+    pending.row.appendChild(b);
+  }
   function onTourSignals(signals) {
     if (signals.sliced) stopSlicing();
+    followAssistSlice(signals);
     watchSlice(signals);
     var hadSummary = !!printSummary();
     var wasLinked = !!(tourSignals && tourSignals.linked);

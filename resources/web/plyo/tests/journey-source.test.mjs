@@ -473,3 +473,10 @@ test('annulation ou délai dépassé : la jauge est relue, une fois la facturati
 test('saisie manuelle : une machine avec traducteur mais non reliée y a droit aussi', () => {
   assert.ok(/!known\.slots \|\| !known\.linked\) return true/.test(read('index.html')));
 });
+
+test('une découpe lancée depuis une réponse propose ensuite d’imprimer ou d’exporter sur cette réponse', () => {
+  const html = read('index.html');
+  assert.match(html, /if \(a\.kind === 'slice'\) assistSlice = \{ conv: conv, row: row \}/);
+  assert.match(html, /followAssistSlice\(signals\);/);
+  assert.match(html, /runAction\(a\.kind\)/);
+});
