@@ -599,8 +599,8 @@ test('l’action remember_success poste spool_success, se grise au clic et dispa
   assert.match(fn, /archived && \(PLATE_KINDS\.indexOf\(a\.kind\) >= 0 \|\| a\.kind === 'remember_success'\)/);
   assert.match(html, /msg\.type === 'spool_success_done'[\s\S]{0,80}onSpoolSuccessDone\(msg\)/);
   // « Oui » de l’étape Résultat : la bobine de l’envoi, et le changement d’avis après « Non ».
-  assert.match(html, /postMessage\(\{ type: 'spool_success', spool: s\.id \|\| '', change_of_mind: !!s\.failed \}\)/);
-  assert.match(html, /postMessage\(\{ type: 'spool_failure', spool: s\.id \|\| '' \}\)/);
+  assert.match(html, /postMessage\(\{ type: 'spool_success', spool: s\.spool\.id, change_of_mind: !!s\.failed \}\)/);
+  assert.match(html, /if \(s\.spool\) window\.orca\.postMessage\(\{ type: 'spool_failure', spool: s\.spool\.id \}\)/);
   // Refus du slicer (autre bobine, envoi ancien ou raté) : son texte honnête est montré.
   assert.match(html, /noteLine\(msg\.text \|\| 'Je n’ai pas pu retenir ces réglages/);
 });
@@ -688,7 +688,7 @@ test('fin d’impression : la question s’affiche avec ses choix et chaque choi
   assert.doesNotMatch(textOf(slot), /Ça a marché avec/);
   const plain = fakeUi().el('div');
   S.render(plain, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', endAsk: null, handlers: h });
-  assert.match(textOf(plain), /Ça a marché avec Sunlu PLA/);
+  assert.match(textOf(plain), /je retiendrai les réglages de ta bobine « Sunlu PLA »/);
 });
 
 test('fin d’impression : le panneau la relie au suivi, aux gestes du Résultat et à la discussion', () => {
@@ -710,7 +710,8 @@ test('fin d’impression : le panneau la relie au suivi, aux gestes du Résultat
   assert.match(status, /Bind\(wxEVT_DESTROY[\s\S]*g_closing = true;[^\n]*\n\s*stop\(\);/, 'le suivi s’arrête avec la fenêtre principale, panneau ouvert ou non');
   assert.doesNotMatch(status.slice(status.indexOf('void watch(')), /is_closing\(\)/, 'le fil ne lit jamais l’application');
   assert.match(status, /read\(kind, \*config, true, logged\);\s*if \(!alive\(\)\)\s*return;/, 'rien n’est posté après une fermeture');
-  assert.equal((cppSrc('PlyoAssistant.cpp').match(/w\["id"\]\s*= id;/g) || []).length, 2, 'les deux suivis renvoient l’id de l’envoi');
+  assert.equal((cppSrc('PlyoAssistant.cpp').match(/w\["id"\]\s*= id;/g) || []).length, 1, 'un seul envoi des messages de suivi');
+  assert.equal((cppSrc('PlyoAssistant.cpp').match(/\]\(nlohmann::json w\) \{ send_watch\(w, id\); \}\);/g) || []).length, 2, 'les deux suivis renvoient l’id de l’envoi');
 });
 
 test('suivi Creality : le journal porte un préfixe fixe et jamais de code d’accès', () => {
@@ -731,7 +732,7 @@ test('reprise 1 : la barre est inerte pendant un envoi ou une découpe', () => {
 
 test('reprise 1 : une fin répondue sans jugement laisse un Résultat neutre', () => {
   const req = createRequire(import.meta.url);
-  const S = req('../journey-steps.js'), h = new Proxy({}, { get: () => () => {} });
+  const S = req('../journey-steps.js'), J = req('../journey-logic.js'), h = new Proxy({}, { get: () => () => {} });
   for (const done of ['cancelled', 'error']) {
     const slot = fakeUi().el('div');
     S.render(slot, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', endAsk: null, endDone: done, handlers: h });
@@ -739,16 +740,17 @@ test('reprise 1 : une fin répondue sans jugement laisse un Résultat neutre', (
     assert.doesNotMatch(textOf(slot), /Ça a marché/, done);
     assert.ok(!labels.includes('Oui, c’est réussi'), done + ' : jamais la question de réussite');
     assert.equal(labels.includes('Non, c’est raté'), done === 'error', 'après une erreur, « Non, c’est raté » reste');
-    assert.ok(labels.includes('Nouvelle pièce') && labels.includes('Réimprimer cette pièce'));
+    assert.ok(labels.includes('Réimprimer cette pièce'));
+    assert.equal(J.primaryAction('resultat', { ended: done }).kind, 'newPart', done + ' : « Nouvelle pièce » est le bouton de la ligne d’action');
   }
   const page = read('index.html');
-  assert.match(page, /markSendAnswered\(\);\s*s\.outcome = s\.end\.verdict;/);
+  assert.match(page, /s\.outcome = s\.end\.verdict;\s*markSendAnswered\(\);/);
   assert.match(page, /endDone: step === 'resultat' \? endOutcome\(\) : ''/);
 });
 
 test('reprise 1 : ids d’envoi, bobine des envois avec emplacements, réussite dite dans la discussion, question unique', () => {
   const page = read('index.html');
-  assert.match(page, /if \(!projectUI\.lastSend \|\| msg\.id !== projectUI\.lastSend\.id\) return;/);
+  assert.match(page, /if \(!sent \|\| !sent\.watch \|\| msg\.id !== sent\.watch\) return;/);
   assert.equal((page.match(/type: 'print_start', export: false,[^}]*watch_id: newWatchId\(\)/g) || []).length, 2);
   assert.match(page, /type: 'print_watch_start', preset: conv\.project\.printer\.preset, id: projectUI\.watchId/);
   const sent = page.slice(page.indexOf('function onCanvasSent'), page.indexOf('function onCanvasState'));
@@ -758,7 +760,7 @@ test('reprise 1 : ids d’envoi, bobine des envois avec emplacements, réussite 
   const end = page.slice(page.indexOf('function onPrintEnd'), page.indexOf('function answerEnd'));
   assert.match(end, /currentStep\(conv\.project\) === 'resultat'\) \{ renderProject\(\);/, 'M8 : au Résultat, seulement l’étape');
   assert.match(page, /Cette question concerne une autre conversation\./);
-  assert.match(page, /lastSend\.conv !== conv\)\) staleEndNote\(\);/);
+  assert.match(page, /projectUI\.endNoteConv !== conv\) staleEndNote\(\);/);
 });
 
 test('reprise 2 : une fenêtre principale recréée (changement de langue) ne coupe pas les suivis suivants', () => {
@@ -769,4 +771,111 @@ test('reprise 2 : une fenêtre principale recréée (changement de langue) ne co
   assert.match(fn, /if \(g_bound_frame == frame\)\s*g_bound_frame = nullptr;/, 'la fenêtre détruite libère la liaison');
   assert.doesNotMatch(src, /static bool bound/);
   assert.match(src, /void watch\(const std::string& preset[^\n]*\n\{\s*watch_closing\(\);/, 'vérifiée à chaque suivi');
+});
+
+test('lot 1 · UX-01 : sans fichier, le petit bateau de test se pose comme une pièce choisie', () => {
+  const card = read('project-card.js'), page = read('index.html');
+  assert.match(card, /ui\.button\('Pas encore de fichier \? Essaie avec le petit bateau de test', h\.samplePart, 'link'\)/);
+  const fn = page.slice(page.indexOf('function importSample'), page.indexOf('// Glisser-déposer sur le panneau'));
+  assert.match(fn, /postMessage\(\{ type: 'model_add', sample: 'benchy', project: conv\.project, conv: conv\.id,/, 'même chemin que model_add : plateau attaché à la conversation');
+  assert.match(fn, /replace: PlyoProject\.replacesPlate\(/);
+  assert.match(page, /samplePart: function \(\) \{ importSample\(\); \}/);
+  // Réponse : model_added, traitée comme une pièce choisie ; s'il manque, une issue.
+  const added = page.slice(page.indexOf('function onModelAdded'), page.indexOf('function dropReplaced'));
+  assert.match(added, /if \(!msg\.ok && msg\.sample\) \{[\s\S]*?button\('Choisir un fichier', function \(\) \{ pickFiles\(\); \}, 'link'\)/);
+  const assistant = cppSrc('PlyoAssistant.cpp');
+  assert.match(assistant, /sample\.empty\(\) \? ModelImport::add\([\s\S]*?: ModelImport::add_sample\(sample, project,/);
+  assert.match(assistant, /added\["sample"\] = sample;/);
+  const imp = cppSrc('PlyoModelImport.cpp');
+  assert.match(imp, /handy_models\(\)[\s\S]*?"3dbenchy"/, 'le fichier vient de la table des modèles d’Orca, pas d’un nom en dur');
+  assert.match(imp, /return place\(path, "Petit bateau de test \(3DBenchy\)", project, replace\);/);
+});
+
+test('lot 1 · UX-06 : l’envoi est gardé dans le projet, plus en mémoire par objet', () => {
+  const page = read('index.html');
+  assert.doesNotMatch(page, /projectUI\.spoolSent|projectUI\.lastSend|projectUI\.spoolNo|s\.conv === conv|s\.conv !== conv/);
+  assert.match(page, /function sendOf\(\) \{ return conv && conv\.project\.send && typeof conv\.project\.send === 'object' \? conv\.project\.send : null; \}/);
+  const note = page.slice(page.indexOf('function noteSpoolSent'), page.indexOf('function spoolAsk'));
+  assert.match(note, /delete conv\.project\.send;\s*sendRecord\(\);\s*scheduleSave\(\);/, 'un nouvel envoi remplace le précédent et s’enregistre');
+  const success = page.slice(page.indexOf('function spoolSuccess'), page.indexOf('function onSpoolSuccessDone'));
+  assert.match(success, /var s = sendRecord\(\);/, 'sans envoi noté : la bobine du projet, comme remember_success');
+  assert.match(success, /if \(!s\.spool\) \{ noteLine\('Je ne retiens les réglages que d’une bobine/, 'rien à retenir : on le dit');
+  const record = page.slice(page.indexOf('function sendRecord'), page.indexOf('function noteSendWatched'));
+  assert.match(record, /f\.spool\.id && !\(Array\.isArray\(p\.canvas\) && p\.canvas\.length\)/);
+  // Réouverture : la fin lue pendant l'absence est redemandée au slicer, qui la garde par id d'envoi.
+  const restore = page.slice(page.indexOf('function restoreConversation'), page.indexOf('function restoreConversation') + 3200);
+  assert.match(restore, /postMessage\(\{ type: 'print_watch_replay', id: sentBefore\.watch \}\)/);
+  const assistant = cppSrc('PlyoAssistant.cpp');
+  assert.match(assistant, /type == "print_watch_replay"/);
+  assert.match(assistant, /if \(Json::str\(w, "phase"\) == "end" && !id\.empty\(\)\)/);
+  // Le slicer garde ces champs à l'enregistrement de la conversation.
+  const logic = cppSrc('PlyoProjectLogic.cpp');
+  assert.match(logic, /Json::field\(project, "send"\)/);
+  assert.match(logic, /out\["success"\] = true;/);
+});
+
+test('lot 1 · UX-04 et UX-05 : Résultat en cours, puis « Oui, c’est réussi » en bouton plein quand la fin est lue', () => {
+  const req = createRequire(import.meta.url);
+  const S = req('../journey-steps.js'), J = req('../journey-logic.js'), h = new Proxy({}, { get: () => () => {} });
+  const labels = (slot) => all(slot).filter((n) => n.tag === 'button').map((b) => b.textContent);
+  const printing = fakeUi().el('div');
+  S.render(printing, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: '', endAsk: null, handlers: h });
+  assert.match(textOf(printing), /Quand elle est finie, dis-moi si c’est réussi\./);
+  assert.deepEqual(labels(printing), ['C’est fini : réussi', 'C’est fini : raté', 'Nouvelle pièce', 'Réimprimer cette pièce']);
+  // Fin lue : le « Oui » est le bouton plein, la carte ne garde que « Non ».
+  const finished = fakeUi().el('div');
+  S.render(finished, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', endAsk: J.endQuestion('finished', 'K2', 'a.gcode'), handlers: h });
+  assert.ok(!labels(finished).includes('Oui'));
+  assert.ok(labels(finished).includes('Non, pas vraiment'));
+  assert.ok(labels(finished).includes('Photo depuis l’ordinateur (utilise ta jauge)'));
+  // « Raté » dit : les photos, avec leur coût, et le changement d'avis.
+  const failed = fakeUi().el('div');
+  S.render(failed, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', spoolNo: true, handlers: h });
+  assert.ok(labels(failed).includes('Photo depuis l’ordinateur (utilise ta jauge)'));
+  assert.ok(labels(failed).includes('Oui, c’est réussi'));
+  assert.ok(!labels(failed).some((l) => l === 'Ajouter une photo depuis l’ordinateur' || l === 'Envoyer une photo'));
+  const page = read('index.html');
+  assert.match(page, /kind === 'success'\) \{ if \(endQuestionNow\(\)\) answerEnd\('yes'\); else stepHandlers\.success\(\); \}/);
+  assert.match(page, /ctx\.failed = !!\(sendOf\(\) && sendOf\(\)\.failed\);/);
+  assert.doesNotMatch(page, /'Envoyer une photo'|Envoyer une photo du résultat/);
+  const chat = page.slice(page.indexOf('function openChatAbout'), page.indexOf('function onCanvasSent'));
+  assert.match(chat, /button\(PlyoJourney\.PHOTO_PHONE, function \(\) \{ openPhone\(\); \}, 'link'\)/);
+  assert.match(chat, /button\(PlyoJourney\.PHOTO_COMPUTER, function \(\) \{ pickFiles\(\); \}, 'link'\)/);
+});
+
+test('lot 1 · UX-15 : le lot des questions d’intention a son « Annuler », qui ramène au résumé', () => {
+  const page = read('index.html');
+  assert.match(page, /if \(result && result\.undo_id\) intentUI\.doneLine\.appendChild\(intentUndoButton\(result\.undo_id, conv\)\);/);
+  const fn = page.slice(page.indexOf('function intentUndoButton'), page.indexOf('function maybeReapplyIntent'));
+  assert.match(fn, /postMessage\(\{ type: 'undo', undo_id: undoId \}\)/);
+  assert.match(fn, /undoneListeners\[undoId\] = function \(\) \{[\s\S]*?conv\.project\.intent\.applied = false;[\s\S]*?noteLine\('Réglages d’avant remis\.'/);
+});
+
+test('lot 1 · UX-16 : « Annuler » après « Tout corriger » défait aussi le plateau, ou dit ce qui reste', () => {
+  const page = read('index.html');
+  const fix = page.slice(page.indexOf("fixAll.addEventListener('click'"), page.indexOf('// Découpe demandée par le bouton d\'une réponse'));
+  assert.match(fix, /plateDone\.push\(\{ kind: actions\[i\]\.action, token: msg && msg\.undo_token !== undefined \? msg\.undo_token : null \}\)/);
+  assert.match(fix, /plateAction\('undo', function \(ok\) \{[^\n]*\}, \{ undo_token: last\.token \}, undefined, true\);/, 'de la dernière action à la première, sans ligne à part');
+  assert.match(fix, /PF\.undoText\(settingsUndone, plateDone\.length - left\.length, left\.map/);
+  assert.match(page, /if \(plateQuiet\[msg\.request\]\) \{ delete plateQuiet\[msg\.request\]; if \(after\) after\(msg\.ok, msg\); return; \}/);
+});
+
+test('lot 1 · UX-20, UX-21, UX-23, UX-28 : une issue à chaque impasse', () => {
+  const page = read('index.html');
+  // UX-20 et UX-23 : gratuit, la discussion s'ouvre avec l'invitation à la photo.
+  assert.match(page, /what === 'failed' \|\| what === 'defect'\) showFailedPrint\(what === 'defect' \? 'Ma pièce a ce défaut : ' : ''\)/);
+  const show = page.slice(page.indexOf('function showFailedPrint'), page.indexOf('var stepHandlers'));
+  assert.match(show, /openChatAbout\(prefill, true\);/);
+  assert.match(show, /PlyoJourney\.fixNeeds\(conv\.project\)/);
+  // UX-21 : le refus pour fiche incomplète donne le bouton qui y mène ; la fiche reste applicable.
+  const sheet = page.slice(page.indexOf("apply.addEventListener('click'"), page.indexOf("ignore.addEventListener('click'"));
+  assert.match(sheet, /if \(!ok\) \{\s*lock\(false\); updateCount\(\);[\s\S]*?completeProjectButton\(result && result\.missing\)/);
+  const assistant = cppSrc('PlyoAssistant.cpp');
+  assert.match(assistant, /SettingsBridge::filament_only\(/);
+  assert.match(assistant, /\{"missing", edit \? std::vector<std::string>\(\) : ProjectLogic::missing_for\(project, filament_only\)\}/);
+  // UX-28 : « Découper la plaque » à côté de « Anciens réglages remis ».
+  assert.match(page, /doneLabel\('Anciens réglages remis\. Découpe à nouveau la plaque pour en tenir compte\.', 'undo'\)\);\s*done\.appendChild\(button\('Découper la plaque', function \(\) \{ sliceAgain\(\); \}, 'btn ghost sm', 'wand'\)\);/);
+  const again = page.slice(page.indexOf('function sliceAgain'), page.indexOf('// ---------- Vérification avant impression'));
+  assert.match(again, /setTourStep\('slice'\)/);
+  assert.match(again, /plateAction\('slice'\)/);
 });

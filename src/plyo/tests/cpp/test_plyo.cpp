@@ -560,6 +560,48 @@ TEST_CASE("Project: refus quand la fiche est incomplète ou que le profil d'Orca
     CHECK_FALSE(refusal(full, "A", "G").empty());
 }
 
+TEST_CASE("Project: un réglage de l'onglet Filament n'exige que la machine et la bobine")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json no_part = {{"printer", {{"preset", "A"}}}, {"filament", {{"type", "PLA"}, {"preset", "F"}}}};
+    CHECK(missing_for(no_part, true).empty());
+    CHECK(missing_for(no_part, false) == std::vector<std::string>{"part"});
+    CHECK(refusal(no_part, "A", "F", true).empty());                // « ma pièce d'hier a des fils » : permis sans pièce
+    CHECK_FALSE(refusal(no_part, "A", "G", true).empty());          // Orca n'est plus sur la bobine du projet : refusé
+    CHECK(refusal(no_part, "A", "F", false) == "Pour appliquer ça, dis-moi d'abord quelle pièce tu imprimes.");
+    CHECK(missing_for(nlohmann::json(), true) == std::vector<std::string>{"printer", "filament"});
+    CHECK(refusal(nlohmann::json(), "A", "F", true) == "Pour appliquer ça, dis-moi d'abord sur quelle machine et avec quelle bobine tu imprimes.");
+    CHECK(refusal(nlohmann::json(), "A", "F") == "Pour appliquer ça, dis-moi d'abord sur quelle machine, quelle pièce et avec quelle bobine tu imprimes.");
+    CHECK(refusal(nlohmann::json{{"printer", {{"preset", "A"}}}}, "A", "F", true) == "Pour appliquer ça, dis-moi d'abord avec quelle bobine tu imprimes.");
+    // Machine seulement proposée (projet précédent, pas confirmée) : elle manque encore.
+    CHECK(missing_for(nlohmann::json{{"printer", {{"preset", "A"}, {"proposed", true}}}, {"filament", {{"preset", "F"}}}}, true) == std::vector<std::string>{"printer"});
+}
+
+TEST_CASE("Project: sanitize garde la réussite et le dernier envoi, sans rien d'autre")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json raw = {{"success", true},
+                                {"send", {{"spool", {{"id", "s1"}, {"name", "Sunlu PLA+ noir"}, {"path", "/x"}}}, {"watch", "w3-1731400000000"},
+                                          {"failed", true}, {"answered", false}, {"marked", "oui"}, {"secret", "SECRET"},
+                                          {"end", {{"verdict", "finished"}, {"file", "cube.gcode"}, {"host", "SECRET"}}}, {"outcome", "cancelled"}}}};
+    const nlohmann::json clean = sanitize(raw);
+    CHECK(clean["success"] == true);
+    CHECK(clean["send"]["spool"] == nlohmann::json({{"id", "s1"}, {"name", "Sunlu PLA+ noir"}}));
+    CHECK(clean["send"]["watch"] == "w3-1731400000000");
+    CHECK(clean["send"]["failed"] == true);
+    CHECK_FALSE(clean["send"].contains("answered")); // faux : rien à garder
+    CHECK_FALSE(clean["send"].contains("marked"));   // pas un booléen
+    CHECK(clean["send"]["end"] == nlohmann::json({{"verdict", "finished"}, {"file", "cube.gcode"}}));
+    CHECK(clean["send"]["outcome"] == "cancelled");
+    CHECK(clean.dump().find("SECRET") == std::string::npos);
+    // Valeurs illisibles : elles disparaissent.
+    const nlohmann::json bad = sanitize({{"success", "oui"}, {"send", {{"spool", {{"id", "s1"}}}, {"end", {{"verdict", "boom"}}}, {"outcome", "x"}, {"watch", 12}}}});
+    CHECK_FALSE(bad.contains("success"));
+    CHECK(bad["send"] == nlohmann::json::object());
+    CHECK_FALSE(sanitize({{"send", "x"}}).contains("send"));
+    CHECK_FALSE(sanitize({{"success", false}}).contains("success"));
+}
+
 TEST_CASE("Project: l'adaptation d'un 3MF impose les températures de la fiche")
 {
     using namespace Plyo::ProjectLogic;

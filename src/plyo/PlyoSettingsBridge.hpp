@@ -55,6 +55,10 @@ void retarget_undo(bool print, const std::string& from, const std::string& to);
 // Renvoie {ok, text, undo_id, applied: [{id, label, before, after}]}.
 nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::string& print_name, const std::string& filament_name);
 
+// Le lot (changements du mode catalogue ou de la liste blanche) ne touche que des réglages de l'onglet Filament : la pièce
+// n'est alors pas exigée pour l'appliquer (ProjectLogic::missing_for). Faux pour un lot vide ou une clé inconnue.
+bool filament_only(const nlohmann::json& changes);
+
 // Plage Plyo d'une clé de configuration de la liste blanche : {min, max, unit}, ou null hors liste blanche.
 nlohmann::json whitelist_range(const std::string& key);
 

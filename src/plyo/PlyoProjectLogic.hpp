@@ -18,13 +18,19 @@ std::vector<std::string> missing(const nlohmann::json& project);
 
 bool complete(const nlohmann::json& project);
 
+// Étapes de la fiche qu'une modification exige encore (même ordre que `missing`). `filament_only` : le lot ne touche que
+// des réglages de l'onglet Filament ; la pièce n'est alors pas exigée, seulement l'imprimante et la bobine.
+std::vector<std::string> missing_for(const nlohmann::json& project, bool filament_only);
+
 // Texte français pour l'utilisateur si une modification doit être refusée (fiche incomplète, ou profils d'Orca qui ne
-// sont plus ceux du projet) ; chaîne vide si elle est permise.
-std::string refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament);
+// sont plus ceux du projet) ; chaîne vide si elle est permise. `filament_only` : voir `missing_for`.
+std::string refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament, bool filament_only = false);
 
 // Le projet réduit à ses clés connues (aucun secret, aucun chemin de fichier), prêt à être enregistré avec la
 // conversation. null si ce n'est pas un objet. `step` (étape guidée) : slice, print, after, ou done (parcours terminé ou passé) ; `adapted` : nom de la pièce 3MF déjà adaptée ;
-// `canvas` : [{t, canvas_id, tray_id, type, color, preset}] (emplacements du Canvas choisis, 16 au plus).
+// `canvas` : [{t, canvas_id, tray_id, type, color, preset}] (emplacements du Canvas choisis, 16 au plus) ; `success` : réussite
+// dite à l'étape Résultat ; `send` : {spool: {id, name}, watch, failed, answered, marked, end: {verdict, file}, outcome}, le
+// dernier envoi ou export fait depuis le panneau.
 nlohmann::json sanitize(const nlohmann::json& project);
 
 // Filaments des couleurs 2 et suivantes choisis par les emplacements du Canvas : (numéro de filament t > 0, profil).

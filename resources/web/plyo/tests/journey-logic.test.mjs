@@ -51,7 +51,8 @@ test('primaryAction : un seul bouton, pas de bouton pour les trois choix', () =>
   assert.deepEqual(J.primaryAction('imprimer', { sliced: true, linked: true, risks: 0 }), { label: 'Envoyer et imprimer', kind: 'send', enabled: true });
   assert.deepEqual(J.primaryAction('imprimer', { sliced: true, linked: false, risks: 0 }), { label: 'Exporter le fichier', kind: 'export', enabled: true });
   assert.deepEqual(J.primaryAction('imprimer', { sliced: false, linked: true, risks: 0 }), { label: 'Découper', kind: 'slice', enabled: true });
-  assert.deepEqual(J.primaryAction('resultat', { sliced: true, linked: true, risks: 0 }), { label: 'Envoyer une photo', kind: 'photo', enabled: true });
+  // Résultat sans fin connue : pas de bouton plein (surtout pas un bouton qui dépense la jauge).
+  assert.deepEqual(J.primaryAction('resultat', { sliced: true, linked: true, risks: 0 }), { label: '', kind: 'none', enabled: false });
 });
 
 test('prompt dit quoi faire à chaque étape', () => {
@@ -92,8 +93,8 @@ test('ficheSummary omet les parties absentes', () => {
   assert.ok(!/undefined|null/.test(J.ficheSummary(null)));
 });
 
-test('suggestionsFor : aucune pendant les choix, deux au plus ensuite, et chaque tiroir reste accessible', () => {
-  for (const key of ['machine', 'filament', 'piece']) assert.deepEqual(J.suggestionsFor(key), [], key);
+test('suggestionsFor : une seule entrée gratuite pendant les choix, deux au plus ensuite, et chaque tiroir reste accessible', () => {
+  for (const key of ['machine', 'filament', 'piece']) assert.deepEqual(J.suggestionsFor(key), [{ label: 'Une impression ratée ? Montre-la-moi', kind: 'open', value: 'failed' }], key);
   const opened = [];
   for (const key of ['preparer', 'imprimer', 'resultat']) {
     const list = J.suggestionsFor(key);
@@ -251,7 +252,7 @@ test('plateau vide alors que la fiche a une pièce : on demande de la remettre, 
     assert.equal(J.primaryAction(step, { plateEmpty: true }).kind, 'importPart', step);
     assert.equal(J.prompt(step, { plateEmpty: true }), 'Ta pièce n’est plus sur le plateau', step);
   }
-  assert.equal(J.primaryAction('resultat', { plateEmpty: true }).kind, 'photo', 'à Résultat, le plateau peut être vidé');
+  assert.notEqual(J.primaryAction('resultat', { plateEmpty: true }).kind, 'importPart', 'à Résultat, le plateau peut être vidé');
   assert.equal(J.primaryAction('preparer', {}).kind, 'slice');
 });
 
@@ -271,7 +272,7 @@ test('découpe en cours : bouton inactif et état dit à l’écran', () => {
 });
 
 test('Résultat : une fois réussi, la suite devient l’action principale', () => {
-  assert.equal(J.primaryAction('resultat', {}).kind, 'photo');
+  assert.equal(J.primaryAction('resultat', {}).kind, 'none');
   assert.equal(J.primaryAction('resultat', { success: true }).kind, 'newPart');
   assert.ok(J.prompt('resultat', { success: true }).includes('réussi'));
 });
@@ -432,8 +433,61 @@ test('fin d’impression : la consigne dit ce qui s’est passé, la question es
   assert.equal(J.prompt('resultat', { ended: 'finished' }), 'Impression terminée');
   assert.equal(J.prompt('resultat', { ended: 'cancelled' }), 'Impression arrêtée');
   assert.equal(J.prompt('resultat', { ended: 'error' }), 'Ta machine signale une erreur');
-  assert.equal(J.prompt('resultat', {}), 'Alors, ça a marché ? Envoie-moi une photo', 'fin inconnue : la question d’aujourd’hui');
+  assert.equal(J.prompt('resultat', {}), 'Bonne impression ! Reviens me dire comment ça s’est passé.', 'fin inconnue : pas de « ça a marché ? » au début de l’impression');
   assert.equal(J.prompt('resultat', { ended: 'finished', success: true }), 'Bravo, c’est réussi !');
   assert.equal(J.shortMachine({ preset: 'Creality CR-10 SE 0.4 nozzle', name: 'Creality CR-10 SE 0.4 nozzle' }), 'Creality CR-10 SE');
   assert.equal(J.shortMachine({ name: 'Ma K2 Plus' }), 'K2 Plus');
+});
+
+test('Résultat : en cours tant qu’aucune fin n’est connue, puis le bouton plein suit la fin lue ou dite', () => {
+  assert.equal(J.resultState({}), 'printing');
+  assert.equal(J.resultState({ ended: 'finished' }), 'finished');
+  assert.equal(J.resultState({ ended: 'cancelled' }), 'stopped');
+  assert.equal(J.resultState({ ended: 'error' }), 'stopped');
+  assert.equal(J.resultState({ failed: true, ended: 'finished' }), 'failed');
+  assert.equal(J.resultState({ success: true, failed: true }), 'success');
+  // En cours : rien de plein, et la consigne ne demande pas encore si c'est réussi.
+  assert.equal(J.primaryAction('resultat', {}).kind, 'none');
+  assert.doesNotMatch(J.prompt('resultat', {}), /marché/);
+  // Fin lue « terminée » : « Oui, c'est réussi » est le bouton plein (gratuit).
+  assert.deepEqual(J.primaryAction('resultat', { ended: 'finished', endAsk: true }), { label: 'Oui, c’est réussi', kind: 'success', enabled: true });
+  // Arrêt ou erreur : la carte pose sa question ; une fois répondue, « Nouvelle pièce ».
+  assert.equal(J.primaryAction('resultat', { ended: 'cancelled', endAsk: true }).kind, 'none');
+  assert.equal(J.primaryAction('resultat', { ended: 'error' }).kind, 'newPart');
+  // « Raté » dit : la photo du téléphone, qui annonce qu'elle utilise la jauge.
+  const failed = J.primaryAction('resultat', { failed: true });
+  assert.equal(failed.kind, 'photo');
+  assert.equal(failed.label, 'Photo avec mon téléphone (utilise ta jauge)');
+  assert.equal(J.prompt('resultat', { failed: true }), 'Dommage. Montre-moi ta pièce en photo');
+  // Aucun bouton plein de Résultat ne dépense sans le dire.
+  for (const c of [{}, { ended: 'finished', endAsk: true }, { ended: 'error', endAsk: true }, { ended: 'cancelled' }, { failed: true }, { success: true }]) {
+    const a = J.primaryAction('resultat', c);
+    if (a.kind === 'photo') assert.match(a.label, /jauge/);
+  }
+});
+
+test('photos : deux libellés uniques, avec leur coût', () => {
+  assert.equal(J.PHOTO_PHONE, 'Photo avec mon téléphone (utilise ta jauge)');
+  assert.equal(J.PHOTO_COMPUTER, 'Photo depuis l’ordinateur (utilise ta jauge)');
+});
+
+test('défaut d’une pièce : montré gratuitement en photo, plus de demande payée pour se faire réclamer une photo', () => {
+  const r = J.suggestionsFor('resultat');
+  assert.ok(r.some((x) => x.kind === 'open' && x.value === 'defect' && x.label === 'Montrer le défaut en photo'));
+  assert.ok(!r.some((x) => x.kind === 'ask'), 'aucune suggestion payante à Résultat');
+});
+
+test('fiche incomplète : le bouton dit ce qu’il reste à choisir, et la photo prévient de ce qu’il faudra', () => {
+  assert.equal(J.completeLabel(['printer', 'filament']), 'Choisir ma machine et ma bobine');
+  assert.equal(J.completeLabel(['printer', 'part', 'filament']), 'Choisir ma machine et ma bobine');
+  assert.equal(J.completeLabel(['printer']), 'Choisir ma machine');
+  assert.equal(J.completeLabel(['filament']), 'Choisir ma bobine');
+  assert.equal(J.completeLabel(['part']), 'Choisir ma pièce');
+  assert.equal(J.completeLabel([]), '');
+  assert.equal(J.completeLabel(undefined), '');
+  assert.equal(J.fixNeeds({}), 'Pour que j’applique une correction, il me faudra ta machine et ta bobine.');
+  assert.equal(J.fixNeeds({ printer: { preset: 'K2' } }), 'Pour que j’applique une correction, il me faudra ta bobine.');
+  assert.equal(J.fixNeeds({ printer: { preset: 'K2', proposed: true }, filament: { preset: 'PLA' } }), 'Pour que j’applique une correction, il me faudra ta machine.');
+  assert.equal(J.fixNeeds({ printer: { preset: 'K2' }, filament: { preset: 'PLA', proposed: true } }), 'Pour que j’applique une correction, il me faudra ta bobine.');
+  assert.equal(J.fixNeeds({ printer: { preset: 'K2' }, filament: { preset: 'PLA' } }), '', 'la pièce n’est pas exigée pour un réglage du filament');
 });

@@ -55,6 +55,7 @@
 
 #include <exception>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 
@@ -139,6 +140,22 @@ void send_values()
     send(message);
 }
 
+// Fins d'impression lues par le suivi (phase « end »), par id d'envoi, le temps de la session : arrivées panneau fermé ou
+// pendant une autre conversation, le panneau les redemande (print_watch_replay) en rouvrant la conversation de cet envoi.
+std::map<std::string, nlohmann::json> s_watch_ends;
+
+void send_watch(nlohmann::json w, const std::string& id)
+{
+    w["type"] = "print_watch";
+    w["id"]   = id; // l'envoi suivi : le panneau ignore un message d'un envoi remplacé
+    if (Json::str(w, "phase") == "end" && !id.empty()) {
+        if (s_watch_ends.size() >= 20 && s_watch_ends.count(id) == 0)
+            s_watch_ends.erase(s_watch_ends.begin());
+        s_watch_ends[id] = w;
+    }
+    send(w);
+}
+
 void send_result(const nlohmann::json& result)
 {
     nlohmann::json message = result;
@@ -149,6 +166,7 @@ void send_result(const nlohmann::json& result)
 // Refus (à envoyer tel quel) si une modification ne doit pas être faite : fiche du projet incomplète, ou Orca qui n'est
 // plus sur l'imprimante ou le filament du projet. null si elle est permise. Ne sont jamais refusés : un retour arrière
 // (`revert`) et un réglage fait par l'utilisateur dans la fiche elle-même (`project_edit`, ex. les températures).
+// `missing` : les étapes de la fiche à compléter d'abord (le panneau propose d'y aller).
 nlohmann::json project_refusal(const nlohmann::json& data)
 {
     if (Json::boolean(data, "revert", false))
@@ -156,13 +174,16 @@ nlohmann::json project_refusal(const nlohmann::json& data)
     const nlohmann::json project = data.contains("project") ? data["project"] : nlohmann::json();
     const nlohmann::json state   = Project::state();
     const std::string    printer = Json::str(state, "printer_preset"), filament = Json::str(state, "filament_preset");
+    // Un lot qui ne touche que l'onglet Filament n'exige pas la pièce (seulement les réglages, pas les ordres sur le plateau).
+    const bool filament_only = Json::str(data, "type") == "apply" && SettingsBridge::filament_only(data.contains("changes") ? data["changes"] : nlohmann::json());
     // Un réglage fait dans la fiche n'exige pas la pièce, mais Orca doit être sur le profil du projet : sinon il écrirait
     // dans le filament d'un autre projet.
-    const std::string text = Json::boolean(data, "project_edit", false) ? ProjectLogic::edit_refusal(project, printer, filament)
-                                                                         : ProjectLogic::refusal(project, printer, filament);
+    const bool        edit = Json::boolean(data, "project_edit", false);
+    const std::string text = edit ? ProjectLogic::edit_refusal(project, printer, filament) : ProjectLogic::refusal(project, printer, filament, filament_only);
     if (text.empty())
         return nullptr;
-    return {{"ok", false}, {"text", text}, {"can_restore", ProjectLogic::can_restore(project, printer, filament)}};
+    return {{"ok", false}, {"text", text}, {"can_restore", ProjectLogic::can_restore(project, printer, filament)},
+            {"missing", edit ? std::vector<std::string>() : ProjectLogic::missing_for(project, filament_only)}};
 }
 
 void handle_page_message(const nlohmann::json& data)
@@ -413,9 +434,15 @@ void handle_page_message(const nlohmann::json& data)
                 send({{"type", "model_added"}, {"ok", false}, {"busy", true}, {"text", ProjectFiles::busy_text()}});
                 return;
             }
-            nlohmann::json added = ModelImport::add(Json::str(data, "name"), Json::str(data, "data"), data.contains("project") ? data["project"] : nlohmann::json(), Json::boolean(data, "replace", false));
+            // `sample` : la pièce d'essai fournie avec l'application (« Pas encore de fichier ? »), posée de la même façon.
+            const std::string    sample  = Json::str(data, "sample");
+            const nlohmann::json project = data.contains("project") ? data["project"] : nlohmann::json();
+            nlohmann::json added = sample.empty() ? ModelImport::add(Json::str(data, "name"), Json::str(data, "data"), project, Json::boolean(data, "replace", false))
+                                                  : ModelImport::add_sample(sample, project, Json::boolean(data, "replace", false));
             if (!Json::boolean(added, "ok", false) && before.empty())
                 ProjectFiles::release(conv); // rien d'écrit pour elle : le plateau n'a pas changé
+            if (!sample.empty())
+                added["sample"] = sample;
             added["type"]        = "model_added";
             send(added);
         } else if (type == "project_attach") {
@@ -532,11 +559,11 @@ void handle_page_message(const nlohmann::json& data)
                 store["local"][brand][code] = model;
             Store::write(file, store);
         } else if (type == "print_watch_start") {
-            PrinterStatus::watch(Json::str(data, "preset"), [id = Json::str(data, "id")](nlohmann::json w) {
-                w["type"] = "print_watch";
-                w["id"]   = id; // l'envoi suivi : le panneau ignore un message d'un envoi remplacé
-                send(w);
-            });
+            PrinterStatus::watch(Json::str(data, "preset"), [id = Json::str(data, "id")](nlohmann::json w) { send_watch(w, id); });
+        } else if (type == "print_watch_replay") {
+            // Conversation rouverte : la fin de son envoi, si le suivi l'a lue pendant qu'elle n'était pas affichée.
+            if (const auto it = s_watch_ends.find(Json::str(data, "id")); it != s_watch_ends.end())
+                send(it->second);
         } else if (type == "canvas_start_plain") {
             Canvas::start_plain(Json::str(data, "preset"), [](nlohmann::json r) {
                 r["type"] = "canvas_started";
@@ -612,11 +639,7 @@ void handle_page_message(const nlohmann::json& data)
                 send(r);
                 // Le démarrage est vérifié sur l'imprimante elle-même (état avant l'envoi, puis relu jusqu'au verdict).
                 if (Json::boolean(r, "ok", false) && !Json::str(data, "preset").empty())
-                    PrinterStatus::watch(Json::str(data, "preset"), [id = Json::str(data, "watch_id")](nlohmann::json w) {
-                        w["type"] = "print_watch";
-                        w["id"]   = id; // l'envoi suivi : le panneau ignore un message d'un envoi remplacé
-                        send(w);
-                    });
+                    PrinterStatus::watch(Json::str(data, "preset"), [id = Json::str(data, "watch_id")](nlohmann::json w) { send_watch(w, id); });
             }
         } else if (type == "setup_catalog") {
             send({{"type", "setup_catalog"}, {"catalog", PrinterSetup::catalog()}});

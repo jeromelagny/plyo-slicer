@@ -87,17 +87,27 @@ bool can_restore(const nlohmann::json& project, const std::string& current_print
            !same_filament(Json::str(*Json::field(project, "filament"), "preset"), current_filament);
 }
 
-std::string refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament)
+std::vector<std::string> missing_for(const nlohmann::json& project, bool filament_only)
 {
-    const std::vector<std::string> todo = missing(project);
+    std::vector<std::string> out = missing(project);
+    // Un réglage de l'onglet Filament ne dépend pas de la pièce : « ma pièce d'hier a des fils » se corrige sans elle.
+    if (filament_only)
+        out.erase(std::remove(out.begin(), out.end(), "part"), out.end());
+    return out;
+}
+
+std::string refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament, bool filament_only)
+{
+    const std::vector<std::string> todo = missing_for(project, filament_only);
     if (!todo.empty()) {
+        // « Pour appliquer ça, dis-moi d'abord sur quelle machine, quelle pièce et avec quelle bobine tu imprimes. »
         std::string list;
         for (size_t i = 0; i < todo.size(); ++i) {
             if (i > 0)
                 list += i + 1 == todo.size() ? " et " : ", ";
-            list += todo[i] == "printer" ? "l'imprimante" : todo[i] == "part" ? "la pièce" : "le filament";
+            list += todo[i] == "printer" ? "sur quelle machine" : todo[i] == "part" ? "quelle pièce" : "avec quelle bobine";
         }
-        return "Il me manque " + list + " du projet avant de changer un réglage. Va dans l'onglet Étapes pour compléter, puis reviens ici.";
+        return "Pour appliquer ça, dis-moi d'abord " + list + " tu imprimes.";
     }
     if (Json::str(*Json::field(project, "printer"), "preset") != current_printer ||
         !same_filament(Json::str(*Json::field(project, "filament"), "preset"), current_filament))
@@ -199,6 +209,35 @@ nlohmann::json sanitize(const nlohmann::json& project)
     }
     if (const std::string adapted = Json::str(project, "adapted", 200); !adapted.empty())
         out["adapted"] = adapted;
+    // Réussite dite à l'étape Résultat : elle tient après une réouverture de la conversation.
+    if (const nlohmann::json* v = Json::field(project, "success"); v != nullptr && v->is_boolean() && v->get<bool>())
+        out["success"] = true;
+    // Dernier envoi ou export fait depuis le panneau : sa bobine, l'id de son suivi sur la machine, la fin lue et ce que tu
+    // en as dit. Gardé avec la conversation pour que « Oui, c'est réussi » et la question de fin survivent à une fermeture.
+    if (const nlohmann::json* s = Json::field(project, "send"); s != nullptr && s->is_object()) {
+        nlohmann::json o = nlohmann::json::object();
+        if (const nlohmann::json* sp = Json::field(*s, "spool"); sp != nullptr && sp->is_object()) {
+            nlohmann::json spool = nlohmann::json::object();
+            text(*sp, spool, "id");
+            text(*sp, spool, "name");
+            if (spool.contains("id") && spool.contains("name"))
+                o["spool"] = spool;
+        }
+        if (const std::string watch = Json::str(*s, "watch", 60); !watch.empty())
+            o["watch"] = watch;
+        for (const char* key : {"failed", "answered", "marked"})
+            if (const nlohmann::json* v = Json::field(*s, key); v != nullptr && v->is_boolean() && v->get<bool>())
+                o[key] = true;
+        const auto verdict = [](const std::string& v) { return v == "finished" || v == "cancelled" || v == "error"; };
+        if (const nlohmann::json* e = Json::field(*s, "end"); e != nullptr && e->is_object() && verdict(Json::str(*e, "verdict"))) {
+            nlohmann::json end = {{"verdict", Json::str(*e, "verdict")}};
+            text(*e, end, "file");
+            o["end"] = end;
+        }
+        if (const std::string outcome = Json::str(*s, "outcome"); verdict(outcome))
+            o["outcome"] = outcome;
+        out["send"] = o;
+    }
     const std::string step = Json::str(project, "step");
     if (step == "slice" || step == "print" || step == "after" || step == "done")
         out["step"] = step;

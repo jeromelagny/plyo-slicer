@@ -3,7 +3,7 @@
 // celui de la ligne d'action (journey-view.js). Chargé par index.html (window.PlyoJourneySteps).
 (function (root) {
   // ui : { el, button, icon }. opts : { step, ctx {sliced, linked, risks}, summary (texte durée et poids), endAsk (question de fin), endDone (fin répondue sans jugement : 'cancelled' | 'error'), handlers }.
-  // handlers : { skip(), exportFile(), started(), photo(), success(), failed(), endChoice(id), changeMachine(), recheck() }. opts.machine : { name, reachable (true|false|null) }.
+  // handlers : { skip(), exportFile(), started(), photo() (photo depuis l'ordinateur), success(), failed(), endChoice(id), changeMachine(), recheck() }. opts.machine : { name, reachable (true|false|null) }.
   function line(ui, iconName, text, tone) {
     var row = ui.el('div', 'printer-step' + (tone ? ' ' + tone : ''));
     row.appendChild(ui.icon(iconName, 14));
@@ -121,30 +121,38 @@
       if (opts.sent) acts.appendChild(ui.button(opts.sentArmed ? 'Oui, elle imprime' : 'L’impression a démarré', h.started, 'btn ghost sm', 'check'));
       body.appendChild(acts);
     } else if (opts.step === 'resultat') {
-      var after = ui.el('div', 'printer-actions');
+      var after = ui.el('div', 'printer-actions'), J = root.PlyoJourney || (typeof require !== 'undefined' ? require('./journey-logic.js') : null);
+      // Les deux photos portent le même nom partout, avec leur coût : la lecture de la photo utilise la jauge.
+      var computer = function () { return ui.button(J.PHOTO_COMPUTER, h.photo, 'btn ghost sm', 'camera'); };
       if (!c.success && opts.endAsk) {
-        // La machine a dit comment l'impression a fini : sa question remplace « Ça a marché ? ». Après une erreur, « Non,
-        // c'est raté » reste là : la bobine n'est marquée que si tu le dis.
-        body.appendChild(endCard(ui, opts.endAsk, h.endChoice));
+        // La machine a dit comment l'impression a fini : sa question remplace « Ça a marché ? ». Une fin normale : « Oui,
+        // c'est réussi » est le bouton de la ligne d'action, la carte garde « Non ». Après une erreur, « Non, c'est raté »
+        // reste là : la bobine n'est marquée que si tu le dis.
+        var q = opts.endAsk.verdict === 'finished' ? Object.assign({}, opts.endAsk, { choices: opts.endAsk.choices.filter(function (x) { return x.id !== 'yes'; }) }) : opts.endAsk;
+        body.appendChild(endCard(ui, q, h.endChoice));
         if (opts.endAsk.verdict === 'error' && opts.spoolAsk && !opts.spoolNo) after.appendChild(ui.button('Non, c’est raté', h.failed, 'btn ghost sm', 'x'));
         after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
-        after.appendChild(ui.button('Ajouter une photo depuis l’ordinateur', h.photo, 'btn ghost sm', 'camera'));
+        after.appendChild(computer());
       } else if (!c.success && opts.endDone && !opts.spoolNo) {
         // Fin déjà répondue sans la juger (arrêt voulu, erreur) : pas de « Ça a marché ? » pour cet envoi. Après une erreur,
-        // « Non, c'est raté » reste là pour le dire.
+        // « Non, c'est raté » reste là pour le dire. « Nouvelle pièce » est le bouton de la ligne d'action.
         if (opts.endDone === 'error' && opts.spoolAsk) after.appendChild(ui.button('Non, c’est raté', h.failed, 'btn ghost sm', 'x'));
-        after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
-        after.appendChild(ui.button('Ajouter une photo depuis l’ordinateur', h.photo, 'btn ghost sm', 'camera'));
-      } else if (!c.success) {
-        // opts.spoolAsk : nom de la bobine de l'envoi (ou de l'export) fait depuis le panneau. « Oui » retient ses réglages,
-        // « Non » mène à la photo du défaut. opts.spoolNo : « Non » vient d'être répondu.
-        if (opts.spoolNo) body.appendChild(ui.el('p', '', 'Dommage. Envoie-moi une photo de ta pièce : je te dis ce qui cloche et comment corriger.'));
-        else if (opts.spoolAsk) body.appendChild(ui.el('p', '', 'Ça a marché avec ' + opts.spoolAsk + ' ? Si oui, je retiens ces réglages pour la prochaine fois.'));
-        else body.appendChild(ui.el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer.'));
+        after.appendChild(computer());
+      } else if (!c.success && opts.spoolNo) {
+        // « Raté » vient d'être dit : la photo (le téléphone est le bouton de la ligne d'action). « Oui » reste possible
+        // (changement d'avis : la réussite remplace l'échec).
+        body.appendChild(ui.el('p', '', 'Envoie-moi une photo de ta pièce : je te dis ce qui cloche et comment corriger.'));
+        after.appendChild(computer());
         after.appendChild(ui.button('Oui, c’est réussi', h.success, 'btn ghost sm', 'check'));
-        if (opts.spoolAsk && !opts.spoolNo) after.appendChild(ui.button('Non, c’est raté', h.failed, 'btn ghost sm', 'x'));
         after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
-        after.appendChild(ui.button('Ajouter une photo depuis l’ordinateur', h.photo, 'btn ghost sm', 'camera'));
+      } else if (!c.success) {
+        // Aucune fin connue : l'impression est peut-être en cours. On attend que tu dises comment elle a fini.
+        // opts.spoolAsk : nom de la bobine de l'envoi (ou de l'export) fait depuis le panneau ; « réussi » retient ses réglages.
+        body.appendChild(ui.el('p', '', opts.spoolAsk ? 'Quand elle est finie, dis-moi si c’est réussi : je retiendrai les réglages de ta bobine « ' + opts.spoolAsk + ' ».'
+          : 'Quand elle est finie, dis-moi si c’est réussi. Si quelque chose cloche, je t’aide à trouver pourquoi.'));
+        after.appendChild(ui.button('C’est fini : réussi', h.success, 'btn ghost sm', 'check'));
+        after.appendChild(ui.button('C’est fini : raté', h.failed, 'btn ghost sm', 'x'));
+        after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
       }
       body.appendChild(after);
       body.appendChild(ui.button('Réimprimer cette pièce', h.reprint, 'link'));

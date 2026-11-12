@@ -630,6 +630,28 @@ nlohmann::json undo_last(int expected_id)
     return {{"ok", true}, {"text", "Annulé : valeurs d'avant remises."}, {"undone_id", undone.id}, {"memory_key", undone.memory_key}};
 }
 
+bool filament_only(const nlohmann::json& changes)
+{
+    if (!changes.is_array() || changes.empty())
+        return false;
+    const Catalog::Policy& policy = Catalog::policy();
+    for (const nlohmann::json& c : changes) {
+        if (!c.is_object())
+            return false;
+        // Mode catalogue : la portée vient du catalogue (une clé des deux portées compte comme Impression, comme à l'écriture).
+        if (c.contains("key")) {
+            const std::string key = Json::str(c, "key");
+            if (policy.allows("print", key) || !policy.allows("filament", key))
+                return false;
+            continue;
+        }
+        const Param* p = find_param(Json::str(c, "id"));
+        if (p == nullptr || p->preset != Preset::TYPE_FILAMENT)
+            return false;
+    }
+    return true;
+}
+
 nlohmann::json whitelist_range(const std::string& key)
 {
     // La température de plateau a une clé par type de plateau (hot_plate_temp, textured_plate_temp…).

@@ -82,11 +82,34 @@
       if (!c.sliced) return slice;
       return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: !c.sending } : { label: 'Exporter le fichier', kind: 'export', enabled: !c.sending };
     }
-    if (step === 'resultat') return c.success ? { label: 'Nouvelle pièce', kind: 'newPart', enabled: true } : { label: 'Envoyer une photo', kind: 'photo', enabled: true };
+    if (step === 'resultat') {
+      // Jamais de bouton plein qui dépense tant que la fin n'est pas connue ou dite (resultState).
+      var rs = resultState(c);
+      if (rs === 'success') return { label: 'Nouvelle pièce', kind: 'newPart', enabled: true };
+      if (rs === 'finished') return { label: 'Oui, c’est réussi', kind: 'success', enabled: true };
+      if (rs === 'failed') return { label: PHOTO_PHONE, kind: 'photo', enabled: true };
+      if (rs === 'stopped' && !c.endAsk) return { label: 'Nouvelle pièce', kind: 'newPart', enabled: true };
+      return { label: '', kind: 'none', enabled: false };
+    }
     // Machine et bobine proposées (dernière machine, bobine du projet précédent) : confirmer d'un toucher.
     if (step === 'machine' && c.proposal) return { label: 'Oui, sur ' + c.proposal.name, kind: 'confirmMachine', enabled: true };
     if (step === 'filament' && c.proposal) return { label: 'Oui, ' + c.proposal.name, kind: 'confirmFilament', enabled: true };
     return { label: '', kind: 'none', enabled: false };
+  }
+
+  // Libellés uniques des deux façons d'envoyer une photo : la lecture de la photo par l'IA utilise la jauge.
+  var PHOTO_PHONE = 'Photo avec mon téléphone (utilise ta jauge)', PHOTO_COMPUTER = 'Photo depuis l’ordinateur (utilise ta jauge)';
+
+  // État de l'étape Résultat (ctx : success, failed, ended, endAsk) :
+  // 'success' (réussite dite), 'failed' (« raté » dit), 'finished' (la machine a fini, ta réponse est attendue),
+  // 'stopped' (arrêt ou erreur lus sur la machine), 'printing' (aucune fin connue : l'impression est peut-être en cours).
+  function resultState(ctx) {
+    var c = ctx || {};
+    if (c.success) return 'success';
+    if (c.failed) return 'failed';
+    if (c.ended === 'finished') return 'finished';
+    if (c.ended) return 'stopped';
+    return 'printing';
   }
 
   // Sans système connu : les textes de la CC2.
@@ -124,11 +147,13 @@
           : c.checked === 'clean' ? 'Tout est bon, on passe à l’impression' : c.checked === 'ignored' ? 'Tu as ignoré des points : à toi de voir' : 'Je vérifie ta plaque…');
       case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : 'Prêt à imprimer';
       default: if (c.success) return 'Bravo, c’est réussi !';
+        if (c.failed) return 'Dommage. Montre-moi ta pièce en photo';
         // La question de fin d'impression est dans l'étape : la consigne dit seulement ce qui s'est passé.
         if (c.ended === 'finished') return 'Impression terminée';
         if (c.ended === 'cancelled') return 'Impression arrêtée';
         if (c.ended === 'error') return 'Ta machine signale une erreur';
-        return 'Alors, ça a marché ? Envoie-moi une photo';
+        // Aucune fin connue : on ne demande pas « ça a marché ? » au début d'une impression.
+        return 'Bonne impression ! Reviens me dire comment ça s’est passé.';
     }
   }
 
@@ -193,14 +218,16 @@
     return parts.join(' · ');
   }
 
-  // Pendant les choix (machine, filament, pièce) aucune suggestion : rien ne doit distraire. Ensuite deux au plus ; à elles
-  // quatre les étapes 4 à 6 gardent accessibles « Vérifier ma plaque », « Mes pièces », « réglages lus » et « limites ».
+  // Pendant les choix (machine, filament, pièce) une seule entrée, gratuite : montrer une impression ratée (souvent faite avant
+  // Plyo). Ensuite deux au plus ; à elles quatre les étapes 4 à 6 gardent accessibles « Vérifier ma plaque », « Mes pièces »,
+  // « réglages lus » et « limites ». Le défaut d'une pièce se montre en photo, gratuitement : seule la lecture utilise la jauge.
   function suggestionsFor(step) {
     switch (step) {
+      case 'machine': case 'piece': case 'filament': return [{ label: 'Une impression ratée ? Montre-la-moi', kind: 'open', value: 'failed' }];
       case 'preparer': return [{ label: 'Vérifier ma plaque', kind: 'open', value: 'check' }, { label: 'Voir mes réglages actuels', kind: 'open', value: 'values' }];
       case 'imprimer': return [{ label: 'Que vérifier avant de lancer ? (utilise ta jauge)', kind: 'ask', value: 'Que dois-je vérifier sur mon imprimante juste avant de lancer l’impression ?' },
         { label: 'Températures de ma bobine', kind: 'open', value: 'limits' }];
-      case 'resultat': return [{ label: 'Mes pièces', kind: 'open', value: 'parts' }, { label: 'Ma pièce a un défaut (utilise ta jauge)', kind: 'ask', value: 'Ma pièce a un défaut, peux-tu m’aider ?' }];
+      case 'resultat': return [{ label: 'Mes pièces', kind: 'open', value: 'parts' }, { label: 'Montrer le défaut en photo', kind: 'open', value: 'defect' }];
       default: return [];
     }
   }
@@ -338,10 +365,28 @@
     return ready ? base : base + ' Pour avancer pas à pas, passe par l’onglet « Étapes ».';
   }
 
+  // Ce qu'il manque à la fiche pour appliquer une correction (`missing` : printer, part, filament, dans cet ordre) : le
+  // bouton qui y mène, et la phrase qui prévient avant une photo (rien si la machine et la bobine sont déjà choisies).
+  function completeLabel(missing) {
+    var m = Array.isArray(missing) ? missing : [], printer = m.indexOf('printer') >= 0, filament = m.indexOf('filament') >= 0;
+    if (printer && filament) return 'Choisir ma machine et ma bobine';
+    if (printer) return 'Choisir ma machine';
+    if (filament) return 'Choisir ma bobine';
+    return m.indexOf('part') >= 0 ? 'Choisir ma pièce' : '';
+  }
+  function fixNeeds(project) {
+    var next = P.nextStep(project), p = project || {};
+    var printer = next === 'printer', filament = !(p.filament && !p.filament.proposed && p.filament.preset);
+    if (printer && filament) return 'Pour que j’applique une correction, il me faudra ta machine et ta bobine.';
+    if (printer) return 'Pour que j’applique une correction, il me faudra ta machine.';
+    if (filament) return 'Pour que j’applique une correction, il me faudra ta bobine.';
+    return '';
+  }
+
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;

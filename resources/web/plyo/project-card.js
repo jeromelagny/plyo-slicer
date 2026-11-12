@@ -241,6 +241,8 @@
       var pacts = ui.el('div', 'printer-actions');
       pacts.appendChild(ui.button('Choisir un fichier', h.importPart, 'btn ghost sm', 'folder'));
       body.appendChild(pacts);
+      // Un débutant n'a souvent aucun fichier : le petit bateau de test fourni avec le slicer se pose comme une pièce choisie.
+      body.appendChild(ui.button('Pas encore de fichier ? Essaie avec le petit bateau de test', h.samplePart, 'link'));
       if (ctx.oldPart) {
         body.appendChild(ui.el('p', 'muted small', '« ' + ctx.oldPart + ' », la pièce de ton projet précédent, est encore sur le plateau d’Orca. Si tu choisis un fichier, elle sera retirée, et tu pourras annuler.'));
         body.appendChild(ui.button('Garder cette pièce', h.keepOldPart, 'link'));

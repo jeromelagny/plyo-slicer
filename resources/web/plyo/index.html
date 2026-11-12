@@ -940,8 +940,9 @@
   var projectUI = { showList: false, showKinds: false, showOthers: false, keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false,
     spool: { open: false, limits: null, error: '' }, // plage de températures de l'étiquette de la bobine (fiche)
     // « Quelle bobine ? » : bobines de la machine `printer` (items null tant que le slicer ne les a pas données), saisie d'une
-    // nouvelle bobine, envoi ou export fait avec une bobine (question de l'étape Résultat), préréglages déjà proposés.
-    spools: { printer: null, items: null }, newSpool: { open: false, material: '', name: '', error: '', focus: false }, spoolSent: null, spoolNo: null, adoptAsked: {}, lastSend: null, endNote: null };
+    // nouvelle bobine, préréglages déjà proposés, question de fin posée en note (et sa conversation). L'envoi ou l'export fait
+    // avec une bobine (question de l'étape Résultat) est gardé dans le projet : conv.project.send (sendOf).
+    spools: { printer: null, items: null }, newSpool: { open: false, material: '', name: '', error: '', focus: false }, adoptAsked: {}, endNote: null, endNoteConv: null };
   // Emplacements (Canvas, CFS, IFS, U1) à l'étape Filament : lecture, proposition, application, plan d'envoi.
   // readId : numéro de la dernière lecture (une réponse plus ancienne est ignorée) ; planKey null : le premier affichage
   // envoie le plan ou l'efface (rien ne reste d'un panneau rechargé) ; refusedConv : conversation du départ refusé.
@@ -1130,8 +1131,10 @@
   }
   // Vérification du démarrage sur l'imprimante (PlyoPrinterStatus.cpp) : un seul message par envoi, une fois le verdict connu.
   function onPrintWatch(msg) {
-    // Chaque envoi suivi a son id (watchId) : un message d'un envoi remplacé est ignoré.
-    if (!projectUI.lastSend || msg.id !== projectUI.lastSend.id) return;
+    // Chaque envoi suivi a son id (watchId), gardé dans le projet : un message d'un envoi remplacé, ou d'une autre conversation,
+    // est ignoré (le slicer garde une fin arrivée entre-temps et la renvoie quand sa conversation est rouverte).
+    var sent = sendOf();
+    if (!sent || !sent.watch || msg.id !== sent.watch) return;
     if (msg.phase === 'end') { onPrintEnd(msg); return; }
     var name = conv && conv.project.printer ? PlyoJourney.machineLabel(conv.project.printer) : 'ton imprimante';
     var line = PlyoJourney.watchText(msg.verdict, name, msg.file);
@@ -1143,8 +1146,27 @@
   // `outcome` : la fin à laquelle tu as répondu sans la juger (arrêt « J'ai changé d'avis », erreur) : Résultat reste neutre.
   var watchSeq = 0;
   function newWatchId() { watchSeq += 1; projectUI.watchId = 'w' + watchSeq + '-' + Date.now(); return projectUI.watchId; }
-  function noteSendWatched() { projectUI.lastSend = { conv: conv, id: projectUI.watchId, answered: false, end: null, outcome: '' }; dropEndNote(); }
-  function markSendAnswered() { if (projectUI.lastSend && projectUI.lastSend.conv === conv) projectUI.lastSend.answered = true; dropEndNote(); }
+  // Le dernier envoi (ou export) fait depuis le panneau pour cette conversation, gardé dans son projet (conv.project.send) : il
+  // survit à la réouverture de la conversation, du panneau et de Plyo. { spool: {id, name}, watch (id du suivi), failed (« raté »
+  // dit), answered (fin répondue), marked (réussite envoyée au slicer), end: {verdict, file} (fin lue), outcome }.
+  function sendOf() { return conv && conv.project.send && typeof conv.project.send === 'object' ? conv.project.send : null; }
+  // L'envoi de la conversation ; sans envoi noté (conversation d'avant, impression lancée depuis Orca), il part de la bobine du
+  // projet : le slicer ne la marque que si son dernier envoi est récent et fait avec elle. Jamais pour les emplacements (Canvas…).
+  function sendRecord() {
+    var p = conv.project, f = p.filament;
+    if (!sendOf()) p.send = f && f.spool && f.spool.id && !(Array.isArray(p.canvas) && p.canvas.length) ? { spool: { id: f.spool.id, name: f.spool.name } } : {};
+    return p.send;
+  }
+  function noteSendWatched() {
+    var s = sendRecord();
+    s.watch = projectUI.watchId;
+    s.answered = false;
+    delete s.end;
+    s.outcome = '';
+    scheduleSave();
+    dropEndNote();
+  }
+  function markSendAnswered() { var s = sendOf(); if (s) { s.answered = true; scheduleSave(); } dropEndNote(); }
   function dropEndNote() { if (projectUI.endNote) { projectUI.endNote.remove(); projectUI.endNote = null; } }
   // Une question de fin laissée dans une autre conversation : plus cliquable, et elle le dit.
   function staleEndNote() {
@@ -1155,30 +1177,32 @@
     n.appendChild(el('p', 'muted small', 'Cette question concerne une autre conversation.'));
   }
   // La fin déjà répondue sans jugement, pour l'étape Résultat de cette conversation ('' sinon).
-  function endOutcome() { var s = projectUI.lastSend; return conv && s && s.conv === conv && !conv.project.success ? s.outcome || '' : ''; }
+  function endOutcome() { var s = sendOf(); return s && !conv.project.success ? s.outcome || '' : ''; }
   function endQuestionNow() {
-    var s = projectUI.lastSend;
-    if (!conv || !s || s.conv !== conv || !PlyoJourney.endAsk(s, conv.project)) return null;
+    var s = sendOf();
+    if (!s || !PlyoJourney.endAsk(s, conv.project)) return null;
     return PlyoJourney.endQuestion(s.end.verdict, conv.project.printer ? PlyoJourney.shortMachine(conv.project.printer) : 'ton imprimante', s.end.file);
   }
   function onPrintEnd(msg) {
-    var s = projectUI.lastSend;
+    var s = sendOf();
     if (!s || s.end) return;
     s.end = { verdict: msg.verdict, file: msg.file || '' };
+    scheduleSave();
     var q = endQuestionNow();
-    if (!q) return; // fin sans détail, autre conversation ouverte, ou Résultat déjà répondu : rien de plus
+    if (!q) return; // fin sans détail, ou Résultat déjà répondu : rien de plus
     // À l'étape Résultat, la question est dans l'étape, une seule fois (même onglet Discussion ouvert : elle y attend).
     if (PlyoJourney.currentStep(conv.project) === 'resultat') { renderProject(); if (viewUI.tab === 'guide') $('project-card').scrollIntoView({ block: 'nearest' }); return; }
     dropEndNote();
     projectUI.endNote = placeInOpenTab(PlyoJourneySteps.endCard({ el: el, button: button, icon: icon }, q, answerEnd));
+    projectUI.endNoteConv = conv;
   }
   function answerEnd(id) {
-    var s = projectUI.lastSend;
-    if (!conv || !s || s.conv !== conv) { staleEndNote(); return; }
+    var s = sendOf();
+    if (!s) { staleEndNote(); return; }
     if (!s.end || s.answered) return;
     var a = PlyoJourney.endAction(s.end.verdict, id, s.end.file);
-    markSendAnswered();
     s.outcome = s.end.verdict;
+    markSendAnswered();
     // L'impression a eu lieu : une réponse qui la juge mène au Résultat (de n'importe quelle étape), comme « L'impression a démarré ».
     if (a.mark && currentTourStep() !== 'after') stepHandlers.started();
     if (a.mark === 'success') stepHandlers.success();
@@ -1191,7 +1215,8 @@
     applyTab('show-chat');
     if (photo) {
       var line = noteLine('Une photo de ta pièce m’aide à trouver la cause.', '', 'camera', 'chat');
-      line.appendChild(button('Envoyer une photo', function () { openPhone(); }, 'link'));
+      line.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { openPhone(); }, 'link'));
+      line.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { pickFiles(); }, 'link'));
     }
     noteInput.value = prefill || '';
     growNote();
@@ -1330,6 +1355,7 @@
       projectUI.waitingFile = null;
       importModel(file);
     }
+    if (projectUI.completing) followCompletion(); // « Choisir ma machine et ma bobine » : l'étape suivante à faire
   }
   // Zone fixe (fiche, barre, ligne d'action) + contenu de l'étape en cours (premier bloc du corps qui défile).
   var journeyUI = { ficheOpen: false, lastStep: null };
@@ -1342,6 +1368,8 @@
     var p = conv && conv.project || {}, ctx = { sliced: plateSliced(), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, editing: projectUI.editing === 'filament', checked: plateChecked, success: !!p.success, slicing: slicing.conv === conv && !!conv,
       plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
     var endQ = conv && PlyoJourney.currentStep(conv.project) === 'resultat' ? endQuestionNow() : null;
+    ctx.failed = !!(sendOf() && sendOf().failed); // « raté » dit pour l'envoi de cette conversation
+    ctx.endAsk = !!endQ;
     if (endQ) ctx.ended = endQ.verdict;
     else if (conv && PlyoJourney.currentStep(conv.project) === 'resultat' && endOutcome()) ctx.ended = endOutcome();
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
@@ -1377,7 +1405,7 @@
     var step = PlyoJourney.currentStep(conv.project);
     // Question de fin : une seule à la fois. Arrivé au Résultat, l'étape la porte (la note part) ; laissée dans une autre
     // conversation, la note n'est plus cliquable.
-    if (projectUI.endNote && (!projectUI.lastSend || projectUI.lastSend.conv !== conv)) staleEndNote();
+    if (projectUI.endNote && projectUI.endNoteConv !== conv) staleEndNote();
     else if (projectUI.endNote && step === 'resultat' && endQuestionNow()) dropEndNote();
     if (step !== 'imprimer') { projectUI.sentConv = null; projectUI.exported = null; } // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
     if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; } }
@@ -1408,7 +1436,7 @@
         spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
-      intent: intentState(step, plateSliced()), spoolAsk: spoolAsk(), spoolNo: projectUI.spoolNo === conv, endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
+      intent: intentState(step, plateSliced()), spoolAsk: spoolAsk(), spoolNo: !!(sendOf() && sendOf().failed), endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     $('hello-spool').textContent = '';
@@ -1443,8 +1471,23 @@
       else if (what === 'parts') openJournal();
       else if (what === 'values') openValues();
       else if (what === 'limits') { if (!projectUI.spool.open) projectHandlers.toggleSpool(); $('spool-slot').scrollIntoView({ block: 'nearest' }); }
+      else if (what === 'failed' || what === 'defect') showFailedPrint(what === 'defect' ? 'Ma pièce a ce défaut : ' : '');
     }
   };
+  // « Une impression ratée ? Montre-la-moi » (étapes 1 à 3) et « Montrer le défaut en photo » (Résultat) : gratuit, la
+  // discussion s'ouvre avec l'invitation à la photo ; seule la demande envoyée ensuite utilise la jauge. Sans machine ou sans
+  // bobine, on prévient qu'une correction en aura besoin, avec le bouton qui y mène.
+  function showFailedPrint(prefill) {
+    openChatAbout(prefill, true);
+    var needs = conv ? PlyoJourney.fixNeeds(conv.project) : '';
+    if (!needs) return;
+    var tip = noteLine(needs, '', 'info', 'chat');
+    var p = conv.project, missing = [];
+    if (PlyoProject.nextStep(p) === 'printer') missing.push('printer');
+    if (!(p.filament && !p.filament.proposed && p.filament.preset)) missing.push('filament');
+    var go = completeProjectButton(missing, 'C’est noté. Montre-moi ta pièce dans la discussion : je te dirai quoi corriger.');
+    if (go) tip.appendChild(go);
+  }
   var stepHandlers = {
     changeSlots: function () { projectHandlers.change('filament'); canvasUI.preset = null; canvasUI.useList = false; renderProject(); },
     rereadSlots: function () {
@@ -1465,7 +1508,7 @@
     started: function () { rememberHabit(); journalPart(''); delete conv.project.success; setTourStep('after'); },
     photo: function () { pickFiles(); },
     success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; spoolSuccess(); markSendAnswered(); projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
-    failed: function () { projectUI.spoolNo = conv; spoolFailure(); markSendAnswered(); renderProject(); },
+    failed: function () { spoolFailure(); markSendAnswered(); renderProject(); },
     newPart: function () { newConversation(); },
     endChoice: function (id) { answerEnd(id); },
     reprint: function () { delete conv.project.success; setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
@@ -1566,6 +1609,7 @@
   function runAction(kind) {
     if (kind === 'slice') plateAction('slice');
     else if (kind === 'photo') openPhone();
+    else if (kind === 'success') { if (endQuestionNow()) answerEnd('yes'); else stepHandlers.success(); } // fin lue : « Oui » répond à sa question
     else if (kind === 'importPart') pickFiles();
     else if (kind === 'newPart') newConversation();
     else if (kind === 'send') {
@@ -1706,7 +1750,7 @@
   function applyIntentNow(again) {
     var p = conv.project, st = intentState(PlyoJourney.currentStep(p), false);
     if (!st || st.mode !== 'ready') { releaseIntent(); return; }
-    function done() {
+    function done(result) {
       releaseIntent();
       intentUI.manual = null; // à relire pour le projet suivant
       p.intent.applied = true;
@@ -1718,13 +1762,32 @@
       // Une seule ligne, même si le filament change plusieurs fois de suite.
       if (intentUI.doneLine) intentUI.doneLine.remove();
       intentUI.doneLine = noteLine(again ? 'J’ai réappliqué tes choix sur cette machine. Je prépare l’impression.' : 'Réglages appliqués. Je prépare l’impression.', 'ok', 'check', 'guide');
+      // Un lot comme les autres : « Annuler » à côté, qui remet les réglages d'avant et ramène au résumé.
+      if (result && result.undo_id) intentUI.doneLine.appendChild(intentUndoButton(result.undo_id, conv));
       plateAction('slice');
     }
-    if (!st.changes.length) { done(); return; }
+    if (!st.changes.length) { done(null); return; }
     var names = Logic.namesForApply(null, lastValues && lastValues.context);
-    pendingSheet = { kind: 'apply', onResult: function (ok, text) { if (!ok) { releaseIntent(); noteLine(text, 'error', 'alert', 'guide'); return; } done(); } };
+    pendingSheet = { kind: 'apply', onResult: function (ok, text, result) { if (!ok) { releaseIntent(); noteLine(text, 'error', 'alert', 'guide'); return; } done(result); } };
     window.orca.postMessage({ type: 'apply', changes: st.changes.map(function (c) { return { key: c.key, value: c.value, label: c.label }; }),
       print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: 'Intention : ' + st.summary.sentence.replace(/ :$/, '') });
+  }
+  // « Annuler » du lot de l'intention : réglages d'avant remis, puis retour au résumé (« Appliquer et préparer ») de l'étape Préparer.
+  function intentUndoButton(undoId, mine) {
+    var b = undoButton('Annuler', function () {
+      pendingSheet = { kind: 'undo', onResult: function (ok, text) { if (!ok) { b.disabled = false; noteLine(text, 'error', 'alert', 'guide'); } } };
+      window.orca.postMessage({ type: 'undo', undo_id: undoId });
+    });
+    undoneListeners[undoId] = function () {
+      if (intentUI.doneLine) { intentUI.doneLine.remove(); intentUI.doneLine = null; }
+      if (conv !== mine || !conv.project.intent) return;
+      conv.project.intent.applied = false;
+      delete conv.project.success;
+      if (tourSignals) tourSignals.sliced = false; // les réglages ont changé : la découpe n'est plus à jour
+      if (currentTourStep() !== 'slice') setTourStep('slice'); else projectChanged();
+      noteLine('Réglages d’avant remis.', '', 'undo', 'guide'); // après le changement d'étape, qui efface les messages
+    };
+    return b;
   }
   // Machine ou filament changé après avoir appliqué une intention : les mêmes réponses sont réappliquées en revenant à Préparer.
   function maybeReapplyIntent(before) {
@@ -1813,6 +1876,7 @@
       });
     },
     importPart: function () { pickFiles(); },
+    samplePart: function () { importSample(); },
     keepOldPart: function () {
       var old = projectUI.oldPart;
       projectUI.oldPart = null;
@@ -1968,24 +2032,28 @@
   }
   // Envoi ou export accepté depuis le panneau : le slicer a noté les réglages de la bobine (print_start). L'étape Résultat
   // demande alors si ça a marché. Pas pour les emplacements (Canvas, CFS…) : la v1 ne suit que la bobine du filament 1.
+  // Un nouvel envoi remplace le précédent (sa fin, ce que tu en as dit).
   function noteSpoolSent() {
-    var p = conv && conv.project, f = p && p.filament;
-    projectUI.spoolSent = f && f.spool && !(Array.isArray(p.canvas) && p.canvas.length) ? { conv: conv, id: f.spool.id, name: f.spool.name } : null;
-    projectUI.spoolNo = null;
+    if (!conv) return;
+    delete conv.project.send;
+    sendRecord();
+    scheduleSave();
   }
   // La question de l'étape Résultat ; elle se tait quand la carte « Ça a marché ? » est déjà là (elle note aussi la bobine).
   function spoolAsk() {
-    var s = projectUI.spoolSent;
-    return s && s.conv === conv && !conv.project.success && !$('outcome-slot').childNodes.length ? s.name : '';
+    var s = sendOf();
+    return s && s.spool && !conv.project.success && !$('outcome-slot').childNodes.length ? s.spool.name : '';
   }
-  // « Oui, c'est réussi » après un envoi ou un export avec une bobine : le slicer retient les réglages de cet envoi.
-  // Le slicer ne marque le dernier envoi que s'il est celui de cette bobine (`spool`), récent et pas déclaré raté ;
-  // `change_of_mind` : « Oui » juste après « Non » dans cette même étape.
+  // « Oui, c'est réussi » : le slicer retient les réglages du dernier envoi, seulement s'il est celui de cette bobine (`spool`),
+  // récent et pas déclaré raté ; `change_of_mind` : « Oui » après « Non » pour ce même envoi. Sa réponse dit ce qui est noté,
+  // ou pourquoi rien ne l'est (onSpoolSuccessDone). Sans bobine à retenir, on le dit aussi.
   function spoolSuccess() {
-    var s = projectUI.spoolSent;
-    if (!s || s.conv !== conv) return;
-    projectUI.spoolSent = null;
-    window.orca.postMessage({ type: 'spool_success', spool: s.id || '', change_of_mind: !!s.failed });
+    var s = sendRecord();
+    if (s.marked) return;
+    if (!s.spool) { noteLine('Je ne retiens les réglages que d’une bobine choisie à l’étape Filament : rien de noté pour cette impression.', '', 'info', 'guide'); return; }
+    s.marked = true;
+    scheduleSave();
+    window.orca.postMessage({ type: 'spool_success', spool: s.spool.id, change_of_mind: !!s.failed });
   }
   function onSpoolSuccessDone(msg) {
     projectUI.spools.printer = null; // « ✓ réussie le … » à jour la prochaine fois
@@ -1994,14 +2062,49 @@
   }
   // « Non, c'est raté » : la bobine de cet envoi passe à « dernière impression ratée » dans la liste.
   function spoolFailure() {
-    var s = projectUI.spoolSent;
-    if (!s || s.conv !== conv || s.failed) return;
+    var s = sendRecord();
+    if (s.failed) return;
     s.failed = true; // « Oui » reste possible ensuite (tu as changé d'avis) : la réussite remplace l'échec
-    window.orca.postMessage({ type: 'spool_failure', spool: s.id || '' });
+    delete s.marked;
+    scheduleSave();
+    if (s.spool) window.orca.postMessage({ type: 'spool_failure', spool: s.spool.id });
   }
   function onSpoolFailureDone(msg) {
     projectUI.spools.printer = null;
     if (msg && !msg.ok && msg.text) noteLine(msg.text, '', 'info', 'guide');
+  }
+  // Correction refusée parce que la fiche du projet est incomplète (`missing` du slicer : printer, part, filament) : un bouton
+  // ouvre l'onglet Étapes à l'étape à faire. Une fois tout choisi, le guide renvoie à la fiche de réglages, restée applicable.
+  // `doneText` : la phrase dite quand tout est choisi (par défaut, la fiche de réglages qui attend « Appliquer »).
+  function completeProjectButton(missing, doneText) {
+    var label = PlyoJourney.completeLabel(missing);
+    if (!label || !conv) return null;
+    var mine = conv;
+    return button(label, function () {
+      if (conv !== mine) return;
+      projectUI.completing = { conv: conv, missing: missing.slice(), done: doneText || 'C’est noté. Ta fiche de réglages t’attend dans la discussion : clique sur « Appliquer ».' };
+      applyTab('show-guide');
+      followCompletion();
+      $('project-card').scrollIntoView({ block: 'nearest' });
+    }, 'btn ghost sm', missing.indexOf('printer') >= 0 ? 'printer' : 'palette');
+  }
+  // Pendant « Choisir ma machine et ma bobine » : la machine d'abord (étape Machine), puis la bobine, même si la pièce manque
+  // encore (un réglage du filament n'en a pas besoin). Quand rien ne manque plus, retour à la discussion proposé.
+  function followCompletion() {
+    var c = projectUI.completing;
+    if (!c || c.conv !== conv) { projectUI.completing = null; return; }
+    var p = conv.project, next = PlyoProject.nextStep(p);
+    var still = c.missing.filter(function (k) { return k === 'printer' ? next === 'printer' : k === 'filament' ? !(p.filament && !p.filament.proposed && p.filament.preset) : !(p.part && p.part.name); });
+    if (next === 'printer' || projectUI.pending) return; // la machine se choisit à l'étape Machine
+    if (still.indexOf('filament') >= 0) {
+      // Une seule fois : « Annuler » dans le choix de la bobine n'y ramène pas de force.
+      if (next !== 'filament' && projectUI.editing !== 'filament' && !c.opened) { c.opened = true; projectHandlers.change('filament'); }
+      return;
+    }
+    if (still.length) return; // la pièce : l'étape Pièce est celle en cours
+    projectUI.completing = null;
+    var tip = noteLine(c.done, 'ok', 'check', 'guide');
+    tip.appendChild(button('Revenir à la discussion', function () { applyTab('show-chat'); }, 'link'));
   }
   // Mode écrit : sans bobine, l'accueil et une question de l'assistant sur le filament mènent au même choix.
   function spoolMissing() { return !!conv && PlyoSpools.needsSpool(conv.project); }
@@ -2072,6 +2175,10 @@
       restoreProjectInOrca(false);
     }
     renderProject();
+    // Envoi suivi dont la fin n'est pas encore connue ici : le slicer la renvoie s'il l'a lue pendant que la conversation
+    // n'était pas affichée (panneau fermé, autre conversation).
+    var sentBefore = sendOf();
+    if (sentBefore && sentBefore.watch && !sentBefore.end && !sentBefore.answered) window.orca.postMessage({ type: 'print_watch_replay', id: sentBefore.watch });
     // Plaque déjà découpée : aucune nouvelle découpe ne relancera la vérification, on la fait maintenant.
     if (tourSignals && tourSignals.sliced) window.orca.postMessage({ type: 'preflight' });
     if (!conv.entries.length) return;
@@ -2914,6 +3021,17 @@
     reader.readAsDataURL(file);
   }
 
+  // « Pas encore de fichier ? » : le slicer pose le petit bateau de test fourni avec lui, comme un fichier choisi (même réponse
+  // model_added : fiche du projet, nom de la pièce, étape suivante ; il remplace aussi la pièce du projet précédent).
+  function importSample() {
+    if (!conv || projectUI.placing) return;
+    applyTab('show-guide');
+    if (conv.project.part && conv.project.part.name) { noteLine('« ' + conv.project.part.name + ' » est déjà sur le plateau.', '', 'info', 'guide'); return; }
+    projectUI.placing = noteLine('Je pose le petit bateau de test sur le plateau…', '', 'cube', 'guide');
+    window.orca.postMessage({ type: 'model_add', sample: 'benchy', project: conv.project, conv: conv.id,
+      replace: PlyoProject.replacesPlate(conv.project, projectUI.oldPart, projectUI.newProjectFile) });
+  }
+
   // Glisser-déposer sur le panneau : mêmes règles que le trombone.
   document.addEventListener('dragover', function (e) { e.preventDefault(); });
   // Coller une image (capture d'écran, copie d'image) dans le champ de saisie la joint à la demande, comme le glisser-déposer.
@@ -2936,6 +3054,7 @@
   var plateUndoLinks = [];   // un seul « Annuler » actif : celui de la dernière action
   var plateCounts = {};      // demande → nombre de pièces concernées (singulier ou pluriel du texte affiché)
   var plateSent = {};        // demande → message envoyé et essais déjà faits (relance d'une action refusée pour un temps)
+  var plateQuiet = {};       // demande dont le résultat est dit par celui qui l'a faite (annulation groupée) : pas de ligne à part
   // Découpe demandée : le bouton attend le résultat. Sans résultat au bout d'un délai (Orca refuse sans le dire au panneau,
   // découpe très longue), il redevient cliquable et le panneau le dit.
   var SLICE_WAIT_MS = 120000;
@@ -2952,11 +3071,13 @@
       renderProject();
     }, SLICE_WAIT_MS) };
   }
-  function plateAction(kind, after, extra, count) {
+  // `after(ok, msg)` : la réponse du slicer (msg.undo_token pour une action annulable). `quiet` : pas de ligne dans le guide.
+  function plateAction(kind, after, extra, count, quiet) {
     if (kind === 'slice') { if (slicing.conv === conv) { if (after) after(true); return; } startSlicing(); }
     var id = ++plateRequest;
     plateWaiters[id] = after || null;
     plateCounts[id] = count;
+    if (quiet) plateQuiet[id] = true;
     plateSent[id] = { message: Object.assign({ type: 'plate_action', kind: kind, request: id }, extra || {}), tries: 0 };
     window.orca.postMessage(plateSent[id].message);
   }
@@ -2979,6 +3100,7 @@
     }
     var text = Logic.plateText(msg, plateCounts[msg.request]);
     delete plateCounts[msg.request];
+    if (plateQuiet[msg.request]) { delete plateQuiet[msg.request]; if (after) after(msg.ok, msg); return; }
     var line = noteLine(text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert', 'guide');
     if (msg.ok && msg.kind !== 'undo') plateUndoLinks.forEach(function (b) { b.remove(); });
     if (msg.ok && msg.undo_token !== undefined) {
@@ -2989,7 +3111,7 @@
       line.appendChild(undo);
     }
     if (msg.kind !== 'undo') record({ kind: 'note', text: text, tone: msg.ok ? 'ok' : 'error', icon: msg.ok ? 'check' : 'alert' });
-    if (after) after(msg.ok);
+    if (after) after(msg.ok, msg);
   }
   function showMe(target) { window.orca.postMessage({ type: 'show_me', target: target }); }
   function showSetting(key) { window.orca.postMessage({ type: 'show_setting', key: key }); }
@@ -3082,7 +3204,7 @@
           // Le slicer marque le dernier envoi (pointeur gardé, marche aussi après un redémarrage d'Orca), seulement s'il est
           // celui de la bobine de cette conversation, récent et pas déclaré raté ; sa réponse dit ce qui est noté, ou pourquoi pas.
           b.disabled = true;
-          if (projectUI.spoolSent && projectUI.spoolSent.conv === conv) projectUI.spoolSent = null;
+          if (sendOf()) { sendOf().marked = true; scheduleSave(); } // « Oui, c'est réussi » n'envoie plus rien pour cet envoi
           markSendAnswered(); // réussite dite dans la discussion : la question de fin de cet envoi ne vient plus
           var convSpool = conv && conv.project && conv.project.filament && conv.project.filament.spool;
           window.orca.postMessage({ type: 'spool_success', spool: (convSpool && convSpool.id) || '' });
@@ -3101,6 +3223,12 @@
   function onModelAdded(msg) {
     dropPlacing();
     if (!msg.ok && msg.busy) { projectUI.reposing = false; noteLine(msg.text, 'warn', 'alert', 'guide'); return; } // le projet d'avant n'est pas encore rangé
+    if (!msg.ok && msg.sample) {
+      // Le bateau de test manque (installation abîmée) : la seule issue est un fichier à soi, et on dit où en trouver un.
+      var none = noteLine((msg.text || 'Je n’ai pas pu poser le petit bateau de test.') + ' Choisis un fichier sur ton ordinateur, ou télécharge un modèle gratuit (par exemple sur printables.com), puis reviens ici.', 'error', 'alert', 'guide');
+      none.appendChild(button('Choisir un fichier', function () { pickFiles(); }, 'link'));
+      return;
+    }
     if (!msg.ok) { projectUI.reposing = false; noteLine((msg.text || 'Je n’ai pas pu poser cette pièce sur le plateau.') + ' Je prends les fichiers STL, 3MF, OBJ, STEP et AMF.', 'error', 'alert', 'guide'); return; }
     if (msg.adaptation) { syncProjectNames(msg.adaptation.saved); if (msg.name) conv.project.adapted = msg.name; } // adapté dès l'import : pas une deuxième fois
     if (tourSignals) tourSignals.objects = Math.max(tourSignals.objects || 0, 1); // sans attendre le prochain signal
@@ -3716,6 +3844,7 @@
           if (!ok) { undo.disabled = false; status.textContent = fr(text); status.classList.remove('hidden'); return; }
           var done = el('div', 'undo-row');
           done.appendChild(doneLabel('Anciens réglages remis. Découpe à nouveau la plaque pour en tenir compte.', 'undo'));
+          done.appendChild(button('Découper la plaque', function () { sliceAgain(); }, 'btn ghost sm', 'wand'));
           undo.replaceWith(done);
         } };
         // Sans « ask » : un retour en arrière ne doit pas reposer la question « Ça a marché ? ».
@@ -3754,11 +3883,18 @@
     }, revert.length ? 'btn ghost' : 'btn', 'search'));
     box.appendChild(acts);
     box.appendChild(status);
-    box.appendChild(button('Envoyer une photo du résultat', function () {
+    box.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () {
       noteInput.value = Logic.retryPrompt(item, note);
       pickFiles();
     }, 'link', 'camera'));
     slot.appendChild(box);
+  }
+
+  // Réglages remis à la main : la découpe est à refaire. Projet ouvert : retour à l'étape Préparer, qui découpe et revérifie ;
+  // sinon la découpe seule.
+  function sliceAgain() {
+    if (conv && currentTourStep()) { applyTab('show-guide'); delete conv.project.success; if (tourSignals) tourSignals.sliced = false; setTourStep('slice'); }
+    plateAction('slice');
   }
 
   // ---------- Vérification avant impression ----------
@@ -3921,13 +4057,18 @@
       var fixes = picked().map(function (r) { return r.fix; });
       var changes = PF.fixChanges(fixes);
       var actions = fixes.filter(function (f) { return f.action; });
-      var undoId = 0;
+      var undoId = 0, plateDone = []; // actions faites sur le plateau, avec leur jeton d'annulation, dans l'ordre
+      var mine = conv;
       lock(true);
       fail.classList.add('hidden');
       function stop(text) { lock(false); update(); if (text) { fail.textContent = fr(text); fail.classList.remove('hidden'); } }
       function next(i) {
         if (i >= actions.length) return finished();
-        plateAction(actions[i].action, function (ok) { if (ok) next(i + 1); else stop(''); }, null, plateCount);
+        plateAction(actions[i].action, function (ok, msg) {
+          if (!ok) { stop(''); return; }
+          plateDone.push({ kind: actions[i].action, token: msg && msg.undo_token !== undefined ? msg.undo_token : null });
+          next(i + 1);
+        }, null, plateCount);
       }
       function finished() {
         box.classList.remove('attention');
@@ -3939,14 +4080,32 @@
         box.appendChild(el('p', 'muted', 'Je redécoupe la plaque et je revérifie.'));
         var row = el('div', 'row-acts');
         plateAction('slice'); // la nouvelle vérification remplace cette carte
-        // « Annuler » au bout de la ligne « fait », comme partout ailleurs.
-        if (undoId) h.appendChild(undoButton('Annuler', function (b) {
-          pendingSheet = { kind: 'undo', onResult: function (ok, t) {
-            if (!ok) { b.disabled = false; noteLine(t, 'error', 'alert'); return; }
+        // « Annuler » au bout de la ligne « fait », comme partout ailleurs : les actions sur le plateau d'abord (de la dernière
+        // à la première, chacune annulable seulement si rien n'a changé depuis), puis les réglages. Ce qui reste en place est dit.
+        if (undoId || plateDone.length) h.appendChild(undoButton('Annuler', function (b) {
+          var left = plateDone.slice();
+          function undoPlate() {
+            var last = left[left.length - 1];
+            if (!last) return undoSettings();
+            if (last.token === null) return undoSettings();
+            plateAction('undo', function (ok) { if (!ok) { undoSettings(); return; } left.pop(); undoPlate(); }, { undo_token: last.token }, undefined, true);
+          }
+          function undoSettings() {
+            if (!undoId) return said(false);
+            pendingSheet = { kind: 'undo', onResult: function (ok, t) {
+              if (!ok && left.length === plateDone.length) { b.disabled = false; noteLine(t, 'error', 'alert'); return; }
+              said(ok, ok ? '' : t);
+            } };
+            window.orca.postMessage({ type: 'undo', undo_id: undoId });
+          }
+          function said(settingsUndone, refused) {
             slot.textContent = '';
-            noteLine('Réglages d’avant remis.', '', 'undo');
-          } };
-          window.orca.postMessage({ type: 'undo', undo_id: undoId });
+            if (refused) noteLine(refused, 'error', 'alert');
+            var r = PF.undoText(settingsUndone, plateDone.length - left.length, left.map(function (a) { return a.kind; }));
+            if (r.text) noteLine(r.text, r.tone, 'undo');
+            if (conv === mine && (settingsUndone || left.length < plateDone.length)) renderProject();
+          }
+          undoPlate();
         }));
         if (h.lastChild.classList.contains('btn')) h.lastChild.classList.add('push');
         box.appendChild(row);
@@ -4436,6 +4595,8 @@
     });
     var fail = el('div', 'fail hidden');
     sheet.appendChild(fail);
+    var completeSlot = el('div', 'row-acts hidden'); // fiche du projet incomplète : le bouton qui mène à l'étape à faire
+    sheet.appendChild(completeSlot);
 
     function checked() { return rows.filter(function (r) { return r.box.checked; }); }
     function updateCount() {
@@ -4455,9 +4616,18 @@
         return r.s.delta !== null ? { id: r.s.id, delta: r.s.delta } : { id: r.s.id, value: r.s.value };
       });
       fail.classList.add('hidden');
+      completeSlot.classList.add('hidden');
       lock(true);
       pendingSheet = { kind: 'apply', onResult: function (ok, text, result) {
-        if (!ok) { lock(false); updateCount(); fail.textContent = fr(text); fail.classList.remove('hidden'); return; }
+        if (!ok) {
+          lock(false); updateCount(); fail.textContent = fr(text); fail.classList.remove('hidden');
+          // La fiche reste applicable : une fois la machine et la bobine choisies, « Appliquer » marche depuis ici.
+          var complete = completeProjectButton(result && result.missing);
+          completeSlot.textContent = '';
+          if (complete) { completeSlot.appendChild(complete); completeSlot.classList.remove('hidden'); }
+          return;
+        }
+        completeSlot.textContent = '';
         var undoId = result && result.undo_id;
         // La conversation garde ce qui a été appliqué, valeurs comprises, pour la relire plus tard.
         entry.applied = true;

@@ -131,7 +131,19 @@
     return fixes.reduce(function (all, f) { return f.changes ? all.concat(f.changes) : all; }, []);
   }
 
-  var api = { preflightRisks: preflightRisks, riskKey: riskKey, preflightPlan: preflightPlan, fixChanges: fixChanges };
+  // « Annuler » après « Tout corriger » : ce qui est revenu et ce qui reste en place. `settings` : les réglages d'avant sont
+  // remis ; `undone` : nombre d'actions défaites sur le plateau ; `left` : celles qui restent (orient, arrange, scale_to_fit),
+  // qu'Orca ne laisse plus défaire d'ici parce que le plateau a changé depuis. { text, tone }.
+  var LEFT = { orient: 'tournée', arrange: 'rangée', scale_to_fit: 'réduite' };
+  function undoText(settings, undone, left) {
+    var kinds = (left || []).filter(function (k, i, all) { return LEFT[k] && all.indexOf(k) === i; }).map(function (k) { return LEFT[k]; });
+    var back = settings && undone ? 'Réglages d’avant remis, et la pièce est revenue comme avant.' : settings ? 'Réglages d’avant remis.' : undone ? 'La pièce est revenue comme avant.' : '';
+    if (!kinds.length) return { text: back, tone: '' };
+    var still = kinds.length > 1 ? kinds.slice(0, -1).join(', ') + ' et ' + kinds[kinds.length - 1] : kinds[0];
+    return { text: (settings ? 'Réglages d’avant remis. ' : '') + 'La pièce reste ' + still + ' : fais Cmd + Z (Ctrl + Z sur Windows) dans le slicer pour la remettre.', tone: 'warn' };
+  }
+
+  var api = { preflightRisks: preflightRisks, riskKey: riskKey, preflightPlan: preflightPlan, fixChanges: fixChanges, undoText: undoText };
   root.PlyoPreflight = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
