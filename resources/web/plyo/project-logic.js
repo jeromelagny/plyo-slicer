@@ -91,14 +91,28 @@
   function projectOpenedText(reason) {
     if (!reason) return '';
     if (reason === 'annule') return 'D’accord, ton plateau reste tel quel.';
+    if (reason === 'occupe') return 'Orca est occupé (découpe, envoi ou calibration) : je n’ai pas changé de plateau. Réessaie dans un instant.';
     return 'Je n’ai pas retrouvé le plateau de cette conversation : je remets ta machine et ta bobine.';
   }
   // Plateau pas retrouvé : la machine et la bobine de la fiche reviennent, comme avant les projets 3MF. Pas si l'utilisateur
   // a gardé son propre projet.
-  function restoresAfterOpen(reason) { return !!reason && reason !== 'annule'; }
-  function tooHeavyText() { return 'Ton plateau est trop lourd pour que je le garde avec cette conversation (50 Mo au plus) : je garde seulement sa fiche.'; }
+  function restoresAfterOpen(reason) { return !!reason && reason !== 'annule' && reason !== 'occupe'; }
+  // `previous` : le plateau trop lourd est celui de la conversation qu'on vient de quitter.
+  function tooHeavyText(previous) {
+    return previous ? 'Le plateau de ta conversation précédente était trop lourd pour que je le garde (50 Mo au plus) : je garde seulement sa fiche.'
+      : 'Ton plateau est trop lourd pour que je le garde avec cette conversation (50 Mo au plus) : je garde seulement sa fiche.';
+  }
+  // Un fichier de l'utilisateur (ouvert dans Orca) n'est jamais attaché à une conversation (signal `user_file` du slicer).
+  function mayAttach(signals) { return !(signals && signals.user_file); }
+  // Orca a vidé les réglages de la pièce sans changer de projet (assistant de configuration, mise à jour des profils…) :
+  // la conversation affichée rouvre son 3MF (les réglages reviennent) sur la même machine ; sur une autre, le plateau est
+  // simplement rattaché (changer de machine refait la préparation). '' : ce n'est plus la conversation affichée.
+  function afterDetached(msg, convId) {
+    if (!msg || msg.conv !== convId) return '';
+    return msg.same_printer ? 'open' : 'attach';
+  }
 
-  var api = { opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  var api = { opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -853,7 +853,8 @@
   }
   // Projet 3MF de la conversation (datadir/plyo/projets/<conv>.3mf) : le slicer y écrit le plateau et les réglages
   // d'impression tout seuls, tant que le plateau est attaché à la conversation.
-  function attachPlate() { if (conv) window.orca.postMessage({ type: 'project_attach', conv: conv.id }); }
+  // Jamais pour un fichier de l'utilisateur ouvert dans Orca (le slicer le refuse aussi) : Orca garde sa question « enregistrer ? ».
+  function attachPlate() { if (conv && PlyoProject.mayAttach(tourSignals)) window.orca.postMessage({ type: 'project_attach', conv: conv.id }); }
   // Le plateau quitté est écrit dans son 3MF ; ses réglages d'impression ne suivent pas la conversation suivante.
   function detachPlate() { window.orca.postMessage({ type: 'project_detach' }); }
   function onProjectOpened(msg) {
@@ -862,8 +863,16 @@
     if (text) noteLine(text, msg.reason === 'annule' ? '' : 'warn', msg.reason === 'annule' ? 'info' : 'alert', 'guide');
     if (PlyoProject.restoresAfterOpen(msg.reason)) restoreProjectInOrca(false);
   }
+  // Le plateau trop lourd peut être celui de la conversation qu'on vient de quitter (écrit à son départ) : on le dit aussi.
   function onProjectFile(msg) {
-    if (msg.kept === false && conv && msg.conv === conv.id) noteLine(PlyoProject.tooHeavyText(), 'warn', 'alert', 'guide');
+    if (msg.kept === false) noteLine(PlyoProject.tooHeavyText(!(conv && msg.conv === conv.id)), 'warn', 'alert', 'guide');
+  }
+  // Orca a vidé les réglages de la pièce sans changer de projet (assistant de configuration, mise à jour des profils…) :
+  // sur la même machine, la conversation rouvre son 3MF (ses réglages reviennent) ; sinon le plateau lui est rattaché.
+  function onProjectDetached(msg) {
+    var next = PlyoProject.afterDetached(msg, conv && conv.id);
+    if (next === 'open') { projectUI.restoringUntil = Date.now() + 4000; window.orca.postMessage({ type: 'project_open', conv: conv.id }); }
+    else if (next === 'attach') attachPlate();
   }
   // Remet l'imprimante et le filament du projet dans Orca (seulement si ces deux choix sont faits).
   function restoreProjectInOrca(discardUnsaved) {
@@ -4600,6 +4609,8 @@
       onProjectOpened(msg);
     } else if (msg.type === 'project_file') {
       onProjectFile(msg);
+    } else if (msg.type === 'project_detached') {
+      onProjectDetached(msg);
     } else if (msg.type === 'model_adapted') {
       var ad = msg.adaptation;
       if (ad && (ad.adapted && ad.adapted.length || ad.dropped && ad.dropped.length || ad.error)) { syncProjectNames(ad.saved); $('guide-notes').appendChild(renderAdaptation(ad, false)); }
@@ -4648,6 +4659,7 @@
   });
 
   startConversation();
+  detachPlate(); // panneau rouvert : conversation neuve, le plateau d'avant n'est plus attaché (ses réglages ne suivent pas)
   window.orca.postMessage({ type: 'habits_get' });
   askProjectPrinters();
   showLoggedIn(false);

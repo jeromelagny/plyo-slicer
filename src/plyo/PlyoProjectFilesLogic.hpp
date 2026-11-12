@@ -54,6 +54,23 @@ struct Fingerprint
     bool operator!=(const Fingerprint& o) const { return !(*this == o); }
 };
 
+// Un plateau ne s'attache à une conversation que s'il n'est pas un fichier de l'utilisateur : ni projet nommé (ouvert ou
+// enregistré sous un nom), ni fichier chargé par lui sans nom (jusqu'au prochain nouveau projet). Sinon Plyo ferait taire
+// la question « enregistrer ? » d'Orca et garderait ses modifications dans datadir au lieu de son fichier.
+inline bool attachable(bool has_project_file, bool user_loaded) { return !has_project_file && !user_loaded; }
+
+// Le plateau quitté (écrit dans le 3MF de sa conversation, empreinte `kept`) peut être remplacé sans rien demander :
+// même projet, même état du plateau, et aucun préréglage modifié depuis. Le compteur de réglages n'entre pas en compte :
+// vider les modifications en partant le fait bouger.
+inline bool plate_unchanged(const Fingerprint& kept, const Fingerprint& now, bool presets_dirty)
+{
+    return kept.project == now.project && kept.snapshot == now.snapshot && !presets_dirty;
+}
+
+// L'export 3MF tourne sur le fil de l'interface : jamais pendant une découpe, un envoi, une calibration (son plateau de
+// test n'est pas celui du projet) ou une fenêtre modale.
+inline bool write_allowed(bool slicing, bool sending, bool calibrating, bool modal) { return !slicing && !sending && !calibrating && !modal; }
+
 // Projets dont la conversation n'existe plus (effacée, ou au-delà des 30 gardées), dans l'ordre de `files`.
 inline std::vector<std::string> orphans(const std::vector<std::string>& kept_conversations, const std::vector<std::string>& files)
 {

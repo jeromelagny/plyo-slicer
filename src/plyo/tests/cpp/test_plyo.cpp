@@ -2640,3 +2640,38 @@ TEST_CASE("Projets : les 3MF sans conversation sont à effacer")
     CHECK(orphans({}, {"x"}) == std::vector<std::string>{"x"});
     CHECK(orphans({"x"}, {}).empty());
 }
+
+TEST_CASE("Projets : un plateau qui est un fichier de l'utilisateur n'est jamais attaché à une conversation")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    CHECK(attachable(false, false));
+    // Projet ouvert ou enregistré sous un nom par l'utilisateur (Fichier › Ouvrir, Enregistrer sous) : jamais.
+    CHECK_FALSE(attachable(true, false));
+    // Fichier chargé par l'utilisateur sans nom de projet (3MF publié, géométrie seule) : jusqu'au prochain nouveau projet.
+    CHECK_FALSE(attachable(false, true));
+}
+
+TEST_CASE("Projets : le plateau quitté se remplace sans question seulement s'il n'a pas bougé depuis l'écriture")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    const Fingerprint kept{3, 10, 40};
+    CHECK(plate_unchanged(kept, Fingerprint{3, 10, 40}, false));
+    // Le compteur de réglages a pu bouger en vidant les modifications : seuls projet et plateau comptent, plus les préréglages modifiés.
+    CHECK(plate_unchanged(kept, Fingerprint{3, 10, 41}, false));
+    // Pièce tournée après le départ de la conversation.
+    CHECK_FALSE(plate_unchanged(kept, Fingerprint{3, 11, 40}, false));
+    // Autre projet.
+    CHECK_FALSE(plate_unchanged(kept, Fingerprint{4, 10, 40}, false));
+    // Réglage changé dans un onglet d'Orca après le départ.
+    CHECK_FALSE(plate_unchanged(kept, Fingerprint{3, 10, 40}, true));
+}
+
+TEST_CASE("Projets : aucune écriture du 3MF pendant une découpe, un envoi, une calibration ou une fenêtre")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    CHECK(write_allowed(false, false, false, false));
+    CHECK_FALSE(write_allowed(true, false, false, false));
+    CHECK_FALSE(write_allowed(false, true, false, false));
+    CHECK_FALSE(write_allowed(false, false, true, false));
+    CHECK_FALSE(write_allowed(false, false, false, true));
+}

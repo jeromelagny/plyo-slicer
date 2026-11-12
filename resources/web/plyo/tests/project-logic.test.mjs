@@ -121,7 +121,6 @@ test('projet de la conversation : texte quand le plateau ne revient pas', () => 
   assert.equal(P.projectOpenedText('absent'), lost);
   assert.equal(P.projectOpenedText('abime'), lost);
   assert.equal(P.projectOpenedText('trop_gros'), lost);
-  assert.equal(P.projectOpenedText('occupe'), lost);
   // L'utilisateur a gardé son propre projet dans la question d'Orca : on ne touche à rien.
   assert.equal(P.projectOpenedText('annule'), 'D’accord, ton plateau reste tel quel.');
   assert.equal(P.restoresAfterOpen(''), false);
@@ -132,4 +131,23 @@ test('projet de la conversation : texte quand le plateau ne revient pas', () => 
 test('projet de la conversation : plateau trop lourd', () => {
   assert.match(P.tooHeavyText(), /50 Mo/);
   assert.match(P.tooHeavyText(), /fiche/);
+});
+
+test('projet de la conversation : jamais attaché à un fichier de l’utilisateur', () => {
+  assert.equal(P.mayAttach({ objects: 1 }), true);
+  assert.equal(P.mayAttach({ objects: 1, user_file: true }), false);
+  assert.equal(P.mayAttach(null), true);
+});
+
+test('projet de la conversation : slicer occupé, plateau trop lourd d’une conversation quittée', () => {
+  assert.equal(P.restoresAfterOpen('occupe'), false);
+  assert.match(P.projectOpenedText('occupe'), /occupé/);
+  assert.match(P.tooHeavyText(true), /conversation précédente/);
+  assert.doesNotMatch(P.tooHeavyText(false), /précédente/);
+});
+
+test('projet de la conversation : plateau détaché par Orca, rouvert seulement sur la même machine', () => {
+  assert.deepEqual(P.afterDetached({ conv: 'a', same_printer: true }, 'a'), 'open');
+  assert.deepEqual(P.afterDetached({ conv: 'a', same_printer: false }, 'a'), 'attach');
+  assert.deepEqual(P.afterDetached({ conv: 'a', same_printer: true }, 'b'), '');
 });

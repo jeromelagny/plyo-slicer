@@ -389,6 +389,7 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "tour_signals") {
             nlohmann::json signals = FirstSteps::tour_signals();
             signals["type"]        = "tour_signals";
+            signals["user_file"]   = !ProjectFiles::attachable(); // un fichier de l'utilisateur n'est jamais attaché à la conversation
             send(signals);
         } else if (type == "tour_add_benchy")
             send_result(FirstSteps::add_benchy());
@@ -400,8 +401,8 @@ void handle_page_message(const nlohmann::json& data)
             const std::string before = ProjectFiles::attached();
             ProjectFiles::attach(conv);
             nlohmann::json added = ModelImport::add(Json::str(data, "name"), Json::str(data, "data"), data.contains("project") ? data["project"] : nlohmann::json(), Json::boolean(data, "replace", false));
-            if (!Json::boolean(added, "ok", false) && before.empty() && !conv.empty())
-                ProjectFiles::detach(false);
+            if (!Json::boolean(added, "ok", false) && before.empty())
+                ProjectFiles::release(conv); // rien d'écrit pour elle : le plateau n'a pas changé
             added["type"]        = "model_added";
             send(added);
         } else if (type == "project_attach") {
@@ -646,7 +647,12 @@ void toggle_assistant(Plater* plater)
         // retirer (le panneau le renvoie à sa réouverture) ; le bouton du haut repasse à « fermé ».
         Canvas::clear_plan();
         AutoSave::stop();
-        ProjectFiles::stop(); // le panneau rouvert commence une conversation neuve : plus rien n'est attaché
+        // Fermeture d'Orca : la minuterie part avec lui. Sinon le plateau reste attaché (derniers changements écrits) ;
+        // le panneau rouvert, qui commence une conversation neuve, le détache.
+        if (Slic3r::GUI::wxGetApp().is_closing())
+            ProjectFiles::stop();
+        else
+            ProjectFiles::panel_closed();
         if (s_topbar_button)
             s_topbar_button->CallAfter([] { refresh_topbar_button(); });
     });

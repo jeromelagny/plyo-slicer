@@ -6,6 +6,7 @@
 #include "PlyoJson.hpp"
 #include "PlyoProjectLogic.hpp"
 #include "PlyoProfiles.hpp"
+#include "PlyoProjectFiles.hpp"
 #include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/PresetBundle.hpp"
@@ -159,7 +160,9 @@ nlohmann::json restore(const nlohmann::json& project, bool discard_unsaved)
 
     const nlohmann::json now      = state();
     const bool           changing = Json::str(now, "printer_preset") != printer || (has_filament && !ProjectLogic::same_filament(filament, Json::str(now, "filament_preset")));
-    const bool           dirty    = bundle().printers.current_is_dirty() || bundle().prints.current_is_dirty() || bundle().filaments.current_is_dirty();
+    // Plateau d'une conversation : ses réglages d'impression modifiés sont dans son 3MF (écrit ici), pas « non enregistrés ».
+    const bool           prints_kept = bundle().prints.current_is_dirty() && ProjectFiles::flush();
+    const bool           dirty    = bundle().printers.current_is_dirty() || (bundle().prints.current_is_dirty() && !prints_kept) || bundle().filaments.current_is_dirty();
     if (changing && dirty && !discard_unsaved)
         return {{"ok", false}, {"needs_confirmation", true}, {"text", "Tu as des réglages non enregistrés dans Orca."}};
 

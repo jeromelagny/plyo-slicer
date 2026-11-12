@@ -107,7 +107,7 @@ nlohmann::json save_applied()
     const std::string old_machine = Limits::machine_key();
     // Plateau d'une conversation : les réglages d'impression sont ceux de la pièce. Ils restent modifiés et vivent dans le
     // 3MF de la conversation, jamais dans le préréglage d'impression partagé (ils suivraient le projet suivant).
-    const bool in_project = !ProjectFiles::attached().empty();
+    const bool in_project = ProjectFiles::owns_print_edits();
     bool       kept       = false;
     for (const Preset::Type type : {Preset::TYPE_PRINT, Preset::TYPE_FILAMENT}) {
         Slic3r::PresetCollection& col = collection(type);
