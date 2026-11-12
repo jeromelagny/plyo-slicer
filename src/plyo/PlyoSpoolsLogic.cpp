@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <regex>
 #include <set>
 
 namespace Plyo { namespace SpoolsLogic {
@@ -179,6 +180,53 @@ std::string spool_of_preset(const nlohmann::json& reg, const std::string& filame
             if (entry["preset"] == filament_preset)
                 return s["id"];
     return "";
+}
+
+std::string preset_for(const nlohmann::json& reg, const std::string& id, const std::string& printer)
+{
+    const nlohmann::json clean = sanitize(reg);
+    for (const nlohmann::json& s : clean["spools"])
+        if (s["id"] == id)
+            return Json::str(Json::obj(s["machines"], printer.c_str()), "preset");
+    return "";
+}
+
+nlohmann::json set_preset(const nlohmann::json& reg, const std::string& id, const std::string& printer, const std::string& preset)
+{
+    nlohmann::json clean = sanitize(reg);
+    if (printer.empty())
+        return clean;
+    for (nlohmann::json& s : clean["spools"])
+        if (s["id"] == id)
+            s["machines"][printer] = {{"preset", preset}, {"last_outcome", ""}, {"last_ok_at", ""}};
+    return sanitize(clean); // le nom du préréglage est borné comme à la lecture
+}
+
+std::string spool_name(const nlohmann::json& reg, const std::string& id)
+{
+    const nlohmann::json clean = sanitize(reg);
+    for (const nlohmann::json& s : clean["spools"])
+        if (s["id"] == id)
+            return s["name"];
+    return "";
+}
+
+std::string machine_label(const std::string& printer_preset)
+{
+    using std::regex;
+    const auto icase = regex::ECMAScript | regex::icase;
+    static const regex mine("^\\s*Ma\\s+", icase);
+    static const regex copy("\\s*-\\s*Cop(ie|y)\\b.*$", icase);
+    static const regex plyo("\\s*\\(Plyo( \\d+)?\\)\\s*$");
+    static const regex nozzle("\\s+\\d+(\\.\\d+)?\\s*nozzle\\s*$", icase);
+    std::string s = std::regex_replace(printer_preset, mine, "");
+    s             = std::regex_replace(s, copy, "");
+    s             = std::regex_replace(s, plyo, "");
+    s             = std::regex_replace(s, nozzle, "");
+    for (char& c : s)
+        if (c == '\t' || c == '\n' || c == '\r')
+            c = ' ';
+    return collapse(s);
 }
 
 }} // namespace Plyo::SpoolsLogic

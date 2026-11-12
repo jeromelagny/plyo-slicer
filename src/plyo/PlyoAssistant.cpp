@@ -30,6 +30,7 @@
 #include "PlyoPrinterSetup.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
+#include "PlyoSpools.hpp"
 
 #include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/DockPanel.hpp"
@@ -504,6 +505,14 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "filament_choose") {
             nlohmann::json r = FirstSteps::choose_filament(Json::str(data, "material"));
             r["type"]        = "filament_chosen";
+            send(r);
+            send_values();
+        } else if (type == "spools_get") {
+            send({{"type", "spools"}, {"items", Spools::list(Json::str(data, "printer"))}});
+        } else if (type == "spool_choose") {
+            // Bobine nommée : son préréglage pour cette machine est choisi, ou créé depuis le profil de la matière de cette machine.
+            nlohmann::json r = Spools::create_or_choose(Json::str(data, "name"), Json::str(data, "material"), Json::str(data, "printer"));
+            r["type"]        = "spool_chosen";
             send(r);
             send_values();
         } else if (type == "print_start") {

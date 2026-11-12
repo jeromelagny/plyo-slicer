@@ -36,4 +36,18 @@ nlohmann::json for_machine(const nlohmann::json& reg, const std::string& printer
 // Id de la bobine qui possède ce préréglage filament, ou "".
 std::string spool_of_preset(const nlohmann::json& reg, const std::string& filament_preset);
 
+// Préréglage de la bobine `id` pour ce préréglage d'imprimante ; vide si elle n'en a pas encore (ou bobine inconnue).
+std::string preset_for(const nlohmann::json& reg, const std::string& id, const std::string& printer);
+
+// Note le préréglage de la bobine `id` pour cette imprimante. Le résultat de la machine repart à zéro : il parlait
+// d'autres valeurs. Bobine inconnue ou imprimante vide : registre (nettoyé) inchangé.
+nlohmann::json set_preset(const nlohmann::json& reg, const std::string& id, const std::string& printer, const std::string& preset);
+
+// Nom de la bobine `id`, vide si elle est inconnue.
+std::string spool_name(const nlohmann::json& reg, const std::string& id);
+
+// Nom court de la machine, comme le panneau l'affiche (journey-logic.js machineLabel et ficheSummary) : sans « Ma » devant,
+// sans « - Copie » / « - Copy », « (Plyo) » ni « 0.4 nozzle » derrière. « Ma Creality CR-10 SE 0.4 nozzle » → « Creality CR-10 SE ».
+std::string machine_label(const std::string& printer_preset);
+
 }} // namespace Plyo::SpoolsLogic

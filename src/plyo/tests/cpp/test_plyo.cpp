@@ -2209,3 +2209,43 @@ TEST_CASE("Bobines : ajout, filtre par machine, retrouver la bobine d'un préré
     CHECK(spool_of_preset(reg2, "P9") == "");
     CHECK(spool_of_preset(reg2, "") == "");
 }
+
+TEST_CASE("Bobines : une autre machine ne reprend pas le préréglage d'une machine (vigilance 3)")
+{
+    using namespace Plyo::SpoolsLogic;
+    const json        r   = add(sanitize(json::object()), "Sunlu PLA+ noir", "PLA");
+    const std::string id  = r["id"];
+    const json        reg = set_preset(r["reg"], id, "Ma Creality CR-10 SE 0.4 nozzle", "Sunlu PLA+ noir \xE2\x80\x94 Creality CR-10 SE");
+    CHECK(preset_for(reg, id, "Ma Creality CR-10 SE 0.4 nozzle") == "Sunlu PLA+ noir \xE2\x80\x94 Creality CR-10 SE");
+    CHECK(for_machine(reg, "Ma Creality CR-10 SE 0.4 nozzle")[0]["has_preset"] == true);
+    // Même bobine, autre machine : rien n'est repris, il faudra partir du profil de la matière de la K2.
+    CHECK(for_machine(reg, "Ma Creality K2 0.4 nozzle")[0]["has_preset"] == false);
+    CHECK(preset_for(reg, id, "Ma Creality K2 0.4 nozzle") == "");
+    CHECK(preset_for(reg, "inconnu", "Ma Creality CR-10 SE 0.4 nozzle") == "");
+    // Bobine inconnue ou machine vide : registre inchangé.
+    CHECK(set_preset(reg, "inconnu", "K2", "P") == sanitize(reg));
+    CHECK(set_preset(reg, id, "", "P") == sanitize(reg));
+    // Un nouveau préréglage repart sans résultat : l'ancien ne parlait pas de ces valeurs.
+    json done = reg;
+    done["spools"][0]["machines"]["Ma Creality CR-10 SE 0.4 nozzle"]["last_outcome"] = "ok";
+    done["spools"][0]["machines"]["Ma Creality CR-10 SE 0.4 nozzle"]["last_ok_at"]   = "2026-11-11";
+    const json again = set_preset(done, id, "Ma Creality CR-10 SE 0.4 nozzle", "Autre");
+    CHECK(again["spools"][0]["machines"]["Ma Creality CR-10 SE 0.4 nozzle"]["last_outcome"] == "");
+    CHECK(again["spools"][0]["machines"]["Ma Creality CR-10 SE 0.4 nozzle"]["preset"] == "Autre");
+    CHECK(spool_name(again, id) == "Sunlu PLA+ noir");
+    CHECK(spool_name(again, "inconnu") == "");
+}
+
+TEST_CASE("Bobines : nom court de la machine (comme le panneau)")
+{
+    using namespace Plyo::SpoolsLogic;
+    CHECK(machine_label("Ma Creality CR-10 SE 0.4 nozzle") == "Creality CR-10 SE");
+    CHECK(machine_label("Creality K2 0.6 Nozzle") == "Creality K2");
+    CHECK(machine_label("Elegoo Centauri Carbon 2 0.4 nozzle - Copie") == "Elegoo Centauri Carbon 2");
+    CHECK(machine_label("Elegoo Centauri Carbon 2 0.4 nozzle - Copy 2") == "Elegoo Centauri Carbon 2");
+    CHECK(machine_label("Ma Creality K2 0.4 nozzle (Plyo)") == "Creality K2");
+    CHECK(machine_label("Ma Creality K2 0.4 nozzle (Plyo 2)") == "Creality K2");
+    CHECK(machine_label("MyKlipper") == "MyKlipper");
+    CHECK(machine_label("Mars 0.4 nozzle") == "Mars");
+    CHECK(machine_label("  ") == "");
+}
