@@ -15,6 +15,10 @@ namespace Plyo { namespace SettingsBridge {
 //  "context": {"printer", "filament", "process"}, "can_undo": bool}
 nlohmann::json read_values();
 
+// Contexte de la question à l'IA, lu en lecture seule dans les préréglages en cours (ContextLogic::context_extras) : type de
+// plateau et clés de température qu'il lit vraiment, matière et marque du filament, faits de l'imprimante.
+nlohmann::json ai_context();
+
 // Pourquoi un lot n'est plus annulable : le refus d'annulation le dit (projet ouvert dans Orca, autre projet de l'assistant,
 // fichier ouvert, calibration, imprimante ou filament changés).
 enum class DropReason { Project, Conversation, Import, Calibration, Profile };

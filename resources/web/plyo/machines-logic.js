@@ -12,6 +12,7 @@
       hidden: Array.isArray(src.hidden) ? src.hidden.filter(function (x) { return typeof x === 'string'; }) : [], last: typeof src.last === 'string' ? src.last : '' };
     if (src.level === 'short' || src.level === 'detailed') out.level = src.level;
     if (src.level_manual === true) out.level_manual = true;
+    if (src.level_hold === true) out.level_hold = true;
     out.intent_skips = typeof src.intent_skips === 'number' ? src.intent_skips : 0;
     if (src.ask_intent === false) out.ask_intent = false;
     return out;
@@ -81,8 +82,22 @@
 
   // Niveau d'explication : « detailed » par défaut ; deviné tant que l'utilisateur ne l'a pas choisi lui-même.
   function levelOf(habits) { return habits && habits.level === 'short' ? 'short' : 'detailed'; }
-  function guessLevel(habits, level) { var h = clone(habits); if (!h.level_manual && level === 'short') h.level = 'short'; return h; } // ne redescend jamais tout seul
-  function chooseLevel(habits, level) { var h = clone(habits); h.level = level === 'short' ? 'short' : 'detailed'; h.level_manual = true; return h; }
+  // Supposition (jamais au-dessus d'un choix fait à la main dans le menu) : « short » quand le vocabulaire le montre ; retour à
+  // « detailed » quand l'utilisateur demande ce qu'est un terme (`definition`), et alors plus de passage automatique en court
+  // (`level_hold`) : son vocabulaire d'avant ne le ferait pas remonter au message suivant.
+  function guessLevel(habits, level, definition) {
+    var h = clone(habits);
+    if (h.level_manual) return h;
+    if (definition) { if (h.level === 'short') { h.level = 'detailed'; h.level_hold = true; } return h; }
+    if (level === 'short' && !h.level_hold) h.level = 'short';
+    return h;
+  }
+  // Ce que la supposition a changé, pour le dire : 'up' (passé en court), 'down' (revenu au détaillé), '' sinon.
+  function levelChange(before, after) {
+    var a = levelOf(before), b = levelOf(after);
+    return a === b ? '' : b === 'short' ? 'up' : 'down';
+  }
+  function chooseLevel(habits, level) { var h = clone(habits); h.level = level === 'short' ? 'short' : 'detailed'; h.level_manual = true; delete h.level_hold; return h; }
 
   // Questions d'intention : passées (skipped = true) ou répondues ; après trois projets passés de suite, on propose d'arrêter.
   function askIntent(habits) { return !(habits && habits.ask_intent === false); }
@@ -113,7 +128,7 @@
       : 'Après un envoi, regarde son écran : je ne sais pas encore vérifier qu’elle démarre.';
   }
 
-  var api = { levelOf: levelOf, guessLevel: guessLevel, chooseLevel: chooseLevel, askIntent: askIntent, noteIntent: noteIntent,
+  var api = { levelOf: levelOf, guessLevel: guessLevel, levelChange: levelChange, chooseLevel: chooseLevel, askIntent: askIntent, noteIntent: noteIntent,
     offerStopAsking: offerStopAsking, stopAsking: stopAsking, machineThatFits: machineThatFits, visiblePrinters: visiblePrinters, isKnownHost: isKnownHost, machineQuestion: machineQuestion, habitFor: habitFor, rememberFilament: rememberFilament, replaceMachine: replaceMachine,
     hideMachine: hideMachine, unhideMachine: unhideMachine, emptyHabits: emptyHabits, searchModels: searchModels, linkSummary: linkSummary };
   root.PlyoMachines = api;

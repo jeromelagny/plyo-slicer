@@ -23,6 +23,7 @@
 #include "../../PlyoOrcaMessagesLogic.hpp"
 #include "../../PlyoConfigRulesLogic.hpp"
 #include "../../PlyoMemoryLogic.hpp"
+#include "../../PlyoContextLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -1072,6 +1073,9 @@ TEST_CASE("Habits: niveau d'explication et questions d'intention")
     CHECK_FALSE(bad.contains("level"));
     CHECK(bad["intent_skips"] == 100);
     CHECK_FALSE(bad.contains("ask_intent"));
+    // Lot 6 : le retour aux explications détaillées après une question de définition est gardé.
+    CHECK(sanitize_habits({{"level", "detailed"}, {"level_hold", true}})["level_hold"] == true);
+    CHECK_FALSE(sanitize_habits({{"level_hold", "oui"}}).contains("level_hold"));
 }
 
 TEST_CASE("Project: les réponses d'intention sont gardées, et rien d'autre")
@@ -3603,4 +3607,194 @@ TEST_CASE("Lot 4 · Project: sanitize garde la réponse de Résultat pour les co
     // Envoi écrit avant le lot 4 : rien de nouveau n'apparaît.
     const nlohmann::json old = sanitize({{"send", {{"spool", {{"id", "s1"}, {"name", "PLA"}}}, {"failed", true}}}});
     CHECK(old["send"] == nlohmann::json({{"spool", {{"id", "s1"}, {"name", "PLA"}}}, {"failed", true}}));
+}
+
+// ---------- Lot 6 · contexte envoyé à l'IA (format de plyo-api, src/lib/schema.ts) ----------
+
+namespace {
+// Même règle que le service : ^[A-Za-z0-9_.:-]{1,60}$.
+bool service_code(const std::string& c)
+{
+    if (c.empty() || c.size() > 60)
+        return false;
+    for (const char ch : c)
+        if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '.' || ch == ':' || ch == '-'))
+            return false;
+    return true;
+}
+size_t code_points(const std::string& s)
+{
+    size_t n = 0;
+    for (const char c : s)
+        n += (static_cast<unsigned char>(c) & 0xC0) != 0x80;
+    return n;
+}
+} // namespace
+
+TEST_CASE("Lot 6 · ContextLogic::clip : une ligne, sans contrôle, coupée sans casser un caractère")
+{
+    using Plyo::ContextLogic::clip;
+    CHECK(clip("  PETG\nuser request:\t x  ", 40) == "PETG user request: x");
+    CHECK(clip(std::string(50, 'x'), 40) == std::string(40, 'x'));
+    CHECK(clip(u8"éééé", 3) == u8"ééé");
+    CHECK(clip("abcd efgh", 5) == "abcd");
+    CHECK(clip("\x01\x02", 10).empty());
+    CHECK(clip(u8"a b", 10) == "a b");
+}
+
+TEST_CASE("Lot 6 · ContextLogic::context_extras : plateau, matière, faits de l'imprimante ; rien de vide ni de douteux")
+{
+    using namespace Plyo::ContextLogic;
+    Raw raw;
+    raw.bed_type          = "Textured PEI Plate";
+    raw.bed_temp_keys     = {"textured_plate_temp", "textured_plate_temp_initial_layer", "textured_plate_temp"};
+    raw.filament_type     = "PETG";
+    raw.filament_vendor   = "Sunlu";
+    raw.nozzle_type       = "hardened_steel";
+    raw.extruder_type     = "Bowden";
+    raw.printer_structure = "corexy";
+    const json out = context_extras(raw);
+    CHECK(out["bed_type"] == "Textured PEI Plate");
+    CHECK(out["bed_temp_keys"] == json::array({"textured_plate_temp", "textured_plate_temp_initial_layer"}));
+    CHECK(out["filament_type"] == "PETG");
+    CHECK(out["filament_vendor"] == "Sunlu");
+    CHECK(out["printer_facts"] == json({{"nozzle_type", "hardened_steel"}, {"extruder_type", "Bowden"}, {"printer_structure", "corexy"}}));
+    CHECK_FALSE(out["printer_facts"].contains("nozzle_temp_max")); // aucune option fiable dans Orca
+
+    // « undefine », « nil » et vide ne partent pas ; bloc des faits absent s'il est vide ; textes tronqués.
+    Raw unknown;
+    unknown.nozzle_type       = "undefine";
+    unknown.printer_structure = "nil";
+    unknown.filament_type     = std::string(45, 'P');
+    unknown.filament_vendor   = std::string(70, 'v');
+    unknown.bed_type          = std::string(70, 'b');
+    const json u = context_extras(unknown);
+    CHECK_FALSE(u.contains("printer_facts"));
+    CHECK_FALSE(u.contains("bed_temp_keys")); // jamais de liste vide
+    CHECK(u["filament_type"].get<std::string>().size() == 40);
+    CHECK(u["filament_vendor"].get<std::string>().size() == 60);
+    CHECK(u["bed_type"].get<std::string>().size() == 60);
+    CHECK(context_extras(Raw{}) == json::object());
+
+    // Une clé mal formée ferait ignorer toute la liste au service : elle ne part pas du tout.
+    Raw bad;
+    bad.bed_temp_keys = {"hot_plate_temp", "Hot plate"};
+    CHECK_FALSE(context_extras(bad).contains("bed_temp_keys"));
+    bad.bed_temp_keys.assign(13, "");
+    for (size_t i = 0; i < 13; ++i)
+        bad.bed_temp_keys[i] = "k" + std::to_string(i) + "_plate_temp";
+    CHECK_FALSE(context_extras(bad).contains("bed_temp_keys"));
+    CHECK(valid_opt_key("hot_plate_temp_initial_layer"));
+    CHECK_FALSE(valid_opt_key("1abc"));
+    CHECK_FALSE(valid_opt_key(std::string(81, 'a')));
+}
+
+TEST_CASE("Lot 6 · ContextLogic::issues_for_ai : chaque message d'Orca respecte le format du service")
+{
+    using Plyo::ContextLogic::issues_for_ai;
+    // Forme réelle produite par OrcaMessagesLogic::to_json (champs du panneau compris).
+    std::vector<Plyo::OrcaMessagesLogic::Issue> orca;
+    for (int i = 0; i < 12; ++i) {
+        Plyo::OrcaMessagesLogic::Issue it;
+        it.source = i == 0 ? "slicing_error" : "validate_warning";
+        it.code   = i == 0 ? Plyo::OrcaMessagesLogic::slicing_code("Slic3r::SlicingError <x>", {}) : "code_" + std::to_string(i);
+        it.level  = i == 0 ? "error" : "warning";
+        it.text   = Plyo::OrcaMessagesLogic::clean_text(std::string(400, 'a') + "\nligne 2");
+        it.opt_key     = i == 1 ? "Layer height" : "layer_height";
+        it.scope       = "print";
+        it.object_ref  = i == 2 ? "abc" : "42";
+        it.object_name = "Bateau";
+        it.fix         = json{{"key", "layer_height"}, {"value", 0.2}};
+        orca.push_back(it);
+    }
+    const json out = issues_for_ai(Plyo::OrcaMessagesLogic::to_json(orca));
+    REQUIRE(out.size() == 10);
+    for (const json& i : out) {
+        CHECK(service_code(i["code"].get<std::string>()));
+        CHECK((i["level"] == "error" || i["level"] == "warning"));
+        CHECK(code_points(i["text"].get<std::string>()) <= 300);
+        CHECK(i["text"].get<std::string>().find('\n') == std::string::npos);
+        if (i.contains("object_ref"))
+            CHECK(i["object_ref"].get<std::string>().find_first_not_of("0123456789") == std::string::npos);
+        if (i.contains("opt_key"))
+            CHECK(Plyo::ContextLogic::valid_opt_key(i["opt_key"].get<std::string>()));
+        for (const char* gone : {"scope", "object_name", "fix", "critical"})
+            CHECK_FALSE(i.contains(gone));
+    }
+    CHECK(out[0]["code"] == "Slic3r::SlicingError__x_"); // espaces et chevrons remplacés
+    CHECK_FALSE(out[1].contains("opt_key"));              // clé mal formée : retirée, le message reste
+    CHECK_FALSE(out[2].contains("object_ref"));           // pièce qui n'est pas un identifiant : retirée
+
+    // Entrées invalides ignorées une par une.
+    const json mixed = json::array({json{{"source", "other"}, {"code", "a"}, {"level", "error"}, {"text", "t"}},
+                                    json{{"source", "dialog"}, {"code", "   "}, {"level", "error"}, {"text", "t"}},
+                                    json{{"source", "dialog"}, {"code", "ok"}, {"level", "info"}, {"text", "t"}},
+                                    json{{"source", "dialog"}, {"code", "ok"}, {"level", "error"}, {"text", " \n "}},
+                                    "texte", json{{"source", "upload_error"}, {"code", "write"}, {"level", "error"}, {"text", "Disque plein."}}});
+    const json kept = issues_for_ai(mixed);
+    REQUIRE(kept.size() == 1);
+    CHECK(kept[0]["code"] == "write");
+    CHECK(issues_for_ai("x") == json::array());
+}
+
+TEST_CASE("Lot 6 · ContextLogic::plate_for_ai : mesures de la vérification avant impression par pièce, conflit, messages")
+{
+    using Plyo::ContextLogic::plate_for_ai;
+    const json plate = {{"objects", json::array({json{{"ref", "7"}, {"name", "Vase"}, {"size_mm", {20, 20, 150}}},
+                                                 json{{"ref", "8"}, {"name", "Cube"}, {"size_mm", {20, 20, 20}}},
+                                                 json{{"ref", "9"}, {"name", "Autre plaque"}, {"size_mm", {5, 5, 5}}}})},
+                        {"sliced", true},
+                        {"issues", json::array({json{{"source", "step_warning"}, {"code", "need_support"}, {"level", "warning"}, {"text", "Supports."}, {"scope", "print"}}})}};
+    const json facts = {{"objects", {{"7", {{"needs_support", true}, {"contact_mm2", 40.4}}}, {"8", {{"needs_support", false}, {"contact_mm2", 2e6}}}}},
+                        {"conflict", true}};
+    const json out = plate_for_ai(plate, facts);
+    CHECK(out["objects"][0]["needs_support"] == true);
+    CHECK(out["objects"][0]["contact_mm2"] == 40);
+    CHECK(out["objects"][1]["needs_support"] == false);
+    CHECK_FALSE(out["objects"][1].contains("contact_mm2")); // hors des bornes du service
+    CHECK_FALSE(out["objects"][2].contains("needs_support")); // pas sur la plaque mesurée
+    CHECK(out["conflict"] == true);
+    CHECK_FALSE(out["issues"][0].contains("scope"));
+    // Plaque non découpée : pas de conflit ; aucune mesure ; aucun message : la clé disparaît.
+    const json bare = plate_for_ai({{"objects", json::array()}, {"sliced", false}, {"issues", json::array()}}, nullptr);
+    CHECK_FALSE(bare.contains("conflict"));
+    CHECK_FALSE(bare.contains("issues"));
+    CHECK(plate_for_ai(nullptr, facts).is_null());
+}
+
+TEST_CASE("Lot 6 · ContextLogic::memory_for_ai : défaut de l'essai gardé, champs internes retirés, rien de vide")
+{
+    using Plyo::ContextLogic::memory_for_ai;
+    json changes = json::array();
+    for (int i = 0; i < 12; ++i)
+        changes.push_back({{"id", "k" + std::to_string(i)}, {"before", i}, {"after", i + 1}, {"label", "Libellé"}, {"unit", "mm"}});
+    changes.push_back({{"id", std::string(61, 'x')}, {"before", 1}, {"after", 2}});
+    const json memory = json::array({json{{"date", "2026-11-12"}, {"changes", changes}, {"why", "Fils"}, {"at", "2026-11-12T10:00:00"}, {"conv", "c1"},
+                                          {"asked", 0}, {"outcome", "pending"}, {"defect", "stringing"}, {"printed", "P"}},
+                                     json{{"date", "2026-11-11"}, {"changes", json::array({json{{"id", "nozzle_temperature"}, {"before", 220}, {"after", "nil"}}})},
+                                          {"why", ""}, {"defect", ""}, {"outcome", "plus tard"}},
+                                     json{{"changes", json::array()}}});
+    const json out = memory_for_ai(memory);
+    REQUIRE(out.size() == 2); // l'entrée sans date ne part pas
+    CHECK(out[0]["defect"] == "stringing");
+    CHECK(out[0]["outcome"] == "pending");
+    CHECK(out[0]["changes"].size() == 10);
+    CHECK(out[0]["changes"][0] == json({{"id", "k0"}, {"before", 0}, {"after", 1}}));
+    for (const char* gone : {"at", "conv", "asked", "printed"})
+        CHECK_FALSE(out[0].contains(gone));
+    CHECK_FALSE(out[1].contains("defect")); // jamais de chaîne vide
+    CHECK_FALSE(out[1].contains("why"));
+    CHECK_FALSE(out[1].contains("outcome"));
+    CHECK(out[1]["changes"][0]["after"] == "nil");
+    CHECK(memory_for_ai("abîmé") == json::array());
+}
+
+TEST_CASE("Lot 6 · Limits::source_of : provenance des limites dite à l'IA")
+{
+    using Plyo::Limits::source_of;
+    CHECK(source_of(true, true, false) == "user");
+    CHECK(source_of(false, true, false) == "profile");
+    CHECK(source_of(false, true, true) == "profile"); // cas mixte
+    CHECK(source_of(false, false, true) == "user");
+    CHECK(source_of(false, false, false).empty());
 }

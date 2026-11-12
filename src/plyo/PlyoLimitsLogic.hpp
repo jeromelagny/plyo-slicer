@@ -12,7 +12,20 @@ namespace Plyo { namespace Limits {
 struct Range
 {
     std::optional<double> nozzle_min, nozzle_max, bed_min, bed_max;
+    std::string           source; // provenance (source_of) : "user", "profile", ou vide sans aucune limite
 };
+
+// Provenance des limites, dite à l'IA : "user" quand la plage de buse a été saisie par l'utilisateur (ou, sans plage de buse,
+// quand la plage du plateau l'a été) ; "profile" quand la plage de buse vient du préréglage filament d'Orca, même si
+// l'utilisateur a saisi celle du plateau (cas mixte) ; vide sans aucune limite.
+inline std::string source_of(bool nozzle_from_user, bool nozzle_from_profile, bool bed_from_user)
+{
+    if (nozzle_from_user)
+        return "user";
+    if (nozzle_from_profile)
+        return "profile";
+    return bed_from_user ? "user" : std::string();
+}
 
 enum class Verdict { Ok, Below, Above };
 

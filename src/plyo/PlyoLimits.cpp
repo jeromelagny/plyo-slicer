@@ -36,13 +36,16 @@ Range current()
     Range r;
     r.nozzle_min = nozzle_range_value("nozzle_temperature_range_low");
     r.nozzle_max = nozzle_range_value("nozzle_temperature_range_high");
+    const bool           from_profile = r.nozzle_min || r.nozzle_max;
+    bool                 nozzle_user = false;
     const nlohmann::json all = Sanitize::limits(Store::read(file()));
     if (const auto it = all.find(machine_key()); it != all.end()) {
         const Range saved = from_json(*it);
-        if (saved.nozzle_min || saved.nozzle_max) { r.nozzle_min = saved.nozzle_min; r.nozzle_max = saved.nozzle_max; }
+        if (saved.nozzle_min || saved.nozzle_max) { r.nozzle_min = saved.nozzle_min; r.nozzle_max = saved.nozzle_max; nozzle_user = true; }
         r.bed_min = saved.bed_min;
         r.bed_max = saved.bed_max;
     }
+    r.source = source_of(nozzle_user, from_profile, r.bed_min || r.bed_max);
     return r;
 }
 

@@ -2,6 +2,7 @@
 #include "PlyoAutoSave.hpp"
 #include "PlyoCatalog.hpp"
 #include "PlyoConfigRulesLogic.hpp"
+#include "PlyoContextLogic.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoLimits.hpp"
 
@@ -146,13 +147,9 @@ const Param* find_param(const std::string& id)
     return nullptr;
 }
 
-// Les clés de température de plateau dépendent du type de plateau : celui de la plaque en cours s'il lui est propre (réglages
-// de plaque), sinon celui du projet.
-std::string resolve_key(const Param& p)
+// Type de plateau en cours : celui de la plaque en cours s'il lui est propre (réglages de plaque), sinon celui du projet.
+Slic3r::BedType current_bed_type()
 {
-    if (*p.key != '\0')
-        return p.key;
-    const bool  initial = std::string(p.id) == "bed_temp_initial";
     Slic3r::BedType type = Slic3r::btDefault;
     if (Slic3r::GUI::Plater* plater = Slic3r::GUI::wxGetApp().plater())
         if (const Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate())
@@ -160,6 +157,16 @@ std::string resolve_key(const Param& p)
     if (type == Slic3r::btDefault)
         if (auto* opt = bundle().project_config.option<Slic3r::ConfigOptionEnum<Slic3r::BedType>>("curr_bed_type"))
             type = opt->value;
+    return type;
+}
+
+// Les clés de température de plateau dépendent du type de plateau en cours.
+std::string resolve_key(const Param& p)
+{
+    if (*p.key != '\0')
+        return p.key;
+    const bool            initial = std::string(p.id) == "bed_temp_initial";
+    const Slic3r::BedType type    = current_bed_type();
     std::string key = initial ? Slic3r::get_bed_temp_1st_layer_key(type) : Slic3r::get_bed_temp_key(type);
     if (!key.empty())
         return key;
@@ -338,6 +345,13 @@ std::string label_of(const std::string& key)
     return ConfigRules::label_of(key, [](const std::string& k) { return Catalog::policy().title(k); });
 }
 
+// Réglage nommé dans un refus : « Titre » du catalogue, ou « ce réglage » quand Plyo n'a pas de titre (jamais la clé d'Orca).
+std::string refused_name(const std::string& key)
+{
+    const std::string title = key.empty() ? key : label_of(key);
+    return title.empty() || title == key ? std::string("ce réglage") : "« " + title + " »";
+}
+
 // Valeur à montrer pour un texte d'Orca : typée pour une clé du catalogue (première case d'un tableau), sinon le texte.
 nlohmann::json shown_value(Preset::Type type, const std::string& key, const std::string& serialized)
 {
@@ -356,6 +370,18 @@ nlohmann::json shown_value(Preset::Type type, const std::string& key, const std:
         return vec->size() == 0 || vec->is_nil(0) ? nlohmann::json(nullptr) : nlohmann::json(vec->vserialize().front());
     }
     return opt ? nlohmann::json(opt->serialize()) : nlohmann::json(serialized);
+}
+
+// Texte d'Orca d'une option (première case d'un tableau), vide si l'option manque ou si la case est vide (« nil »). Lecture seule.
+std::string first_text(const DynamicPrintConfig& config, const std::string& key)
+{
+    const Slic3r::ConfigOption* opt = config.option(key);
+    if (opt == nullptr)
+        return std::string();
+    if (!opt->is_vector())
+        return opt->serialize();
+    const auto* vec = static_cast<const Slic3r::ConfigOptionVectorBase*>(opt);
+    return vec->size() == 0 || vec->is_nil(0) ? std::string() : vec->vserialize().front();
 }
 
 // Valeur actuelle d'une clé du catalogue, comme dans le relevé envoyé à l'IA (un « nil » du filament : celle de l'imprimante).
@@ -611,6 +637,27 @@ nlohmann::json read_values()
     return {{"params", params}, {"context", context}, {"can_undo", !s_undo_stack.empty()}};
 }
 
+nlohmann::json ai_context()
+{
+    // Lectures seules des préréglages en cours (filament et imprimante) : rien n'est écrit, la politique d'écriture ne change pas
+    // (filament_type et filament_vendor restent interdits à l'écriture).
+    const Configs        configs = edited_configs();
+    ContextLogic::Raw    raw;
+    const Slic3r::BedType type   = current_bed_type();
+    if (type != Slic3r::btDefault)
+        raw.bed_type = Slic3r::ConfigOptionEnum<Slic3r::BedType>(type).serialize();
+    // Les clés que lit vraiment le plateau en cours : celles que résout la liste blanche (même résolution, première couche comprise).
+    for (const char* id : {"bed_temp", "bed_temp_initial"})
+        if (const Param* p = find_param(id))
+            raw.bed_temp_keys.push_back(resolve_key(*p));
+    raw.filament_type     = first_text(configs.filament, "filament_type");
+    raw.filament_vendor   = first_text(configs.filament, "filament_vendor");
+    raw.nozzle_type       = first_text(configs.printer, "nozzle_type");
+    raw.extruder_type     = first_text(configs.printer, "extruder_type");
+    raw.printer_structure = first_text(configs.printer, "printer_structure");
+    return ContextLogic::context_extras(raw);
+}
+
 nlohmann::json apply_changes(const nlohmann::json& changes)
 {
     if (!changes.is_array() || changes.empty())
@@ -632,7 +679,7 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
         const std::string id    = change.is_object() ? Json::str(change, "id") : std::string();
         const Param*      param = find_param(id);
         if (param == nullptr)
-            return {{"ok", false}, {"text", "Refusé : « " + id + " » ne fait pas partie des paramètres modifiables."}};
+            return {{"ok", false}, {"text", "Refusé : ce réglage ne fait pas partie des paramètres modifiables. Aucune modification appliquée."}};
 
         if (param->kind == Kind::Enum) {
             const std::string text = change.contains("value") && change["value"].is_string() ? change["value"].get<std::string>() : std::string();
@@ -901,11 +948,12 @@ nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::s
         const std::string key = change.is_object() ? Json::str(change, "key") : std::string();
         const char*       scope = policy.allows("print", key) ? "print" : policy.allows("filament", key) ? "filament" : "";
         if (*scope == '\0')
-            return refused("Refusé : « " + key + " » ne fait pas partie des réglages que l'assistant peut modifier. Aucune modification appliquée.");
+            return refused("Refusé : " + refused_name(key) + " ne fait pas partie des réglages que l'assistant peut modifier. Aucune modification appliquée.");
         if (std::find(seen.begin(), seen.end(), key) != seen.end())
-            return refused("Refusé : « " + key + " » est demandé deux fois. Aucune modification appliquée.");
+            return refused("Refusé : " + refused_name(key) + " est demandé deux fois. Aucune modification appliquée.");
         seen.push_back(key);
-        const std::string label = Json::str(change, "label").empty() ? key : Json::str(change, "label");
+        // Sans libellé du panneau : le titre du catalogue (les refus ne montrent jamais la clé d'Orca).
+        const std::string label = Json::str(change, "label").empty() ? label_of(key) : Json::str(change, "label");
         // `confirmed` : la ligne a été cochée à la main, ou le bouton cliqué annonçait cette valeur. `confirmed_outside_range` :
         // sortie de la plage du fabricant confirmée de la même façon.
         Planned p;
@@ -1097,7 +1145,7 @@ nlohmann::json object_override(const std::string& id, const nlohmann::json& valu
     const Param* param = find_param(id);
     // Une pièce seule ne reçoit que des réglages d'impression : jamais ceux du filament ni de l'imprimante.
     if (param == nullptr || param->preset != Preset::TYPE_PRINT)
-        return {{"ok", false}, {"text", "Refusé : « " + id + " » ne peut pas être réglé pour une seule pièce."}};
+        return {{"ok", false}, {"text", "Refusé : " + (param != nullptr ? "« " + std::string(param->label) + " »" : std::string("ce réglage")) + " ne peut pas être réglé pour une seule pièce."}};
     std::string serialized, shown;
     if (param->kind == Kind::Enum) {
         const std::string text    = value.is_string() ? value.get<std::string>() : std::string();

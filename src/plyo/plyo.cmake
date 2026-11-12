@@ -32,6 +32,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoGuard.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJson.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoMemoryLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoContextLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoContextLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoMemoryLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSanitize.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSanitize.hpp
@@ -108,6 +110,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPlateActions.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPreflight.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPreflight.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRawTests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRawTests.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaMessages.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaMessages.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaMessagesLogic.cpp

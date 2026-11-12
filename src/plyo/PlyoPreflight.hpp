@@ -9,4 +9,9 @@ namespace Plyo { namespace Preflight {
 // dernier découpage d'Orca. Les risques sont déduits côté panneau (preflight.js).
 nlohmann::json measure();
 
+// Mêmes mesures, pour la question envoyée à l'IA (lecture seule, plaque en cours) : {objects: {"<ref>": {needs_support,
+// contact_mm2}}, conflict: bool} ; `ref` est l'identifiant de pièce de PlateActions::context, `conflict` n'est donné que
+// pour une plaque découpée. null sans plateau.
+nlohmann::json ai_facts();
+
 }} // namespace Plyo::Preflight

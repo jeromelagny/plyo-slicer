@@ -122,14 +122,28 @@
     return { sentence: sentence, bullets: bullets, warning: warning };
   }
 
-  // Niveau d'explication deviné d'après les messages de l'utilisateur : « short » s'il emploie au moins deux termes techniques.
-  var TECH = /\b(brim|infill|gyroid|cubic|lightning|r[ée]traction|retract|d[ée]bit|flow|pressure advance|\bpa\b|seam|couture|overhang|porte-?[àa]-?faux|layer height|hauteur de couche|z-?offset|p[ée]rim[èe]tre|wall|paroi|mm\/s|mouse ears|bridge|pont|ironing|lissage|support (arbre|tree)|tree support|first layer|premi[èe]re couche|petg|asa|abs|tpu)\b/gi;
-  function detectLevel(texts) {
-    var all = Array.isArray(texts) ? texts.join(' ') : '', seen = {};
-    // Termes différents (sans accents ni majuscules) : répéter « première couche » ne fait pas un expert.
-    (all.match(TECH) || []).forEach(function (t) { seen[t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '')] = true; });
-    return Object.keys(seen).length >= 2 ? 'short' : 'detailed';
+  // Niveau d'explication deviné d'après les messages de l'utilisateur : « short » s'il emploie au moins 3 termes techniques
+  // différents, répartis sur au moins 2 messages. Ni les noms de matières (PLA, PETG…) ni les mots du quotidien (pont, débit,
+  // paroi, première couche, lissage) ne comptent : un débutant les emploie aussi.
+  var TECH = /\b(brim|infill|gyroid|cubic|lightning|r[ée]traction|retract|flow|pressure advance|\bpa\b|seam|couture|overhang|porte-?[àa]-?faux|layer height|hauteur de couche|z-?offset|p[ée]rim[èe]tre|wall|mm\/s|mouse ears|bridge|ironing|support (arbre|tree)|tree support|first layer)\b/gi;
+  function techTerms(text) {
+    var seen = {};
+    // Termes différents (sans accents ni majuscules) : répéter « rétraction » ne fait pas un expert.
+    (String(text || '').match(TECH) || []).forEach(function (t) { seen[t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '')] = true; });
+    return Object.keys(seen);
   }
+  function detectLevel(texts) {
+    var list = Array.isArray(texts) ? texts : [], all = {}, messages = 0;
+    list.forEach(function (t) {
+      var terms = techTerms(t);
+      if (terms.length) messages++;
+      terms.forEach(function (k) { all[k] = true; });
+    });
+    return Object.keys(all).length >= 3 && messages >= 2 ? 'short' : 'detailed';
+  }
+  // L'utilisateur demande ce qu'est un terme (« c'est quoi le z-offset ? ») : il veut des explications, quel que soit son vocabulaire.
+  var DEFINITION = /(c['’]est quoi|qu['’]est[- ]ce que? c['’]est|qu['’]est[- ]ce qu['’](un|une|on appelle)|[çc]a veut dire quoi|que veut dire|que signifie|[çc]a sert [àa] quoi|[àa] quoi ([çc]a )?sert|je (ne )?(sais|connais|comprends) pas ce que|je (ne )?comprends pas|what is|what does .* mean)/i;
+  function asksDefinition(text) { return DEFINITION.test(String(text || '')); }
 
   // Réponses comprises par l'IA dans une phrase libre ([{question, choice}]) ajoutées aux réponses existantes. L'usage passe en
   // premier (les choix de « pref » en dépendent), dans l'ordre des questions ; un identifiant inconnu est ignoré. Rend { answers, labels }.
@@ -148,7 +162,7 @@
     return { answers: out, labels: labels };
   }
 
-  var api = { mergeAnswers: mergeAnswers, detectLevel: detectLevel, QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
+  var api = { mergeAnswers: mergeAnswers, detectLevel: detectLevel, asksDefinition: asksDefinition, QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
     settingsFor: settingsFor, displayValue: displayValue, keepManual: keepManual, summary: summary, MANAGED_KEYS: Object.keys(LABELS) };
   root.PlyoIntent = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

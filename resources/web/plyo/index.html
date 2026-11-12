@@ -3437,13 +3437,16 @@
   // Boutons d'action proposés par l'IA. Dans une conversation rouverte, seules les actions sans effet restent.
   var PLATE_KINDS = ['orient', 'arrange', 'scale_to_fit', 'slice'];
   function renderActions(actions, archived) {
-    var list = (actions || []).filter(function (a) { return !(archived && (PLATE_KINDS.indexOf(a.kind) >= 0 || a.kind === 'remember_success')); });
+    // Une action que ce panneau ne sait pas exécuter n'a pas de bouton ; un test d'Orca ne se relance pas d'une conversation rouverte.
+    var list = (actions || []).filter(function (a) { return Logic.actionSupported(a) && !(archived && a.kind === 'open_calibration') && !(archived && (PLATE_KINDS.indexOf(a.kind) >= 0 || a.kind === 'remember_success')); });
     if (!list.length) return null;
     var row = el('div', 'row-acts');
     list.forEach(function (a) {
       var iconName = a.kind === 'show' || a.kind === 'show_setting' || a.kind === 'open_tool' ? 'eye' : 'wand';
       var b = button(a.label, function () {
-        if (a.kind === 'show') showMe(a.target);
+        if (a.kind === 'show' && a.target === 'preview') showPreview(b);
+        else if (a.kind === 'open_calibration') confirmRawTest(a.target, row, b);
+        else if (a.kind === 'show') showMe(a.target);
         else if (a.kind === 'open_tool') window.orca.postMessage({ type: 'open_tool', tool: a.target });
         else if (a.kind === 'show_setting') showSetting(a.target);
         else if (a.kind === 'remember_success') {
@@ -3463,6 +3466,51 @@
       row.appendChild(b);
     });
     return row;
+  }
+
+  // Action « show » / « preview » : l'onglet « Aperçu » d'Orca, et ce qu'on y regarde.
+  var previewWaiters = {}, rawTestWaiters = {}, rawTestRequest = 0;
+  function showPreview(b) {
+    var id = ++rawTestRequest;
+    b.disabled = true;
+    previewWaiters[id] = function (msg) {
+      b.disabled = false;
+      noteLine(Logic.previewText(msg), msg.ok && msg.sliced ? 'ok' : msg.ok ? 'warn' : 'error', msg.ok ? 'eye' : 'alert');
+    };
+    window.orca.postMessage({ type: 'show_preview', request: id });
+  }
+  // Action « open_calibration » : ce qui va se passer est dit AVANT, et rien ne part sans « Ouvrir le test ».
+  function confirmRawTest(target, row, b) {
+    var t = Logic.rawTestText(target);
+    if (!t || row.nextElementSibling && row.nextElementSibling.classList.contains('raw-test')) return;
+    var box = alertBox('warn', t.before, 'alert');
+    box.classList.add('raw-test');
+    var acts = el('div', 'row-acts');
+    var go = button('Ouvrir le test', function () {
+      go.disabled = true; later.disabled = true; b.disabled = true;
+      var id = ++rawTestRequest;
+      // Le projet d'avant (max_flow, vfa) : la conversation qu'on quitte, pour proposer d'y revenir.
+      var from = conv ? { id: conv.id, title: conv.title || '' } : null;
+      rawTestWaiters[id] = function (msg) { box.remove(); b.disabled = false; rawTestDone(msg, from); };
+      window.orca.postMessage({ type: 'open_calibration', target: target, request: id });
+    }, 'btn sm', 'wand');
+    var later = button('Pas maintenant', function () { box.remove(); }, 'link');
+    acts.appendChild(go);
+    acts.appendChild(later);
+    box.body.appendChild(acts);
+    row.after(box);
+    box.scrollIntoView({ block: 'nearest' });
+  }
+  // Après le test : comment le lire, et comment revenir à sa pièce (la conversation d'avant, dont le slicer a écrit le projet).
+  function rawTestDone(msg, from) {
+    var r = Logic.rawTestResult(msg);
+    var box = alertBox(r.tone === 'ok' ? 'tip' : r.tone === 'error' ? 'error' : 'info', r.text, r.tone === 'ok' ? 'bulb' : r.tone === 'error' ? 'alert' : 'info');
+    if (r.back && from && from.id && (!conv || conv.id !== from.id)) {
+      var acts = el('div', 'row-acts');
+      acts.appendChild(button('Revenir à ma pièce', function () { openConversation(from.id); }, 'btn ghost sm', 'undo'));
+      box.body.appendChild(acts);
+    }
+    placeInOpenTab(box);
   }
 
   // ---------- Modèle 3D joint : posé sur le plateau, conseils sur clic seulement ----------
@@ -4665,23 +4713,42 @@
     var photos = opts.photos || attachments.slice();
     if (!note && !photos.length) { noteInput.focus(); return; }
     applyTab('send'); // envoyer un message ouvre la Discussion
-    var guessed = PlyoMachines.guessLevel(habits, PlyoIntent.detectLevel(conv.history.filter(function (m) { return m.role === 'user'; }).map(function (m) { return m.text; }).concat([note])));
-    if (guessed.level !== habits.level) { habits = guessed; saveHabits(); updateLevelLabel(); }
+    // Niveau d'explication deviné (jamais au-dessus d'un choix fait dans le menu) ; un changement est toujours dit.
+    var guessed = PlyoMachines.guessLevel(habits, PlyoIntent.detectLevel(conv.history.filter(function (m) { return m.role === 'user'; }).map(function (m) { return m.text; }).concat([note])), PlyoIntent.asksDefinition(note));
+    var levelMove = PlyoMachines.levelChange(habits, guessed);
+    if (guessed.level !== habits.level || !!guessed.level_hold !== !!habits.level_hold) { habits = guessed; saveHabits(); updateLevelLabel(); }
     renderProject();
     if (!lastValues) { noteLine('Je lis encore les réglages du slicer : réessaie dans une seconde.', '', 'info'); return; }
     // « C'est quoi la rétraction ? » : la fiche du réglage répond, gratuitement et sans compte.
     var ficheKey = !opts.photos && !photos.length ? FS.matchSettingQuestion(note, window.PLYO_FICHES) : null;
     if (ficheKey) {
       if (!opts.shown) addMe(note, [], false);
+      levelNotice(levelMove);
       clearNoteIfSent(note);
       explain(ficheKey);
       return;
     }
     if (!opts.photos) { attachments = []; renderAttachments(); clearNoteIfSent(note); }
     if (!opts.shown) addMe(note, photos, opts.fromPhone);
+    levelNotice(levelMove);
     var again = { photos: photos, fromPhone: opts.fromPhone, shown: true };
     if (requireLogin('Pour te répondre, j’envoie ta demande à l’IA.', function () { send(note, again); })) return;
     ask(note, photos);
+  }
+
+  // Le niveau d'explication deviné vient de changer : on le dit, avec de quoi revenir aux explications détaillées.
+  function levelNotice(move) {
+    if (move === 'down') { noteLine('Je reprends les explications détaillées.', '', 'info', 'chat'); return; }
+    if (move !== 'up') return;
+    var line = noteLine('Tu as l’air d’avoir de l’expérience : je te réponds plus court.', '', 'info', 'chat');
+    var keep = button('Garde les explications détaillées', function () {
+      habits = PlyoMachines.chooseLevel(habits, 'detailed');
+      saveHabits();
+      updateLevelLabel();
+      keep.remove();
+      line.appendChild(el('span', 'note-text', ' C’est noté : je garde les explications détaillées.'));
+    }, 'link');
+    line.appendChild(keep);
   }
 
   // Juste avant l'appel : ce qui est sur le plateau et ce qui a déjà été appliqué sur cette machine.
@@ -4738,11 +4805,13 @@
     var plateParts = [];       // pièces sur le plateau au moment de la question (journal des pièces)
     aiContext().then(function (ctx) {
       if (ctx && ctx.plate && ctx.plate.objects) plateParts = ctx.plate.objects.map(function (o) { return o.name; });
+      // Contexte (lot 6) : clé de plateau résolue, plafond de la machine et choix permis de chaque réglage ; plateau en cours,
+      // matière et faits de l'imprimante lus par le slicer juste avant (lecture seule, filtrés par le C++).
       var body = {
         locale: lastValues.locale || 'fr',
-        settings: { params: lastValues.params.map(function (p) { return { id: p.id, value: p.value, unit: p.unit }; }) },
-        context: lastValues.context,
-        history: conv.history.slice(-MAX_HISTORY)
+        settings: { params: Logic.diagnoseParams(lastValues.params) },
+        context: Logic.aiContext(lastValues.context, ctx && ctx.context),
+        history: Logic.historyForAI(conv.history.slice(-MAX_HISTORY))
       };
       // La bobine du projet : sans elle le serveur ne propose jamais « Retenir ces réglages ».
       var spoolName = conv.project && conv.project.filament && conv.project.filament.spool && conv.project.filament.spool.name;
@@ -4757,6 +4826,7 @@
       if (ctx && ctx.snapshot && Object.keys(ctx.snapshot).length) body.snapshot = ctx.snapshot;
       body.explanation_level = PlyoMachines.levelOf(habits);
       if (pendingIntent) body.intent_questions = pendingIntent;
+      body.capabilities = Logic.CAPABILITIES.slice(); // actions que ce panneau sait exécuter (aperçu, tests bruts d'Orca)
       return apiFetch('/api/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify(body), signal: controller.signal });
     }).then(function (response) {
       if (response.status === 401) return { error: 'unauthorized' };
@@ -4808,6 +4878,7 @@
       // 2 000 caractères au plus : au-delà, l'API refuserait toutes les demandes suivantes de la conversation.
       target.history.push({ role: 'user', text: ((photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note).slice(0, 2000) });
       var hist = { role: 'assistant', text: summaryForHistory(a) };
+      if (a.suggestions.length) hist.cards = 'proposed'; // devient « applied » ou « undone » (historyForAI le dit à l'IA)
       target.history.push(hist);
       target.history = target.history.slice(-MAX_HISTORY);
       var entry = record({ kind: 'answer', data: a, photoCount: photos.length, question: note, date: new Date().toISOString(), applied: false }, target);
@@ -5051,6 +5122,7 @@
         var undoId = result && result.undo_id;
         // La conversation garde ce qui a été appliqué, valeurs comprises, pour la relire plus tard.
         entry.applied = true;
+        if (entry.hist) entry.hist.cards = 'applied';
         entry.data.suggestions = picked.map(function (r) { return r.s; });
         scheduleSave();
         rows.forEach(function (r) { if (!r.box.checked) r.row.remove(); else r.box.replaceWith(markCell()); });
@@ -5066,6 +5138,7 @@
         else if (preset) footer.appendChild(el('p', 'muted small footnote', 'Le préréglage « ' + preset + ' » est marqué modifié : enregistre-le si tu veux garder ces réglages.'));
         function showUndone(done) {
           entry.applied = false;
+          if (entry.hist) entry.hist.cards = 'undone';
           scheduleSave();
           footer.textContent = '';
           footer.appendChild(doneLabel('Réglages d’avant remis', 'undo'));
@@ -5343,6 +5416,12 @@
     } else if (msg.type === 'printer_scan_result') {
       var found = Array.isArray(msg.printers) ? msg.printers : [];
       if (setup.phase === 'scan') onSetupScan(found);
+    } else if (msg.type === 'show_preview') {
+      var pw = previewWaiters[msg.request]; delete previewWaiters[msg.request];
+      if (pw) pw(msg);
+    } else if (msg.type === 'open_calibration') {
+      var rw = rawTestWaiters[msg.request]; delete rawTestWaiters[msg.request];
+      if (rw) rw(msg);
     } else if (msg.type === 'project_changed') {
       // Nouveau projet ou projet ouvert : retour à l'accueil (la conversation précédente reste dans « Mes conversations »).
       if (!busy) { closeDrawer(); newConversation(); }

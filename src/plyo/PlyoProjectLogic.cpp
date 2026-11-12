@@ -332,6 +332,9 @@ nlohmann::json sanitize_habits(const nlohmann::json& habits)
         out["level"] = level;
     if (const nlohmann::json* m = Json::field(habits, "level_manual"); m != nullptr && m->is_boolean())
         out["level_manual"] = m->get<bool>();
+    // Revenu aux explications détaillées après une question de définition : plus de passage automatique en court.
+    if (const nlohmann::json* h = Json::field(habits, "level_hold"); h != nullptr && h->is_boolean())
+        out["level_hold"] = h->get<bool>();
     if (const nlohmann::json* n = Json::field(habits, "intent_skips"); n != nullptr && n->is_number_integer())
         out["intent_skips"] = std::max<long long>(0, std::min<long long>(100, n->get<long long>()));
     if (const nlohmann::json* a = Json::field(habits, "ask_intent"); a != nullptr && a->is_boolean())

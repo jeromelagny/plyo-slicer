@@ -19,6 +19,7 @@
 #include <cmath>
 #include <limits>
 #include <set>
+#include <string>
 #include <vector>
 
 namespace Plyo { namespace Preflight {
@@ -114,6 +115,29 @@ nlohmann::json measure()
             result["conflict"] = {{"a", Json::utf8_prefix(gcode->conflict_result->_objName1, 120)},
                                   {"b", Json::utf8_prefix(gcode->conflict_result->_objName2, 120)},
                                   {"height", std::round(gcode->conflict_result->_height * 10) / 10}};
+    return result;
+}
+
+nlohmann::json ai_facts()
+{
+    Slic3r::GUI::Plater* plater = wxGetApp().plater();
+    Slic3r::GUI::PartPlate* plate = plater != nullptr ? plater->get_partplate_list().get_curr_plate() : nullptr;
+    if (plate == nullptr)
+        return nullptr;
+    const auto     floating = needing_support(*plater);
+    nlohmann::json objects  = nlohmann::json::object();
+    for (const Slic3r::ModelObject* object : plate->get_objects_on_this_plate()) {
+        if (objects.size() >= 50)
+            break;
+        if (object->instances.empty())
+            continue;
+        objects[std::to_string(object->id().id)] = {{"needs_support", floating.count(object->id()) > 0}, {"contact_mm2", std::round(contact_area(*object))}};
+    }
+    nlohmann::json result{{"objects", objects}};
+    if (plate->is_slice_result_valid()) {
+        const Slic3r::GCodeProcessorResult* gcode = plate->get_slice_result();
+        result["conflict"] = gcode != nullptr && gcode->conflict_result.has_value();
+    }
     return result;
 }
 

@@ -8,6 +8,7 @@
 
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
+#include "slic3r/GUI/Plater.hpp"
 
 #include <boost/log/trivial.hpp>
 #include <boost/nowide/cstdlib.hpp>
@@ -105,6 +106,13 @@ nlohmann::json call(const std::string& fn)
         return PlateActions::context();
     if (fn == "windows")
         return shown_windows();
+    if (fn == "view") {
+        // Vue affichée : onglet « Aperçu » ou vue 3D de « Préparer » (action « show » / « preview » de l'IA).
+        const Slic3r::GUI::Plater* plater = Slic3r::GUI::wxGetApp().plater();
+        return {{"preview", plater != nullptr && plater->is_preview_shown()}, {"view3d", plater != nullptr && plater->is_view3D_shown()}};
+    }
+    if (fn == "ai_context")
+        return SettingsBridge::ai_context();
     return {{"error", "fonction inconnue : " + Json::utf8_prefix(fn, 40)}};
 }
 

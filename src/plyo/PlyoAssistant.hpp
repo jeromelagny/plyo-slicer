@@ -26,6 +26,10 @@ void on_config_changed();
 // Appelé par Plater::new_project() et Plater::load_project() : le panneau revient à son accueil.
 void on_project_changed();
 
+// Nombre d'appels à on_project_changed() depuis le lancement : un test d'Orca (PlyoRawTests) sait ainsi si sa fenêtre a
+// ouvert un nouveau projet.
+int project_change_count();
+
 // Tant qu'une de ces gardes existe, on_project_changed() ne prévient pas le panneau : la calibration vide et recharge le
 // plateau, mais la conversation et le lien téléphone doivent continuer (comme un `try/finally` qui lève puis baisse un drapeau).
 class ProjectNotificationsPause

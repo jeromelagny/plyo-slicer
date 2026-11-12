@@ -77,7 +77,9 @@ test('summary : une phrase claire, des puces sans jargon, un avertissement honn�
 test('detectLevel : courtes si l’utilisateur emploie le vocabulaire technique, détaillées sinon', () => {
   assert.equal(I.detectLevel(['ma pièce se décolle du plateau, je fais quoi ?']), 'detailed');
   assert.equal(I.detectLevel(['brim ou mouse ears sur du PETG ?', 'infill gyroid 20% ça suffit ?']), 'short');
-  assert.equal(I.detectLevel(['rétraction à 0,8 mm et débit à 95 %, ok ?']), 'short');
+  // Lot 6 : un seul message, même chargé de termes, ne suffit pas ; le débit n'est pas un terme d'expert.
+  assert.equal(I.detectLevel(['rétraction à 0,8 mm et débit à 95 %, ok ?']), 'detailed');
+  assert.equal(I.detectLevel(['rétraction à 0,8 mm, seam aligné, z-offset à -0,1 ?']), 'detailed');
   assert.equal(I.detectLevel([]), 'detailed');
   assert.equal(I.detectLevel(null), 'detailed');
 });
@@ -103,7 +105,24 @@ test('mergeAnswers : les réponses comprises par l’IA remplissent les question
 test('detectLevel compte des termes différents : répéter « première couche » ou « PETG » ne suffit pas', () => {
   assert.equal(I.detectLevel(['ma première couche ne colle pas', 'toujours la première couche qui se décolle']), 'detailed');
   assert.equal(I.detectLevel(['PETG ou PETG ?']), 'detailed');
-  assert.equal(I.detectLevel(['première couche et rétraction']), 'short');
+  assert.equal(I.detectLevel(['première couche et rétraction']), 'detailed');
+});
+
+test('lot 6 · detectLevel : 3 termes techniques différents, sur 2 messages au moins ; matières et mots du quotidien ne comptent pas', () => {
+  // Le cas de l'audit (UX-19) : un débutant qui parle de son PETG et de sa première couche reste en détaillé.
+  assert.equal(I.detectLevel(['Mon PETG fait des fils sur la première couche', 'et le pont est raté, la paroi aussi, le débit ?']), 'detailed');
+  assert.equal(I.detectLevel(['PLA, PETG, ABS, ASA, TPU : lequel ?', 'et pour le lissage ?']), 'detailed');
+  // Deux termes seulement, même sur deux messages : détaillé.
+  assert.equal(I.detectLevel(['rétraction trop longue ?', 'et le z-offset ?']), 'detailed');
+  // Trois termes répartis sur deux messages : court.
+  assert.equal(I.detectLevel(['rétraction à 0,8 mm, z-offset à -0,1', 'et la seam en arrière ?']), 'short');
+  assert.equal(I.detectLevel(['rétraction, z-offset et seam', 'merci']), 'detailed'); // un seul message en porte
+});
+
+test('lot 6 · asksDefinition : une question de définition fait redescendre le niveau', () => {
+  for (const t of ['C’est quoi le z-offset ?', "c'est quoi la rétraction", 'Qu’est-ce que c’est, le VFA ?', 'ça veut dire quoi PA ?', 'à quoi sert le brim ?', 'je ne comprends pas', 'What is pressure advance?'])
+    assert.equal(I.asksDefinition(t), true, t);
+  for (const t of ['rétraction à 0,8 mm ?', 'Mon PETG fait des fils', '', null]) assert.equal(I.asksDefinition(t), false, String(t));
 });
 
 test('displayValue : des valeurs lisibles par un débutant (unités, motifs en français, « aucune »)', () => {

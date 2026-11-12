@@ -18,6 +18,7 @@
 #include "PlyoMemory.hpp"
 #include "PlyoModelImport.hpp"
 #include "PlyoConfig.hpp"
+#include "PlyoContextLogic.hpp"
 #include "PlyoOrcaMessages.hpp"
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoPlateActions.hpp"
@@ -31,6 +32,7 @@
 #include "PlyoProject.hpp"
 #include "PlyoProjectLogic.hpp"
 #include "PlyoProjectFiles.hpp"
+#include "PlyoRawTests.hpp"
 #include "PlyoPrinterSetup.hpp"
 #include "PlyoSelfTest.hpp"
 #include "PlyoSession.hpp"
@@ -75,6 +77,7 @@ constexpr const char* PANE_NAME = "plyo:assistant";
 wxWeakRef<DockPanel> s_panel;
 bool                 s_refresh_pending = false;
 int                  s_project_pauses  = 0; // gardes ProjectNotificationsPause en vie (fil principal seulement)
+int                  s_project_changes = 0; // appels à on_project_changed() (fil principal seulement)
 wxWeakRef<SideButton> s_topbar_button;
 
 // Bouton de la barre du haut : plein quand le panneau est ouvert, cerné quand il est fermé.
@@ -305,10 +308,18 @@ void handle_page_message(const nlohmann::json& data)
                 }
             }
             send_result(result, data);
-        } else if (type == "ai_context")
-            // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
-            send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()},
-                  {"limits", Limits::to_json(Limits::current())}, {"snapshot", SettingsBridge::read_snapshot()}});
+        } else if (type == "ai_context") {
+            // Juste avant une demande à l'IA : le plateau (avec les mesures de la vérification avant impression), ce qui a déjà
+            // été appliqué sur cette machine, les limites et leur provenance, et ce que le slicer sait de la machine (lectures
+            // seules, filtrées au format du service : ContextLogic).
+            const Limits::Range range  = Limits::current();
+            nlohmann::json      limits = Limits::to_json(range);
+            if (!limits.empty() && !range.source.empty())
+                limits["source"] = range.source;
+            send({{"type", "ai_context"}, {"plate", ContextLogic::plate_for_ai(PlateActions::context(), Preflight::ai_facts())},
+                  {"memory", ContextLogic::memory_for_ai(Memory::for_current())}, {"limits", limits},
+                  {"snapshot", SettingsBridge::read_snapshot()}, {"context", SettingsBridge::ai_context()}});
+        }
         else if (type == "reliable_get") {
             nlohmann::json info = Profiles::reliable_info();
             info["type"]        = "reliable";
@@ -543,6 +554,28 @@ void handle_page_message(const nlohmann::json& data)
             send_values();
         } else if (type == "model_adapt") {
             send({{"type", "model_adapted"}, {"adaptation", ModelImport::adapt_last(data.contains("project") ? data["project"] : nlohmann::json())}});
+        } else if (type == "show_preview") {
+            // Action de l'IA « show » / « preview » : l'onglet « Aperçu » d'Orca.
+            nlohmann::json shown = RawTests::show_preview();
+            shown["type"]        = "show_preview";
+            shown["request"]     = Json::integer(data, "request", 0);
+            send(shown);
+        } else if (type == "open_calibration") {
+            // Action de l'IA « open_calibration » (max_flow, vfa, tolerance), confirmée dans le panneau. Refus immédiat si Orca
+            // est occupé ; sinon le test part après ce message (CallAfter), et la réponse vient quand sa fenêtre est fermée.
+            const std::string target  = Json::str(data, "target", 20);
+            const long long   request = Json::integer(data, "request", 0);
+            const auto        reply   = [request](nlohmann::json done) {
+                done["type"]    = "open_calibration";
+                done["request"] = request;
+                send(done);
+            };
+            if (const nlohmann::json refused = RawTests::refusal(target); !refused.is_null()) {
+                nlohmann::json done = refused;
+                done["target"]      = target;
+                reply(done);
+            } else
+                RawTests::open(target, reply);
         } else if (type == "show_me") {
             const std::string target = Json::str(data, "target");
             send({{"type", "show_me"}, {"target", target}, {"ok", Json::boolean(Highlight::show(target), "ok", false)}});
@@ -834,8 +867,11 @@ wxWindow* create_topbar_button(wxWindow* parent)
     return holder;
 }
 
+int project_change_count() { return s_project_changes; }
+
 void on_project_changed()
 {
+    ++s_project_changes;
     CC2::clear_refused(); // « Démarrer sans carte » lancerait le fichier de la pièce d'avant
     ProjectFiles::on_project_changed(s_project_pauses > 0); // projet de l'utilisateur : plus celui de la conversation
     if (s_project_pauses > 0)

@@ -125,11 +125,29 @@ test('questions d’intention : après trois projets passés de suite, on propos
   assert.equal(M.askIntent(M.stopAsking(h, false)), true);
 });
 
-test('le niveau deviné ne redescend jamais tout seul vers « détaillées »', () => {
+test('le niveau deviné ne redescend pas sur un simple message sans jargon', () => {
   let h = M.guessLevel(M.emptyHabits(), 'short');
   h = M.guessLevel(h, 'detailed');
   assert.equal(M.levelOf(h), 'short');
   assert.equal(M.levelOf(M.guessLevel(M.emptyHabits(), 'detailed')), 'detailed');
+});
+
+test('lot 6 · le niveau redescend sur une question de définition, et le changement est repérable pour être dit', () => {
+  const start = M.guessLevel(M.emptyHabits(), 'short');
+  assert.equal(M.levelChange(M.emptyHabits(), start), 'up');
+  const down = M.guessLevel(start, 'short', true); // « c'est quoi le z-offset ? » avec un vocabulaire d'expert avant
+  assert.equal(M.levelOf(down), 'detailed');
+  assert.equal(M.levelChange(start, down), 'down');
+  // Le vocabulaire d'avant ne le fait pas remonter au message suivant, même après un redémarrage (habitudes relues).
+  const next = M.guessLevel(JSON.parse(JSON.stringify(down)), 'short');
+  assert.equal(M.levelOf(next), 'detailed');
+  assert.equal(M.levelChange(down, next), '');
+  // Le choix fait à la main fait toujours foi : ni une définition ni le vocabulaire ne l'écrasent.
+  const manual = M.chooseLevel(start, 'short');
+  assert.equal(M.levelOf(M.guessLevel(manual, 'detailed', true)), 'short');
+  const manualDetailed = M.chooseLevel(down, 'detailed');
+  assert.equal(M.levelOf(M.guessLevel(manualDetailed, 'short')), 'detailed');
+  assert.equal(M.chooseLevel(down, 'short').level_hold, undefined);
 });
 
 test('searchModels : la marque seule montre tous ses modèles, une recherche précise en garde 8', () => {

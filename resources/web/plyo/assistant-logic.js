@@ -704,7 +704,101 @@
     return box.bottom - port.bottom > 24;
   }
 
-  var api = { changeLine: changeLine, sameSetting: sameSetting, revertPlan: revertPlan, revertText: revertText, batchesOf: batchesOf, mergeCorrections: mergeCorrections, outcomeCard: outcomeCard, reliablePreview: reliablePreview, valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, manualEditsNote: manualEditsNote, splitManualEdits: splitManualEdits, noteWritten: noteWritten, forgetBatch: forgetBatch, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+
+  // ---------- Lot 6 : contexte envoyé à l'IA, et actions que ce panneau sait exécuter ----------
+
+  // Réglages de la liste blanche envoyés au service : valeur et unité, plus la clé d'Orca réellement utilisée (clé de plateau
+  // résolue), le plafond propre à la machine et les choix permis, que le C++ lit déjà (read_params).
+  function diagnoseParams(params) {
+    return (Array.isArray(params) ? params : []).filter(function (p) { return p && typeof p.id === 'string'; }).map(function (p) {
+      var out = { id: p.id, value: p.value, unit: p.unit };
+      if (typeof p.key === 'string' && p.key) out.key = p.key;
+      if (typeof p.max === 'number' && isFinite(p.max)) out.max = p.max;
+      if (Array.isArray(p.values) && p.values.length) out.values = p.values.filter(function (v) { return typeof v === 'string'; }).slice(0, 50);
+      return out;
+    });
+  }
+
+  // Contexte de la demande : noms des préréglages (valeurs lues), plus ce que le slicer a lu juste avant (déjà filtré par le C++,
+  // ContextLogic) ; seuls les champs attendus et non vides passent.
+  var CONTEXT_EXTRAS = { bed_type: 'string', bed_temp_keys: 'array', filament_type: 'string', filament_vendor: 'string', printer_facts: 'object' };
+  function aiContext(base, extras) {
+    var out = Object.assign({}, base || {});
+    var x = extras && typeof extras === 'object' ? extras : {};
+    Object.keys(CONTEXT_EXTRAS).forEach(function (k) {
+      var v = x[k], want = CONTEXT_EXTRAS[k];
+      if (want === 'string' && typeof v === 'string' && v.trim()) out[k] = v;
+      else if (want === 'array' && Array.isArray(v) && v.length) out[k] = v.slice();
+      else if (want === 'object' && v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length) out[k] = Object.assign({}, v);
+    });
+    return out;
+  }
+
+  // Historique renvoyé à l'IA : chaque réponse qui proposait des réglages dit ce qu'il en est advenu (IA-22).
+  var CARDS_TEXT = { applied: 'réglages proposés : appliqués', undone: 'réglages proposés : appliqués puis annulés', proposed: 'réglages proposés : pas appliqués' };
+  function historyForAI(history) {
+    return (Array.isArray(history) ? history : []).map(function (h) {
+      var text = String(h && h.text || '');
+      var line = h && h.role === 'assistant' ? CARDS_TEXT[h.cards] : '';
+      if (line) text = text.slice(0, 2000 - line.length - 1) + '\n' + line; // la ligne d'état n'est jamais coupée
+      return { role: h && h.role === 'assistant' ? 'assistant' : 'user', text: text.slice(0, 2000) };
+    });
+  }
+
+  // Capacités annoncées au service : seulement ce que ce panneau exécute vraiment (actions ci-dessous).
+  var CAPABILITIES = ['show_preview', 'open_calibration'];
+  var SHOW_TARGETS = ['printer', 'filament', 'slice', 'print', 'plate', 'preview'];
+  var TOOL_TARGETS = ['move', 'rotate', 'scale', 'lay_flat', 'cut', 'paint_supports', 'paint_seam', 'paint_color', 'fuzzy_skin', 'text', 'svg', 'measure',
+    'assembly', 'boolean', 'simplify', 'brim_ears'];
+  var RAW_TESTS = ['max_flow', 'vfa', 'tolerance'];
+  // Une action que ce panneau ne sait pas exécuter (service plus récent, cible inconnue) n'a jamais de bouton.
+  function actionSupported(a) {
+    if (!a || typeof a.kind !== 'string' || typeof a.label !== 'string' || !a.label.trim()) return false;
+    var t = a.target;
+    if (a.kind === 'show') return SHOW_TARGETS.indexOf(t) >= 0;
+    if (a.kind === 'open_calibration') return RAW_TESTS.indexOf(t) >= 0;
+    if (a.kind === 'open_tool') return TOOL_TARGETS.indexOf(t) >= 0;
+    if (a.kind === 'show_setting') return typeof t === 'string' && /^[a-z][a-z0-9_]{1,59}$/.test(t);
+    return ['orient', 'arrange', 'scale_to_fit', 'slice', 'remember_success'].indexOf(a.kind) >= 0;
+  }
+
+  // Tests bruts d'Orca : ce qui va se passer (dit AVANT, avec une confirmation), puis comment lire le test et revenir à sa pièce.
+  var RAW_TEST_TEXT = {
+    max_flow: {
+      name: 'Débit maximal',
+      before: 'Ce test ouvre une fenêtre d’Orca et remplace ta plaque par la pièce de test. Ta pièce reste rangée dans ce projet : tu la retrouveras dans « Mes conversations ».',
+      after: 'Imprime la tour de test. Repère la hauteur juste sous les premiers défauts (la surface passe de brillante à mate, ou se creuse). Ton débit maximal en mm³/s = départ + hauteur mesurée × pas : avec les valeurs proposées par Orca (départ 5, pas 0,5), 19 mm donnent 14,5. Garde 10 à 20 % de moins, et mets-le dans « Vitesse volumétrique maximale » de ton filament. Si tu hésites, envoie-moi une photo de la tour.'
+    },
+    vfa: {
+      name: 'VFA',
+      before: 'Ce test ouvre une fenêtre d’Orca et remplace ta plaque par la pièce de test. Ta pièce reste rangée dans ce projet : tu la retrouveras dans « Mes conversations ».',
+      after: 'Imprime la tour de test : chaque bloc est imprimé plus vite que celui du dessous. Regarde les parois en lumière rasante : les blocs couverts de fines stries verticales régulières montrent les vitesses à éviter pour les parois extérieures. Si tu hésites, envoie-moi une photo de la tour.'
+    },
+    tolerance: {
+      name: 'Test de tolérance Orca',
+      before: 'J’ajoute la pièce « Test de tolérance Orca » sur ta plaque, à côté de ta pièce. Rien n’est remplacé.',
+      after: 'Imprime la pièce, puis essaie d’enfoncer chaque tige dans son trou : le plus petit jeu où elle entre sans forcer est celui à prévoir dans tes modèles. Pour la retirer de la plaque, clique dessus puis appuie sur la touche Suppr de ton clavier.'
+    }
+  };
+  function rawTestText(target) { return RAW_TEST_TEXT[target] || null; }
+  // Réponse du slicer à « open_calibration » : texte, ton, et faut-il proposer de revenir à la pièce d'avant ?
+  function rawTestResult(msg) {
+    var t = rawTestText(msg && msg.target);
+    if (!msg || !msg.ok) return { tone: 'error', text: (msg && msg.text) || 'Je n’ai pas pu ouvrir ce test.', back: false };
+    if (!t) return { tone: 'error', text: 'Je ne connais pas ce test.', back: false };
+    if (msg.target === 'tolerance') return { tone: 'ok', text: 'La pièce « ' + t.name + ' » est sur ta plaque' + (msg.arranged ? ' ; j’ai organisé la plaque pour qu’elle ne touche pas ta pièce' : '') + '. ' + t.after, back: false };
+    if (!msg.replaced) return { tone: 'info', text: 'Tu as fermé la fenêtre d’Orca sans lancer le test : ta plaque n’a pas changé.', back: false };
+    return { tone: 'ok', text: 'Le test « ' + t.name + ' » est sur la plaque. ' + t.after + ' Pour retrouver ta pièce ensuite : « Mes conversations », puis ton projet.', back: true };
+  }
+  // Réponse du slicer à « show_preview ».
+  function previewText(msg) {
+    if (!msg || !msg.ok) return (msg && msg.text) || 'Je n’ai pas pu ouvrir l’aperçu.';
+    if (!msg.sliced) return 'J’ai ouvert l’onglet « Aperçu », mais la plaque n’est pas encore découpée : il reste vide. Clique sur « Découper la plaque », puis reviens-y.';
+    return 'J’ai ouvert l’onglet « Aperçu » : fais glisser le curseur à droite pour voir les couches une par une. Pour revenir à ta pièce, clique sur l’onglet « Préparer ».';
+  }
+
+  var api = { diagnoseParams: diagnoseParams, aiContext: aiContext, historyForAI: historyForAI, CAPABILITIES: CAPABILITIES, actionSupported: actionSupported, rawTestText: rawTestText, rawTestResult: rawTestResult, previewText: previewText,
+    changeLine: changeLine, sameSetting: sameSetting, revertPlan: revertPlan, revertText: revertText, batchesOf: batchesOf, mergeCorrections: mergeCorrections, outcomeCard: outcomeCard, reliablePreview: reliablePreview, valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, manualEditsNote: manualEditsNote, splitManualEdits: splitManualEdits, noteWritten: noteWritten, forgetBatch: forgetBatch, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
