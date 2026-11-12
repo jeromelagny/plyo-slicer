@@ -566,3 +566,19 @@ test('préréglage de l’utilisateur : proposé une fois, oui → spool_adopt, 
   const cpp = readCpp('src/plyo/PlyoAssistant.cpp');
   assert.ok(cpp.includes('"spool_adopt_check"') && cpp.includes('"spool_adopt"'));
 });
+
+test('reprise de revue : échec noté, fraîcheur venue du slicer, sortie de « changer », question tue sous la carte', () => {
+  const page = read('index.html'), card = read('project-card.js');
+  assert.match(page, /failed: function \(\) \{[^\n]*spoolFailure\(\)/, '« Non, c’est raté » note l’échec');
+  assert.match(page, /type: 'spool_failure'/);
+  assert.match(page, /msg\.type === 'spool_failure_done'/);
+  assert.ok(readCpp('src/plyo/PlyoAssistant.cpp').includes('"spool_failure"'));
+  assert.ok(!/hasSpoolPreset/.test(page), 'fraîcheur lue dans spool_chosen, pas dans une liste peut-être vide');
+  assert.match(page, /msg\.preset_created/);
+  assert.match(card, /ctx\.editing === 'filament' && !fi\) body\.appendChild\(ui\.button\('Annuler', h\.cancelEdit/);
+  assert.match(card, /proposedFilament = project\.filament && project\.filament\.proposed && project\.filament\.spool/);
+  const out = page.slice(page.indexOf('function renderOutcome('), page.indexOf('// « Ça n\'a pas marché »'));
+  assert.match(out, /renderProject\(\)/, 'la carte posée redessine l’étape (spoolAsk se tait)');
+  const done = page.slice(page.indexOf('function onSpoolSuccessDone'), page.indexOf('function onSpoolSuccessDone') + 600);
+  assert.match(done, /Je n’ai pas pu retenir ces réglages/);
+});

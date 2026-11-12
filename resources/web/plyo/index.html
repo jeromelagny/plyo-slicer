@@ -1312,7 +1312,7 @@
     started: function () { rememberHabit(); journalPart(''); delete conv.project.success; setTourStep('after'); },
     photo: function () { pickFiles(); },
     success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; spoolSuccess(); projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
-    failed: function () { projectUI.spoolNo = conv; renderProject(); },
+    failed: function () { projectUI.spoolNo = conv; spoolFailure(); renderProject(); },
     newPart: function () { newConversation(); },
     reprint: function () { delete conv.project.success; setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
     changeMachine: function () { projectHandlers.change('printer'); },
@@ -1606,7 +1606,7 @@
     setupPrinter: function () { startSetup(); renderSetupFlow(); },
     openManual: function () { openManual(); },
     // « Quelle bobine ? » : une bobine de la liste, ou une nouvelle (matière, puis nom obligatoire).
-    pickSpool: function (row) { chooseSpool(row.name, row.material, !hasSpoolPreset(row.id)); },
+    pickSpool: function (row) { chooseSpool(row.name, row.material); },
     toggleNewSpool: function () { var ns = projectUI.newSpool; ns.open = !ns.open; ns.error = ''; renderProject(); },
     pickMaterial: function (type) { var ns = projectUI.newSpool; ns.open = true; ns.material = type; ns.error = ''; ns.focus = true; renderProject(); },
     typeSpoolName: function (text) { projectUI.newSpool.name = text; },
@@ -1614,7 +1614,7 @@
       var ns = projectUI.newSpool;
       ns.error = PlyoSpools.nameError(ns.name);
       if (ns.error || !ns.material) { ns.focus = true; renderProject(); return; } // l'aide reste sous le champ, avec la raison
-      chooseSpool(PlyoSpools.cleanName(ns.name), ns.material, true);
+      chooseSpool(PlyoSpools.cleanName(ns.name), ns.material);
     },
     // `done(ok, texte)` : la réponse d'Orca ; sans `done`, seul un refus est dit.
     setTemps: function (nozzle, bed, done) {
@@ -1673,7 +1673,7 @@
     confirmFilament: function () {
       var f = conv.project.filament;
       if (!f || !f.spool) return;
-      chooseSpool(f.spool.name, f.type, !hasSpoolPreset(f.spool.id));
+      chooseSpool(f.spool.name, f.type);
     },
     change: function (line) {
       projectUI.error = {};
@@ -1721,7 +1721,7 @@
       projectChanged();
       // La bobine du projet est rechoisie pour la nouvelle machine (son préréglage part de la matière de celle-ci), avec les
       // mêmes températures. Sans bobine, l'étape Filament la demande.
-      if (kept && kept.spool && kept.type) { projectUI.keepTemps = { nozzle: kept.nozzle_temp, bed: kept.bed_temp }; chooseSpool(kept.spool.name, kept.type, true); }
+      if (kept && kept.spool && kept.type) { projectUI.keepTemps = { nozzle: kept.nozzle_temp, bed: kept.bed_temp }; chooseSpool(kept.spool.name, kept.type); }
       return;
     }
     if (!pend) return;
@@ -1773,13 +1773,10 @@
     projectUI.spools.items = msg.items;
     if (conv) renderProject();
   }
-  function hasSpoolPreset(id) { return (projectUI.spools.items || []).some(function (s) { return s.id === id && s.has_preset; }); }
-  // `fresh` : la bobine n'a pas encore de préréglage sur cette machine (il part du profil de la matière) : on demandera
-  // les températures de son étiquette, comme pour un filament neuf.
-  function chooseSpool(name, material, fresh) {
+  function chooseSpool(name, material) {
     if (!conv || !conv.project.printer) return;
     projectUI.error = {};
-    projectUI.pending = { kind: 'spool', type: material, fresh: !!fresh, profileBefore: lastValues && lastValues.context ? lastValues.context.filament : '' };
+    projectUI.pending = { kind: 'spool', type: material, profileBefore: lastValues && lastValues.context ? lastValues.context.filament : '' };
     window.orca.postMessage({ type: 'spool_choose', name: name, material: material, printer: conv.project.printer.preset });
   }
   function onSpoolChosen(msg) {
@@ -1794,7 +1791,7 @@
     }
     projectUI.newSpool = { open: false, material: '', name: '', error: '', focus: false };
     projectUI.spools.printer = null; // relue la prochaine fois (une bobine de plus, un préréglage de plus)
-    projectUI.pending = { kind: 'filament', type: pend.type, spool: { id: msg.id, name: msg.name }, fresh: pend.fresh || !!msg.created, success: msg.success || null, profileBefore: pend.profileBefore };
+    projectUI.pending = { kind: 'filament', type: pend.type, spool: { id: msg.id, name: msg.name }, fresh: msg.preset_created === undefined ? !!msg.created : !!msg.preset_created, success: msg.success || null, profileBefore: pend.profileBefore };
     window.orca.postMessage({ type: 'project_state' }); // lit le préréglage choisi et ses températures
   }
   // Après le choix : la phrase de reprise (dernière impression réussie), et le retour aux réglages réussis s'ils ont changé.
@@ -1835,7 +1832,16 @@
   function onSpoolSuccessDone(msg) {
     projectUI.spools.printer = null; // « ✓ réussie le … » à jour la prochaine fois
     if (msg.ok && msg.name) noteLine(PlyoSpools.doneText(msg.name), 'ok', 'check', 'guide');
+    else noteLine('Je n’ai pas pu retenir ces réglages : je ne retrouve pas ceux de cet envoi. Ta prochaine impression réussie avec cette bobine les retiendra.', '', 'info', 'guide');
   }
+  // « Non, c'est raté » : la bobine de cet envoi passe à « dernière impression ratée » dans la liste.
+  function spoolFailure() {
+    var s = projectUI.spoolSent;
+    if (!s || s.conv !== conv || s.failed) return;
+    s.failed = true; // « Oui » reste possible ensuite (tu as changé d'avis) : la réussite remplace l'échec
+    window.orca.postMessage({ type: 'spool_failure' });
+  }
+  function onSpoolFailureDone() { projectUI.spools.printer = null; }
   // Mode écrit : sans bobine, l'accueil et une question de l'assistant sur le filament mènent au même choix.
   function spoolMissing() { return !!conv && PlyoSpools.needsSpool(conv.project); }
   function chooseSpoolButton() {
@@ -3476,6 +3482,7 @@
         apiFetch('/api/outcomes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Logic.outcomePayload(item, outcome)) }).catch(function () {});
       if (outcome === 'ok') noteLine('Super ! Je m’en souviendrai pour mes prochains conseils sur cette imprimante.', 'ok', 'check');
       if (outcome === 'bad') renderOutcomeBad(item, note);
+      if (conv) renderProject(); // carte partie (ou remplacée) : la question de l'étape Résultat suit (spoolAsk)
     }
     // Oui et Non pèsent le même poids : la carte ne souffle pas la réponse.
     var answers = el('div', 'answers');
@@ -3486,6 +3493,7 @@
     box.appendChild(button('Pas encore imprimé, redemande-moi plus tard', function () { answer('later'); }, 'link'));
     box.appendChild(shareLabel);
     slot.appendChild(box);
+    if (conv) renderProject(); // la question de l'étape Résultat se tait sous cette carte (spoolAsk)
   }
 
   // « Ça n'a pas marché » : les réglages essayés sont encore appliqués. On propose de les retirer (sans appel à
@@ -3502,7 +3510,7 @@
     var title = el('span', '', 'Ça n’a pas marché');
     title.id = titleId;
     head.appendChild(title);
-    var close = button('', function () { slot.textContent = ''; }, 'icon-btn push');
+    var close = button('', function () { slot.textContent = ''; if (conv) renderProject(); }, 'icon-btn push');
     close.title = 'Fermer';
     close.setAttribute('aria-label', 'Fermer');
     close.appendChild(icon('x', 14));
@@ -4514,6 +4522,8 @@
       onSpoolChosen(msg);
     } else if (msg.type === 'spool_success_done') {
       onSpoolSuccessDone(msg);
+    } else if (msg.type === 'spool_failure_done') {
+      onSpoolFailureDone(msg);
     } else if (msg.type === 'spool_adopt_offer') {
       onAdoptOffer(msg);
     } else if (msg.type === 'spool_adopted') {

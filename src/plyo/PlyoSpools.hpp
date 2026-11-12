@@ -14,7 +14,8 @@ nlohmann::json list(const std::string& printer_preset);
 // Bobine nommée par l'utilisateur (retrouvée si elle existe déjà, créée sinon), puis son préréglage pour cette machine :
 // choisi s'il existe, sinon créé depuis le profil système de la matière compatible avec la machine en cours (jamais depuis
 // les valeurs d'une autre machine), compatible avec elle seule, et choisi. L'imprimante doit être celle en cours.
-// { ok, id, name, preset, printer, created, cancelled?, text? } (`created` : la bobine est nouvelle ; `printer` si ok).
+// { ok, id, name, preset, printer, created, preset_created, cancelled?, text? } (`created` : la bobine est nouvelle ;
+// `preset_created` : son préréglage pour cette machine vient d'être créé ; `printer` et `preset_created` si ok).
 nlohmann::json create_or_choose(const std::string& name, const std::string& material, const std::string& printer_preset);
 
 // Préréglage de l'utilisateur choisi dans Orca (filament 1), hors registre : peut-on proposer d'en faire une bobine ?

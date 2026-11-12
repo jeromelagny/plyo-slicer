@@ -157,8 +157,9 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
     if (!recorded.empty() && !pending && filaments.find_preset(recorded, false) != nullptr) {
         if (!FirstSteps::select_filament(recorded))
             return {{"ok", false}, {"cancelled", true}, {"id", id}, {"name", spool}, {"created", created}};
-        out["preset"]  = recorded;
-        out["printer"] = printer;
+        out["preset"]         = recorded;
+        out["printer"]        = printer;
+        out["preset_created"] = false;
         return out;
     }
 
@@ -195,8 +196,9 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
         return {{"ok", false}, {"id", id}, {"name", spool}, {"preset", preset}, {"created", created},
                 {"text", "Le préréglage « " + preset + " » est enregistré, mais je n'ai pas pu le noter dans la liste de tes bobines. Choisis à nouveau ta bobine."}};
     }
-    out["preset"]  = preset;
-    out["printer"] = printer;
+    out["preset"]         = preset;
+    out["printer"]        = printer;
+    out["preset_created"] = true; // parti du profil de la matière : ses températures sont à vérifier
     return out;
 }
 

@@ -240,6 +240,14 @@ nlohmann::json mark_sent_success()
     return {{"ok", true}, {"name", name}};
 }
 
+nlohmann::json mark_sent_failure()
+{
+    const nlohmann::json pointer = Spools::read_last_sent();
+    if (pointer.empty() || !Spools::note_outcome(pointer["spool"], pointer["printer"], "bad", today()))
+        return {{"ok", false}, {"name", ""}};
+    return {{"ok", true}, {"name", Spools::name_of(pointer["spool"])}};
+}
+
 bool mark_spool_failure()
 {
     const nlohmann::json spool = Spools::current_full();

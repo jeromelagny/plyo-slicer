@@ -55,4 +55,8 @@ nlohmann::json mark_sent_success();
 // « Ça n'a pas marché » : le registre note last_outcome "bad" pour la bobine en cours sur cette imprimante.
 bool mark_spool_failure();
 
+// « Non, c'est raté » à l'étape Résultat : le dernier envoi ou export (plyo/essai/dernier-envoi.json) est noté « bad » au
+// registre pour sa bobine et son imprimante. { ok, name }.
+nlohmann::json mark_sent_failure();
+
 }} // namespace Plyo::Profiles

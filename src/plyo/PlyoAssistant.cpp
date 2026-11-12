@@ -271,6 +271,11 @@ void handle_page_message(const nlohmann::json& data)
             nlohmann::json done = Profiles::mark_sent_success();
             done["type"]        = "spool_success_done";
             send(done);
+        } else if (type == "spool_failure") {
+            // « Non, c'est raté » à l'étape Résultat : vise le dernier envoi, comme spool_success.
+            nlohmann::json done = Profiles::mark_sent_failure();
+            done["type"]        = "spool_failure_done";
+            send(done);
         } else if (type == "journal_add")
             Journal::record(data);
         else if (type == "journal_list")

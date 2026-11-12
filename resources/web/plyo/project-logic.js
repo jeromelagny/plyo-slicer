@@ -28,6 +28,9 @@
   function proposeFrom(previous) {
     var prev = previous && typeof previous === 'object' ? previous : {};
     var printer = copy(prev.printer), filament = copy(prev.filament);
+    // Seule une bobine est reproposée (« Sunlu PLA+ noir, comme la dernière fois ? ») : un filament sans bobine (projet d'avant
+    // « Quelle bobine ? », emplacements) laisse l'étape Filament montrer la liste et « Une nouvelle bobine ».
+    if (filament && !(filament.spool && filament.spool.id)) filament = null;
     if (printer) printer.proposed = true;
     if (filament) filament.proposed = true;
     return { printer: printer, filament: filament, part: null };

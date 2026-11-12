@@ -22,8 +22,8 @@ test('nextStep accepte un projet absent ou abîmé', () => {
   assert.equal(P.nextStep('abc'), 'printer');
 });
 
-test('proposeFrom reprend imprimante et filament à confirmer, sans pièce', () => {
-  const p = P.proposeFrom({ printer: printer, filament: filament, part: { name: 'a.stl' } });
+test('proposeFrom reprend imprimante et bobine à confirmer, sans pièce', () => {
+  const p = P.proposeFrom({ printer: printer, filament: Object.assign({ spool: { id: 'b1', name: 'Sunlu PLA+ noir' } }, filament), part: { name: 'a.stl' } });
   assert.equal(p.printer.proposed, true);
   assert.equal(p.filament.proposed, true);
   assert.equal(p.part, null);
@@ -31,7 +31,7 @@ test('proposeFrom reprend imprimante et filament à confirmer, sans pièce', () 
 });
 
 test('confirm retire la marque « proposé »', () => {
-  const p = P.confirm(P.proposeFrom({ printer: printer, filament: filament, part: null }));
+  const p = P.confirm(P.proposeFrom({ printer: printer, filament: Object.assign({ spool: { id: 'b1', name: 'Sunlu PLA+ noir' } }, filament), part: null }));
   assert.equal(p.printer.proposed, undefined);
   assert.equal(P.nextStep(p), 'part');
 });
@@ -99,4 +99,10 @@ test('proposeFrom reprend la bobine du projet précédent, à confirmer (« Sunl
   assert.deepEqual(next.filament.spool, { id: 'b1', name: 'Sunlu PLA+ noir' });
   assert.equal(next.filament.proposed, true);
   assert.equal(P.nextStep(Object.assign({}, next, { printer: printer, part: { name: 'b.stl' } })), 'filament', 'une bobine proposée n’est pas choisie');
+});
+
+test('proposeFrom : un filament sans bobine (projet d’avant « Quelle bobine ? ») n’est pas proposé', () => {
+  const next = P.proposeFrom({ printer: printer, filament: filament, part: { name: 'a.stl' } });
+  assert.equal(next.filament, null, 'l’étape Filament montre la liste et « Une nouvelle bobine »');
+  assert.equal(next.printer.proposed, true);
 });

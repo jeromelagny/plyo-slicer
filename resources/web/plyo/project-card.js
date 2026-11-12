@@ -176,7 +176,7 @@
     slot.choicesKey = key;
     slot.textContent = '';
     var fi = project.filament && !project.filament.proposed ? project.filament : null;
-    var proposedFilament = project.filament && project.filament.proposed ? project.filament : null;
+    var proposedFilament = project.filament && project.filament.proposed && project.filament.spool ? project.filament : null; // projet ancien : pas de bobine à reproposer
     var wantsFilament = step === 'filament' || ctx.editing === 'filament';
     if (step !== 'printer' && !wantsFilament && step !== 'part') return;
     var body = ui.el('div', 'project-body');
@@ -233,6 +233,8 @@
         body.appendChild(ui.button('Ma bobine indique d’autres températures', h.toggleSpool, 'link'));
         if (ctx.editing === 'filament') body.appendChild(ui.button('Garder cette bobine', h.cancelEdit, 'link'));
       }
+      // Venu de « Choisir ma bobine » avant l'étape Filament : on peut revenir sans choisir.
+      if (ctx.editing === 'filament' && !fi) body.appendChild(ui.button('Annuler', h.cancelEdit, 'link'));
       renderManualLink(body, ui, ctx);
     } else {
       body.appendChild(ui.el('p', 'muted small', 'Glisse ton fichier STL ou 3MF ici, ou choisis-le sur ton ordinateur. Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
