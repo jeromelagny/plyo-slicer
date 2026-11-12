@@ -2275,3 +2275,80 @@ TEST_CASE("Bobines : nom court de la machine (comme le panneau)")
     CHECK(machine_label("Mars 0.4 nozzle") == "Mars");
     CHECK(machine_label("  ") == "");
 }
+
+TEST_CASE("Bobines : enregistrement automatique seulement au calme, pour une bobine, hors découpe et envoi")
+{
+    using namespace Plyo::SpoolsLogic;
+    const std::string printer = "Ma Creality CR-10 SE 0.4 nozzle";
+    const json        r       = add(sanitize(json::object()), "Sunlu PLA+ noir", "PLA");
+    const std::string name    = preset_name("Sunlu PLA+ noir", machine_label(printer), {}, {});
+    const json        reg     = set_preset(r["reg"], r["id"], printer, name);
+
+    AutoSaveState s;
+    s.filament_dirty = true;
+    s.is_spool       = !spool_of_preset(reg, name).empty();
+    s.slicing        = false;
+    s.sending        = false;
+    s.quiet_ms       = 2000;
+    // Modifié, bobine, 2 s de calme : on enregistre.
+    CHECK(should_save_spool(s));
+
+    // Même état pendant une découpe, ou pendant un envoi : on attend.
+    AutoSaveState slicing = s;
+    slicing.slicing       = true;
+    CHECK_FALSE(should_save_spool(slicing));
+    AutoSaveState sending = s;
+    sending.sending       = true;
+    CHECK_FALSE(should_save_spool(sending));
+
+    // Préréglage hors registre (un préréglage de l'utilisateur, ou une bobine encore « en attente ») : jamais écrasé.
+    AutoSaveState other = s;
+    other.is_spool      = !spool_of_preset(reg, "Mon PLA à moi").empty();
+    CHECK_FALSE(other.is_spool);
+    CHECK_FALSE(should_save_spool(other));
+    AutoSaveState pending = s;
+    pending.is_spool      = !spool_of_preset(set_preset(r["reg"], r["id"], printer, name, true), name).empty();
+    CHECK_FALSE(should_save_spool(pending));
+
+    // 1,5 s de calme seulement : l'utilisateur tape peut-être encore.
+    AutoSaveState typing = s;
+    typing.quiet_ms      = 1500;
+    CHECK_FALSE(should_save_spool(typing));
+
+    // Rien de modifié : rien à écrire.
+    AutoSaveState clean = s;
+    clean.filament_dirty = false;
+    CHECK_FALSE(should_save_spool(clean));
+}
+
+TEST_CASE("Bobines : écarts de températures que la vérification d'Orca refuserait (sa fenêtre ne doit jamais s'ouvrir)")
+{
+    using namespace Plyo::SpoolsLogic;
+    // Buse : 30 °C d'écart au plus entre la première couche et les suivantes ; plateau : 15 °C.
+    CHECK(temperature_pairs_ok({}));
+    CHECK(temperature_pairs_ok({{220, 215, 30}, {60, 55, 15}}));
+    CHECK(temperature_pairs_ok({{245, 215, 30}})); // 30 tout juste : accepté
+    CHECK_FALSE(temperature_pairs_ok({{250, 215, 30}}));
+    CHECK_FALSE(temperature_pairs_ok({{220, 215, 30}, {80, 60, 15}}));
+    CHECK_FALSE(temperature_pairs_ok({{200, 240, 30}})); // dans les deux sens
+    // 0 (ou moins) : réglage coupé, comme chez Orca.
+    CHECK(temperature_pairs_ok({{0, 215, 30}, {60, 0, 15}}));
+}
+
+TEST_CASE("Bobines : la vérification des températures d'Orca a toujours les mêmes seuils")
+{
+    // Si Orca change ces seuils, temperature_pairs_ok (et ses appelants) doivent suivre.
+    const fs::path          file = fs::path(__FILE__).parent_path() / "../../../../src/slic3r/GUI/Tab.cpp";
+    boost::nowide::ifstream in(file.string());
+    REQUIRE(in.good());
+    const std::string src((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const size_t      at = src.find("bool Tab::validate_filament_temperature_pairs()");
+    REQUIRE(at != std::string::npos);
+    const std::string body = src.substr(at, 4000);
+    CHECK(body.find("\"nozzle_temperature_initial_layer\", \"nozzle_temperature\", 30}") != std::string::npos);
+    CHECK(body.find("temp_pair_rules.push_back({label, first_key, other_key, 15});") != std::string::npos);
+    CHECK(body.find("for (int bt = static_cast<int>(btPC); bt < static_cast<int>(btCount); ++bt)") != std::string::npos);
+    CHECK(body.find("if (first_temp <= 0 || other_temp <= 0)") != std::string::npos);
+    CHECK(body.find("if (delta <= rule.max_delta)") != std::string::npos);
+    CHECK(body.find("get_at(0)") != std::string::npos);
+}

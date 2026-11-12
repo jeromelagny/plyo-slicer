@@ -17,6 +17,10 @@ nlohmann::json list(const std::string& printer_preset);
 // { ok, id, name, preset, created, cancelled?, text? } (`created` : la bobine est nouvelle).
 nlohmann::json create_or_choose(const std::string& name, const std::string& material, const std::string& printer_preset);
 
+// Ce préréglage filament est-il celui d'une bobine du registre (hors nom encore « en attente ») ? Le registre est gardé
+// en mémoire après sa première lecture (relu seulement après une écriture par Plyo) : appelable souvent, sans disque.
+bool is_spool_preset(const std::string& filament_preset);
+
 // Bobine du premier filament en cours : { id, name }, ou {} si ce préréglage n'est pas une bobine.
 nlohmann::json current();
 

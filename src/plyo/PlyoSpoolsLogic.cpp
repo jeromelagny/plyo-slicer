@@ -240,4 +240,21 @@ std::string machine_label(const std::string& printer_preset)
     return collapse(s);
 }
 
+bool should_save_spool(const AutoSaveState& state)
+{
+    return state.filament_dirty && state.is_spool && !state.slicing && !state.sending && state.quiet_ms >= AUTOSAVE_QUIET_MS;
+}
+
+bool temperature_pairs_ok(const std::vector<TempPair>& pairs)
+{
+    for (const TempPair& p : pairs) {
+        if (p.first_layer <= 0 || p.other_layers <= 0)
+            continue;
+        const int delta = p.first_layer > p.other_layers ? p.first_layer - p.other_layers : p.other_layers - p.first_layer;
+        if (delta > p.max_delta)
+            return false;
+    }
+    return true;
+}
+
 }} // namespace Plyo::SpoolsLogic

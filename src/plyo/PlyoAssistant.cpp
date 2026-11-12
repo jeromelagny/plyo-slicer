@@ -1,4 +1,5 @@
 #include "PlyoAssistant.hpp"
+#include "PlyoAutoSave.hpp"
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoCalibration.hpp"
@@ -585,11 +586,13 @@ void toggle_assistant(Plater* plater)
         // Panneau détruit (fermé par sa croix ou par le bouton) : le plan d'envoi n'a plus personne pour le montrer ou le
         // retirer (le panneau le renvoie à sa réouverture) ; le bouton du haut repasse à « fermé ».
         Canvas::clear_plan();
+        AutoSave::stop();
         if (s_topbar_button)
             s_topbar_button->CallAfter([] { refresh_topbar_button(); });
     });
     s_panel           = panel;
     s_refresh_pending = false; // un rafraîchissement en attente meurt avec l'ancien panneau
+    AutoSave::start();         // le préréglage de la bobine s'enregistre tout seul tant que le panneau est là
     plater->add_dock_pane(panel, PANE_NAME, "Assistant Plyo", "right", wxSize(380, 600), [panel]() { panel->fire_close(); });
     // La disposition enregistrée par Orca peut garder une largeur minuscule (18 px vu) : le panneau serait
     // à peine visible. On lui impose une largeur minimale, et sa largeur normale si la sienne est trop petite.
@@ -648,6 +651,7 @@ ProjectNotificationsPause::~ProjectNotificationsPause() { --s_project_pauses; }
 
 void on_config_changed()
 {
+    AutoSave::note_change(); // le délai de calme de l'enregistrement automatique repart de zéro
     // Orca peut appeler ceci plusieurs fois de suite : on regroupe en un seul envoi.
     if (!s_panel || s_refresh_pending)
         return;

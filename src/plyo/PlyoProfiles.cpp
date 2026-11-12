@@ -6,6 +6,7 @@
 #include "PlyoSanitize.hpp"
 #include "PlyoStore.hpp"
 #include "PlyoSettingsBridge.hpp"
+#include "PlyoSpools.hpp"
 
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
@@ -65,41 +66,57 @@ nlohmann::json manual_edits()
     return out;
 }
 
+SaveOutcome save_current_as(bool print, const std::string& name)
+{
+    const Preset::Type        type = print ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
+    Slic3r::PresetCollection& col  = collection(type);
+    Slic3r::GUI::Tab*         tab  = Slic3r::GUI::wxGetApp().get_tab(type);
+    if (tab == nullptr) {
+        BOOST_LOG_TRIVIAL(error) << "Plyo: pas d'onglet pour enregistrer le profil « " << name << " »";
+        return SaveOutcome::Failed;
+    }
+    const std::time_t started = std::time(nullptr);
+    try {
+        tab->save_preset(name); // avec un nom : aucune boîte de dialogue ; Orca met l'interface à jour
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(error) << "Plyo: enregistrement du profil « " << name << " » impossible : " << e.what();
+        return SaveOutcome::Failed;
+    }
+    // Orca peut refuser sans le dire (températures incohérentes) : le profil doit être choisi sous ce nom et plus modifié.
+    if (col.current_is_dirty() || col.get_selected_preset().name != name) {
+        BOOST_LOG_TRIVIAL(error) << "Plyo: le profil « " << name << " » n'a pas été enregistré par Orca";
+        return SaveOutcome::Refused;
+    }
+    // Orca ne signale pas un disque qui refuse d'écrire : on vérifie que le fichier du profil a bien été écrit.
+    if (!written_since(col.get_selected_preset().file, started - 2)) {
+        BOOST_LOG_TRIVIAL(error) << "Plyo: le fichier du profil « " << name << " » n'a pas été écrit : " << col.get_selected_preset().file;
+        return SaveOutcome::NotWritten;
+    }
+    return SaveOutcome::Ok;
+}
+
 nlohmann::json save_applied()
 {
     nlohmann::json    saved = nlohmann::json::array();
     std::string       error;
     const std::string old_machine = Limits::machine_key();
-    const std::time_t started     = std::time(nullptr);
     for (const Preset::Type type : {Preset::TYPE_PRINT, Preset::TYPE_FILAMENT}) {
         Slic3r::PresetCollection& col = collection(type);
         if (!col.current_is_dirty())
             continue;
-        Slic3r::GUI::Tab* tab = Slic3r::GUI::wxGetApp().get_tab(type);
-        if (tab == nullptr)
+        if (Slic3r::GUI::wxGetApp().get_tab(type) == nullptr)
             continue;
-        const std::string from    = col.get_selected_preset().name;
-        const bool        created = !col.get_selected_preset().can_overwrite();
+        const std::string from = col.get_selected_preset().name;
+        // Une bobine n'a qu'un préréglage par machine : on l'écrase, jamais de copie « (Plyo) ».
+        const bool spool   = type == Preset::TYPE_FILAMENT && Spools::is_spool_preset(from);
+        const bool created = !spool && !col.get_selected_preset().can_overwrite();
         std::vector<std::string> existing;
         for (const Slic3r::Preset& p : col)
             existing.push_back(p.name);
-        const std::string name = created ? copy_name(from, existing) : from;
-        try {
-            tab->save_preset(name); // avec un nom : aucune boîte de dialogue ; Orca met l'interface à jour
-        } catch (const std::exception& e) {
-            BOOST_LOG_TRIVIAL(error) << "Plyo: enregistrement du profil « " << name << " » impossible : " << e.what();
-            error = "Orca n'a pas pu écrire le fichier";
-            break;
-        }
-        if (col.current_is_dirty() || col.get_selected_preset().name != name) {
-            BOOST_LOG_TRIVIAL(error) << "Plyo: le profil « " << name << " » n'a pas été enregistré par Orca";
-            error = "Orca a refusé l'enregistrement";
-            break;
-        }
-        // Orca ne signale pas un disque qui refuse d'écrire : on vérifie que le fichier du profil a bien été écrit.
-        if (!written_since(col.get_selected_preset().file, started - 2)) {
-            BOOST_LOG_TRIVIAL(error) << "Plyo: le fichier du profil « " << name << " » n'a pas été écrit : " << col.get_selected_preset().file;
-            error = "Orca n'a pas pu écrire le fichier";
+        const std::string name    = created ? copy_name(from, existing) : from;
+        const SaveOutcome outcome = save_current_as(type == Preset::TYPE_PRINT, name);
+        if (outcome != SaveOutcome::Ok) {
+            error = outcome == SaveOutcome::Refused ? "Orca a refusé l'enregistrement" : "Orca n'a pas pu écrire le fichier";
             break;
         }
         SettingsBridge::retarget_undo(type == Preset::TYPE_PRINT, from, name);

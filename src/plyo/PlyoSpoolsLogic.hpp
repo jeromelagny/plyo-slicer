@@ -57,4 +57,33 @@ std::string spool_name(const nlohmann::json& reg, const std::string& id);
 // sans « - Copie » / « - Copy », « (Plyo) » ni « 0.4 nozzle » derrière. « Ma Creality CR-10 SE 0.4 nozzle » → « Creality CR-10 SE ».
 std::string machine_label(const std::string& printer_preset);
 
+// État vu par l'enregistrement automatique (Plyo::AutoSave), relevé toutes les 500 ms.
+struct AutoSaveState
+{
+    bool      filament_dirty = false; // le préréglage filament en cours a des modifications non enregistrées
+    bool      is_spool       = false; // ce préréglage est celui d'une bobine du registre (spool_of_preset non vide)
+    bool      slicing        = false; // Orca découpe
+    bool      sending        = false; // Orca exporte ou envoie un fichier à l'imprimante
+    long long quiet_ms       = 0;     // temps écoulé depuis le dernier changement de réglage
+};
+
+constexpr long long AUTOSAVE_QUIET_MS = 2000;
+
+// Vrai seulement si le préréglage est modifié, est une bobine, que rien ne découpe ni n'envoie, et après
+// AUTOSAVE_QUIET_MS sans changement (l'utilisateur a fini de taper).
+bool should_save_spool(const AutoSaveState& state);
+
+// Couple de températures « première couche / couches suivantes » et l'écart permis (buse 30 °C, plateau 15 °C).
+struct TempPair
+{
+    int first_layer;
+    int other_layers;
+    int max_delta;
+};
+
+// Même règle que Tab::validate_filament_temperature_pairs d'Orca, qui ouvre une fenêtre « Temperature Safety Check »
+// dans save_preset si un écart dépasse : vrai si aucun ne dépasse (une valeur <= 0 est un réglage coupé, ignoré).
+// L'enregistrement automatique ne doit jamais ouvrir de fenêtre : il n'enregistre que si c'est vrai.
+bool temperature_pairs_ok(const std::vector<TempPair>& pairs);
+
 }} // namespace Plyo::SpoolsLogic

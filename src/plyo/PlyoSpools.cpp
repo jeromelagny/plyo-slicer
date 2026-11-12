@@ -1,6 +1,7 @@
 #include "PlyoSpools.hpp"
 #include "PlyoFirstSteps.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoProfiles.hpp"
 #include "PlyoProfilesLogic.hpp"
 #include "PlyoSpoolsLogic.hpp"
 #include "PlyoStore.hpp"
@@ -27,7 +28,16 @@ boost::filesystem::path path_of() { return Store::dir() / "bobines.json"; }
 
 nlohmann::json load() { return SpoolsLogic::sanitize(Store::read(path_of())); }
 
-bool save(const nlohmann::json& reg) { return Store::write(path_of(), SpoolsLogic::sanitize(reg)); }
+// Copie du registre pour is_spool_preset (fil principal seulement). Seul Plyo écrit bobines.json : chaque écriture,
+// réussie ou non, oblige à le relire.
+bool           s_cache_valid = false;
+nlohmann::json s_cache;
+
+bool save(const nlohmann::json& reg)
+{
+    s_cache_valid = false;
+    return Store::write(path_of(), SpoolsLogic::sanitize(reg));
+}
 
 Slic3r::PresetBundle* bundle() { return Slic3r::GUI::wxGetApp().preset_bundle; }
 
@@ -76,25 +86,26 @@ bool save_spool_preset(const std::string& base_name, const std::string& name, co
         out = refuse("L'onglet Filament d'Orca n'est pas disponible.");
         return false;
     }
-    const std::time_t started = std::time(nullptr);
     try {
         tab->load_config(cfg);
-        tab->save_preset(name); // nom fourni : aucune fenêtre
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: préréglage de bobine « " << name << " » impossible : " << e.what();
         out = refuse("Orca n'a pas pu écrire le préréglage « " + name + " ».");
         return false;
     }
-    // Orca peut refuser sans le dire (températures incohérentes) ou ne pas écrire le fichier (disque) : on vérifie tout.
-    const Preset* saved = filaments.find_preset(name, false);
-    if (saved == nullptr || filaments.get_selected_preset_name() != name || filaments.current_is_dirty()) {
-        BOOST_LOG_TRIVIAL(error) << "Plyo: le préréglage de bobine « " << name << " » n'a pas été enregistré par Orca";
+    // Mêmes vérifications que save_applied : choisi sous ce nom, plus modifié, fichier réécrit.
+    switch (Profiles::save_current_as(false, name)) {
+    case Profiles::SaveOutcome::Ok: break;
+    case Profiles::SaveOutcome::Refused:
         out = refuse("Orca a refusé d'enregistrer le préréglage « " + name + " ».");
         return false;
-    }
-    if (!Profiles::written_since(saved->file, started - 2)) {
-        BOOST_LOG_TRIVIAL(error) << "Plyo: le fichier du préréglage de bobine « " << name << " » n'a pas été écrit : " << saved->file;
+    default:
         out = refuse("Orca n'a pas pu écrire le préréglage « " + name + " ».");
+        return false;
+    }
+    const Preset* saved = filaments.find_preset(name, false);
+    if (saved == nullptr) {
+        out = refuse("Orca a refusé d'enregistrer le préréglage « " + name + " ».");
         return false;
     }
     if (saved->inherits() != base_name) {
@@ -184,6 +195,17 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
     }
     out["preset"] = preset;
     return out;
+}
+
+bool is_spool_preset(const std::string& filament_preset)
+{
+    if (filament_preset.empty())
+        return false;
+    if (!s_cache_valid) {
+        s_cache       = load();
+        s_cache_valid = true;
+    }
+    return !SpoolsLogic::spool_of_preset(s_cache, filament_preset).empty();
 }
 
 nlohmann::json current()

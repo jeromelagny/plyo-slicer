@@ -2,6 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <string>
+
 // Profils (impression et filament) enregistrés par l'assistant après un lot de réglages, pour que la fenêtre
 // « enregistrer les modifications ? » d'Orca ne s'affiche plus à la fermeture.
 namespace Plyo { namespace Profiles {
@@ -10,7 +12,16 @@ namespace Plyo { namespace Profiles {
 // [{"preset": "print"|"filament", "key", "title", "before", "after"}]. Elles sont enregistrées avec le lot (« tout enregistrer »).
 nlohmann::json manual_edits();
 
+// Résultat de save_current_as.
+enum class SaveOutcome { Ok, Failed, Refused, NotWritten };
+
+// Enregistre le profil en cours (impression si `print`, sinon filament) sous `name` (avec un nom : aucune fenêtre de nom)
+// et vérifie qu'Orca l'a bien fait : Failed (erreur levée ou onglet absent), Refused (pas choisi sous ce nom, ou encore
+// modifié), NotWritten (fichier absent, vide ou pas réécrit). Chaque échec est noté dans le journal.
+SaveOutcome save_current_as(bool print, const std::string& name);
+
 // Enregistre les profils impression et filament modifiés. Un profil d'Orca (non écrasable) est copié sous « <nom> (Plyo) ».
+// Le préréglage d'une bobine (registre des bobines) est toujours écrasé sous son propre nom, jamais copié.
 // Renvoie {"saved": [{"type", "name", "created", "from"}], "save_error": "" ou le motif}. Les valeurs restent appliquées
 // en mémoire si l'écriture échoue.
 nlohmann::json save_applied();

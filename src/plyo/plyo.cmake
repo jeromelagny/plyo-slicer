@@ -77,6 +77,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSpoolsLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSpools.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSpools.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoAutoSave.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoAutoSave.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCanvas.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCanvas.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCanvasLogic.cpp
