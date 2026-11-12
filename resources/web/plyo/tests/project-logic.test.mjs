@@ -106,3 +106,30 @@ test('proposeFrom : un filament sans bobine (projet d’avant « Quelle bobine ?
   assert.equal(next.filament, null, 'l’étape Filament montre la liste et « Une nouvelle bobine »');
   assert.equal(next.printer.proposed, true);
 });
+
+// ---------- Lot 7 : un projet 3MF par conversation ----------
+test('projet de la conversation : rouvert seulement quand la fiche a une pièce', () => {
+  assert.equal(P.opensProjectFile({ part: { name: 'clip.stl' } }), true);
+  assert.equal(P.opensProjectFile({ part: null }), false);
+  assert.equal(P.opensProjectFile(P.emptyProject()), false);
+  assert.equal(P.opensProjectFile(null), false);
+});
+
+test('projet de la conversation : texte quand le plateau ne revient pas', () => {
+  assert.equal(P.projectOpenedText(''), '');
+  const lost = 'Je n’ai pas retrouvé le plateau de cette conversation : je remets ta machine et ta bobine.';
+  assert.equal(P.projectOpenedText('absent'), lost);
+  assert.equal(P.projectOpenedText('abime'), lost);
+  assert.equal(P.projectOpenedText('trop_gros'), lost);
+  assert.equal(P.projectOpenedText('occupe'), lost);
+  // L'utilisateur a gardé son propre projet dans la question d'Orca : on ne touche à rien.
+  assert.equal(P.projectOpenedText('annule'), 'D’accord, ton plateau reste tel quel.');
+  assert.equal(P.restoresAfterOpen(''), false);
+  assert.equal(P.restoresAfterOpen('absent'), true);
+  assert.equal(P.restoresAfterOpen('annule'), false);
+});
+
+test('projet de la conversation : plateau trop lourd', () => {
+  assert.match(P.tooHeavyText(), /50 Mo/);
+  assert.match(P.tooHeavyText(), /fiche/);
+});

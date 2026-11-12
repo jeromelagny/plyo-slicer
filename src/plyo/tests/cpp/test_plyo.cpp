@@ -19,6 +19,7 @@
 #include "../../PlyoCalibrationLogic.hpp"
 #include "../../PlyoCommandsLogic.hpp"
 #include "../../PlyoSpoolsLogic.hpp"
+#include "../../PlyoProjectFilesLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -2566,4 +2567,76 @@ TEST_CASE("Bobines : le résumé ne cite que des nombres")
     // Nombres négatifs ou entiers : cités.
     r = success_summary({{"filament_flow_ratio", "1"}}, {{"filament_flow_ratio", "-0.5"}}, titles, kinds);
     CHECK(r["summary"] == "débit -0,5");
+}
+
+TEST_CASE("Projets : le 3MF de la conversation ne s'écrit qu'attaché, modifié, au repos et après 3 s de calme")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    SaveState s;
+    s.attached           = true;
+    s.changed_since_save = true;
+    s.slicing            = false;
+    s.sending            = false;
+    s.quiet_ms           = 3000;
+    // Calme 3 s et modifié : on écrit.
+    CHECK(should_save(s));
+
+    // Pendant une découpe, ou un envoi : on attend (l'export 3MF tourne sur le fil de l'interface).
+    SaveState slicing = s;
+    slicing.slicing   = true;
+    CHECK_FALSE(should_save(slicing));
+    SaveState sending = s;
+    sending.sending   = true;
+    CHECK_FALSE(should_save(sending));
+
+    // Plateau pas rattaché à une conversation (fichier de l'utilisateur, nouvelle conversation pas encore reprise) : jamais.
+    SaveState detached = s;
+    detached.attached  = false;
+    CHECK_FALSE(should_save(detached));
+
+    // 2 s de calme seulement : l'utilisateur tourne peut-être encore la pièce.
+    SaveState typing = s;
+    typing.quiet_ms  = 2000;
+    CHECK_FALSE(should_save(typing));
+
+    // Rien de changé depuis la dernière écriture : rien à écrire.
+    SaveState same          = s;
+    same.changed_since_save = false;
+    CHECK_FALSE(should_save(same));
+}
+
+TEST_CASE("Projets : motif d'un 3MF de conversation qui ne peut pas être rouvert")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    CHECK(open_reason(true, 1024, true) == "");
+    CHECK(open_reason(false, 0, false) == "absent");
+    // Un fichier vide ou illisible (zip abîmé, sans modèle) : abîmé.
+    CHECK(open_reason(true, 0, false) == "abime");
+    CHECK(open_reason(true, 2048, false) == "abime");
+    // Au-delà de la taille maximale : trop gros, même s'il se lirait (il n'est pas ouvert).
+    CHECK(open_reason(true, MAX_PROJECT_BYTES + 1, true) == "trop_gros");
+    CHECK(open_reason(true, MAX_PROJECT_BYTES + 1, false) == "trop_gros");
+    CHECK(open_reason(true, MAX_PROJECT_BYTES, true) == "");
+    CHECK(MAX_PROJECT_BYTES == 50ULL * 1024 * 1024);
+}
+
+TEST_CASE("Projets : l'empreinte change avec le projet, le plateau ou un réglage")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    const Fingerprint a{1, 7, 12};
+    CHECK(a == Fingerprint{1, 7, 12});
+    // Nouveau projet : la pile d'annulation repart de 0, le numéro de projet de Plyo la distingue.
+    CHECK_FALSE(a == Fingerprint{2, 7, 12});
+    CHECK_FALSE(a == Fingerprint{1, 8, 12});
+    CHECK_FALSE(a == Fingerprint{1, 7, 13});
+}
+
+TEST_CASE("Projets : les 3MF sans conversation sont à effacer")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    const std::vector<std::string> kept  = {"abc-1", "def-2"};
+    const std::vector<std::string> files = {"abc-1", "old-9", "def-2", "gone-3"};
+    CHECK(orphans(kept, files) == std::vector<std::string>{"old-9", "gone-3"});
+    CHECK(orphans({}, {"x"}) == std::vector<std::string>{"x"});
+    CHECK(orphans({"x"}, {}).empty());
 }

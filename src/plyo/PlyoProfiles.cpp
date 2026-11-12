@@ -3,6 +3,7 @@
 #include "PlyoLimits.hpp"
 #include "PlyoMemory.hpp"
 #include "PlyoProfilesLogic.hpp"
+#include "PlyoProjectFiles.hpp"
 #include "PlyoSanitize.hpp"
 #include "PlyoStore.hpp"
 #include "PlyoSettingsBridge.hpp"
@@ -104,10 +105,18 @@ nlohmann::json save_applied()
     nlohmann::json    saved = nlohmann::json::array();
     std::string       error;
     const std::string old_machine = Limits::machine_key();
+    // Plateau d'une conversation : les réglages d'impression sont ceux de la pièce. Ils restent modifiés et vivent dans le
+    // 3MF de la conversation, jamais dans le préréglage d'impression partagé (ils suivraient le projet suivant).
+    const bool in_project = !ProjectFiles::attached().empty();
+    bool       kept       = false;
     for (const Preset::Type type : {Preset::TYPE_PRINT, Preset::TYPE_FILAMENT}) {
         Slic3r::PresetCollection& col = collection(type);
         if (!col.current_is_dirty())
             continue;
+        if (type == Preset::TYPE_PRINT && in_project) {
+            kept = true;
+            continue;
+        }
         if (Slic3r::GUI::wxGetApp().get_tab(type) == nullptr)
             continue;
         const std::string from = col.get_selected_preset().name;
@@ -131,7 +140,7 @@ nlohmann::json save_applied()
         Limits::carry_over(old_machine);
         Memory::carry_over(old_machine, now);
     }
-    return {{"saved", saved}, {"save_error", error}};
+    return {{"saved", saved}, {"save_error", error}, {"in_project", kept}};
 }
 
 bool note_trial(const std::string& at)
@@ -186,6 +195,7 @@ nlohmann::json restore_reliable()
         const nlohmann::json saved = save_applied();
         result["saved"]            = saved["saved"];
         result["save_error"]       = saved["save_error"];
+        result["in_project"]       = saved["in_project"];
     }
     return result;
 }

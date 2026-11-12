@@ -335,3 +335,19 @@ test('hors-sujet : gratuit dans le quota, rien à dire ; au-delà, la réponse d
   assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: null }), '');
   assert.equal(L.offTopicCostNote({ status: 'ok', credits: { charged: 2 } }), '', 'une réponse normale ne le répète pas');
 });
+
+test('conversation rouverte : ses fiches de réglages non appliquées s’appliquent de nouveau', () => {
+  // Réponse neuve : jamais archivée.
+  assert.equal(L.sheetArchived(false, false, false), false);
+  // Conversation rouverte (redevenue active) : une fiche non appliquée redevient applicable, une fiche appliquée reste un relevé.
+  assert.equal(L.sheetArchived(true, true, false), false);
+  assert.equal(L.sheetArchived(true, true, true), true);
+  // Relecture seule (sans réouverture) : tout est archivé.
+  assert.equal(L.sheetArchived(true, false, false), true);
+});
+
+test('réglages d’impression gardés avec le projet de la conversation', () => {
+  assert.equal(L.savedText({ saved: [], in_project: true }), 'Gardé avec le projet de cette conversation.');
+  assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Sunlu PLA+ noir — CR-10 SE', created: false }], in_project: true }),
+    'Enregistré dans le profil « Sunlu PLA+ noir — CR-10 SE ». Gardé avec le projet de cette conversation.');
+});

@@ -28,6 +28,7 @@
 #include "PlyoHabits.hpp"
 #include "PlyoProject.hpp"
 #include "PlyoProjectLogic.hpp"
+#include "PlyoProjectFiles.hpp"
 #include "PlyoPrinterSetup.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
@@ -197,6 +198,7 @@ void handle_page_message(const nlohmann::json& data)
                 const nlohmann::json saved = Profiles::save_applied();
                 result["saved"]            = saved["saved"];
                 result["save_error"]       = saved["save_error"];
+                result["in_project"]       = saved["in_project"];
                 result["manual_saved"]     = manual;
                 const nlohmann::json ask = data.contains("ask") ? data["ask"] : nlohmann::json();
                 nlohmann::json       after = SettingsBridge::read_values();
@@ -227,6 +229,7 @@ void handle_page_message(const nlohmann::json& data)
                 const nlohmann::json saved = Profiles::save_applied();
                 result["saved"]            = saved["saved"];
                 result["save_error"]       = saved["save_error"];
+                result["in_project"]       = saved["in_project"];
             }
             send_result(result);
         } else if (type == "ai_context")
@@ -327,6 +330,7 @@ void handle_page_message(const nlohmann::json& data)
                 send({{"type", "conv_save_failed"}, {"id", Json::str(data, "id")}});
             }
         } else if (type == "conv_delete") {
+            ProjectFiles::forget(Json::str(data, "id")); // plus d'écriture pour elle ; son 3MF part avec elle
             Conversations::remove(Json::str(data, "id"));
             send({{"type", "conv_list"}, {"items", Conversations::list()}});
         }
@@ -389,10 +393,29 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "tour_add_benchy")
             send_result(FirstSteps::add_benchy());
         else if (type == "model_add") {
-            // Modèle 3D joint dans le panneau (trombone ou glisser-déposer).
+            // Modèle 3D joint dans le panneau (trombone ou glisser-déposer). Une nouvelle pièce posée : le plateau devient celui
+            // de la conversation, avant l'adaptation des réglages d'un 3MF (qui restent ainsi dans le projet, pas dans le
+            // préréglage d'impression partagé). Pièce refusée : le plateau n'est pas attaché.
+            const std::string conv   = Json::str(data, "conv");
+            const std::string before = ProjectFiles::attached();
+            ProjectFiles::attach(conv);
             nlohmann::json added = ModelImport::add(Json::str(data, "name"), Json::str(data, "data"), data.contains("project") ? data["project"] : nlohmann::json(), Json::boolean(data, "replace", false));
+            if (!Json::boolean(added, "ok", false) && before.empty() && !conv.empty())
+                ProjectFiles::detach(false);
             added["type"]        = "model_added";
             send(added);
+        } else if (type == "project_attach") {
+            // Pièce précédente reprise, ou pièce posée autrement que par le panneau : le plateau est celui de la conversation.
+            ProjectFiles::attach(Json::str(data, "conv"));
+        } else if (type == "project_detach") {
+            // Autre conversation : le plateau quitté est écrit, ses réglages d'impression ne suivent pas.
+            ProjectFiles::detach(true);
+        } else if (type == "project_open") {
+            nlohmann::json opened = ProjectFiles::open(Json::str(data, "conv"));
+            opened["type"]        = "project_opened";
+            opened["conv"]        = Json::str(data, "conv");
+            send(opened);
+            send_values();
         } else if (type == "model_adapt") {
             send({{"type", "model_adapted"}, {"adaptation", ModelImport::adapt_last(data.contains("project") ? data["project"] : nlohmann::json())}});
         } else if (type == "show_me") {
@@ -612,6 +635,7 @@ void toggle_assistant(Plater* plater)
     if (plater == nullptr)
         return;
 
+    ProjectFiles::set_listener([](const nlohmann::json& message) { send(message); });
     FirstSteps::set_focus_listener([](const nlohmann::json& focus) {
         nlohmann::json message = focus;
         message["type"]        = "focus_setting";
@@ -622,6 +646,7 @@ void toggle_assistant(Plater* plater)
         // retirer (le panneau le renvoie à sa réouverture) ; le bouton du haut repasse à « fermé ».
         Canvas::clear_plan();
         AutoSave::stop();
+        ProjectFiles::stop(); // le panneau rouvert commence une conversation neuve : plus rien n'est attaché
         if (s_topbar_button)
             s_topbar_button->CallAfter([] { refresh_topbar_button(); });
     });
@@ -675,6 +700,7 @@ wxWindow* create_topbar_button(wxWindow* parent)
 void on_project_changed()
 {
     CC2::clear_refused(); // « Démarrer sans carte » lancerait le fichier de la pièce d'avant
+    ProjectFiles::on_project_changed(s_project_pauses > 0); // projet de l'utilisateur : plus celui de la conversation
     if (s_project_pauses > 0)
         return; // calibration : la pièce reviendra, le panneau garde sa conversation et son plan d'envoi
     Canvas::clear_plan(); // la carte des emplacements visait la pièce d'avant
@@ -687,6 +713,7 @@ ProjectNotificationsPause::~ProjectNotificationsPause() { --s_project_pauses; }
 void on_config_changed()
 {
     AutoSave::note_change(); // le délai de calme de l'enregistrement automatique repart de zéro
+    ProjectFiles::note_change(); // le projet de la conversation a changé
     // Orca peut appeler ceci plusieurs fois de suite : on regroupe en un seul envoi.
     if (!s_panel || s_refresh_pending)
         return;

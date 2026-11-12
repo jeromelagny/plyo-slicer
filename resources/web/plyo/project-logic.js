@@ -85,7 +85,20 @@
     return count > 1 ? 'Les ' + count + ' pièces d’avant sont retirées du plateau.' : '« ' + (name || 'L’ancienne pièce') + ' » retirée du plateau.';
   }
 
-  var api = { replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  // Projet 3MF de la conversation (datadir/plyo/projets/<conv>.3mf) : on ne le rouvre que si la fiche a une pièce.
+  function opensProjectFile(project) { return chosen(project && project.part, 'name'); }
+  // Réponse du slicer à l'ouverture (`reason` : "" | "absent" | "abime" | "trop_gros" | "occupe" | "annule").
+  function projectOpenedText(reason) {
+    if (!reason) return '';
+    if (reason === 'annule') return 'D’accord, ton plateau reste tel quel.';
+    return 'Je n’ai pas retrouvé le plateau de cette conversation : je remets ta machine et ta bobine.';
+  }
+  // Plateau pas retrouvé : la machine et la bobine de la fiche reviennent, comme avant les projets 3MF. Pas si l'utilisateur
+  // a gardé son propre projet.
+  function restoresAfterOpen(reason) { return !!reason && reason !== 'annule'; }
+  function tooHeavyText() { return 'Ton plateau est trop lourd pour que je le garde avec cette conversation (50 Mo au plus) : je garde seulement sa fiche.'; }
+
+  var api = { opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

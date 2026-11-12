@@ -2,6 +2,7 @@
 #include "plyo/PlyoAssistant.hpp" // PLYO: prévenir le panneau Assistant d'un nouveau projet
 #include "plyo/PlyoFirstSteps.hpp" // PLYO: fin réelle d'un export demandé par le panneau, voir on_process_completed()
 #include "plyo/PlyoCanvas.hpp" // PLYO: envoi armé par le panneau, voir send_gcode_legacy
+#include "plyo/PlyoProjectFiles.hpp" // PLYO: projet de la conversation gardé par Plyo, voir close_with_confirm
 #include "../Utils/NetworkAgent.hpp"
 #include "IPrinterAgent.hpp"
 #include "CalibUtils.hpp"
@@ -19202,7 +19203,7 @@ void Plater::reset_with_confirm()
 // BBS: save logic
 int GUI::Plater::close_with_confirm(std::function<bool(bool)> second_check)
 {
-    if (up_to_date(false, false)) {
+    if (up_to_date(false, false) || Plyo::ProjectFiles::keeps_project()) { // PLYO: plateau d'une conversation, écrit par Plyo dans son 3MF
         if (second_check && !second_check(false)) return wxID_CANCEL;
         model().set_backup_path("");
         return wxID_NO;

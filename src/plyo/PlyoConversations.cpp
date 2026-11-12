@@ -1,5 +1,6 @@
 #include "PlyoConversations.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoProjectFilesLogic.hpp"
 #include "PlyoProjectLogic.hpp"
 #include "PlyoStore.hpp"
 
@@ -18,6 +19,9 @@ namespace fs = boost::filesystem;
 namespace {
 
 fs::path path_of(const std::string& id) { return Store::dir("conversations") / (id + ".json"); }
+
+// Projet 3MF de la conversation (voir PlyoProjectFiles) : il vit et meurt avec elle.
+fs::path project_of(const std::string& id) { return Store::dir("projets") / (id + ".3mf"); }
 
 // Une conversation lisible : un objet avec une liste d'éléments.
 bool well_formed(const nlohmann::json& c) { return c.is_object() && c.contains("entries") && c["entries"].is_array(); }
@@ -43,11 +47,23 @@ static void prune()
         if (p.extension() == ".json" && valid_id(p.stem().string()))
             files.emplace_back(fs::last_write_time(p, ec), p);
     }
-    if (files.size() <= MAX_KEPT)
-        return;
     std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
-    for (size_t i = MAX_KEPT; i < files.size(); ++i)
-        fs::remove(files[i].second, ec);
+    std::vector<std::string> kept;
+    for (size_t i = 0; i < files.size(); ++i) {
+        if (i < MAX_KEPT)
+            kept.push_back(files[i].second.stem().string());
+        else
+            fs::remove(files[i].second, ec);
+    }
+    // Les projets 3MF des conversations effacées partent avec elles (et les restes d'une écriture interrompue).
+    std::vector<std::string> projects;
+    for (const fs::directory_entry& entry : fs::directory_iterator(Store::dir("projets"), ec)) {
+        const fs::path& p = entry.path();
+        if (p.extension() == ".3mf")
+            projects.push_back(p.stem().string());
+    }
+    for (const std::string& stem : ProjectFilesLogic::orphans(kept, projects))
+        fs::remove(Store::dir("projets") / (stem + ".3mf"), ec);
 }
 
 nlohmann::json list()
@@ -98,6 +114,7 @@ bool remove(const std::string& id)
     if (!valid_id(id))
         return false;
     boost::system::error_code ec;
+    fs::remove(project_of(id), ec);
     return fs::remove(path_of(id), ec) && !ec;
 }
 

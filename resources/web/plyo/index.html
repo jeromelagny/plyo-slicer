@@ -840,10 +840,30 @@
     renderAttachments();
     noteInput.value = ''; growNote();
     // La pièce du projet précédent reste sur le plateau d'Orca : ce n'est pas celle du nouveau projet, on ne la reprend pas en silence.
-    var previous = conv && conv.project.part && conv.project.part.name;
-    projectUI.oldPart = previous && tourSignals && tourSignals.objects > 0 ? { label: previous, name: tourSignals.part_name, objects: tourSignals.objects } : null;
+    // Le plateau n'est attaché au nouveau projet qu'une fois la pièce reprise ou une nouvelle pièce posée (attachPlate).
+    detachPlate();
+    projectUI.oldPart = previousPart();
     // Nouveau projet : imprimante et filament du précédent proposés, jamais appliqués sans confirmation.
     startConversation(conv && PlyoProject.nextStep(conv.project) !== 'printer' ? PlyoProject.proposeFrom(conv.project) : null);
+  }
+  // Pièce de la conversation quittée, encore sur le plateau : proposée à la reprise, jamais reprise en silence.
+  function previousPart() {
+    var previous = conv && conv.project.part && conv.project.part.name;
+    return previous && tourSignals && tourSignals.objects > 0 ? { label: previous, name: tourSignals.part_name, objects: tourSignals.objects } : null;
+  }
+  // Projet 3MF de la conversation (datadir/plyo/projets/<conv>.3mf) : le slicer y écrit le plateau et les réglages
+  // d'impression tout seuls, tant que le plateau est attaché à la conversation.
+  function attachPlate() { if (conv) window.orca.postMessage({ type: 'project_attach', conv: conv.id }); }
+  // Le plateau quitté est écrit dans son 3MF ; ses réglages d'impression ne suivent pas la conversation suivante.
+  function detachPlate() { window.orca.postMessage({ type: 'project_detach' }); }
+  function onProjectOpened(msg) {
+    if (!conv || msg.conv !== conv.id) return;
+    var text = PlyoProject.projectOpenedText(msg.reason);
+    if (text) noteLine(text, msg.reason === 'annule' ? '' : 'warn', msg.reason === 'annule' ? 'info' : 'alert', 'guide');
+    if (PlyoProject.restoresAfterOpen(msg.reason)) restoreProjectInOrca(false);
+  }
+  function onProjectFile(msg) {
+    if (msg.kept === false && conv && msg.conv === conv.id) noteLine(PlyoProject.tooHeavyText(), 'warn', 'alert', 'guide');
   }
   // Remet l'imprimante et le filament du projet dans Orca (seulement si ces deux choix sont faits).
   function restoreProjectInOrca(discardUnsaved) {
@@ -1661,7 +1681,7 @@
     keepOldPart: function () {
       var old = projectUI.oldPart;
       projectUI.oldPart = null;
-      if (old) { conv.project.part = { name: old.label }; projectChanged(); }
+      if (old) { conv.project.part = { name: old.label }; projectChanged(); attachPlate(); }
     },
     expand: function () { journeyUI.ficheOpen = true; renderProject(); },
     cancelEdit: function () { projectUI.editing = null; renderProject(); },
@@ -1881,11 +1901,13 @@
     flushSave();
     window.orca.postMessage({ type: 'conv_load', id: id });
   }
-  // Une conversation rouverte est en lecture : ses fiches de réglages ne s'appliquent plus (les réglages ont pu changer).
+  // Une conversation rouverte redevient active : son projet 3MF revient sur le plateau (pièce, positions, réglages
+  // d'impression ; le filament vient de la bobine), et ses fiches de réglages non appliquées s'appliquent de nouveau.
   function restoreConversation(id, c) {
     if (!c || !Array.isArray(c.entries) || busy) return;
     unlinkPhone(true);
     clearThread();
+    var previous = previousPart();
     projectUI.oldPart = null;
     projectUI.waitingFile = null;
     conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [],
@@ -1897,21 +1919,31 @@
     dropReplaced();
     applyTab('reset');
     $('guide-notes').textContent = '';
-    restoreProjectInOrca(false);
+    if (PlyoProject.opensProjectFile(conv.project)) {
+      // Le slicer écrit d'abord le plateau quitté, puis rouvre celui-ci sans fenêtre ; s'il manque, la machine et la bobine reviennent (onProjectOpened).
+      projectUI.restoringUntil = Date.now() + 4000; // Orca change de profil : pas d'alerte de divergence pendant ce temps
+      window.orca.postMessage({ type: 'project_open', conv: id });
+    } else {
+      // Pas encore de pièce : la pièce d'avant, si elle est sur le plateau, est proposée comme pour une nouvelle conversation.
+      detachPlate();
+      projectUI.oldPart = previous;
+      restoreProjectInOrca(false);
+    }
     renderProject();
     // Plaque déjà découpée : aucune nouvelle découpe ne relancera la vérification, on la fait maintenant.
     if (tourSignals && tourSignals.sliced) window.orca.postMessage({ type: 'preflight' });
     if (!conv.entries.length) return;
     showConversation();
-    conv.entries.forEach(function (entry) { try { renderEntry(entry, true); } catch (e) { /* élément abîmé : ignoré */ } });
+    conv.entries.forEach(function (entry) { try { renderEntry(entry, true, true); } catch (e) { /* élément abîmé : ignoré */ } });
     // Un vrai échange (question, réponse, explication) : on le montre ; une pièce posée seule reste sur Étapes.
     if (conv.entries.some(function (entry) { return entry.kind === 'me' || entry.kind === 'answer' || entry.kind === 'fiche'; })) applyTab('show-chat');
     scrollDown();
   }
-  function renderEntry(entry, archived) {
+  // `reopened` : conversation rouverte, redevenue active (fiches de réglages applicables, questions sur un réglage permises).
+  function renderEntry(entry, archived, reopened) {
     if (entry.kind === 'me') return renderMe(entry);
-    if (entry.kind === 'answer') return renderAnswer(entry, archived);
-    if (entry.kind === 'fiche') return renderFiche(entry.msg, archived);
+    if (entry.kind === 'answer') return renderAnswer(entry, archived, reopened);
+    if (entry.kind === 'fiche') return renderFiche(entry.msg, archived, reopened);
     if (entry.kind === 'model') return renderModel(entry, archived);
     if (entry.kind === 'note') return noteLine(entry.text, entry.tone, entry.icon, 'chat');
   }
@@ -2732,7 +2764,7 @@
     var reader = new FileReader();
     reader.onload = function () {
       var data = String(reader.result || '');
-      window.orca.postMessage({ type: 'model_add', name: file.name, data: data.slice(data.indexOf(',') + 1), project: conv.project,
+      window.orca.postMessage({ type: 'model_add', name: file.name, data: data.slice(data.indexOf(',') + 1), project: conv.project, conv: conv.id,
         replace: PlyoProject.replacesPlate(conv.project, projectUI.oldPart, projectUI.newProjectFile) });
     };
     reader.onerror = function () { dropPlacing(); noteLine('« ' + file.name + ' » n’a pas pu être lu.', 'error', 'alert', 'guide'); };
@@ -2944,6 +2976,7 @@
         line.remove();
         if (conv !== mine) return;
         // Retour à l'état d'avant le choix du fichier : l'ancienne pièce sur le plateau, la fiche qui attend une pièce.
+        detachPlate();
         conv.project.part = null;
         delete conv.project.adapted;
         delete conv.project.step;
@@ -3809,7 +3842,7 @@
     // Pièce posée sur le plateau autrement que par ce panneau (Fichier › Importer d'Orca, glisser-déposer) : elle remplit la fiche.
     if (signals.objects === 0) projectUI.oldPart = null;
     var plated = projectUI.waitingFile ? null : PlyoProject.partFromPlate(conv && conv.project, signals, projectUI.oldPart);
-    if (plated) { conv.project.part = { name: plated, fromPlate: true }; projectUI.oldPart = null; projectChanged(); }
+    if (plated) { conv.project.part = { name: plated, fromPlate: true }; projectUI.oldPart = null; projectChanged(); attachPlate(); }
     var step = currentTourStep();
     // La découpe est périmée (un réglage a changé) : on redécoupe avant d'imprimer, y compris après une correction à l'étape Résultat.
     if ((step === 'print' || step === 'after') && FS.nextTourStep(step, signals, projectUI.fixedAfter === conv) === 'slice') { projectUI.fixedAfter = null; setTourStep('slice'); return; }
@@ -3831,7 +3864,7 @@
 
   // Fiche d'un réglage : texte livré dans Plyo (fiches.js), sinon l'aide du slicer ; valeur actuelle jugée hors ligne.
   function onExplain(msg) { applyTab('show-chat'); renderFiche(record({ kind: 'fiche', msg: msg }).msg, false); }
-  function renderFiche(msg, archived) {
+  function renderFiche(msg, archived, reopened) {
     var fiche = window.PLYO_FICHES[msg.key];
     showConversation();
     var box = el('div', 'ai fiche');
@@ -3856,7 +3889,7 @@
     }
     var acts = el('div', 'row-acts');
     acts.appendChild(button('Montre-moi où il est', function () { showSetting(msg.key); }, 'btn ghost sm', 'eye'));
-    if (!archived) acts.appendChild(button('Et dans mon cas, je mets combien ?', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }, 'btn ghost sm'));
+    if (!archived || reopened) acts.appendChild(button('Et dans mon cas, je mets combien ?', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }, 'btn ghost sm'));
     box.appendChild(acts);
     thread.appendChild(box);
     scrollDown();
@@ -4380,7 +4413,7 @@
     return link;
   }
 
-  function renderAnswer(entry, archived) {
+  function renderAnswer(entry, archived, reopened) {
     var a = entry.data;
     showConversation();
     var box = el('div', 'ai');
@@ -4396,7 +4429,7 @@
     }
 
     if (a.suggestions.length) {
-      renderSheet(box, entry, archived);
+      renderSheet(box, entry, Logic.sheetArchived(archived, reopened, !!entry.applied));
       if (a.message) { var tip = alertBox('tip', a.message, 'bulb'); box.appendChild(tip); }
     } else if (a.message) {
       box.appendChild(rich(a.message));
@@ -4563,6 +4596,10 @@
       if (!saveFailedShown) { saveFailedShown = true; noteLine('Cette conversation est devenue trop longue pour être gardée : commence-en une nouvelle depuis le menu « ⋯ ».', 'error', 'alert'); }
     } else if (msg.type === 'project_restored') {
       onProjectRestored(msg);
+    } else if (msg.type === 'project_opened') {
+      onProjectOpened(msg);
+    } else if (msg.type === 'project_file') {
+      onProjectFile(msg);
     } else if (msg.type === 'model_adapted') {
       var ad = msg.adaptation;
       if (ad && (ad.adapted && ad.adapted.length || ad.dropped && ad.dropped.length || ad.error)) { syncProjectNames(ad.saved); $('guide-notes').appendChild(renderAdaptation(ad, false)); }

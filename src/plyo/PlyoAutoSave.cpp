@@ -2,6 +2,7 @@
 #include "PlyoCalibration.hpp"
 #include "PlyoGuard.hpp"
 #include "PlyoProfiles.hpp"
+#include "PlyoProjectFiles.hpp"
 #include "PlyoSpools.hpp"
 #include "PlyoSpoolsLogic.hpp"
 
@@ -52,7 +53,7 @@ bool                     s_saving  = false;
 long long ms_since(Clock::time_point t) { return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t).count(); }
 
 // Une fenêtre modale d'Orca est ouverte (« Transférer ou ignorer ? », enregistrement…) : on n'y touche pas.
-bool modal_open()
+bool modal_open_impl()
 {
     for (wxWindowList::compatibility_iterator node = wxTopLevelWindows.GetFirst(); node; node = node->GetNext()) {
         const wxDialog* dialog = wxDynamicCast(node->GetData(), wxDialog);
@@ -64,7 +65,7 @@ bool modal_open()
 
 // Export du G-code en cours (fichier ou envoi, qui l'exporte d'abord), ou un envoi encore dans la file d'Orca : le même
 // relevé qu'Orca fait avant de fermer (GUI_App, get_active_jobs).
-bool sending(Slic3r::GUI::Plater* plater)
+bool sending_impl(Slic3r::GUI::Plater* plater)
 {
     if (plater->is_export_gcode_scheduled())
         return true;
@@ -81,7 +82,7 @@ bool sending(Slic3r::GUI::Plater* plater)
 // de calibration du Print (calib_pa, calib_retraction…, remis à Calib_None au prochain chargement de fichier), le motif
 // de pressure advance, ou une pièce du plateau chargée depuis resources/calib (calib_flowrate et calib_temp ne
 // donnent pas de mode : seules leurs pièces les trahissent).
-bool calibrating(Slic3r::GUI::Plater* plater)
+bool calibrating_impl(Slic3r::GUI::Plater* plater)
 {
     if (Calibration::active())
         return true;
@@ -134,7 +135,8 @@ void skip(const std::string& name)
 
 void tick()
 {
-    if (s_saving)
+    // Un projet de conversation est en train d'être rouvert : son filament (celui du 3MF) va être remplacé par la bobine.
+    if (s_saving || ProjectFiles::opening())
         return;
     Slic3r::GUI::GUI_App& app    = Slic3r::GUI::wxGetApp();
     Slic3r::GUI::Plater*  plater = app.plater();
@@ -156,17 +158,17 @@ void tick()
     SpoolsLogic::AutoSaveState state;
     state.filament_dirty = true;
     state.slicing        = plater->is_background_process_slicing();
-    state.sending        = sending(plater);
+    state.sending        = sending_impl(plater);
     // Le calme compte depuis le dernier changement, et au moins depuis que le préréglage est vu modifié.
     state.quiet_ms = std::min(ms_since(s_last_change), ms_since(s_dirty_since));
     // Calibration (parcours du plateau) puis registre (en mémoire après sa première lecture) : consultés seulement une
     // fois le calme atteint, hors découpe et envoi.
     const bool ready  = state.quiet_ms >= SpoolsLogic::AUTOSAVE_QUIET_MS && !state.slicing && !state.sending;
-    state.calibrating = ready && calibrating(plater);
+    state.calibrating = ready && calibrating_impl(plater);
     // Le registre (en mémoire après sa première lecture) n'est consulté qu'une fois tout le reste prêt.
     state.is_spool = ready && !state.calibrating &&
                      filaments.get_selected_preset().can_overwrite() && Spools::is_spool_preset(name);
-    if (!SpoolsLogic::should_save_spool(state) || modal_open())
+    if (!SpoolsLogic::should_save_spool(state) || modal_open_impl())
         return;
 
     // Orca ouvrirait sa fenêtre « Temperature Safety Check » : on laisse le préréglage modifié (Orca demandera à la
@@ -191,6 +193,44 @@ void tick()
 }
 
 } // namespace
+
+bool modal_open() { return modal_open_impl(); }
+
+bool sending()
+{
+    Slic3r::GUI::Plater* plater = Slic3r::GUI::wxGetApp().plater();
+    return plater != nullptr && sending_impl(plater);
+}
+
+bool calibrating()
+{
+    Slic3r::GUI::Plater* plater = Slic3r::GUI::wxGetApp().plater();
+    return plater != nullptr && calibrating_impl(plater);
+}
+
+bool save_spool_now()
+{
+    Slic3r::GUI::GUI_App& app = Slic3r::GUI::wxGetApp();
+    if (app.preset_bundle == nullptr)
+        return false;
+    Slic3r::PresetCollection& filaments = app.preset_bundle->filaments;
+    if (!filaments.current_is_dirty())
+        return true;
+    const std::string name = filaments.get_selected_preset_name();
+    if (!filaments.get_selected_preset().can_overwrite() || !Spools::is_spool_preset(name) || calibrating())
+        return false;
+    if (!SpoolsLogic::temperature_pairs_ok(temperature_pairs(filaments.get_edited_preset().config)))
+        return false;
+    s_saving                          = true;
+    const Profiles::SaveOutcome saved = Profiles::save_current_as(false, name);
+    s_saving                          = false;
+    if (saved != Profiles::SaveOutcome::Ok)
+        return false;
+    s_has_skip = false;
+    s_dirty_name.clear();
+    BOOST_LOG_TRIVIAL(info) << "Plyo: préréglage de bobine enregistré (avant de quitter le projet) « " << name << " »";
+    return true;
+}
 
 void start()
 {

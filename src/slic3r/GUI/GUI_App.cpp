@@ -6,6 +6,7 @@
 #include "libslic3r/Technologies.hpp"
 #include "libslic3r/Platform.hpp"
 #include "GUI_App.hpp"
+#include "plyo/PlyoProjectFiles.hpp" // PLYO: projet de la conversation, voir check_and_save/keep_current_preset_changes
 #include "Shortcuts.hpp"
 #include "DeviceCore/DevConfigUtil.h"
 #include "BindDialog.hpp"
@@ -9161,6 +9162,7 @@ std::vector<std::pair<unsigned int, std::string>> GUI_App::get_selected_presets(
 // - Taking snapshot
 bool GUI_App::check_and_save_current_preset_changes(const wxString& caption, const wxString& header, bool remember_choice/* = true*/, bool dont_save_insted_of_discard/* = false*/)
 {
+    if (Plyo::ProjectFiles::take_preset_changes()) return true; // PLYO: réglages de la pièce gardés dans le 3MF de la conversation, filament dans sa bobine
     if (has_current_preset_changes()) {
         int act_buttons = ActionButtons::SAVE;
         if (dont_save_insted_of_discard)
@@ -9213,6 +9215,7 @@ void GUI_App::apply_keeped_preset_modifications()
 // Note: no_nullptr postponed_apply_of_keeped_changes indicates that thie function is called after ConfigWizard is closed
 bool GUI_App::check_and_keep_current_preset_changes(const wxString& caption, const wxString& header, int action_buttons, bool* postponed_apply_of_keeped_changes/* = nullptr*/)
 {
+    if (Plyo::ProjectFiles::take_preset_changes()) return true; // PLYO: réglages de la pièce gardés dans le 3MF de la conversation, filament dans sa bobine
     if (has_current_preset_changes()) {
         bool is_called_from_configwizard = postponed_apply_of_keeped_changes != nullptr;
 
