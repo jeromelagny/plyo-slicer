@@ -567,6 +567,9 @@
   var pendingResults = {};   // identifiant de demande → gestionnaire : chaque « result » va à la demande qui le porte, et à elle seule
   var nextRequest = 1;
   var undoneListeners = {};  // identifiant d'un lot appliqué → fiche à prévenir s'il est annulé (même depuis le menu)
+  // Préfixe des lots de cette ouverture du panneau : les identifiants du slicer repartent de 1 à chaque lancement, et le relevé
+  // des réglages posés par l'assistant (conv.project.assistant) est gardé avec la conversation.
+  var BATCH_TAG = Date.now().toString(36);
   var phoneLink = null;      // lien téléphone de la conversation : { id, qr_svg }
   var phoneTimer = null;
   var phoneCreating = null;  // création du lien en cours (évite deux liens sur un double clic)
@@ -797,6 +800,7 @@
     if (typeof intentUI !== 'undefined') { intentUI.idk = false; intentUI.manual = null; }
     if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
+    conv.project.assistant = {}; // réglages que l'assistant posera pour ce projet (les autres modifications sont les tiennes)
     if (typeof renderProject === 'function') renderProject();
     if (typeof applyMachineQuestion === 'function') { projectUI.showList = false; projectUI.showKinds = false; applyMachineQuestion(); }
   }
@@ -1712,7 +1716,8 @@
   }
   function fetchManualKeys(then) {
     intentUI.manual = intentUI.manual || [];
-    manualListeners.push(function (items) { intentUI.manual = (items || []).map(function (m) { return m.key; }); then(); });
+    // Seulement ce que tu as changé toi-même : un réglage posé par l'assistant (lot d'intention d'avant) n'est pas « gardé ».
+    manualListeners.push(function (items) { intentUI.manual = Logic.splitManualEdits(items, conv && conv.project.assistant).mine.map(function (m) { return m.key; }); then(); });
     window.orca.postMessage({ type: 'manual_edits_get' });
   }
   var intentHandlers = {
@@ -3099,13 +3104,23 @@
     plateSent[id] = { message: Object.assign({ type: 'plate_action', kind: kind, request: id }, extra || {}), tries: 0 };
     window.orca.postMessage(plateSent[id].message);
   }
+  // Nouvelle demande de découpe pour l'attente en cours (sans ligne « Je découpe » de plus).
+  function resendSlice() {
+    var id = ++plateRequest;
+    plateQuiet[id] = true;
+    plateSent[id] = { message: { type: 'plate_action', kind: 'slice', request: id }, tries: 0 };
+    slicing.since = Date.now();
+    slicing.asked = false;
+    window.orca.postMessage(plateSent[id].message);
+  }
   function onPlateAction(msg) {
     var sent = plateSent[msg.request], wait = Logic.plateRetryDelay(msg, sent ? sent.tries : 99);
     if (wait) { sent.tries += 1; setTimeout(function () { window.orca.postMessage(sent.message); }, wait); return; }
     delete plateSent[msg.request];
     var after = plateWaiters[msg.request];
     delete plateWaiters[msg.request];
-    if (msg.kind === 'slice') { if (!msg.ok) stopSlicing(); renderProject(); }
+    // Découpe partie : le slicer a attendu qu'Orca lise un réglage changé à l'instant ; l'attente « sans nouvelle » compte d'ici.
+    if (msg.kind === 'slice') { if (!msg.ok) stopSlicing(); else if (slicing.conv) { slicing.since = Date.now(); slicing.asked = false; } renderProject(); }
     if (msg.kind === 'scale_to_fit' && msg.ok) stopSlicing(); // une découpe encore attendue ne doit pas bloquer celle d'après la réduction
     // Découpe refusée par Orca (Print::validate) : sa vraie raison, expliquée, avec la correction quand elle est sûre.
     if (msg.kind === 'slice' && msg.reason === 'orca_refused') {
@@ -3205,6 +3220,10 @@
       fixed.classList.add('orca-fixed');
       var row = el('div', 'undo-row');
       row.appendChild(el('span', 'note-text', fr('Corrigé : ' + a.label.charAt(0).toLowerCase() + a.label.slice(1) + '.')));
+      // Ce qui a été remis en plus du réglage en cause (ex. parois et remplissage après le mode vase), valeurs comprises.
+      var also = (result && Array.isArray(result.applied) ? result.applied : []).filter(function (x) { return x && x.id && x.id !== a.changes[0].key; });
+      var details = also.length ? 'Remis aussi : ' + also.map(function (x) { return (x.label || x.id) + ' (' + Logic.valueText(x.before, x.id) + ' → ' + Logic.valueText(x.after, x.id) + ')'; }).join(', ') + '.' : '';
+      var orcaToo = Logic.alsoChangedText(result && result.also_changed);
       var undoId = (result && result.undo_id) || 0;
       if (undoId) row.appendChild(undoButton('Annuler', function (u) {
         pendingSheet = { kind: 'undo', onResult: function (undone, t) {
@@ -3215,6 +3234,7 @@
         postRequest({ type: 'undo', undo_id: undoId });
       }));
       fixed.body.appendChild(row);
+      [details, orcaToo].forEach(function (t) { if (t) fixed.body.appendChild(el('p', 'muted small', fr(t))); });
       box.replaceWith(fixed);
       if (conv === mine) plateAction('slice');
       done(true);
@@ -3278,9 +3298,12 @@
       if (slicing.conv !== conv || msg.busy) return; // Orca découpe finalement : sa fin arrivera
       if (window.PlyoPreflight.orcaCards(issues, {}).length) { orcaFailed(issues, 'refused'); return; }
       if (msg.pending) { slicing.asked = false; slicing.since = Date.now(); return; } // un changement attend d'être lu : on redemande
-      // Aucune raison lisible et rien en cours : Orca n'a pas relancé (plaque restée en erreur). On le dit au lieu d'attendre.
+      // Aucune raison lisible et rien en cours. Juste après un réglage changé, Orca a dû manquer ce changement : on relance une
+      // fois, puis on le dit sans prétendre qu'il attend un changement. Sinon : plaque restée en erreur, on le dit.
+      var justChanged = !!orcaUI.changedAt && Date.now() - orcaUI.changedAt < 60000;
+      if (justChanged && !slicing.retried) { slicing.retried = true; resendSlice(); return; }
       stopSlicing();
-      orcaNote(window.PlyoPreflight.SLICE_NOT_STARTED, 'warn');
+      orcaNote(justChanged ? window.PlyoPreflight.SLICE_NOT_STARTED_AFTER_CHANGE : window.PlyoPreflight.SLICE_NOT_STARTED, 'warn');
       renderProject();
       return;
     }
@@ -3415,13 +3438,16 @@
     attachDone(); // pièce posée : le slicer a attaché le plateau
     var old = projectUI.oldPart;
     projectUI.oldPart = null;
-    if (!(conv.project.part && conv.project.part.name)) { conv.project.part = { name: msg.name }; projectChanged(); }
+    var firstPose = !(conv.project.part && conv.project.part.name);
+    if (firstPose) { conv.project.part = { name: msg.name }; projectChanged(); }
     if (projectUI.reposing) { projectUI.reposing = false; renderProject(); noteLine('« ' + msg.name + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); }
     projectUI.newProjectFile = false;
     if (msg.replaced > 0) showReplaced(msg, old);
     var entry = record({ kind: 'model', msg: msg, reduced: false });
     renderModel(entry, false);
     if (msg.fits === false) showTooBig(entry);
+    // Dans « Étapes » aussi : la pièce et sa taille (après le changement d'étape, qui efface les messages).
+    else if (firstPose && !FS.modelAddedText(msg).warn) noteLine(FS.modelAddedText(msg).text, 'ok', 'check', 'guide');
   }
   // Nouveau projet : l'ancienne pièce a été retirée. La ligne et son « Annuler » restent visibles d'une étape à l'autre, jusqu'à la découpe.
   function dropReplaced() { var b = $('project-alert').querySelector('.part-replaced'); if (b) b.remove(); }
@@ -4201,11 +4227,19 @@
   // Carte « Avant d'imprimer » : neutre (le badge ambre porte l'alerte), les soucis rangés par pièce, puis une
   // liste de corrections à cocher et un seul bouton principal, comme la fiche de réglages.
   var preflightSeq = 0;
+  // Carte « Corrigé » de la dernière correction de cette conversation : elle reste, avec son « Annuler », quand la nouvelle
+  // vérification la remplacerait (sinon le lot appliqué n'aurait plus ni compte rendu ni « Annuler »).
+  var preflightKept = null; // { conv, box, note }
   function renderPreflight(risks, data) {
     var PF = window.PlyoPreflight;
     var slot = $('preflight-slot');
     slot.textContent = '';
     preflightFix = null;
+    var kept = preflightKept && preflightKept.conv === conv ? preflightKept : null;
+    if (kept) {
+      if (!risks.length) kept.note.textContent = 'Plaque redécoupée et revérifiée : rien d’autre à signaler.';
+      slot.appendChild(kept.box);
+    }
     if (!risks.length) return;
     var plan = PF.preflightPlan(data);
     var plateCount = data && data.objects ? data.objects.length : undefined;
@@ -4270,7 +4304,7 @@
     box.appendChild(talk);
 
     // Carte fermée : plus de risque ouvert, donc plus de bouton « Appliquer les correctifs » dans la ligne d'action.
-    function closeCard() { slot.textContent = ''; preflightFix = null; openRisks = 0; plateChecked = 'ignored'; renderProject(); }
+    function closeCard() { slot.textContent = ''; if (kept) slot.appendChild(kept.box); preflightFix = null; openRisks = 0; plateChecked = 'ignored'; renderProject(); }
     preflightFix = function () { if (fixAll.disabled) return false; fixAll.click(); return true; };
     function picked() { return rows.filter(function (r) { return r.check.checked; }); }
     // « Tout corriger » tant que la sélection est celle conseillée ; sinon « Corriger » ce qui est coché.
@@ -4286,7 +4320,7 @@
     // Réglages cochés en un seul envoi (une étape à annuler), puis les actions sur le plateau, l'une après l'autre.
     fixAll.addEventListener('click', function () {
       var fixes = picked().map(function (r) { return r.fix; });
-      var changes = PF.fixChanges(fixes);
+      var batch = PF.fixBatch(fixes), changes = batch.changes;
       var actions = fixes.filter(function (f) { return f.action; });
       var undoId = 0, plateDone = []; // actions faites sur le plateau, avec leur jeton d'annulation, dans l'ordre
       var mine = conv;
@@ -4308,7 +4342,11 @@
         h.appendChild(icon('check', 16));
         h.appendChild(el('span', '', 'Corrigé'));
         box.appendChild(h);
-        box.appendChild(el('p', 'muted', 'Je redécoupe la plaque et je revérifie.'));
+        // Ce qui a été fait, dit avec les mots des lignes cochées.
+        box.appendChild(el('p', 'small', fr('Fait : ' + fixes.map(function (f) { return f.label.charAt(0).toLowerCase() + f.label.slice(1); }).join(', ') + '.')));
+        var redo = el('p', 'muted', 'Je redécoupe la plaque et je revérifie.');
+        box.appendChild(redo);
+        preflightKept = { conv: mine, box: box, note: redo };
         var row = el('div', 'row-acts');
         plateAction('slice'); // la nouvelle vérification remplace cette carte
         // « Annuler » au bout de la ligne « fait », comme partout ailleurs : les actions sur le plateau d'abord (de la dernière
@@ -4330,6 +4368,7 @@
             postRequest({ type: 'undo', undo_id: undoId });
           }
           function said(settingsUndone, refused) {
+            if (preflightKept && preflightKept.box === box) preflightKept = null;
             slot.textContent = '';
             if (refused) noteLine(refused, 'error', 'alert');
             var r = PF.undoText(settingsUndone, plateDone.length - left.length, left.map(function (a) { return a.kind; }));
@@ -4347,7 +4386,10 @@
         undoId = (result && result.undo_id) || 0;
         next(0);
       } };
-      postRequest({ type: 'apply', changes: changes, why: 'Vérification avant impression' });
+      var applyMsg = { type: 'apply', changes: changes, why: 'Vérification avant impression' };
+      // Réglages du catalogue (remettre ceux du mode vase…) : pour les profils lus à l'instant, comme toute fiche.
+      if (batch.catalog) { var pn = Logic.namesForApply(null, lastValues && lastValues.context); applyMsg.print_name = pn.process; applyMsg.filament_name = pn.filament; applyMsg.printer_name = pn.printer; }
+      postRequest(applyMsg);
     });
     slot.appendChild(box);
   }
@@ -4829,7 +4871,7 @@
     var manualNote = el('div', 'status hidden');
     sheet.insertBefore(manualNote, footer);
     askManualEdits(function (items) {
-      var line = Logic.manualEditsText(items);
+      var line = Logic.manualEditsNote(items, conv && conv.project.assistant);
       if (line) { manualNote.textContent = fr(line); manualNote.classList.remove('hidden'); }
     });
     var fail = el('div', 'fail hidden');
@@ -4911,6 +4953,9 @@
           } };
           postRequest({ type: 'undo', undo_id: undoId || 0 });
         }));
+        // Le compte rendu et « Annuler » doivent se voir, pas rester sous le badge « Voir la suite ».
+        footer.scrollIntoView({ block: 'center' });
+        updateMoreBadge();
       } };
       // `ask` : ces réglages viennent de l'IA, Plyo demandera plus tard si l'impression a marché.
       var names = Logic.namesForApply(entry.data, lastValues && lastValues.context);
@@ -5078,6 +5123,13 @@
       else noteLine(msg.text, 'error', 'alert');
     } else if (msg.type === 'result') {
       syncProjectNames(msg.saved);
+      // Réglages posés par l'assistant pour ce projet : retenus, et oubliés à l'annulation, pour ne jamais les présenter comme
+      // tes modifications manuelles. Conversation plus ancienne sans relevé : on ne commence pas un relevé incomplet.
+      if (conv && msg.ok && conv.project.assistant && typeof conv.project.assistant === 'object') {
+        if (msg.undo_id && Array.isArray(msg.written)) { conv.project.assistant = Logic.noteWritten(conv.project.assistant, msg.written, BATCH_TAG + ':' + msg.undo_id); scheduleSave(); }
+        if (msg.undone_id) { conv.project.assistant = Logic.forgetBatch(conv.project.assistant, BATCH_TAG + ':' + msg.undone_id); scheduleSave(); }
+      }
+      if (msg.ok && (msg.undo_id || msg.undone_id)) orcaUI.changedAt = Date.now(); // un réglage vient de changer (découpe à relancer)
       if (msg.can_restore) offerRestore();
       if (msg.undone_id && undoneListeners[msg.undone_id]) { undoneListeners[msg.undone_id](msg); delete undoneListeners[msg.undone_id]; }
       var waiting = msg.request && pendingResults[msg.request];

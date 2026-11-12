@@ -231,4 +231,15 @@ bool has_error(const nlohmann::json& issues)
     return std::any_of(issues.begin(), issues.end(), [](const nlohmann::json& i) { return Json::str(i, "level") == "error"; });
 }
 
+FinishRead finish_read(bool slicing, bool update_scheduled, int tries, int max_tries)
+{
+    if (slicing)
+        return FinishRead::Skip;
+    if (update_scheduled && tries < max_tries)
+        return FinishRead::Retry;
+    return FinishRead::Send;
+}
+
+bool slice_must_wait(bool update_scheduled, int waited_ms, int max_wait_ms) { return update_scheduled && waited_ms < max_wait_ms; }
+
 }} // namespace Plyo::OrcaMessagesLogic

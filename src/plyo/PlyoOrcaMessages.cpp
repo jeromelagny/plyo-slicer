@@ -4,6 +4,7 @@
 #include "PlyoJson.hpp"
 #include "PlyoOrcaMessagesLogic.hpp"
 #include "PlyoPlateActions.hpp"
+#include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/Exception.hpp"
 #include "libslic3r/GCode/GCodeProcessor.hpp"
@@ -26,12 +27,15 @@
 #include <boost/format.hpp>
 
 #include <wx/stdpaths.h>
+#include <wx/timer.h>
 #include <wx/utils.h>
 
 #include <algorithm>
 #include <exception>
+#include <functional>
 #include <new>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Plyo { namespace OrcaMessages {
@@ -160,7 +164,9 @@ Issue from_validation(const Slic3r::StringObjectException& e, bool warning, cons
             if (const double safe = OML::safe_layer_height(nozzle); safe > 0)
                 issue.fix = {{"key", e.opt_key}, {"value", safe}};
         } else if (issue.code == "vase_several_objects")
-            issue.fix = {{"key", "spiral_mode"}, {"value", false}};
+            // Avec les réglages que le mode vase avait imposés (parois, couches du dessus, remplissage…) : désactivé seul, il
+            // laisserait une pièce creuse et ouverte.
+            issue.fix = {{"key", "spiral_mode"}, {"value", false}, {"also", SettingsBridge::spiral_leftovers()}};
     }
     return issue;
 }
@@ -297,9 +303,59 @@ std::string exception_type(const Slic3r::SlicingProcessCompletedEvent& evt)
     return "unknown";
 }
 
-bool orca_busy(Slic3r::GUI::Plater& plater)
+// Minuterie à un coup sur le fil de l'interface, jamais détruite (minuterie wx après la fermeture d'Orca).
+class OneShot : public wxTimer
 {
-    return plater.is_background_process_slicing() || plater.background_process().running() || plater.is_background_process_update_scheduled();
+public:
+    void start(int ms, std::function<void()> fn)
+    {
+        m_fn = std::move(fn);
+        StartOnce(ms);
+    }
+    void Notify() override
+    {
+        std::function<void()> fn = std::move(m_fn);
+        m_fn                     = nullptr;
+        if (fn)
+            fn();
+    }
+
+private:
+    std::function<void()> m_fn;
+};
+OneShot* s_finish_timer = nullptr;
+
+constexpr int FINISH_RETRY_MS  = 250;
+constexpr int FINISH_MAX_TRIES = 12; // 3 s au plus
+
+// Fin d'une découpe finie ou annulée, lue une fois qu'Orca a terminé son traitement. Une autre découpe qui suit vraiment
+// (« Tout découper », découpe relancée) parlera à sa fin ; la minuterie d'Orca en attente (souvent juste après une découpe)
+// n'en est pas une : on relit un peu plus tard, puis on envoie.
+void read_finish(bool cancelled, int tries)
+{
+    guarded("la lecture de la fin de découpe", [cancelled, tries] {
+        Slic3r::GUI::Plater* p = wxGetApp().plater();
+        if (p == nullptr)
+            return;
+        const bool slicing = p->is_background_process_slicing() || p->background_process().running();
+        switch (OML::finish_read(slicing, p->is_background_process_update_scheduled(), tries, FINISH_MAX_TRIES)) {
+        case OML::FinishRead::Skip: return;
+        case OML::FinishRead::Retry:
+            if (s_finish_timer == nullptr)
+                s_finish_timer = new OneShot();
+            s_finish_timer->start(FINISH_RETRY_MS, [cancelled, tries] { read_finish(cancelled, tries + 1); });
+            return;
+        case OML::FinishRead::Send: break;
+        }
+        if (cancelled) {
+            notify({{"type", "slice_result"}, {"status", "cancelled"}, {"issues", nlohmann::json::array()}});
+            return;
+        }
+        nlohmann::json r = report();
+        r["type"]        = "slice_result";
+        r["status"]      = "finished";
+        notify(r);
+    });
 }
 
 } // namespace
@@ -459,21 +515,9 @@ void on_slicing_done(const Slic3r::SlicingProcessCompletedEvent& evt)
             return;
         // Fini ou annulé : Orca termine son traitement (validité de la plaque, aperçu) avant que l'on lise.
         const bool cancelled = evt.cancelled();
-        wxGetApp().CallAfter([cancelled] {
-            guarded("la lecture de la fin de découpe", [cancelled] {
-                Slic3r::GUI::Plater* p = wxGetApp().plater();
-                if (p == nullptr || orca_busy(*p))
-                    return; // une autre découpe suit (« Tout découper », découpe relancée par Orca) : on attend sa fin
-                if (cancelled) {
-                    notify({{"type", "slice_result"}, {"status", "cancelled"}, {"issues", nlohmann::json::array()}});
-                    return;
-                }
-                nlohmann::json r = report();
-                r["type"]        = "slice_result";
-                r["status"]      = "finished";
-                notify(r);
-            });
-        });
+        if (s_finish_timer != nullptr)
+            s_finish_timer->Stop(); // une lecture encore en attente vise une fin plus ancienne
+        wxGetApp().CallAfter([cancelled] { read_finish(cancelled, 0); });
     });
 }
 

@@ -2,6 +2,7 @@
 #include "PlyoJson.hpp"
 #include "PlyoOrcaMessages.hpp"
 #include "PlyoPlateActions.hpp"
+#include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/Model.hpp"
 #include "libslic3r/ObjectID.hpp"
@@ -78,7 +79,14 @@ nlohmann::json measure()
         {"brim_type", print.has("brim_type") ? print.opt_serialize("brim_type") : std::string("no_brim")},
         {"brim_width", print.opt_float("brim_width")},
         {"support", print.opt_bool("enable_support")},
+        // Mode vase, couches pleines du dessus et remplissage : une pièce qui partirait ouverte et creuse hors mode vase.
+        {"spiral_mode", print.opt_bool("spiral_mode")},
+        {"top_shell_layers", print.opt_int("top_shell_layers")},
+        {"sparse_infill_density", print.opt_serialize("sparse_infill_density")},
     };
+    // Réglages laissés par un mode vase désactivé, avec les valeurs à remettre (correction d'un clic).
+    if (!print.opt_bool("spiral_mode"))
+        settings["vase_leftovers"] = SettingsBridge::spiral_leftovers();
     const auto           floating = needing_support(*plater);
     const Slic3r::Vec3d  bed      = PlateActions::bed_size();
     nlohmann::json       objects  = nlohmann::json::array();

@@ -3434,3 +3434,69 @@ TEST_CASE("Dernière barrière : chaque parcours légitime passe, avec la confir
     // Réponse de l'IA, ligne cochée par défaut : petit écart, pas de confirmation nécessaire.
     CHECK(pass("wall_loops", info("int", 0, 1000), 3, 2, false));
 }
+
+// --- Correctifs du banc réel : découpe après un réglage, fin de découpe, réglages laissés par le mode vase ---
+
+TEST_CASE("Découpe demandée après un réglage : elle attend que la minuterie d'Orca soit passée, 3 s au plus")
+{
+    using Plyo::OrcaMessagesLogic::slice_must_wait;
+    CHECK(slice_must_wait(true, 0, 3000));      // réglage changé à l'instant : Orca ne l'a pas encore lu
+    CHECK(slice_must_wait(true, 2900, 3000));
+    CHECK_FALSE(slice_must_wait(true, 3000, 3000)); // attente bornée : on découpe quand même
+    CHECK_FALSE(slice_must_wait(false, 0, 3000));   // rien en attente : tout de suite
+}
+
+TEST_CASE("Fin de découpe : la minuterie d'Orca en attente n'est pas une autre découpe")
+{
+    using namespace Plyo::OrcaMessagesLogic;
+    CHECK(finish_read(true, false, 0, 12) == FinishRead::Skip);  // « Tout découper » : la plaque suivante parlera
+    CHECK(finish_read(true, true, 0, 12) == FinishRead::Skip);
+    CHECK(finish_read(false, true, 0, 12) == FinishRead::Retry); // minuterie seule : on relit plus tard, sans abandonner
+    CHECK(finish_read(false, true, 11, 12) == FinishRead::Retry);
+    CHECK(finish_read(false, true, 12, 12) == FinishRead::Send); // toujours en attente au bout de 3 s : on envoie quand même
+    CHECK(finish_read(false, false, 0, 12) == FinishRead::Send);
+}
+
+TEST_CASE("Mode vase désactivé : les réglages qu'il avait imposés sont remis à la valeur de référence")
+{
+    using namespace Plyo::ConfigRules;
+    Values reference = plain_print();          // profil : 3 parois, 5 couches du dessus, 15 %
+    reference["detect_thin_wall"] = "1";
+    Values now = reference;                     // ce que le mode vase a laissé
+    now["wall_loops"]            = "1";
+    now["top_shell_layers"]      = "0";
+    now["sparse_infill_density"] = "0%";
+    now["detect_thin_wall"]      = "0";
+    const auto out = spiral_leftovers(now, reference);
+    REQUIRE(out.size() == 4);
+    CHECK(out[0] == std::make_pair(std::string("wall_loops"), std::string("3")));
+    CHECK(out[1] == std::make_pair(std::string("top_shell_layers"), std::string("5")));
+    CHECK(out[2] == std::make_pair(std::string("sparse_infill_density"), std::string("15%")));
+    CHECK(out[3] == std::make_pair(std::string("detect_thin_wall"), std::string("1")));
+    // Retouché à la main depuis (2 parois) : ce n'est plus la valeur du mode vase, on n'y touche pas.
+    now["wall_loops"] = "2";
+    CHECK(spiral_leftovers(now, reference).size() == 3);
+    // Le profil lui-même a 0 couche du dessus : rien à remettre pour elle (pas de valeur à inventer).
+    reference["top_shell_layers"] = "0";
+    for (const auto& [key, text] : spiral_leftovers(now, reference))
+        CHECK(key != "top_shell_layers");
+    // « 0 » et « 0% » sont le même remplissage nul ; une clé absente de la référence est laissée.
+    Values partial = {{"sparse_infill_density", "0"}};
+    CHECK(spiral_leftovers(partial, {{"sparse_infill_density", "20%"}}).size() == 1);
+    CHECK(spiral_leftovers(partial, {}).empty());
+    CHECK(spiral_keys().front() == "wall_loops");
+}
+
+TEST_CASE("Project: sanitize garde les réglages posés par l'assistant, bornés, et un relevé vide")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json clean = sanitize({{"assistant", {{"print/wall_loops", {{{"v", "3"}, {"b", "k1:2"}}, {{"v", 3}, {"b", "x"}}, {{"v", "4"}}}},
+                                                           {"print/top_shell_layers", "5"},
+                                                           {"", {{{"v", "1"}, {"b", "x"}}}}}}});
+    REQUIRE(clean.contains("assistant"));
+    CHECK(clean["assistant"].size() == 1);
+    CHECK(clean["assistant"]["print/wall_loops"] == nlohmann::json::array({{{"v", "3"}, {"b", "k1:2"}}}));
+    CHECK(sanitize({{"assistant", nlohmann::json::object()}})["assistant"] == nlohmann::json::object()); // connu et vide
+    CHECK_FALSE(sanitize({{"assistant", "oui"}}).contains("assistant"));
+    CHECK_FALSE(sanitize(nlohmann::json::object()).contains("assistant")); // conversation ancienne : inconnu
+}

@@ -1,7 +1,7 @@
 // Vérification avant impression : à partir des mesures du plateau (PlyoPreflight.cpp), les risques à signaler,
 // chacun avec ses corrections en un clic. Aucun appel à l'IA.
 (function (root) {
-  var ORDER = ['conflict', 'fit', 'support', 'tall', 'contact'];
+  var ORDER = ['conflict', 'open_top', 'fit', 'support', 'tall', 'contact'];
   var BRIM = 5; // mm, largeur proposée
 
   function hasBrim(s) {
@@ -12,6 +12,24 @@
     var changes = s.brim_type === 'no_brim' ? [{ id: 'brim_type', value: 'outer_only' }] : [];
     return { label: 'Ajouter une bordure', changes: changes.concat([{ id: 'brim_width', value: BRIM }]) };
   }
+
+  // Réglages que le mode vase impose, nommés simplement (« Désactiver le mode vase et remettre parois et remplissage »).
+  var VASE_NOUNS = { wall_loops: 'parois', top_shell_layers: 'couches du dessus', sparse_infill_density: 'remplissage', detect_thin_wall: 'parois fines',
+    enable_support: 'supports', overhang_reverse: 'surplombs inversés', enable_wrapping_detection: 'détection d’enroulement' };
+  function listFr(items) { return items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' et ' + items[items.length - 1]; }
+  // Réglages laissés par le mode vase (PlyoSettingsBridge::spiral_leftovers) : [{key, label, value, now}], les valides seulement.
+  function leftovers(list) { return (Array.isArray(list) ? list : []).filter(function (c) { return c && typeof c.key === 'string' && c.key && c.value !== undefined && c.value !== null; }); }
+  function leftoverNames(list) {
+    var seen = [];
+    leftovers(list).forEach(function (c) { var n = VASE_NOUNS[c.key] || String(c.label || c.key).toLowerCase(); if (seen.indexOf(n) < 0) seen.push(n); });
+    return listFr(seen);
+  }
+  function leftoverChanges(list) { return leftovers(list).map(function (c) { return { key: c.key, value: c.value, label: c.label || c.key }; }); }
+
+  // Hors mode vase, aucune couche pleine au-dessus : le dessus de la pièce resterait ouvert (souvent un reste du mode vase).
+  // 0 % de remplissage seul peut être voulu : il n'est dit qu'avec un dessus ouvert.
+  function openTop(s) { return s.spiral_mode === false && s.top_shell_layers !== undefined && s.top_shell_layers !== null && Number(s.top_shell_layers) === 0; }
+  function emptyInside(s) { return parseFloat(s.sparse_infill_density) === 0; }
 
   var ORIENT = { label: 'Orienter automatiquement', action: 'orient' };
   var ARRANGE = { label: 'Ranger le plateau', action: 'arrange' };
@@ -35,6 +53,10 @@
 
   // Textes au singulier et au pluriel : [une pièce, plusieurs pièces].
   var TEXTS = {
+    open_top: [' n’aurait pas de dessus : aucune couche pleine n’est prévue au-dessus, elle resterait ouverte.',
+      ' n’auraient pas de dessus : aucune couche pleine n’est prévue au-dessus, elles resteraient ouvertes.'],
+    open_top_empty: [' n’aurait pas de dessus et serait vide dedans : aucune couche pleine au-dessus et 0 % de remplissage.',
+      ' n’auraient pas de dessus et seraient vides dedans : aucune couche pleine au-dessus et 0 % de remplissage.'],
     fit: [' dépasse du plateau.', ' dépassent du plateau.'],
     support: [' a des parties dans le vide : sans supports, elles risquent de s’effondrer.',
       ' ont des parties dans le vide : sans supports, elles risquent de s’effondrer.'],
@@ -46,6 +68,7 @@
 
   function kindOf(o, s) {
     var kinds = [];
+    if (openTop(s)) kinds.push('open_top');
     if (o.fits === false) kinds.push('fit');
     if (o.needs_support === true && !s.support) kinds.push('support');
     if (!hasBrim(s)) {
@@ -72,6 +95,8 @@
     return ORDER.filter(function (k) { return byKind[k]; }).map(function (k) {
       var list = byKind[k];
       if (k === 'conflict') return { kind: k, objects: list, text: names(list) + CONFLICT_TEXT, fixes: [{ label: ARRANGE.label, action: ARRANGE.action }] };
+      if (k === 'open_top') return { kind: k, objects: list, text: names(list) + TEXTS[emptyInside(s) ? 'open_top_empty' : 'open_top'][list.length > 1 ? 1 : 0],
+        fixes: restoreFix(s) ? [restoreFix(s)] : [] };
       var fixes = k === 'fit' ? [{ label: 'Réduire pour que ça tienne', action: 'scale_to_fit' }]
         : k === 'support' ? [{ label: 'Activer les supports', changes: [{ id: 'support', value: true }] }, ORIENT]
         : k === 'tall' ? [brimFix(s)]
@@ -86,12 +111,20 @@
   // une seule liste de corrections sans doublon, cochées comme la fiche de réglages. L'orientation est une autre
   // façon d'éviter supports et décollement : proposée, mais pas cochée d'office.
   var ISSUES = {
+    open_top: 'Pas de dessus : aucune couche pleine n’est prévue au-dessus, elle resterait ouverte.',
+    open_top_empty: 'Pas de dessus et vide dedans : aucune couche pleine au-dessus et 0 % de remplissage.',
     fit: 'Dépasse du plateau.',
     support: 'Des parties dans le vide : sans supports, elles risquent de s’effondrer.',
     tall: 'Haute et fine : sans bordure, elle risque de basculer.',
     contact: 'Touche peu le plateau : sans bordure, elle risque de se décoller.'
   };
-  var FIX_ORDER = ['fit', 'support', 'brim', 'orient', 'arrange'];
+  var FIX_ORDER = ['restore', 'fit', 'support', 'brim', 'orient', 'arrange'];
+  // Remettre les réglages du profil que le mode vase avait changés (catalogue, une ligne cochée vaut confirmation).
+  function restoreFix(s) {
+    var list = leftovers(s && s.vase_leftovers);
+    if (!list.length) return null;
+    return { key: 'restore', label: 'Remettre ' + leftoverNames(list) + ' comme dans le profil', keyChanges: leftoverChanges(list) };
+  }
 
   function preflightPlan(data) {
     var plan = { parts: [], fixes: [], count: 0 };
@@ -111,8 +144,9 @@
       var kinds = kindOf(o, s);
       if (!kinds.length) return;
       involved[o.name] = true;
-      plan.parts.push({ name: o.name, issues: kinds.map(function (k) { return ISSUES[k]; }) });
+      plan.parts.push({ name: o.name, issues: kinds.map(function (k) { return k === 'open_top' && emptyInside(s) ? ISSUES.open_top_empty : ISSUES[k]; }) });
       kinds.forEach(function (k) {
+        if (k === 'open_top' && restoreFix(s)) want('restore', o.name, function () { var f = restoreFix(s); return { key: 'restore', label: f.label, keyChanges: f.keyChanges, objects: [], checked: true }; });
         if (k === 'fit') want('fit', o.name, function () { return { key: 'fit', label: 'Réduire pour que tout tienne sur le plateau', action: 'scale_to_fit', objects: [], checked: true }; });
         if (k === 'support') want('support', o.name, function () { return { key: 'support', label: 'Activer les supports', changes: [{ id: 'support', value: true }], objects: [], checked: true }; });
         if (k === 'tall' || k === 'contact')
@@ -129,6 +163,18 @@
   // Réglages des corrections cochées, réunis pour un seul message « apply » (une seule étape à annuler).
   function fixChanges(fixes) {
     return fixes.reduce(function (all, f) { return f.changes ? all.concat(f.changes) : all; }, []);
+  }
+  // Le même envoi quand une correction porte sur des réglages du catalogue (`keyChanges`, ex. remettre ceux du mode vase) :
+  // tout part en mode catalogue (une seule étape à annuler), les réglages historiques traduits en clés d'Orca, chaque ligne
+  // cochée valant confirmation. { catalog, changes }.
+  var LEGACY_KEYS = { support: 'enable_support', brim_type: 'brim_type', brim_width: 'brim_width' };
+  function fixBatch(fixes) {
+    var keyed = (fixes || []).reduce(function (all, f) { return f.keyChanges ? all.concat(f.keyChanges) : all; }, []);
+    var legacy = fixChanges(fixes || []);
+    if (!keyed.length) return { catalog: false, changes: legacy };
+    var out = keyed.slice();
+    legacy.forEach(function (c) { if (LEGACY_KEYS[c.id]) out.push({ key: LEGACY_KEYS[c.id], value: c.value, label: c.id }); });
+    return { catalog: true, changes: out.map(function (c) { return { key: c.key, value: c.value, label: c.label, confirmed: true }; }) };
   }
 
   // « Annuler » après « Tout corriger » : ce qui est revenu et ce qui reste en place. `settings` : les réglages d'avant sont
@@ -173,7 +219,10 @@
       var fix = i.fix && SCOPES[i.scope] ? [{ kind: 'fix', label: 'Mettre la hauteur de couche à ' + decimal(i.fix.value) + ' mm', changes: [{ key: i.fix.key, value: i.fix.value, label: 'Hauteur de couche' }] }] : [];
       return { text: 'La hauteur de couche est plus grande que le trou de la buse : la buse ne peut pas déposer une couche aussi épaisse, alors Orca refuse de découper.', actions: fix }; },
     vase_several_objects: function (i) {
-      var fix = i.fix && SCOPES[i.scope] ? [{ kind: 'fix', label: 'Désactiver le mode vase', changes: [{ key: i.fix.key, value: i.fix.value, label: 'Mode vase' }] }] : [];
+      // Avec ce que le mode vase avait imposé (parois, couches du dessus, remplissage…) : sinon la pièce partirait creuse et ouverte.
+      var also = i.fix ? leftovers(i.fix.also) : [];
+      var label = 'Désactiver le mode vase' + (also.length ? ' et remettre ' + leftoverNames(also) : '');
+      var fix = i.fix && SCOPES[i.scope] ? [{ kind: 'fix', label: label, changes: [{ key: i.fix.key, value: i.fix.value, label: 'Mode vase' }].concat(leftoverChanges(also)) }] : [];
       return { text: 'Le mode vase imprime une seule pièce, en un seul trait qui monte en spirale. Avec plusieurs pièces sur la plaque, Orca refuse.', actions: fix }; },
     spiral_mode: function () { return { text: 'Le mode vase ne marche pas avec une pièce de plusieurs couleurs ou matières.', actions: [] }; },
     object_too_tall: function (i, p, P) { return { text: P + ' est trop haute pour ton imprimante : son sommet dépasse la hauteur maximale.', actions: [{ kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour qu’elle tienne' }] }; },
@@ -261,10 +310,14 @@
   // Découpe demandée qui ne démarre pas, sans refus lisible : Orca ne redécoupe pas une plaque restée en erreur tant que rien ne change.
   var SLICE_NOT_STARTED = { text: 'Orca n’a pas lancé la découpe. Après une erreur, il attend qu’un réglage ou la pièce change avant de redécouper : corrige ce qui a été signalé, ou demande-moi.',
     actions: [{ kind: 'ask', label: ASK_LABEL, prompt: 'Je clique sur « Découper » mais Orca ne lance pas la découpe de ma plaque. Que faire ?' }] };
+  // Même cas juste après un réglage changé par l'assistant : « il attend qu'un réglage change » serait faux.
+  var SLICE_NOT_STARTED_AFTER_CHANGE = { text: 'Orca n’a pas relancé la découpe, alors que le réglage vient de changer. Relance-la ; si rien ne se passe, demande-moi.',
+    actions: [{ kind: 'slice', label: 'Découper à nouveau' }, { kind: 'ask', label: ASK_LABEL, prompt: 'Je viens de changer un réglage et Orca ne relance pas la découpe de ma plaque. Que faire ?' }] };
   var SLICE_STOPPED = { text: 'La découpe s’est arrêtée avant la fin : un réglage a changé pendant qu’Orca découpait, ou elle a été annulée.',
     actions: [{ kind: 'slice', label: 'Découper à nouveau' }] };
 
-  var api = { preflightRisks: preflightRisks, riskKey: riskKey, preflightPlan: preflightPlan, fixChanges: fixChanges, undoText: undoText,
+  var api = { preflightRisks: preflightRisks, riskKey: riskKey, preflightPlan: preflightPlan, fixChanges: fixChanges, fixBatch: fixBatch, undoText: undoText,
+    leftoverNames: leftoverNames, SLICE_NOT_STARTED_AFTER_CHANGE: SLICE_NOT_STARTED_AFTER_CHANGE,
     orcaCards: orcaCards, orcaIssueView: orcaIssueView, issueKey: issueKey, askPrompt: askPrompt, exportErrorView: exportErrorView,
     SLICE_SLOW: SLICE_SLOW, SLICE_STOPPED: SLICE_STOPPED, SLICE_NOT_STARTED: SLICE_NOT_STARTED, ASK_LABEL: ASK_LABEL };
   root.PlyoPreflight = api;

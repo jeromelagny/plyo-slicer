@@ -66,8 +66,10 @@ nlohmann::json manual_edits()
         const Slic3r::Preset&   edited = col.get_edited_preset();
         for (const std::string& key : col.current_dirty_options()) {
             const std::string kind = policy.kind(scope_of(type), key);
+            // `now` : la valeur telle qu'Orca l'écrit, comparée par le panneau à ce que l'assistant a posé (champ `written` d'un lot).
             out.push_back({{"preset", scope_of(type)}, {"key", key}, {"title", policy.title(key)},
-                           {"before", value_of(saved.config, key, kind)}, {"after", value_of(edited.config, key, kind)}});
+                           {"before", value_of(saved.config, key, kind)}, {"after", value_of(edited.config, key, kind)},
+                           {"now", edited.config.has(key) ? edited.config.opt_serialize(key) : std::string()}});
         }
     }
     return out;

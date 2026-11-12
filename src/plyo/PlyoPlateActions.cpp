@@ -1,6 +1,7 @@
 #include "PlyoPlateActions.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoFirstSteps.hpp"
+#include "PlyoGuard.hpp"
 #include "PlyoOrcaMessages.hpp"
 #include "PlyoOrcaMessagesLogic.hpp"
 
@@ -19,10 +20,16 @@
 #include "slic3r/GUI/Selection.hpp"
 #include "slic3r/Utils/UndoRedo.hpp"
 
+#include <boost/log/trivial.hpp>
+
 #include <wx/event.h>
+#include <wx/timer.h>
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
+#include <functional>
+#include <utility>
 #include <vector>
 
 namespace Plyo { namespace PlateActions {
@@ -88,6 +95,55 @@ nlohmann::json slice_refusal(Slic3r::GUI::Plater& plater)
                 {"text", "Orca refuse de découper cette plaque pour l'instant : je t'explique pourquoi juste en dessous."}};
     return nullptr;
 }
+
+// Découpe demandée juste après un réglage changé (lot de l'assistant, correction d'une carte, « Tout corriger », remise de
+// réglages) : Tab::load_config reprogramme la mise à jour d'Orca dans 500 ms (Plater::priv::schedule_background_process).
+// Tant qu'elle n'est pas passée, Orca garde l'état d'erreur d'avant (process_completed_with_error, remis à zéro par
+// update_background_process) et Plater::reslice s'arrête sans rien dire. On attend donc le passage de la minuterie, puis on
+// vérifie la plaque (son vrai refus s'il y en a un) et on découpe. Les demandes arrivées pendant l'attente partent ensemble.
+constexpr int SLICE_POLL_MS     = 100;
+constexpr int SLICE_MAX_WAIT_MS = 3000;
+
+class SliceWait : public wxTimer
+{
+public:
+    void add(std::function<void(nlohmann::json)> reply)
+    {
+        m_replies.push_back(std::move(reply));
+        if (!IsRunning()) {
+            m_waited_ms = 0;
+            step();
+        }
+    }
+    void Notify() override { guarded("la découpe demandée par le panneau", [this] { step(); }); }
+
+private:
+    void step()
+    {
+        Slic3r::GUI::Plater* plater = wxGetApp().plater();
+        if (plater != nullptr && OrcaMessagesLogic::slice_must_wait(plater->is_background_process_update_scheduled(), m_waited_ms, SLICE_MAX_WAIT_MS)) {
+            m_waited_ms += SLICE_POLL_MS;
+            StartOnce(SLICE_POLL_MS);
+            return;
+        }
+        std::vector<std::function<void(nlohmann::json)>> replies = std::move(m_replies);
+        m_replies.clear();
+        nlohmann::json done;
+        try {
+            done = run("slice");
+        } catch (const std::exception& e) {
+            BOOST_LOG_TRIVIAL(error) << "Plyo: découpe demandée par le panneau : " << e.what();
+            done = {{"ok", false}, {"text", "Je n'ai pas pu lancer la découpe. Réessaie dans un instant."}};
+        }
+        for (auto& reply : replies)
+            reply(done);
+    }
+
+    std::vector<std::function<void(nlohmann::json)>> m_replies;
+    int                                              m_waited_ms = 0;
+};
+
+SliceWait* s_slice_wait = nullptr; // jamais détruite (minuterie wx après la fermeture d'Orca)
 
 } // namespace
 
@@ -199,6 +255,17 @@ nlohmann::json run(const std::string& kind)
         return {{"ok", true}, {"text", "Je découpe la plaque : le temps d'impression s'affichera dans l'aperçu."}};
     }
     return {{"ok", false}, {"text", "Action inconnue."}};
+}
+
+void run_when_ready(const std::string& kind, std::function<void(nlohmann::json)> reply)
+{
+    if (kind != "slice") {
+        reply(run(kind));
+        return;
+    }
+    if (s_slice_wait == nullptr)
+        s_slice_wait = new SliceWait();
+    s_slice_wait->add(std::move(reply));
 }
 
 nlohmann::json undo(long long undo_token)

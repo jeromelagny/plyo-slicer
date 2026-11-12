@@ -553,6 +553,16 @@ std::string also_text(const nlohmann::json& also)
     return " Orca a aussi réglé : " + text + ".";
 }
 
+// Ce qu'un lot a laissé, tel qu'Orca l'écrit : le panneau retient ainsi les réglages posés par l'assistant pour ce projet et
+// ne les présente plus comme des modifications manuelles (comparés au champ `now` de Profiles::manual_edits).
+nlohmann::json written_of(const std::vector<SavedValue>& saved)
+{
+    nlohmann::json out = nlohmann::json::array();
+    for (const SavedValue& v : saved)
+        out.push_back({{"scope", scope_name(v.preset)}, {"key", v.key}, {"value", v.after}});
+    return out;
+}
+
 } // namespace
 
 void clear_undo(DropReason reason)
@@ -713,7 +723,7 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
     s_undo_stack.push_back({id, batch.saved, std::string()});
     BOOST_LOG_TRIVIAL(info) << "Plyo: modifications appliquées : " << summary;
     return {{"ok", true}, {"text", "Appliqué : " + summary + "." + (added_text.empty() ? "" : " J'ai aussi réglé : " + added_text + ".") + also_text(batch.also)},
-            {"undo_id", id}, {"also_changed", batch.also}};
+            {"undo_id", id}, {"also_changed", batch.also}, {"written", written_of(batch.saved)}};
 }
 
 nlohmann::json typed_value_of(const DynamicPrintConfig& config, const std::string& key, const std::string& kind)
@@ -812,7 +822,7 @@ nlohmann::json restore_values(const nlohmann::json& values)
     s_undo_stack.push_back({id, batch.saved, std::string()});
     return {{"ok", true},
             {"text", std::to_string(count) + (count > 1 ? " réglages remis" : " réglage remis") + " comme dans ta dernière version fiable." + also_text(batch.also)},
-            {"undo_id", id}, {"also_changed", batch.also}};
+            {"undo_id", id}, {"also_changed", batch.also}, {"written", written_of(batch.saved)}};
 }
 
 nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::string& print_name, const std::string& filament_name)
@@ -942,7 +952,7 @@ nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::s
     BOOST_LOG_TRIVIAL(info) << "Plyo: réglages du catalogue appliqués : " << summary << (added.empty() ? "" : " ; ajoutés : " + added);
     return {{"ok", true},
             {"text", "Appliqué : " + summary + "." + (added.empty() ? "" : " J'ai aussi réglé : " + added + ".") + also_text(batch.also)},
-            {"undo_id", id}, {"applied", applied}, {"also_changed", batch.also}};
+            {"undo_id", id}, {"applied", applied}, {"also_changed", batch.also}, {"written", written_of(batch.saved)}};
 }
 
 void set_memory_key(int undo_id, const std::string& key)
@@ -1089,6 +1099,43 @@ nlohmann::json object_override(const std::string& id, const nlohmann::json& valu
     }
     out.set_deserialize_strict(resolve_key(*param), serialized);
     return {{"ok", true}, {"key", resolve_key(*param)}, {"text", std::string(param->label) + " : " + shown}};
+}
+
+nlohmann::json spiral_leftovers()
+{
+    const Catalog::Policy&    policy  = Catalog::policy();
+    const DynamicPrintConfig& current = edited_config(Preset::TYPE_PRINT);
+    const DynamicPrintConfig& profile = bundle().prints.get_selected_preset().config;
+    ConfigRules::Values       now, reference;
+    for (const std::string& key : ConfigRules::spiral_keys()) {
+        if (current.option(key) != nullptr)
+            now[key] = current.opt_serialize(key);
+        if (profile.option(key) != nullptr)
+            reference[key] = profile.opt_serialize(key);
+    }
+    // Le dernier lot encore annulable qui a activé le mode vase sur ce profil : ses valeurs d'avant passent en premier.
+    for (auto e = s_undo_stack.rbegin(); e != s_undo_stack.rend(); ++e) {
+        const auto spiral = std::find_if(e->saved.begin(), e->saved.end(), [](const SavedValue& v) {
+            return v.preset == Preset::TYPE_PRINT && v.key == "spiral_mode" && v.after == "1";
+        });
+        if (spiral == e->saved.end() || spiral->preset_name != edited_name(Preset::TYPE_PRINT))
+            continue;
+        for (const SavedValue& v : e->saved)
+            if (v.preset == Preset::TYPE_PRINT && reference.count(v.key))
+                reference[v.key] = v.serialized;
+        break;
+    }
+    nlohmann::json out = nlohmann::json::array();
+    for (const auto& [key, text] : ConfigRules::spiral_leftovers(now, reference)) {
+        const std::string kind = policy.kind("print", key);
+        if (kind.empty())
+            continue; // hors catalogue (timelapse, couches de supports forcées) : l'assistant n'y touche pas
+        const nlohmann::json value = shown_value(Preset::TYPE_PRINT, key, text);
+        if (value.is_null())
+            continue;
+        out.push_back({{"key", key}, {"label", label_of(key)}, {"value", value}, {"now", typed_value_of(current, key, kind)}});
+    }
+    return out;
 }
 
 }} // namespace Plyo::SettingsBridge

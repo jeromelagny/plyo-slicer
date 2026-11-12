@@ -241,6 +241,26 @@ nlohmann::json sanitize(const nlohmann::json& project)
     const std::string step = Json::str(project, "step");
     if (step == "slice" || step == "print" || step == "after" || step == "done")
         out["step"] = step;
+    // Réglages posés par l'assistant pour ce projet (« print/wall_loops » → dernières valeurs écrites, telles qu'Orca les écrit,
+    // et le lot qui les a écrites) : le panneau ne les présente pas comme des modifications manuelles. Gardé même vide : on
+    // sait alors qu'il n'y en a pas (une conversation plus ancienne n'a pas ce champ).
+    if (const nlohmann::json* a = Json::field(project, "assistant"); a != nullptr && a->is_object()) {
+        nlohmann::json o = nlohmann::json::object();
+        for (auto it = a->begin(); it != a->end() && o.size() < 300; ++it) {
+            if (it.key().empty() || it.key().size() > 120 || !it.value().is_array())
+                continue;
+            nlohmann::json list = nlohmann::json::array();
+            for (const nlohmann::json& e : it.value()) {
+                const nlohmann::json* v = Json::field(e, "v");
+                const std::string     b = Json::str(e, "b");
+                if (list.size() < 5 && v != nullptr && v->is_string() && v->get_ref<const std::string&>().size() <= 200 && !b.empty() && b.size() <= 40)
+                    list.push_back({{"v", *v}, {"b", b}});
+            }
+            if (!list.empty())
+                o[it.key()] = list;
+        }
+        out["assistant"] = o;
+    }
     return out;
 }
 

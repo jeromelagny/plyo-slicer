@@ -285,6 +285,26 @@ std::vector<std::string> retouched(const std::map<std::string, std::string>& aft
     return out;
 }
 
+std::vector<std::pair<std::string, std::string>> spiral_leftovers(const Values& current, const Values& reference)
+{
+    std::vector<std::pair<std::string, std::string>> out;
+    for (const Need& need : spiral_needs()) {
+        const auto ref = reference.find(need.key);
+        if (!has(current, need.key) || ref == reference.end() || !meets(current, need) || meets(reference, need))
+            continue;
+        out.emplace_back(need.key, ref->second);
+    }
+    return out;
+}
+
+std::vector<std::string> spiral_keys()
+{
+    std::vector<std::string> out;
+    for (const Need& need : spiral_needs())
+        out.push_back(need.key);
+    return out;
+}
+
 std::string label_of(const std::string& key, const Title& title)
 {
     if (title) {

@@ -6,6 +6,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Règles de cohérence d'Orca reprises avant d'écrire un lot de réglages. Tab::load_config relance les contrôles de l'onglet
@@ -86,6 +87,14 @@ Verdict verify(const std::map<std::string, Written>& planned, const std::set<std
 // Annulation : réglages retouchés depuis le lot (valeur actuelle différente de celle que le lot a laissée). `after` : clé →
 // texte laissé par le lot (vide : inconnu, jamais compté comme retouché) ; `current` : clé → texte actuel.
 std::vector<std::string> retouched(const std::map<std::string, std::string>& after, const std::map<std::string, std::string>& current);
+
+// Mode vase désactivé (ou sur le point de l'être) : les réglages qu'il avait imposés (1 paroi, aucune couche pleine
+// au-dessus, 0 % de remplissage, parois fines désactivées…) et qui ont encore exactement sa valeur, alors que la valeur de
+// référence (`reference` : celle d'avant le lot qui a activé le mode vase, sinon celle du profil enregistré) est différente.
+// Rend [clé, texte de référence], dans l'ordre des exigences d'Orca. Une clé absente de l'un ou de l'autre est laissée.
+std::vector<std::pair<std::string, std::string>> spiral_leftovers(const Values& current, const Values& reference);
+// Clés que le mode vase impose (ConfigManipulation::update_print_fff_config).
+std::vector<std::string> spiral_keys();
 
 // Nom à montrer pour un réglage : `title`, sinon un nom de repli pour les clés qu'Orca change sans être au catalogue
 // (timelapse, couches de supports forcées), sinon la clé.

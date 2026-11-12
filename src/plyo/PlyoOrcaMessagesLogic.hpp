@@ -76,4 +76,16 @@ nlohmann::json to_json(const std::vector<Issue>& issues);
 // Y a-t-il une erreur (niveau « error ») dans cette liste (forme JSON de to_json) ?
 bool has_error(const nlohmann::json& issues);
 
+// Fin d'une découpe réussie ou annulée, lue juste après. `slicing` : une autre découpe suit vraiment (Orca découpe encore, ou
+// « Tout découper » passe à la plaque suivante) → rien, sa propre fin parlera. `update_scheduled` : la minuterie de mise à
+// jour d'Orca est en attente (c'est souvent le cas juste après une découpe, sans qu'une autre suive) → relire un peu plus
+// tard, `max_tries` fois au plus. Sinon → envoyer.
+enum class FinishRead { Skip, Retry, Send };
+FinishRead finish_read(bool slicing, bool update_scheduled, int tries, int max_tries);
+
+// Découpe demandée par le panneau juste après un réglage changé : Orca ne lit ce changement qu'au passage de sa minuterie
+// (500 ms) ; une découpe lancée avant tomberait sur l'état d'erreur d'avant. Vrai tant qu'il faut encore attendre
+// (minuterie en attente et moins de `max_wait_ms` écoulées).
+bool slice_must_wait(bool update_scheduled, int waited_ms, int max_wait_ms);
+
 }} // namespace Plyo::OrcaMessagesLogic

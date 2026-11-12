@@ -356,12 +356,19 @@ void handle_page_message(const nlohmann::json& data)
             // Après un découpage (ou sur demande) : mesures du plateau pour la vérification avant impression.
             send({{"type", "preflight"}, {"data", Preflight::measure()}});
         else if (type == "plate_action") {
-            const std::string kind = Json::str(data, "kind");
-            nlohmann::json    done = kind == "undo" ? PlateActions::undo(Json::integer(data, "undo_token", -1LL)) : PlateActions::run(kind);
-            done["type"]           = "plate_action";
-            done["kind"]           = kind;
-            done["request"]        = Json::integer(data, "request", 0); // pour retrouver le bouton qui a demandé l'action
-            send(done);
+            const std::string kind    = Json::str(data, "kind");
+            const long long   request = Json::integer(data, "request", 0LL); // pour retrouver le bouton qui a demandé l'action
+            const auto        reply   = [kind, request](nlohmann::json done) {
+                done["type"]    = "plate_action";
+                done["kind"]    = kind;
+                done["request"] = request;
+                send(done);
+            };
+            // Une découpe attend qu'Orca ait lu un réglage changé à l'instant (PlateActions::run_when_ready).
+            if (kind == "undo")
+                reply(PlateActions::undo(Json::integer(data, "undo_token", -1LL)));
+            else
+                PlateActions::run_when_ready(kind, reply);
         } else if (type == "commands") {
             // Ordres de l'IA (« penche la pièce de 20° ») : exécutés aussitôt, annulables d'un clic (plate_action « undo »).
             if (const nlohmann::json refused = project_refusal(data); !refused.is_null()) {

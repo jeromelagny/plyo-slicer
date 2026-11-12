@@ -414,6 +414,58 @@
     if (piece.length) out.push('Tes modifications manuelles de la pièce restent en place : ' + listed(piece));
     return out.join(' ');
   }
+  // Réglages posés par l'assistant pour le projet de la conversation (`project.assistant`) : clé « print/wall_loops » → les
+  // dernières valeurs écrites, telles qu'Orca les écrit (`written` d'un lot appliqué), avec leur lot (`batch`). Une
+  // annulation retire les valeurs de son lot. Gardé avec la conversation : il tient après une réouverture.
+  var WROTE_MAX = 5, WROTE_KEYS = 300;
+  function noteWritten(record, written, batch) {
+    var out = JSON.parse(JSON.stringify(record && typeof record === 'object' ? record : {}));
+    (Array.isArray(written) ? written : []).forEach(function (w) {
+      if (!w || typeof w.key !== 'string' || !w.key || typeof w.value !== 'string' || (w.scope !== 'print' && w.scope !== 'filament')) return;
+      var id = w.scope + '/' + w.key;
+      if (!out[id] && Object.keys(out).length >= WROTE_KEYS) return;
+      out[id] = (out[id] || []).concat([{ v: w.value, b: String(batch) }]).slice(-WROTE_MAX);
+    });
+    return out;
+  }
+  function forgetBatch(record, batch) {
+    var out = {};
+    Object.keys(record && typeof record === 'object' ? record : {}).forEach(function (id) {
+      var kept = (Array.isArray(record[id]) ? record[id] : []).filter(function (e) { return e && e.b !== String(batch); });
+      if (kept.length) out[id] = kept;
+    });
+    return out;
+  }
+  // La valeur actuelle (`now`, Profiles::manual_edits) est-elle celle que l'assistant a écrite en dernier ?
+  function assistantWrote(record, item) {
+    var list = record && item && record[item.preset + '/' + item.key];
+    return Array.isArray(list) && list.length > 0 && typeof item.now === 'string' && list[list.length - 1].v === item.now;
+  }
+  // Modifications non enregistrées → ce que l'utilisateur a changé lui-même (`mine`) ; celles que l'assistant a posées pour ce
+  // projet sont écartées. `known` faux : relevé absent (conversation plus ancienne), on ne peut pas savoir qui les a faites.
+  function splitManualEdits(items, record) {
+    var list = Array.isArray(items) ? items.filter(function (e) { return e && e.key; }) : [];
+    var known = !!record && typeof record === 'object' && !Array.isArray(record);
+    if (!known) return { known: false, mine: list, assistant: [] };
+    return { known: true, mine: list.filter(function (e) { return !assistantWrote(record, e); }), assistant: list.filter(function (e) { return assistantWrote(record, e); }) };
+  }
+  // Phrase de la fiche : seules les vraies modifications de l'utilisateur sont dites « tes modifications manuelles » ; les
+  // réglages posés par l'assistant ne sont pas répétés ; sans relevé, une formulation neutre et vraie.
+  function manualEditsNote(items, record) {
+    var split = splitManualEdits(items, record);
+    if (split.known) return manualEditsText(split.mine);
+    function listed(list) {
+      var shown = list.slice(0, 6).map(function (e) { return (e.title || e.key || '?') + ' (' + plainValue(e.before) + ' → ' + plainValue(e.after) + ')'; });
+      var more = list.length - shown.length;
+      return shown.join(', ') + (more > 0 ? ' et ' + more + ' autre' + (more > 1 ? 's' : '') : '') + '.';
+    }
+    var piece = split.mine.filter(function (e) { return e.preset === 'print'; });
+    var saved = split.mine.filter(function (e) { return e.preset !== 'print'; });
+    var out = [];
+    if (saved.length) out.push('J’enregistre aussi les autres réglages modifiés du filament : ' + listed(saved));
+    if (piece.length) out.push('Réglages de ce projet qui diffèrent du profil, gardés tels quels : ' + listed(piece));
+    return out.join(' ');
+  }
   // Ce que l'assistant dit après avoir enregistré (ou tenté d'enregistrer) le profil.
   function savedText(result) {
     var r = result || {};
@@ -526,7 +578,7 @@
     return box.bottom - port.bottom > 24;
   }
 
-  var api = { valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, manualEditsNote: manualEditsNote, splitManualEdits: splitManualEdits, noteWritten: noteWritten, forgetBatch: forgetBatch, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
