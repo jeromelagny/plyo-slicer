@@ -185,6 +185,10 @@
   .journey-seg.is-current .journey-name { color: var(--accent-text); font-weight: 700; }
   .journey-bar.pills .journey-name { font-size: var(--fs-xs); }
   .journey-seg.is-done .journey-name { color: var(--accent-text); }
+  /* Étape faite qui se rouvre d'un clic (barre des étapes) */
+  .journey-go { display: flex; flex-direction: column; gap: 3px; cursor: pointer; border-radius: 3px; }
+  .journey-go:hover .journey-name { text-decoration: underline; }
+  .journey-go:hover .journey-fill { background: var(--accent-text); }
   .step-card { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .journey-action { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
   .journey-prompt { flex: 1; min-width: 12ch; font-weight: 600; font-size: var(--fs-lg); }
@@ -1309,7 +1313,7 @@
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, handlers: projectHandlers });
     PlyoProjectCard.renderSpoolEditor($('spool-slot'), ui, { spool: projectUI.spool, handlers: projectHandlers });
-    PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth });
+    PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth, onRevisit: revisitStep });
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
       extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'plus', onClick: projectHandlers.setupPrinter } : null });
@@ -1342,6 +1346,18 @@
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
     PlyoJourneyView.renderSuggestions($('suggestions'), ui, { step: step, handlers: suggestionHandlers });
     renderSetupFlow();
+  }
+  // Une étape faite de la barre, rouverte en mode « changer » avec les gestes de la fiche : changer de machine ou de bobine refait
+  // la préparation (resetStepOnChange) ; la pièce se rechoisit comme à l'étape Pièce (une autre pièce = un autre projet) ;
+  // Préparer reprend la vérification de la plaque, qui reste à redécouper si elle n'est plus à jour.
+  function revisitStep(key) {
+    if (!conv) return;
+    applyTab('show-guide');
+    if (key === 'machine') projectHandlers.change('printer');
+    else if (key === 'filament') projectHandlers.change('filament');
+    else if (key === 'piece') projectHandlers.importPart();
+    else if (key === 'preparer') { delete conv.project.success; setTourStep('slice'); }
+    if (key !== 'piece') $('project-card').scrollIntoView({ block: 'nearest' });
   }
   var journeyHandlers = {
     run: function (kind) { applyTab('show-guide'); runAction(kind); } // les retours de l'action arrivent dans le Guide

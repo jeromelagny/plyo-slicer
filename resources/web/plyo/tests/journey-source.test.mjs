@@ -612,3 +612,56 @@ test('ouverture refusée par « occupe » : le panneau redemande project_open ta
   assert.match(fn, /setTimeout\(function \(\) \{\s*if \(!conv \|\| conv\.id !== id\) return;[\s\S]*?postMessage\(\{ type: 'project_open', conv: id \}\)/);
   assert.match(fn, /PlyoProject\.openGiveUpText\(\)/);
 });
+
+// Un DOM minimal pour les rendus de la barre et de la question de fin.
+function fakeUi() {
+  const make = (tag, className, text) => {
+    const node = { tag, className: className || '', textContent: text || '', children: [], attrs: {}, on: {},
+      appendChild(c) { this.children.push(c); return c; }, setAttribute(k, v) { this.attrs[k] = String(v); },
+      addEventListener(t, f) { this.on[t] = f; } };
+    Object.defineProperty(node, 'childNodes', { get() { return this.children; } });
+    Object.defineProperty(node, 'textContent', { get() { return this._t || ''; }, set(v) { this._t = v; if (v === '') this.children = []; } });
+    node.textContent = text || '';
+    return node;
+  };
+  return { el: make, icon: () => make('svg'), button: (label, onClick, className) => { const b = make('button', className, label); b.on.click = onClick; return b; } };
+}
+const all = (n) => [n, ...n.children.flatMap(all)];
+const textOf = (n) => (n.textContent || '') + n.children.map(textOf).join('');
+
+test('barre : une étape faite se rouvre au clic, à Entrée et à Espace ; l’étape en cours et les suivantes non', () => {
+  const req = createRequire(import.meta.url);
+  globalThis.PlyoProject = req('../project-logic.js');
+  globalThis.PlyoJourney = req('../journey-logic.js');
+  const V = req('../journey-view.js');
+  const slot = fakeUi().el('div');
+  const project = { printer: { preset: 'K2', name: 'K2' }, filament: { type: 'PLA', preset: 'PLA', temps_ok: true }, part: { name: 'a.stl' }, step: 'after' };
+  const opened = [];
+  V.renderBar(slot, fakeUi(), { project, widthPx: 400, onRevisit: (k) => opened.push(k) });
+  const goes = all(slot).filter((n) => n.attrs.role === 'button');
+  assert.deepEqual(goes.map((n) => n.attrs['aria-label']), ['Revenir à l’étape Machine', 'Revenir à l’étape Pièce', 'Revenir à l’étape Filament', 'Revenir à l’étape Préparer']);
+  assert.ok(goes.every((n) => n.attrs.tabindex === '0' && n.className === 'journey-go'));
+  goes[0].on.click();
+  let prevented = 0;
+  goes[2].on.keydown({ key: 'Enter', preventDefault() { prevented++; } });
+  goes[3].on.keydown({ key: ' ', preventDefault() { prevented++; } });
+  goes[1].on.keydown({ key: 'a', preventDefault() { prevented++; } });
+  assert.deepEqual(opened, ['machine', 'filament', 'preparer']);
+  assert.equal(prevented, 2);
+  const segs = slot.children[0].children;
+  assert.equal(segs[4].children.some((c) => c.attrs && c.attrs.role === 'button'), false, 'Imprimer (fait) ne se rouvre pas');
+  assert.equal(segs[5].attrs['aria-current'], 'step', 'Résultat en cours');
+  assert.ok(!all(segs[5]).some((n) => n.attrs.role === 'button'));
+  assert.ok(segs.every((s) => s.attrs.role === 'listitem'), 'la barre reste une liste');
+});
+
+test('barre : chaque étape rouverte reprend le geste existant de la fiche', () => {
+  const page = read('index.html');
+  const fn = page.slice(page.indexOf('function revisitStep'), page.indexOf('var journeyHandlers'));
+  assert.match(fn, /key === 'machine'\) projectHandlers\.change\('printer'\)/);
+  assert.match(fn, /key === 'filament'\) projectHandlers\.change\('filament'\)/);
+  assert.match(fn, /key === 'piece'\) projectHandlers\.importPart\(\)/);
+  assert.match(fn, /key === 'preparer'\) \{ delete conv\.project\.success; setTourStep\('slice'\); \}/);
+  assert.match(page, /renderBar\(\$\('journey-bar'\), ui, \{[^}]*onRevisit: revisitStep/);
+  assert.match(page, /\.journey-go \{[^}]*cursor: pointer/);
+});

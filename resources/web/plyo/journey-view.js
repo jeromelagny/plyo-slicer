@@ -2,7 +2,8 @@
 // Pas d'état propre : index.html lui donne l'étape, le contexte et les gestes. Seule la ligne d'action porte un bouton plein.
 // Chargé par index.html (window.PlyoJourneyView).
 (function (root) {
-  // ui : { el, button, icon }.
+  // ui : { el, button, icon }. opts.onRevisit(key) : une étape faite (Machine, Pièce, Filament, Préparer) rouverte d'un clic,
+  // au clavier par Entrée ou Espace ; l'étape en cours et celles à venir ne réagissent pas.
   function renderBar(slot, ui, opts) {
     var J = root.PlyoJourney, mode = J.barMode(opts.widthPx), list = J.steps(opts.project);
     slot.textContent = '';
@@ -12,9 +13,23 @@
       var seg = ui.el('div', 'journey-seg is-' + s.state); // « is-done » : la classe globale .done (lignes « fait ») cassait la barre
       seg.setAttribute('role', 'listitem');
       if (s.state === 'current') seg.setAttribute('aria-current', 'step');
-      seg.appendChild(ui.el('i', 'journey-fill'));
-      seg.appendChild(ui.el('span', 'journey-name', (s.state === 'done' ? '✓ ' : '') + (mode === 'pills' ? String(i + 1) : s.label)));
-      seg.title = s.label;
+      var host = seg;
+      if (opts.onRevisit && J.canRevisit(s)) {
+        host = ui.el('div', 'journey-go');
+        host.setAttribute('role', 'button');
+        host.setAttribute('tabindex', '0');
+        host.setAttribute('aria-label', J.revisitLabel(s));
+        host.addEventListener('click', function () { opts.onRevisit(s.key); });
+        host.addEventListener('keydown', function (e) {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault(); // Espace ne fait pas défiler le panneau
+          opts.onRevisit(s.key);
+        });
+        seg.appendChild(host);
+      }
+      host.appendChild(ui.el('i', 'journey-fill'));
+      host.appendChild(ui.el('span', 'journey-name', (s.state === 'done' ? '✓ ' : '') + (mode === 'pills' ? String(i + 1) : s.label)));
+      seg.title = host === seg ? s.label : J.revisitLabel(s);
       bar.appendChild(seg);
     });
     slot.appendChild(bar);

@@ -376,3 +376,14 @@ test('fiche : la ligne filament montre le nom de la bobine quand il y en a une',
   delete p.filament.spool;
   assert.equal(J.filledRows(p).filter(r => r.line === 'filament')[0].text, 'PLA');
 });
+
+test('barre : seules les étapes faites parmi Machine, Pièce, Filament et Préparer se rouvrent', () => {
+  const at = (step) => J.steps(full({ step }));
+  const open = (list) => list.filter(J.canRevisit).map((s) => s.key);
+  assert.deepEqual(open(at('slice')), ['machine', 'piece', 'filament'], 'Préparer en cours ne se rouvre pas');
+  assert.deepEqual(open(at('print')), ['machine', 'piece', 'filament', 'preparer']);
+  assert.deepEqual(open(at('after')), ['machine', 'piece', 'filament', 'preparer'], 'Imprimer fait ne se rouvre pas');
+  assert.deepEqual(open(J.steps({ printer })), ['machine']);
+  assert.deepEqual(open(J.steps(null)), [], 'étapes à venir et étape en cours : rien');
+  assert.equal(J.revisitLabel({ label: 'Pièce' }), 'Revenir à l’étape Pièce');
+});
