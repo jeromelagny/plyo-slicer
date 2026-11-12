@@ -43,7 +43,9 @@ test('habitudes : se souvenir du filament par machine, sans toucher aux autres',
   let h = M.emptyHabits();
   assert.equal(M.habitFor(h, cc2.preset), null);
   h = M.rememberFilament(h, cc2.preset, { type: 'PLA', nozzle_temp: 215, bed_temp: 60 });
-  assert.deepEqual(M.habitFor(h, cc2.preset), { type: 'PLA', nozzle_temp: 215, bed_temp: 60 });
+  assert.deepEqual(M.habitFor(h, cc2.preset), { type: 'PLA', nozzle_temp: 215, bed_temp: 60, spool: '' });
+  // Lot 8 (UX-11) : le nom de la bobine est retenu pour « Mes machines » (« Dernière bobine : … »).
+  assert.equal(M.habitFor(M.rememberFilament(h, cc2.preset, { type: 'PLA', spool: { id: 'b1', name: 'Sunlu PLA+ noir' } }), cc2.preset).spool, 'Sunlu PLA+ noir');
   assert.equal(M.habitFor(h, k2.preset), null);
   assert.equal(h.last, cc2.preset);
   h = M.rememberFilament(h, cc2.preset, { type: 'PETG', nozzle_temp: 240, bed_temp: 80 });

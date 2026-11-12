@@ -128,8 +128,8 @@ test('UX-29 : chaque erreur a un texte vrai et une action qui lui correspond', (
 });
 
 test('ROB-10 : projet changé pendant une réponse : retenu, rien ne s’applique, la réponse reste dans l’ancienne conversation', () => {
-  assert.equal(L.projectSwitchText(true, true), 'Tu as ouvert un autre projet pendant que je répondais : je n’ai pas exécuté les ordres prévus pour l’ancien. Ma réponse est gardée avec l’ancien projet, dans « Mes conversations ».');
-  assert.equal(L.projectSwitchText(false, true), 'Tu as ouvert un autre projet pendant que je répondais. Ma réponse est gardée avec l’ancien projet, dans « Mes conversations ».');
+  assert.equal(L.projectSwitchText(true, true), 'Tu as ouvert un autre projet pendant que je répondais : je n’ai pas exécuté les ordres prévus pour l’ancien. Ma réponse est gardée avec l’ancien projet, dans « Mes projets ».');
+  assert.equal(L.projectSwitchText(false, true), 'Tu as ouvert un autre projet pendant que je répondais. Ma réponse est gardée avec l’ancien projet, dans « Mes projets ».');
   assert.match(L.projectSwitchText(false, false), /remise dans le champ/);
   const page = read('index.html');
   assert.match(page, /if \(!busy\) \{ closeDrawer\(\); newConversation\(\); \}\s*else projectSwitched = true;/);

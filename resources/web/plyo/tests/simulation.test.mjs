@@ -270,8 +270,8 @@ test('M6 : « Garder ces emplacements » est grisé tant qu’une matière manqu
 });
 
 test('M8 : compteur de caractères près de la limite du champ', () => {
-  assert.equal(L.noteHint(10, 500), 'Entrée pour envoyer');
-  assert.equal(L.noteHint(449, 500), 'Entrée pour envoyer');
+  assert.equal(L.noteHint(10, 500), 'Entrée pour envoyer (utilise ta jauge)');
+  assert.equal(L.noteHint(449, 500), 'Entrée pour envoyer (utilise ta jauge)');
   assert.equal(L.noteHint(450, 500), '450 / 500 caractères');
   assert.equal(L.noteHint(500, 500), '500 / 500 caractères');
   assert.match(read('index.html'), /noteInput\.addEventListener\('input', growNote\)/);

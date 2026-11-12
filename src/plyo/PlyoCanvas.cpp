@@ -2,6 +2,7 @@
 #include "PlyoCanvas.hpp"
 
 #include "PlyoCC2.hpp"
+#include "PlyoAutoSave.hpp"
 #include "PlyoCanvasLogic.hpp"
 #include "PlyoCfs.hpp"
 #include "PlyoFirstSteps.hpp"
@@ -9,6 +10,7 @@
 #include "PlyoJson.hpp"
 #include "PlyoPrinterLink.hpp"
 #include "PlyoSlotsLogic.hpp"
+#include "PlyoSpoolsLogic.hpp"
 #include "PlyoU1.hpp"
 
 #include "libslic3r/PresetBundle.hpp"
@@ -281,10 +283,14 @@ nlohmann::json apply(const nlohmann::json& entries)
             return {{"ok", false}, {"text", "Je n'ai pas trouvé de profil " + (type.empty() ? std::string("de filament") : type) + " pour cette imprimante. Choisis un autre emplacement ou un autre filament."}};
         presets.emplace_back(tv->get<size_t>(), name);
     }
+    // La bobine en cours garde d'abord ses derniers réglages : sinon Orca demanderait quoi faire de ses modifications.
+    if (AutoSave::flush_spool() == SpoolsLogic::Flush::Refuse)
+        return {{"ok", false}, {"text", SpoolsLogic::FLUSH_REFUSED_TEXT}};
     // Le premier filament d'abord : c'est le seul choix que l'utilisateur peut annuler, et rien d'autre n'a alors changé.
+    // Annulé : le filament en cours n'est pas une bobine, et ses modifications restent telles quelles.
     for (const auto& [t, name] : presets)
         if (t == 0 && !set_preset(t, name))
-            return {{"ok", false}, {"text", "Choix annulé : les emplacements et ton filament n'ont pas changé. Enregistre ou abandonne d'abord tes modifications du filament."}};
+            return {{"ok", false}, {"text", "Choix annulé : les emplacements et ton filament n'ont pas changé, tes modifications restent en place. Choisis à nouveau quand tu veux : Orca te redemandera quoi en faire."}};
     nlohmann::json out = {{"ok", true}, {"presets", nlohmann::json::array()}};
     for (size_t i = 0; i < presets.size(); ++i) {
         if (presets[i].first != 0)

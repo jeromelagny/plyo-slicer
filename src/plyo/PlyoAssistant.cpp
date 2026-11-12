@@ -63,6 +63,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace Plyo {
 
@@ -387,9 +388,13 @@ void handle_page_message(const nlohmann::json& data)
             send(done);
         } else if (type == "journal_add")
             Journal::record(data);
-        else if (type == "journal_list")
-            send({{"type", "journal"}, {"events", Journal::list()}});
-        else if (type == "orca_issues") {
+        else if (type == "journal_list") {
+            // Projets encore gardés : une pièce dont le projet a été supprimé n'offre pas de bouton qui mène à une erreur.
+            nlohmann::json projects = nlohmann::json::array();
+            for (const nlohmann::json& it : Conversations::list())
+                projects.push_back(it["id"]);
+            send({{"type", "journal"}, {"events", Journal::list()}, {"projects", projects}});
+        } else if (type == "orca_issues") {
             // Ce qu'Orca dit de la plaque (après un lot appliqué, une découpe qui ne démarre pas, une plaque non imprimable).
             nlohmann::json r = OrcaMessages::report();
             r["type"]        = "orca_issues";
@@ -443,11 +448,22 @@ void handle_page_message(const nlohmann::json& data)
             const std::string id = Json::str(data, "id");
             send({{"type", "conv_loaded"}, {"id", id}, {"conversation", Conversations::load(id)}});
         } else if (type == "conv_save") {
-            // Enregistrement silencieux : le panneau n'attend pas de réponse, un échec est seulement journalisé.
-            if (!Conversations::save(Json::str(data, "id"), Json::any(data, "conversation"))) {
+            // Enregistrement silencieux : le panneau n'attend pas de réponse, un échec est seulement journalisé. Un ancien
+            // projet effacé pour faire de la place est dit au panneau (jamais en silence).
+            std::vector<std::string> removed;
+            if (!Conversations::save(Json::str(data, "id"), Json::any(data, "conversation"), &removed)) {
                 BOOST_LOG_TRIVIAL(warning) << "Plyo: conversation non enregistrée";
                 send({{"type", "conv_save_failed"}, {"id", Json::str(data, "id")}});
-            }
+            } else if (!removed.empty())
+                send({{"type", "conv_pruned"}, {"names", removed}});
+        } else if (type == "project_resume_get") {
+            // Ouverture du panneau : la conversation dont le plateau est encore attaché (panneau fermé puis rouvert), avec son
+            // contenu, pour qu'elle soit rouverte avant tout signal du plateau ; et la liste, pour proposer une reprise.
+            // Un départ en attente (nouveau projet demandé, Orca occupé) : ce plateau n'est plus celui à rouvrir.
+            const std::string    attached = ProjectFiles::detach_pending() ? std::string() : ProjectFiles::attached();
+            const nlohmann::json c        = attached.empty() ? nlohmann::json() : Conversations::load(attached);
+            send({{"type", "project_resume"}, {"attached", c.is_null() ? std::string() : attached}, {"conversation", c},
+                  {"items", Conversations::list()}});
         } else if (type == "conv_delete") {
             ProjectFiles::forget(Json::str(data, "id")); // plus d'écriture pour elle ; son 3MF part avec elle
             Conversations::remove(Json::str(data, "id"));

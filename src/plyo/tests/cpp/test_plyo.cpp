@@ -1272,12 +1272,12 @@ TEST_CASE("Slots::decide_map : sans options, exactement les textes de la CC2")
     using namespace Plyo;
     const json planned = json::array({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 3}, {"type", "PLA"}, {"preset", ""}}});
     const SlotsLogic::MapDecision gone = SlotsLogic::decide_map(planned, json::array(), {});
-    CHECK(gone.refusal == "L'emplacement 4 n'est plus visible sur le Canvas : l'impression n'a pas démarré. Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Démarrer sans carte », ou choisis à nouveau les emplacements.");
+    CHECK(gone.refusal == "L'emplacement 4 n'est plus visible sur le Canvas : l'impression n'a pas démarré. Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Laisser l'imprimante choisir l'emplacement », ou choisis à nouveau les emplacements.");
     const SlotsLogic::MapDecision same = CC2Logic::decide_map(planned, json::array(), {});
     CHECK(same.refusal == gone.refusal);
     const SlotsLogic::MapDecision none = SlotsLogic::decide_map(planned, json(), {});
     CHECK(none.refusal.find("Je n'ai pas pu relire") == 0);
-    CHECK(none.refusal.find("Démarrer sans carte") != std::string::npos);
+    CHECK(none.refusal.find("Laisser l'imprimante choisir l'emplacement") != std::string::npos);
 }
 
 TEST_CASE("Slots::decide_map : offer_plain faux ne propose jamais « Démarrer sans carte »")
@@ -2756,6 +2756,18 @@ TEST_CASE("Projets : les 3MF sans conversation sont à effacer")
     CHECK(orphans(kept, files) == std::vector<std::string>{"old-9", "gone-3"});
     CHECK(orphans({}, {"x"}) == std::vector<std::string>{"x"});
     CHECK(orphans({"x"}, {}).empty());
+}
+
+TEST_CASE("ProjectFiles::to_prune : limites séparées pour les projets avec plateau et les simples questions", "[projectfiles]")
+{
+    using Plyo::ProjectFilesLogic::to_prune;
+    // Du plus récent au plus ancien : vrai = projet avec plateau.
+    CHECK(to_prune({true, true, false}, 2, 2).empty());
+    CHECK(to_prune({true, true, true, false}, 2, 2) == std::vector<size_t>{2});
+    // Des questions en série ne font jamais partir un projet avec plateau.
+    CHECK(to_prune({false, false, false, true}, 2, 2) == std::vector<size_t>{2});
+    CHECK(to_prune({false, true, false, true, true, false}, 2, 2) == std::vector<size_t>{4, 5});
+    CHECK(to_prune({}, 30, 30).empty());
 }
 
 TEST_CASE("Projets : un plateau qui est un fichier de l'utilisateur n'est jamais attaché à une conversation")

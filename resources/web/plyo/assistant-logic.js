@@ -18,7 +18,54 @@
     if (t) return t.length > 48 ? t.slice(0, 47) + '…' : t;
     if (photoCount > 1) return 'Photos du ' + shortDate(isoDate);
     if (photoCount === 1) return 'Photo du ' + shortDate(isoDate);
-    return 'Conversation du ' + shortDate(isoDate);
+    return 'Projet du ' + shortDate(isoDate);
+  }
+
+  // ---------- Mes projets (lot 8 de l'audit) ----------
+  // Jour local d'une date ISO (« 12 novembre ») : une date enregistrée en UTC peut tomber la veille ou le lendemain.
+  function localDay(iso) {
+    var d = new Date(iso);
+    if (!iso || isNaN(d)) return '';
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return dayText(d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()));
+  }
+  // Une entrée de « Mes projets » : le nom de la pièce (sinon la première question), puis la date et l'étape atteinte, pour
+  // qu'un débutant retrouve son projet. `item` : { title, updated, project } (liste du slicer).
+  function projectEntry(item) {
+    var it = item || {}, p = it.project && typeof it.project === 'object' ? it.project : null;
+    var part = p && p.part && typeof p.part.name === 'string' ? p.part.name : '';
+    var title = part || String(it.title || '') || 'Projet sans nom';
+    var day = localDay(it.updated);
+    if (!part) return { title: title, detail: day ? 'Question du ' + day : '', hasPart: false };
+    var J = root.PlyoJourney || require('./journey-logic.js');
+    var step = J.currentStep(p), send = p.send && typeof p.send === 'object' ? p.send : {};
+    var stage;
+    if (step === 'resultat') {
+      var verdict = p.success ? ', réussi' : send.failed ? ', raté' : '';
+      return { title: title, detail: (day ? 'Imprimé le ' + day : 'Imprimé') + verdict, hasPart: true };
+    }
+    if (step === 'imprimer') stage = 'prêt à imprimer';
+    else if (step === 'preparer') stage = 'à préparer';
+    else stage = 'à compléter';
+    return { title: title, detail: [day, stage].filter(Boolean).join(' · '), hasPart: true };
+  }
+  // Projet à proposer de reprendre à l'ouverture du panneau : le plus récent qui a une pièce, s'il a moins de 48 h.
+  var RESUME_MS = 48 * 3600 * 1000;
+  function resumeCandidate(items, nowMs) {
+    var list = Array.isArray(items) ? items.slice() : [];
+    list.sort(function (a, b) { return String(b && b.updated || '') > String(a && a.updated || '') ? 1 : -1; });
+    var pick = list.filter(function (it) { return it && it.id && it.project && it.project.part && it.project.part.name; })[0];
+    if (!pick) return null;
+    var at = Date.parse(pick.updated);
+    return !isNaN(at) && nowMs - at >= 0 && nowMs - at < RESUME_MS ? pick : null;
+  }
+  // Confirmation avant de supprimer un projet (dans le panneau, jamais une fenêtre du système).
+  function deleteQuestion(entry) {
+    return entry && entry.hasPart ? 'Supprimer « ' + entry.title + ' » et son plateau ?' : 'Supprimer « ' + (entry && entry.title || 'ce projet') + ' » ?';
+  }
+  // Un ancien projet retiré pour faire de la place (limite de l'ordinateur) : dit, jamais en silence.
+  function prunedText(name) {
+    return 'J’ai rangé ton projet le plus ancien, « ' + name + ' », pour faire de la place : il n’est plus dans « Mes projets ». Ce que tu as imprimé reste dans « Mes pièces ».';
   }
 
   // Questions de l'IA : toutes répondues avant l'envoi, puis une seule demande.
@@ -66,7 +113,7 @@
   // renouvelle chaque mois, les crédits ajoutés non utilisés restent.
   function gaugeExtraText(g) {
     var extra = g && typeof g.extra_pct === 'number' ? Math.round(g.extra_pct) : 0;
-    return extra > 0 ? 'Ta jauge est agrandie de ' + extra + ' % par des crédits ajoutés : ce que tu n’en utilises pas reste le mois suivant.' : '';
+    return extra > 0 ? 'Ta jauge est agrandie de ' + extra + ' % par une recharge ou un cadeau : ce que tu n’en utilises pas reste le mois suivant.' : '';
   }
   function gaugeResetText(g) {
     var when = resetText(g && g.resets_at);
@@ -234,7 +281,7 @@
   function projectSwitchText(hadCommands, answered) {
     if (!answered) return 'Tu as ouvert un autre projet pendant que je cherchais : ta question est restée sans réponse. Je l’ai remise dans le champ : renvoie-la si elle vaut aussi pour ce projet.';
     return 'Tu as ouvert un autre projet pendant que je répondais' + (hadCommands ? ' : je n’ai pas exécuté les ordres prévus pour l’ancien.' : '.') +
-      ' Ma réponse est gardée avec l’ancien projet, dans « Mes conversations ».';
+      ' Ma réponse est gardée avec l’ancien projet, dans « Mes projets ».';
   }
   var STALE_PROJECT_TEXT = 'Tu as ouvert un autre projet dans Orca : je ne change rien tant que ma réponse n’est pas terminée. Ensuite, je repars sur ce projet.';
 
@@ -544,7 +591,7 @@
 
   // Sous le champ de question : le rappel d'Entrée, et le compteur à l'approche de la limite (le texte ne s'allonge plus au-delà).
   function noteHint(length, max) {
-    return max > 0 && length >= max - 50 ? length + ' / ' + max + ' caractères' : 'Entrée pour envoyer';
+    return max > 0 && length >= max - 50 ? length + ' / ' + max + ' caractères' : 'Entrée pour envoyer (utilise ta jauge)';
   }
 
   // Fin réelle d'un export : où est le fichier, et la suite. Sans nom (renommé par Orca), le dossier seul.
@@ -707,11 +754,12 @@
     var r = result || {};
     // Écart de températures qu'Orca refuserait : Plyo n'enregistre pas plutôt que d'ouvrir sa fenêtre.
     if (r.save_error === 'temperatures') return 'Appliqué. Je n’ai pas enregistré le filament : sa première couche et les couches suivantes auraient un écart de température qu’Orca refuse. Rapproche ces deux températures et je l’enregistrerai.';
-    if (r.save_error) return 'Appliqué, mais je n’ai pas pu enregistrer le profil (' + r.save_error + '). Enregistre-le toi-même si tu veux le garder.';
+    if (r.save_error) return r.save_spool ? 'Appliqué, mais je n’ai pas pu le garder dans ta bobine (' + r.save_error + ') : je réessaie à ta prochaine modification.'
+      : 'Appliqué, mais je n’ai pas pu le garder dans ton profil de filament (' + r.save_error + ') : il reste en place sur ce plateau, et Orca te demandera quoi en faire en quittant.';
     var saved = Array.isArray(r.saved) ? r.saved : [];
     // Réglages d'impression du plateau d'une conversation : gardés dans son projet 3MF, pas dans un profil partagé.
     // Sans projet de conversation, ils restent modifiés sur ce plateau (Orca demandera quoi en faire à la fermeture).
-    var kept = r.in_project ? 'Gardé avec le projet de cette conversation.'
+    var kept = r.in_project ? 'Réglages de la pièce gardés avec ce projet.'
       : r.print_edited ? 'Réglages de la pièce appliqués à ce plateau seulement : ton profil d’impression ne change pas.' : '';
     if (!saved.length) return kept;
     return saved.map(function (s) {
@@ -878,12 +926,12 @@
   var RAW_TEST_TEXT = {
     max_flow: {
       name: 'Débit maximal',
-      before: 'Ce test ouvre une fenêtre d’Orca et remplace ta plaque par la pièce de test. Ta pièce reste rangée dans ce projet : tu la retrouveras dans « Mes conversations ».',
+      before: 'Ce test ouvre une fenêtre d’Orca et remplace ta plaque par la pièce de test. Ta pièce reste rangée dans ce projet : tu la retrouveras dans « Mes projets ».',
       after: 'Imprime la tour de test. Repère la hauteur juste sous les premiers défauts (la surface passe de brillante à mate, ou se creuse). Ton débit maximal en mm³/s = départ + hauteur mesurée × pas : avec les valeurs proposées par Orca (départ 5, pas 0,5), 19 mm donnent 14,5. Garde 10 à 20 % de moins, et mets-le dans « Vitesse volumétrique maximale » de ton filament. Si tu hésites, envoie-moi une photo de la tour.'
     },
     vfa: {
       name: 'VFA',
-      before: 'Ce test ouvre une fenêtre d’Orca et remplace ta plaque par la pièce de test. Ta pièce reste rangée dans ce projet : tu la retrouveras dans « Mes conversations ».',
+      before: 'Ce test ouvre une fenêtre d’Orca et remplace ta plaque par la pièce de test. Ta pièce reste rangée dans ce projet : tu la retrouveras dans « Mes projets ».',
       after: 'Imprime la tour de test : chaque bloc est imprimé plus vite que celui du dessous. Regarde les parois en lumière rasante : les blocs couverts de fines stries verticales régulières montrent les vitesses à éviter pour les parois extérieures. Si tu hésites, envoie-moi une photo de la tour.'
     },
     tolerance: {
@@ -900,7 +948,7 @@
     if (!t) return { tone: 'error', text: 'Je ne connais pas ce test.', back: false };
     if (msg.target === 'tolerance') return { tone: 'ok', text: 'La pièce « ' + t.name + ' » est sur ta plaque' + (msg.arranged ? ' ; j’ai organisé la plaque pour qu’elle ne touche pas ta pièce' : '') + '. ' + t.after, back: false };
     if (!msg.replaced) return { tone: 'info', text: 'Tu as fermé la fenêtre d’Orca sans lancer le test : ta plaque n’a pas changé.', back: false };
-    return { tone: 'ok', text: 'Le test « ' + t.name + ' » est sur la plaque. ' + t.after + ' Pour retrouver ta pièce ensuite : « Mes conversations », puis ton projet.', back: true };
+    return { tone: 'ok', text: 'Le test « ' + t.name + ' » est sur la plaque. ' + t.after + ' Pour retrouver ta pièce ensuite : menu « ⋯ », « Mes projets », puis ton projet.', back: true };
   }
   // Réponse du slicer à « show_preview ».
   function previewText(msg) {
@@ -910,7 +958,7 @@
   }
 
   var api = { diagnoseParams: diagnoseParams, aiContext: aiContext, historyForAI: historyForAI, CAPABILITIES: CAPABILITIES, actionSupported: actionSupported, rawTestText: rawTestText, rawTestResult: rawTestResult, previewText: previewText,
-    changeLine: changeLine, sameSetting: sameSetting, revertPlan: revertPlan, revertText: revertText, batchesOf: batchesOf, mergeCorrections: mergeCorrections, outcomeCard: outcomeCard, reliablePreview: reliablePreview, valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, manualEditsNote: manualEditsNote, splitManualEdits: splitManualEdits, noteWritten: noteWritten, forgetBatch: forgetBatch, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+    changeLine: changeLine, sameSetting: sameSetting, revertPlan: revertPlan, revertText: revertText, batchesOf: batchesOf, mergeCorrections: mergeCorrections, outcomeCard: outcomeCard, reliablePreview: reliablePreview, valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, manualEditsNote: manualEditsNote, splitManualEdits: splitManualEdits, noteWritten: noteWritten, forgetBatch: forgetBatch, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, projectEntry: projectEntry, resumeCandidate: resumeCandidate, RESUME_MS: RESUME_MS, deleteQuestion: deleteQuestion, prunedText: prunedText, allAnswered: allAnswered, combineAnswers: combineAnswers,
     newRequestId: newRequestId, formatUuid: formatUuid, resendRequestId: resendRequestId, sameQuestion: sameQuestion, inProgressDelay: inProgressDelay, waitingText: waitingText,
     utf8Bytes: utf8Bytes, sizePlan: sizePlan, limitFrom413: limitFrom413, MAX_SEND_BYTES: MAX_SEND_BYTES, SHRINK_STEPS: SHRINK_STEPS, unansweredView: unansweredView, projectSwitchText: projectSwitchText, STALE_PROJECT_TEXT: STALE_PROJECT_TEXT,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };

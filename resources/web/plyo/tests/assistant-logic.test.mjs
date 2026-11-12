@@ -11,7 +11,7 @@ test('titre d’une conversation : la première demande, raccourcie', () => {
   assert.equal(L.conversationTitle('a'.repeat(80), 0, '2026-10-24'), 'a'.repeat(47) + '…');
   assert.equal(L.conversationTitle('', 2, '2026-10-24'), 'Photos du 24 octobre');
   assert.equal(L.conversationTitle('  ', 1, '2026-10-24'), 'Photo du 24 octobre');
-  assert.equal(L.conversationTitle('', 0, '2026-10-24'), 'Conversation du 24 octobre');
+  assert.equal(L.conversationTitle('', 0, '2026-10-24'), 'Projet du 24 octobre');
 });
 
 test('réponses aux questions de l’IA envoyées ensemble', () => {
@@ -214,7 +214,7 @@ test('gaugeExtraText : une seule jauge, agrandie par les crédits ajoutés', () 
   assert.equal(L.gaugeExtraText({ ...base, extra_pct: 0 }), '');
   assert.equal(L.gaugeExtraText({ ...base }), '');
   assert.equal(L.gaugeExtraText({ ...base, extra_pct: 200 }),
-    'Ta jauge est agrandie de 200 % par des crédits ajoutés : ce que tu n’en utilises pas reste le mois suivant.');
+    'Ta jauge est agrandie de 200 % par une recharge ou un cadeau : ce que tu n’en utilises pas reste le mois suivant.');
 });
 
 test('gaugeResetText : la part incluse se renouvelle, les crédits ajoutés restent', () => {
@@ -275,7 +275,10 @@ test('modifications manuelles enregistrées avec le lot : liste courte et lisibl
 test('texte après l’enregistrement du profil par l’assistant', () => {
   assert.equal(L.savedText({ saved: [{ type: 'print', name: 'Mon profil', created: false }] }), 'Enregistré dans le profil « Mon profil ».');
   assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Generic TPU (Plyo)', created: true, from: 'Generic TPU' }] }), 'Enregistré dans une copie à toi, « Generic TPU (Plyo) » : « Generic TPU » est un profil d’Orca, qui ne se modifie pas.');
-  assert.equal(L.savedText({ saved: [], save_error: 'disque plein' }), 'Appliqué, mais je n’ai pas pu enregistrer le profil (disque plein). Enregistre-le toi-même si tu veux le garder.');
+  // Lot 8 (UX-14) : jamais « enregistre-le toi-même » ; la suite est dite (bobine : nouvel essai ; sinon Orca demandera).
+  assert.equal(L.savedText({ saved: [], save_error: 'disque plein' }), 'Appliqué, mais je n’ai pas pu le garder dans ton profil de filament (disque plein) : il reste en place sur ce plateau, et Orca te demandera quoi en faire en quittant.');
+  assert.equal(L.savedText({ saved: [], save_error: 'disque plein', save_spool: true }), 'Appliqué, mais je n’ai pas pu le garder dans ta bobine (disque plein) : je réessaie à ta prochaine modification.');
+  assert.doesNotMatch(L.savedText({ save_error: 'x' }) + L.savedText({ save_error: 'x', save_spool: true }), /toi-même|[Ee]nregistre-le/);
   assert.equal(L.savedText({}), '');
 });
 
@@ -347,9 +350,9 @@ test('conversation rouverte : ses fiches de réglages non appliquées s’appliq
 });
 
 test('réglages d’impression gardés avec le projet de la conversation', () => {
-  assert.equal(L.savedText({ saved: [], in_project: true }), 'Gardé avec le projet de cette conversation.');
+  assert.equal(L.savedText({ saved: [], in_project: true }), 'Réglages de la pièce gardés avec ce projet.');
   assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Sunlu PLA+ noir — CR-10 SE', created: false }], in_project: true }),
-    'Enregistré dans le profil « Sunlu PLA+ noir — CR-10 SE ». Gardé avec le projet de cette conversation.');
+    'Enregistré dans le profil « Sunlu PLA+ noir — CR-10 SE ». Réglages de la pièce gardés avec ce projet.');
 });
 
 test('réglages d’impression jamais enregistrés dans un profil partagé, même sans projet de conversation', () => {

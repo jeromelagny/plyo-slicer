@@ -112,7 +112,7 @@ test('preflightPlan : la bordure n’apparaît qu’une fois ; l’orientation e
   const plan = preflightPlan(plate([casque, boule]));
   assert.deepEqual(plan.fixes.map((f) => [f.key, f.checked]), [['support', true], ['brim', true], ['orient', false]]);
   const brim = plan.fixes.find((f) => f.key === 'brim');
-  assert.equal(brim.label, 'Ajouter une bordure de 5 mm');
+  assert.equal(brim.label, 'Ajouter une bordure de 5 mm (un fin rebord collé autour, qui l’empêche de se décoller)');
   assert.deepEqual(brim.objects, ['Casque', 'Boule']);
   assert.deepEqual(brim.changes, [{ id: 'brim_type', value: 'outer_only' }, { id: 'brim_width', value: 5 }]);
 });
@@ -142,7 +142,7 @@ test('« Annuler » après « Tout corriger » : dit ce qui est revenu et ce qui
   assert.deepEqual(undoText(false, 1, []), { text: 'La pièce est revenue comme avant.', tone: '' });
   const left = undoText(true, 0, ['orient']);
   assert.equal(left.tone, 'warn');
-  assert.equal(left.text, 'Réglages d’avant remis. La pièce reste tournée : fais Cmd + Z (Ctrl + Z sur Windows) dans le slicer pour la remettre.');
+  assert.equal(left.text, 'Réglages d’avant remis. La pièce reste tournée : fais Cmd + Z (Ctrl + Z sur Windows) dans la fenêtre de Plyo pour la remettre.');
   assert.match(undoText(false, 1, ['orient', 'scale_to_fit']).text, /^La pièce reste tournée et réduite : /);
   assert.match(undoText(true, 0, ['orient', 'arrange', 'scale_to_fit']).text, /tournée, rangée et réduite/);
   assert.equal(undoText(false, 0, []).text, '');

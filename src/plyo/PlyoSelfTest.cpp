@@ -1,4 +1,5 @@
 #include "PlyoSelfTest.hpp"
+#include "PlyoAssistant.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoOrcaMessages.hpp"
 #include "PlyoPlateActions.hpp"
@@ -14,6 +15,7 @@
 #include <boost/nowide/cstdlib.hpp>
 #include <boost/nowide/fstream.hpp>
 
+#include <wx/timer.h>
 #include <wx/toplevel.h>
 
 #include <chrono>
@@ -146,6 +148,24 @@ bool handle(const std::string& type, const nlohmann::json& data, const std::func
         Slic3r::GUI::wxGetApp().CallAfter([] {
             if (Slic3r::GUI::MainFrame* frame = Slic3r::GUI::wxGetApp().mainframe)
                 frame->Close(true);
+        });
+    } else if (type == "selftest_reopen_panel") {
+        // Comme « × » puis « Assistant » : le panneau est fermé (après ce message), puis rouvert dès qu'il est détruit. Le
+        // pilote est réinséré dans la nouvelle page et reprend du début (le scénario sait où il en est par l'état du slicer).
+        static wxTimer* s_reopen = nullptr;
+        if (s_reopen == nullptr) {
+            s_reopen = new wxTimer();
+            s_reopen->Bind(wxEVT_TIMER, [](wxTimerEvent&) {
+                if (is_assistant_shown())
+                    return;
+                s_reopen->Stop();
+                toggle_assistant(Slic3r::GUI::wxGetApp().plater());
+            });
+        }
+        Slic3r::GUI::wxGetApp().CallAfter([] {
+            if (is_assistant_shown())
+                toggle_assistant(Slic3r::GUI::wxGetApp().plater());
+            s_reopen->Start(500);
         });
     } else if (type == "selftest_call") {
         const std::string fn = Json::str(data, "fn", 40);

@@ -88,10 +88,10 @@
     if (step === 'resultat') {
       // Jamais de bouton plein qui dépense tant que la fin n'est pas connue ou dite (resultState).
       var rs = resultState(c);
-      if (rs === 'success') return { label: 'Nouvelle pièce', kind: 'newPart', enabled: true };
+      if (rs === 'success') return { label: 'Nouveau projet', kind: 'newPart', enabled: true };
       if (rs === 'finished') return { label: 'Oui, c’est réussi', kind: 'success', enabled: true };
       if (rs === 'failed') return { label: PHOTO_PHONE, kind: 'photo', enabled: true };
-      if (rs === 'stopped' && !c.endAsk) return { label: 'Nouvelle pièce', kind: 'newPart', enabled: true };
+      if (rs === 'stopped' && !c.endAsk) return { label: 'Nouveau projet', kind: 'newPart', enabled: true };
       return { label: '', kind: 'none', enabled: false };
     }
     // Machine et bobine proposées (dernière machine, bobine du projet précédent) : confirmer d'un toucher.

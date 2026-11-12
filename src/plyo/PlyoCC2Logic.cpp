@@ -200,7 +200,7 @@ std::string error_text(int error_code)
     case 0: return "L'impression a démarré.";
     case 1003: return "L'imprimante a refusé la demande (paramètre invalide).";
     case 1009: return "L'imprimante est occupée : attends la fin de ce qu'elle fait, puis réessaie.";
-    case 1014: return "L'imprimante dit que le fichier G-code n'est pas valide.";
+    case 1014: return "L'imprimante dit que le fichier d'impression (G-code) n'est pas valide.";
     case 1021: return "Fichier introuvable sur l'imprimante : l'envoi n'a pas abouti.";
     default: return "L'imprimante a répondu avec l'erreur " + std::to_string(error_code) + ".";
     }

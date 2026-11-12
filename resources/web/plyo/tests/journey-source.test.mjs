@@ -44,8 +44,9 @@ test('le menu ne garde que l’essentiel', () => {
   const page = read('index.html');
   const menu = page.slice(page.indexOf('id="menu"'), page.indexOf('</div>\n  </div>', page.indexOf('id="menu"')));
   const ids = [...menu.matchAll(/id="(m-[a-z-]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(ids, ['m-account-sep', 'm-convs', 'm-email', 'm-help', 'm-intent', 'm-level', 'm-login', 'm-logout', 'm-new', 'm-undo', 'm-usage']);
-  for (const gone of ['m-check', 'm-parts', 'm-values', 'm-setup', 'm-limits', 'm-tour']) assert.ok(!page.includes("$('" + gone + "')"), gone + ' encore écouté');
+  // Lot 8 (UX-37) : « Mes pièces » revient dans le menu, sous « Mes projets ».
+  assert.deepEqual(ids, ['m-account-sep', 'm-convs', 'm-email', 'm-help', 'm-intent', 'm-level', 'm-login', 'm-logout', 'm-new', 'm-parts', 'm-undo', 'm-usage']);
+  for (const gone of ['m-check', 'm-values', 'm-setup', 'm-limits', 'm-tour']) assert.ok(!page.includes("$('" + gone + "')"), gone + ' encore écouté');
 });
 
 test('la carte de vérification n’a pas de bouton plein : le bouton de l’étape est celui de la ligne d’action', () => {
@@ -63,7 +64,9 @@ test('le champ de question est discret : une ligne, et plus de phrase d’averti
 });
 
 test('« Ma machine n’est pas dans la liste » est dans la ligne d’action fixe, plus dans la liste qui défile', () => {
-  assert.ok(!read('project-card.js').includes('Ma machine n’est pas dans la liste'));
+  // Lot 8 (UX-10) : la liste le nomme (« juste au-dessus ») sans en refaire un bouton.
+  assert.ok(!/ui\.button\('Ma machine n’est pas dans la liste'/.test(read('project-card.js')));
+  assert.ok(read('project-card.js').includes('clique sur « Ma machine n’est pas dans la liste », juste au-dessus'));
   assert.ok(read('journey-view.js').includes('extra'));
 });
 
@@ -121,7 +124,7 @@ test('Canvas : vues sans bouton plein, fichiers inclus, rappel et relance à l�
   assert.ok(cpp.includes('"canvas-logic.js", "canvas-view.js"'), 'chargés par PlyoAssistant.cpp');
   const steps = read('journey-steps.js');
   // Le nom du bouton est cité par les messages de refus du C++ (PlyoCC2.cpp, PlyoCC2Logic.cpp) : à changer ensemble.
-  assert.ok(steps.includes('Changer les emplacements') && steps.includes('Démarrer sans carte'));
+  assert.ok(steps.includes('Changer les emplacements') && steps.includes('Laisser l’imprimante choisir l’emplacement'));
   // L'envoi relit les emplacements avant de partir quand le projet en a.
   assert.ok(/kind === 'send'[\s\S]{0,200}sendWithCanvasCheck\(\)/.test(page));
 });
@@ -138,7 +141,8 @@ test('Canvas : lectures numérotées, plan envoyé au premier affichage, refus o
 test('les températures de la bobine se saisissent là où le texte le dit', () => {
   const card = read('project-card.js');
   assert.ok(!card.includes('Change-les dans la fiche'), 'plus de renvoi vers des champs masqués aux débutants');
-  assert.ok(card.includes('Ma bobine indique d’autres températures') && card.includes('renderSpoolEditor'), 'lien et formulaire de la plage');
+  // Lot 8 (UX-13) : un seul lien par écran, « Entrer celles de l’étiquette » (formulaire fermé par défaut).
+  assert.ok(card.includes('Entrer celles de l’étiquette') && card.includes('renderSpoolEditor'), 'lien et formulaire de la plage');
   const page = read('index.html');
   assert.ok(page.includes('id="spool-slot"') && page.includes('setSpoolRange:'), 'formulaire branché dans le corps du Guide');
   assert.ok(!/visite guidée|« Explique-moi »/.test(page), 'aucun texte ne cite un élément supprimé');
@@ -257,7 +261,7 @@ test('reprise d’un projet : le même fichier est reposé sans proposer un nouv
 
 test('un fichier déposé est prioritaire : le plateau ne le remplace pas, et il est posé dès la machine choisie', () => {
   const page = read('index.html');
-  assert.ok(/projectUI\.waitingFile \? null : PlyoProject\.partFromPlate\(/.test(page));
+  assert.ok(/projectUI\.waitingFile \|\| resumeUI\.waiting \? null : PlyoProject\.partFromPlate\(/.test(page));
   assert.ok(/if \(adopted\) conv\.project\.part = null/.test(page), 'une pièce seulement vue sur le plateau cède la place');
   assert.ok(read('project-card.js').includes('Garder cette pièce'), 'l’ancienne pièce reste récupérable, et le panneau le dit');
 });
@@ -334,9 +338,9 @@ test('le panneau dit quand il change la machine d’Orca, sans supprimer ce chan
   assert.ok(q.includes('pickPrinter(q.machine.preset'), 'le changement reste');
 });
 
-test('Résultat répond à sa question : « Oui, c’est réussi » et « Nouvelle pièce », sans bouton plein de plus', () => {
+test('Résultat répond à sa question : « Oui, c’est réussi » et « Nouveau projet », sans bouton plein de plus', () => {
   const steps = read('journey-steps.js');
-  assert.ok(steps.includes('Oui, c’est réussi') && steps.includes('Nouvelle pièce'));
+  assert.ok(steps.includes('Oui, c’est réussi') && steps.includes('Nouveau projet'));
   assert.ok(/kind === 'newPart'\) newConversation\(\)/.test(read('index.html')));
 });
 
@@ -745,7 +749,7 @@ test('reprise 1 : une fin répondue sans jugement laisse un Résultat neutre', (
     assert.ok(!labels.includes('Oui, c’est réussi'), done + ' : jamais la question de réussite');
     assert.equal(labels.includes('Non, c’est raté'), done === 'error', 'après une erreur, « Non, c’est raté » reste');
     assert.ok(labels.includes('Réimprimer cette pièce'));
-    assert.equal(J.primaryAction('resultat', { ended: done }).kind, 'newPart', done + ' : « Nouvelle pièce » est le bouton de la ligne d’action');
+    assert.equal(J.primaryAction('resultat', { ended: done }).kind, 'newPart', done + ' : « Nouveau projet » est le bouton de la ligne d’action');
   }
   const page = read('index.html');
   assert.match(page, /s\.outcome = s\.end\.verdict;\s*markSendAnswered\(\);/);
@@ -763,7 +767,7 @@ test('reprise 1 : ids d’envoi, bobine des envois avec emplacements, réussite 
   assert.match(remember, /markSendAnswered\(\)/, 'M7');
   const end = page.slice(page.indexOf('function onPrintEnd'), page.indexOf('function answerEnd'));
   assert.match(end, /currentStep\(conv\.project\) === 'resultat'\) \{ renderProject\(\);/, 'M8 : au Résultat, seulement l’étape');
-  assert.match(page, /Cette question concerne une autre conversation\./);
+  assert.match(page, /Cette question concerne un autre projet\./);
   assert.match(page, /projectUI\.endNoteConv !== conv\) staleEndNote\(\);/);
 });
 
@@ -829,7 +833,7 @@ test('lot 1 · UX-04 et UX-05 : Résultat en cours, puis « Oui, c’est réussi
   S.render(printing, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: '', endAsk: null, handlers: h });
   assert.match(textOf(printing), /Quand elle est finie, dis-moi si c’est réussi\./);
   // Lot 4 (UX-22) : les mêmes libellés que la carte et la fin suivie.
-  assert.deepEqual(labels(printing), ['Oui, c’est réussi', 'Non, c’est raté', 'Nouvelle pièce', 'Réimprimer cette pièce']);
+  assert.deepEqual(labels(printing), ['Oui, c’est réussi', 'Non, c’est raté', 'Nouveau projet', 'Réimprimer cette pièce']);
   // Fin lue : le « Oui » est le bouton plein, la carte ne garde que « Non ».
   const finished = fakeUi().el('div');
   S.render(finished, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', endAsk: J.endQuestion('finished', 'K2', 'a.gcode'), handlers: h });

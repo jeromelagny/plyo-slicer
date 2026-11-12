@@ -2,6 +2,8 @@
 #include "PlyoCalibrationLogic.hpp"
 #include "PlyoAssistant.hpp"
 #include "PlyoAutoSave.hpp"
+#include "PlyoCatalog.hpp"
+#include "PlyoConfigRulesLogic.hpp"
 #include "PlyoStore.hpp"
 #include "PlyoSanitize.hpp"
 #include "PlyoJson.hpp"
@@ -460,7 +462,7 @@ nlohmann::json save_result(const std::string& test, double value)
         return {{"ok", false}, {"text", "Refusé : valeur de test invalide."}};
     for (const auto& [range, v] : keys)
         if (!(v >= range.min - 1e-9 && v <= range.max + 1e-9))
-            return {{"ok", false}, {"text", std::string("Refusé : ") + range.key + " hors des limites de Plyo."}};
+            return {{"ok", false}, {"text", "Refusé : la valeur trouvée pour « " + ConfigRules::label_of(range.key, [](const std::string& k) { return Catalog::policy().title(k); }) + " » sort des plages sûres de Plyo."}};
 
     // Base : le préréglage de filament ENREGISTRÉ (pas l'édité, qui porte les réglages du test). Si le préréglage
     // calibré existe déjà, on part de lui pour garder les valeurs des tests précédents.
@@ -501,7 +503,7 @@ nlohmann::json save_result(const std::string& test, double value)
     tab->save_preset(name); // nom fourni : pas de fenêtre ; crée ou met à jour le préréglage calibré
     // Orca peut refuser l'enregistrement sans le dire (ex. températures de plateau incohérentes dans le filament).
     if (bundle().filaments.get_selected_preset_name() != name || bundle().filaments.current_is_dirty())
-        return {{"ok", false}, {"text", "Orca n'a pas pu enregistrer le préréglage « " + name + " ». Vérifie ton filament dans ses réglages."}};
+        return {{"ok", false}, {"text", "Orca n'a pas pu enregistrer le profil « " + name + " » : le résultat du test n'est pas retenu."}};
 
     // « Remettre ma pièce » reprendra le préréglage calibré à la place du filament d'avant.
     if (!s_before->filaments.empty())

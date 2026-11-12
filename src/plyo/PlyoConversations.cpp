@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <ctime>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -36,9 +37,19 @@ bool valid_id(const std::string& id)
            std::all_of(id.begin(), id.end(), [](unsigned char c) { return std::islower(c) || std::isdigit(c) || c == '-'; });
 }
 
-// Garde les MAX_KEPT conversations les plus récentes, d'après la date des fichiers : sans les relire (jusqu'à
-// 4 Mo chacune), l'enregistrement automatique ne fige pas l'interface.
-static void prune()
+// Nom d'une conversation tel que le panneau le montre : sa pièce, sinon son titre.
+static std::string shown_name(const nlohmann::json& c)
+{
+    const nlohmann::json* project = Json::field(c, "project");
+    const nlohmann::json* part    = project != nullptr ? Json::field(*project, "part") : nullptr;
+    const std::string     name    = part != nullptr ? Json::str(*part, "name", 200) : std::string();
+    return name.empty() ? Json::str(c, "title", 200) : name;
+}
+
+// Garde les MAX_KEPT conversations avec un plateau et les MAX_KEPT sans plateau les plus récentes, d'après la date des
+// fichiers : sans les relire (jusqu'à 4 Mo chacune), l'enregistrement automatique ne fige pas l'interface. Seules celles
+// qui partent sont relues, pour dire leur nom au panneau (`removed`).
+static void prune(std::vector<std::string>* removed)
 {
     boost::system::error_code                    ec;
     std::vector<std::pair<std::time_t, fs::path>> files;
@@ -48,12 +59,21 @@ static void prune()
             files.emplace_back(fs::last_write_time(p, ec), p);
     }
     std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
-    std::vector<std::string> kept;
+    std::vector<bool> has_plate;
+    for (const auto& f : files)
+        has_plate.push_back(fs::is_regular_file(project_of(f.second.stem().string()), ec));
+    const std::vector<size_t> gone = ProjectFilesLogic::to_prune(has_plate, MAX_KEPT, MAX_KEPT);
+    std::vector<std::string>  kept;
     for (size_t i = 0; i < files.size(); ++i) {
-        if (i < MAX_KEPT)
+        if (std::find(gone.begin(), gone.end(), i) == gone.end()) {
             kept.push_back(files[i].second.stem().string());
-        else
-            fs::remove(files[i].second, ec);
+            continue;
+        }
+        if (removed != nullptr) {
+            const std::string name = shown_name(Store::read(files[i].second));
+            removed->push_back(name.empty() ? std::string("Projet sans nom") : name);
+        }
+        fs::remove(files[i].second, ec);
     }
     // Les projets 3MF des conversations effacées partent avec elles (et les restes d'une écriture interrompue).
     std::vector<std::string> projects;
@@ -80,7 +100,12 @@ nlohmann::json list()
         const nlohmann::json c = Store::read(p);
         if (!well_formed(c))
             continue;
-        out.push_back({{"id", p.stem().string()}, {"title", Json::str(c, "title")}, {"updated", updated_of(c)}});
+        // Fiche du projet (déjà réduite à ses clés connues à l'enregistrement) : le panneau en tire le nom de la pièce et
+        // l'étape atteinte. `has_plate` : son plateau est gardé (3MF).
+        const nlohmann::json* project = Json::field(c, "project");
+        out.push_back({{"id", p.stem().string()}, {"title", Json::str(c, "title")}, {"updated", updated_of(c)},
+                       {"project", project != nullptr && project->is_object() ? *project : nlohmann::json()},
+                       {"has_plate", fs::is_regular_file(project_of(p.stem().string()), ec)}});
     }
     // Dates ISO 8601 : l'ordre du texte est l'ordre du temps.
     std::sort(out.begin(), out.end(), [](const nlohmann::json& a, const nlohmann::json& b) { return a["updated"] > b["updated"]; });
@@ -95,7 +120,7 @@ nlohmann::json load(const std::string& id)
     return well_formed(c) ? c : nlohmann::json();
 }
 
-bool save(const std::string& id, const nlohmann::json& conversation)
+bool save(const std::string& id, const nlohmann::json& conversation, std::vector<std::string>* removed)
 {
     if (!valid_id(id) || !well_formed(conversation) || conversation.dump().size() > MAX_BYTES)
         return false;
@@ -105,7 +130,7 @@ bool save(const std::string& id, const nlohmann::json& conversation)
         kept["project"] = ProjectLogic::sanitize(kept["project"]);
     if (!Store::write(path_of(id), kept))
         return false;
-    prune();
+    prune(removed);
     return true;
 }
 

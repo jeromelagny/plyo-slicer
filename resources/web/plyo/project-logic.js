@@ -73,7 +73,7 @@
 
   // Réponse négative de filament_choose : fenêtre d'Orca annulée (`cancelled`, réglages non enregistrés gardés), ou pas de profil.
   function filamentChoiceError(msg, type) {
-    if (msg && msg.cancelled) return 'Choix annulé : ton filament n’a pas changé. Enregistre ou abandonne d’abord tes modifications du filament, puis choisis à nouveau.';
+    if (msg && msg.cancelled) return 'Choix annulé : ton filament n’a pas changé, tes modifications restent en place. Choisis à nouveau quand tu veux : Orca te redemandera quoi en faire.';
     return 'Je n’ai pas trouvé de profil ' + type + ' pour cette imprimante. Choisis un autre filament.';
   }
 
@@ -91,8 +91,8 @@
   function projectOpenedText(reason) {
     if (!reason) return '';
     if (reason === 'annule') return 'D’accord, ton plateau reste tel quel.';
-    if (reason === 'occupe') return 'Orca est occupé (découpe, envoi, test ou fenêtre ouverte) : je rouvre le plateau de cette conversation dès qu’il a fini. D’ici là, je ne change rien.';
-    return 'Je n’ai pas retrouvé le plateau de cette conversation : je remets ta machine et ta bobine.';
+    if (reason === 'occupe') return 'Orca est occupé (découpe, envoi, test ou fenêtre ouverte) : je rouvre le plateau de ce projet dès qu’il a fini. D’ici là, je ne change rien.';
+    return 'Je n’ai pas retrouvé le plateau de ce projet : je remets ta machine et ta bobine.';
   }
   // Plateau pas retrouvé : la machine et la bobine de la fiche reviennent, comme avant les projets 3MF. Pas si l'utilisateur
   // a gardé son propre projet.
@@ -104,18 +104,18 @@
     return tries < OPEN_RETRY_MAX ? 'retry' : 'give_up';
   }
   function openGiveUpText() {
-    return 'Orca est toujours occupé : je n’ai pas pu rouvrir le plateau de cette conversation. Rouvre-la depuis « Mes conversations » quand il aura fini ; d’ici là, je ne change rien.';
+    return 'Orca est toujours occupé : je n’ai pas pu rouvrir le plateau de ce projet. Rouvre-le depuis « Mes projets » (menu « ⋯ ») quand il aura fini ; d’ici là, je ne change rien.';
   }
   function restoresAfterOpen(reason) { return !!reason && reason !== 'annule' && reason !== 'occupe'; }
   // `previous` : le plateau trop lourd est celui de la conversation qu'on vient de quitter.
   function tooHeavyText(previous) {
-    return previous ? 'Le plateau de ta conversation précédente était trop lourd pour que je le garde (50 Mo au plus) : je garde seulement sa fiche.'
-      : 'Ton plateau est trop lourd pour que je le garde avec cette conversation (50 Mo au plus) : je garde seulement sa fiche.';
+    return previous ? 'Le plateau de ton projet précédent était trop lourd pour que je le garde (50 Mo au plus) : je garde seulement sa fiche.'
+      : 'Ton plateau est trop lourd pour que je le garde avec ce projet (50 Mo au plus) : je garde seulement sa fiche.';
   }
   // Plateau qui n'a pas pu être gardé (`reason` "echec" : écriture impossible ; sinon trop lourd).
   function projectFileText(reason, previous) {
     if (reason !== 'echec') return tooHeavyText(previous);
-    return (previous ? 'Je n’ai pas pu enregistrer le projet de ta conversation précédente' : 'Je n’arrive pas à enregistrer le projet de cette conversation')
+    return (previous ? 'Je n’ai pas pu enregistrer ton projet précédent' : 'Je n’arrive pas à enregistrer ce projet')
       + ' : vérifie qu’il reste de la place sur ton disque. Je garde seulement sa fiche.';
   }
   // Un fichier de l'utilisateur (ouvert dans Orca) n'est jamais attaché à une conversation (signal `user_file` du slicer).

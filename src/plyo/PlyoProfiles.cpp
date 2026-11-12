@@ -108,6 +108,7 @@ nlohmann::json save_applied()
 {
     nlohmann::json    saved = nlohmann::json::array();
     std::string       error;
+    bool              error_spool = false; // l'échec vise une bobine : l'enregistrement automatique réessaiera
     const std::string old_machine = Limits::machine_key();
     // Les réglages d'impression sont ceux de la pièce : jamais enregistrés dans le préréglage d'impression partagé (ils
     // suivraient le projet suivant), ni dans une copie « (Plyo) ». Ils restent modifiés : dans le 3MF de la conversation
@@ -131,8 +132,10 @@ nlohmann::json save_applied()
             existing.push_back(p.name);
         const std::string name    = created ? copy_name(from, existing) : from;
         const SaveOutcome outcome = save_current_as(false, name);
-        if (outcome != SaveOutcome::Ok)
-            error = outcome == SaveOutcome::Refused ? "Orca a refusé l'enregistrement" : "Orca n'a pas pu écrire le fichier";
+        if (outcome != SaveOutcome::Ok) {
+            error       = outcome == SaveOutcome::Refused ? "Orca a refusé l'enregistrement" : "Orca n'a pas pu écrire le fichier";
+            error_spool = spool;
+        }
         else {
             SettingsBridge::retarget_undo(false, from, name);
             saved.push_back({{"type", scope_of(Preset::TYPE_FILAMENT)}, {"name", name}, {"created", created}, {"from", from}});
@@ -143,7 +146,7 @@ nlohmann::json save_applied()
         Limits::carry_over(old_machine);
         Memory::carry_over(old_machine, now);
     }
-    return {{"saved", saved}, {"save_error", error}, {"in_project", in_project}, {"print_edited", print_dirty && !in_project}};
+    return {{"saved", saved}, {"save_error", error}, {"save_spool", error_spool}, {"in_project", in_project}, {"print_edited", print_dirty && !in_project}};
 }
 
 namespace {
@@ -288,7 +291,7 @@ std::string sent_refusal_text(const nlohmann::json& pointer, const std::string& 
     if (why == "other") {
         const std::string sent = Spools::name_of(pointer["spool"]);
         return "Ma dernière impression envoyée était avec " + (sent.empty() ? std::string("une autre bobine") : "« " + sent + " »") +
-               ", pas avec la bobine de cette conversation : je ne retiens rien. Ta prochaine impression réussie avec elle la retiendra.";
+               ", pas avec la bobine de ce projet : je ne retiens rien. Ta prochaine impression réussie avec elle la retiendra.";
     }
     if (why == "answered")
         return "Tu m'as dit que la dernière impression avait raté : je n'en retiens pas les réglages. Ta prochaine impression réussie les retiendra.";

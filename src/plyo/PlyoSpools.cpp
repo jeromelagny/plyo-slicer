@@ -92,33 +92,33 @@ bool save_spool_preset(const std::string& base_name, const std::string& name, co
         tab->load_config(cfg);
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: préréglage de bobine « " << name << " » impossible : " << e.what();
-        out = refuse("Orca n'a pas pu écrire le préréglage « " + name + " ».");
+        out = refuse("Orca n'a pas pu écrire le profil « " + name + " ».");
         return false;
     }
     // Mêmes vérifications que save_applied : choisi sous ce nom, plus modifié, fichier réécrit.
     switch (Profiles::save_current_as(false, name)) {
     case Profiles::SaveOutcome::Ok: break;
     case Profiles::SaveOutcome::Refused:
-        out = refuse("Orca a refusé d'enregistrer le préréglage « " + name + " ».");
+        out = refuse("Orca a refusé d'enregistrer le profil « " + name + " ».");
         return false;
     default:
-        out = refuse("Orca n'a pas pu écrire le préréglage « " + name + " ».");
+        out = refuse("Orca n'a pas pu écrire le profil « " + name + " ».");
         return false;
     }
     const Preset* saved = filaments.find_preset(name, false);
     if (saved == nullptr) {
-        out = refuse("Orca a refusé d'enregistrer le préréglage « " + name + " ».");
+        out = refuse("Orca a refusé d'enregistrer le profil « " + name + " ».");
         return false;
     }
     if (saved->inherits() != base_name) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: le préréglage de bobine « " << name << " » hérite de « " << saved->inherits()
                                  << " » au lieu de « " << base_name << " »";
-        out = refuse("Le préréglage « " + name + " » n'est pas relié au profil « " + base_name + " » d'Orca : je ne le retiens pas.");
+        out = refuse("Le profil « " + name + " » ne part pas du profil « " + base_name + " » d'Orca : je ne le retiens pas comme bobine.");
         return false;
     }
     // Comme un choix dans la liste du plateau (aucune question attendue : rien n'est modifié).
     if (!FirstSteps::select_filament(name)) {
-        out = refuse("Le préréglage « " + name + " » est enregistré, mais Orca ne l'a pas choisi. Choisis-le dans la liste des filaments.");
+        out = refuse("Le profil « " + name + " » est enregistré, mais Orca ne l'a pas choisi. Choisis-le dans la liste des filaments, à gauche du plateau.");
         return false;
     }
     BOOST_LOG_TRIVIAL(info) << "Plyo: préréglage de bobine enregistré « " << name << " » depuis « " << base_name << " »";
@@ -198,7 +198,7 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
         // L'entrée reste « en attente » sous ce nom : le prochain choix le réécrit, sans doublon.
         BOOST_LOG_TRIVIAL(error) << "Plyo: registre des bobines non écrit après l'enregistrement de « " << preset << " »";
         return {{"ok", false}, {"id", id}, {"name", spool}, {"preset", preset}, {"created", created},
-                {"text", "Le préréglage « " + preset + " » est enregistré, mais je n'ai pas pu le noter dans la liste de tes bobines. Choisis à nouveau ta bobine."}};
+                {"text", "Le profil « " + preset + " » est enregistré, mais je n'ai pas pu le noter dans la liste de tes bobines. Choisis à nouveau ta bobine."}};
     }
     out["preset"]         = preset;
     out["printer"]        = printer;
@@ -243,7 +243,7 @@ nlohmann::json adopt(const std::string& filament_preset, const std::string& name
 {
     const std::string material = adoptable_material(filament_preset);
     if (material.empty())
-        return {{"ok", false}, {"preset", filament_preset}, {"text", "Je ne peux pas retenir « " + filament_preset + " » comme bobine : il doit être ton filament 1 dans Orca et partir d'un profil d'Orca (PLA, PETG, ABS, ASA ou TPU). Sinon, crée une nouvelle bobine à l'étape Filament."}};
+        return {{"ok", false}, {"preset", filament_preset}, {"text", "Je ne peux pas retenir « " + filament_preset + " » comme bobine : je ne retiens que le premier filament de ta liste, s'il vient d'un profil PLA, PETG, ABS, ASA ou TPU d'Orca. Sinon, crée une nouvelle bobine à l'étape Filament."}};
     const nlohmann::json reg = load();
     const nlohmann::json r   = SpoolsLogic::adopt(reg, filament_preset, name, material, current_printer());
     const std::string    id  = Json::str(r, "id");

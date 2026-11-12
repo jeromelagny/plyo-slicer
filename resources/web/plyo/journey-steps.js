@@ -114,7 +114,7 @@
       if (opts.refused) {
         body.appendChild(line(ui, 'alert', opts.refused, 'warn'));
         if (opts.offerPlain === false) body.appendChild(ui.button('Relire les emplacements', h.rereadSlots, 'link'));
-        else body.appendChild(ui.button('Démarrer sans carte', h.startPlain, 'link'));
+        else body.appendChild(ui.button('Laisser l’imprimante choisir l’emplacement', h.startPlain, 'link'));
       }
       body.appendChild(ui.el('p', 'muted small', 'Vérifie que le plateau est vide et propre, et que le filament est chargé.'));
       var acts = ui.el('div', 'printer-actions');
@@ -134,7 +134,7 @@
         var q = opts.endAsk.verdict === 'finished' ? Object.assign({}, opts.endAsk, { choices: opts.endAsk.choices.filter(function (x) { return x.id !== 'yes'; }) }) : opts.endAsk;
         body.appendChild(endCard(ui, q, h.endChoice));
         if (opts.endAsk.verdict === 'error' && opts.spoolAsk && !opts.spoolNo) after.appendChild(ui.button('Non, c’est raté', h.failed, 'btn ghost sm', 'x'));
-        after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
+        after.appendChild(ui.button('Nouveau projet', h.newPart, 'btn ghost sm', 'plus'));
         after.appendChild(computer());
       } else if (!c.success && opts.endDone && !opts.spoolNo) {
         // Fin déjà répondue sans la juger (arrêt voulu, erreur) : pas de « Ça a marché ? » pour cet envoi. Après une erreur,
@@ -147,7 +147,7 @@
         body.appendChild(ui.el('p', '', 'Envoie-moi une photo de ta pièce : je te dis ce qui cloche et comment corriger.'));
         after.appendChild(computer());
         after.appendChild(ui.button('Oui, c’est réussi', h.success, 'btn ghost sm', 'check'));
-        after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
+        after.appendChild(ui.button('Nouveau projet', h.newPart, 'btn ghost sm', 'plus'));
       } else if (!c.success) {
         // Aucune fin connue : l'impression est peut-être en cours. On attend que tu dises comment elle a fini.
         // opts.spoolAsk : nom de la bobine de l'envoi (ou de l'export) fait depuis le panneau ; « réussi » retient ses réglages.
@@ -156,7 +156,7 @@
         // Mêmes libellés que la carte « Ça a marché ? » et la fin suivie (UX-22) : une seule question, un seul vocabulaire.
         after.appendChild(ui.button('Oui, c’est réussi', h.success, 'btn ghost sm', 'check'));
         after.appendChild(ui.button('Non, c’est raté', h.failed, 'btn ghost sm', 'x'));
-        after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
+        after.appendChild(ui.button('Nouveau projet', h.newPart, 'btn ghost sm', 'plus'));
       }
       body.appendChild(after);
       body.appendChild(ui.button('Réimprimer cette pièce', h.reprint, 'link'));

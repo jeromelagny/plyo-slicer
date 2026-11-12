@@ -91,7 +91,7 @@ MapDecision decide_map(const nlohmann::json& planned, const nlohmann::json& canv
 {
     MapDecision out;
     const std::string again = opts.offer_plain ?
-        " Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Démarrer sans carte », ou choisis à nouveau les emplacements." :
+        " Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Laisser l'imprimante choisir l'emplacement », ou choisis à nouveau les emplacements." :
         " Rien n'est parti : relis les emplacements ou choisis-en d'autres.";
     if (!canvases.is_array()) {
         out.refusal = "Je n'ai pas pu relire les emplacements de l'imprimante : l'impression n'a pas démarré." + again;

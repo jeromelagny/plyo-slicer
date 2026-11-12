@@ -35,13 +35,14 @@
 
   function habitFor(habits, preset) {
     var m = habits && habits.machines && typeof habits.machines === 'object' ? habits.machines[preset] : null;
-    return m && m.filament && m.filament.type ? { type: m.filament.type, nozzle_temp: m.filament.nozzle_temp, bed_temp: m.filament.bed_temp } : null;
+    return m && m.filament && m.filament.type ? { type: m.filament.type, nozzle_temp: m.filament.nozzle_temp, bed_temp: m.filament.bed_temp, spool: typeof m.filament.spool === 'string' ? m.filament.spool : '' } : null;
   }
 
   function rememberFilament(habits, preset, filament) {
     var h = clone(habits);
     if (!preset || !filament || !filament.type) return h;
     h.machines[preset] = { filament: { type: filament.type, nozzle_temp: filament.nozzle_temp, bed_temp: filament.bed_temp } };
+    if (filament.spool && typeof filament.spool.name === 'string' && filament.spool.name) h.machines[preset].filament.spool = filament.spool.name.slice(0, 60);
     h.last = preset;
     return h;
   }

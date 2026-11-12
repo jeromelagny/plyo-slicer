@@ -137,6 +137,19 @@ inline bool project_question(const std::string& caption, const std::vector<std::
     return !caption.empty() && std::find(project_captions.begin(), project_captions.end(), caption) != project_captions.end();
 }
 
+// Conversations à effacer pour faire de la place, d'après leurs fichiers du plus récent au plus ancien (`has_plate` : un
+// projet 3MF existe pour elle). La limite compte à part celles qui ont un plateau et les simples questions : une série de
+// questions ne fait jamais partir un projet. Rend les rangs à effacer, dans l'ordre de `has_plate`.
+inline std::vector<size_t> to_prune(const std::vector<bool>& has_plate, size_t max_plates, size_t max_others)
+{
+    std::vector<size_t> out;
+    size_t              plates = 0, others = 0;
+    for (size_t i = 0; i < has_plate.size(); ++i)
+        if (has_plate[i] ? ++plates > max_plates : ++others > max_others)
+            out.push_back(i);
+    return out;
+}
+
 // Projets dont la conversation n'existe plus (effacée, ou au-delà des 30 gardées), dans l'ordre de `files`.
 inline std::vector<std::string> orphans(const std::vector<std::string>& kept_conversations, const std::vector<std::string>& files)
 {

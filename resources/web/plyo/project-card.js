@@ -62,13 +62,15 @@
 
   // Températures de la fiche : rappel (débutant), lien vers la plage de l'étiquette de la bobine, et ce formulaire une fois ouvert.
   // ctx.spool : { open, limits (plage connue ou null), error }. Enregistrer garde la plage (limites du fabricant) et règle
-  // les températures dedans (h.setSpoolRange).
+  // les températures dedans (h.setSpoolRange). Une seule entrée par écran : à l'étape Filament, le lien est dans l'étape
+  // (ctx.spoolLinkInStep), pas dans la fiche.
+  var LABEL_LINK = 'Entrer celles de l’étiquette';
   function renderSpool(card, ui, fi, ctx) {
     var h = ctx.handlers, sp = ctx.spool || {};
     var wrap = ui.el('div', 'project-spool');
     if (ctx.beginner && (fi.nozzle_temp != null || fi.bed_temp != null))
       wrap.appendChild(ui.el('p', 'muted small', 'Buse ' + (fi.nozzle_temp != null ? fi.nozzle_temp + ' °C' : '?') + ' · plateau ' + (fi.bed_temp != null ? fi.bed_temp + ' °C' : '?')));
-    if (!sp.open) wrap.appendChild(ui.button('Ma bobine indique d’autres températures', h.toggleSpool, 'link'));
+    if (!sp.open && !ctx.spoolLinkInStep) wrap.appendChild(ui.button('Températures de l’étiquette', h.toggleSpool, 'link'));
     card.appendChild(wrap);
   }
 
@@ -196,7 +198,7 @@
           acts.appendChild(ui.button(label, function () { h.pickPrinter(p.preset, p.label); }, 'btn ghost sm'));
         };
         groups.main.forEach(add);
-        if (!groups.main.length && !groups.others.length) body.appendChild(ui.el('p', 'muted small', 'Aucune imprimante pour l’instant : ajoute la tienne avec le lien en haut à droite.'));
+        if (!groups.main.length && !groups.others.length) body.appendChild(ui.el('p', 'muted small', 'Aucune imprimante pour l’instant : clique sur « Ma machine n’est pas dans la liste », juste au-dessus.'));
         // Machines non reliées (carte SD, clé USB) : visibles comme les autres tant qu'il y en a peu, sinon repliées.
         if (groups.others.length && (groups.others.length <= 3 || ctx.showOthers)) groups.others.forEach(add);
         else if (groups.others.length) acts.appendChild(ui.button('Autres machines installées (' + groups.others.length + ')', h.toggleOthers, 'link'));
@@ -229,15 +231,17 @@
         else body.appendChild(ui.button('Une nouvelle bobine', h.toggleNewSpool, 'btn ghost sm', 'plus'));
       }
       if (fi) {
-        body.appendChild(ui.el('p', 'muted small', 'Si l’étiquette de ta bobine indique d’autres températures que celles en place, entre-les :'));
-        body.appendChild(ui.button('Ma bobine indique d’autres températures', h.toggleSpool, 'link'));
+        if (!(ctx.spool && ctx.spool.open)) {
+          body.appendChild(ui.el('p', 'muted small', 'Ton étiquette indique d’autres températures ?'));
+          body.appendChild(ui.button(LABEL_LINK, h.toggleSpool, 'link'));
+        }
         if (ctx.editing === 'filament') body.appendChild(ui.button('Garder cette bobine', h.cancelEdit, 'link'));
       }
       // Venu de « Choisir ma bobine » avant l'étape Filament : on peut revenir sans choisir.
       if (ctx.editing === 'filament' && !fi) body.appendChild(ui.button('Annuler', h.cancelEdit, 'link'));
       renderManualLink(body, ui, ctx);
     } else {
-      body.appendChild(ui.el('p', 'muted small', 'Glisse ton fichier STL ou 3MF ici, ou choisis-le sur ton ordinateur. Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
+      body.appendChild(ui.el('p', 'muted small', 'Glisse ici le fichier 3D de ta pièce (STL ou 3MF), ou choisis-le sur ton ordinateur. Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
       var pacts = ui.el('div', 'printer-actions');
       pacts.appendChild(ui.button('Choisir un fichier', h.importPart, 'btn ghost sm', 'folder'));
       body.appendChild(pacts);
@@ -251,6 +255,6 @@
     slot.appendChild(body);
   }
 
-  root.PlyoProjectCard = { renderFiche: renderFiche, renderChoices: renderChoices, renderSpoolEditor: renderSpoolEditor, MATERIALS: MATERIALS };
+  root.PlyoProjectCard = { renderFiche: renderFiche, renderChoices: renderChoices, renderSpoolEditor: renderSpoolEditor, MATERIALS: MATERIALS, LABEL_LINK: LABEL_LINK };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.PlyoProjectCard;
 })(typeof window !== 'undefined' ? window : globalThis);

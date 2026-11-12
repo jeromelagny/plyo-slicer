@@ -79,7 +79,7 @@ test('issues d’un lot refusé : confirmer, réessayer, montrer le réglage', (
 
 test('ROB-05 : enregistrement évité pour un écart de températures, dit clairement', () => {
   assert.match(L.savedText({ save_error: 'temperatures' }), /^Appliqué\. Je n’ai pas enregistré le filament : .*Rapproche ces deux températures/);
-  assert.match(L.savedText({ save_error: 'Orca a refusé l’enregistrement' }), /^Appliqué, mais je n’ai pas pu enregistrer le profil/);
+  assert.match(L.savedText({ save_error: 'Orca a refusé l’enregistrement' }), /^Appliqué, mais je n’ai pas pu le garder dans ton profil de filament/);
 });
 
 test('ROB-11 : chaque demande qui attend un « result » porte un identifiant, l’erreur générale a son propre type', () => {

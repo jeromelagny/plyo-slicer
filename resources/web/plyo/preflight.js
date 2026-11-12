@@ -150,7 +150,7 @@
         if (k === 'fit') want('fit', o.name, function () { return { key: 'fit', label: 'Réduire pour que tout tienne sur le plateau', action: 'scale_to_fit', objects: [], checked: true }; });
         if (k === 'support') want('support', o.name, function () { return { key: 'support', label: 'Activer les supports', changes: [{ id: 'support', value: true }], objects: [], checked: true }; });
         if (k === 'tall' || k === 'contact')
-          want('brim', o.name, function () { return { key: 'brim', label: 'Ajouter une bordure de ' + BRIM + ' mm', changes: brimFix(s).changes, objects: [], checked: true }; });
+          want('brim', o.name, function () { return { key: 'brim', label: 'Ajouter une bordure de ' + BRIM + ' mm (un fin rebord collé autour, qui l’empêche de se décoller)', changes: brimFix(s).changes, objects: [], checked: true }; });
         if (k === 'support' || k === 'contact')
           want('orient', o.name, function () { return { key: 'orient', label: ORIENT.label, action: ORIENT.action, objects: [], checked: false }; });
       });
@@ -186,7 +186,7 @@
     var back = settings && undone ? 'Réglages d’avant remis, et la pièce est revenue comme avant.' : settings ? 'Réglages d’avant remis.' : undone ? 'La pièce est revenue comme avant.' : '';
     if (!kinds.length) return { text: back, tone: '' };
     var still = kinds.length > 1 ? kinds.slice(0, -1).join(', ') + ' et ' + kinds[kinds.length - 1] : kinds[0];
-    return { text: (settings ? 'Réglages d’avant remis. ' : '') + 'La pièce reste ' + still + ' : fais Cmd + Z (Ctrl + Z sur Windows) dans le slicer pour la remettre.', tone: 'warn' };
+    return { text: (settings ? 'Réglages d’avant remis. ' : '') + 'La pièce reste ' + still + ' : fais Cmd + Z (Ctrl + Z sur Windows) dans la fenêtre de Plyo pour la remettre.', tone: 'warn' };
   }
 
   // ---------- Ce qu'Orca dit de la plaque (PlyoOrcaMessages.cpp) ----------
@@ -231,7 +231,7 @@
     collision_by_object: function () { return { text: 'En impression pièce par pièce, la tête de l’imprimante toucherait une pièce déjà imprimée : elles sont trop proches, ou l’une est trop haute.', actions: [ARRANGE_ACT] }; },
     object_outside: function () { return { text: 'Une pièce touche le bord du plateau ou en sort. Orca vérifie la vraie forme du plateau, zones interdites comprises.', actions: [ARRANGE_ACT] }; },
     plate_refused: function () { return { text: 'Orca refuse de découper cette plaque sans me dire pourquoi. Range le plateau, puis découpe à nouveau.', actions: [ARRANGE_ACT] }; },
-    toolpath_outside: function () { return { text: 'Une partie du trajet de la buse sort du plateau : souvent la bordure ou la jupe d’une pièce placée trop près du bord.', actions: [ARRANGE_ACT] }; },
+    toolpath_outside: function () { return { text: 'Une partie du trajet de la buse sort du plateau : souvent la bordure (rebord collé autour de la pièce) ou la jupe (contour tracé autour d’elle) d’une pièce placée trop près du bord.', actions: [ARRANGE_ACT] }; },
     height_outside: function () { return { text: 'Le trajet de la buse monte plus haut que ce que ton imprimante peut atteindre.', actions: [{ kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour que ça tienne' }] }; },
     filament_bed_surface: function () { return { text: 'Un filament de ta plaque ne peut pas être imprimé directement sur la surface de ce plateau.', actions: [{ kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' }] }; },
     nozzle_area: function () { return { text: 'Une partie de la plaque est hors de la zone que peut atteindre l’une des buses.', actions: [ARRANGE_ACT] }; },
@@ -291,7 +291,7 @@
   // Erreur d'export (`kind` : FirstSteps::on_export_done) : la phrase vient de Plyo, le texte d'Orca n'est qu'un détail.
   var EXPORT_TEXTS = {
     write: { text: 'Je n’ai pas pu écrire le fichier : le disque est peut-être plein, le dossier protégé, ou un fichier du même nom est ouvert dans un autre logiciel.', actions: [{ kind: 'export', label: 'Choisir un autre dossier' }] },
-    gcode_template: { text: 'Le G-code de ton imprimante contient une erreur : le fichier n’a pas pu être préparé. Je ne modifie jamais ces commandes.', actions: [{ kind: 'show_me', target: 'printer', label: 'Montre-moi l’imprimante' }] },
+    gcode_template: { text: 'Le G-code de ton imprimante (ses commandes de début et de fin) contient une erreur : le fichier n’a pas pu être préparé. Je ne modifie jamais ces commandes.', actions: [{ kind: 'show_me', target: 'printer', label: 'Montre-moi l’imprimante' }] },
     slicing: { text: 'La découpe a échoué pendant l’export : aucun fichier n’a été écrit.', actions: [{ kind: 'slice', label: 'Découper à nouveau' }] },
     memory: { text: 'Ton ordinateur a manqué de mémoire pendant l’export. Ferme d’autres logiciels, puis exporte à nouveau.', actions: [{ kind: 'export', label: 'Exporter à nouveau' }] },
     other: { text: 'L’export n’a pas abouti : aucun fichier n’a été écrit.', actions: [{ kind: 'export', label: 'Choisir un autre dossier' }] }

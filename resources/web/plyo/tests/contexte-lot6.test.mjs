@@ -76,7 +76,7 @@ test('IA-16 : chaque test d’Orca est annoncé avant, puis expliqué (lecture, 
     assert.match(L.rawTestText(t).before, /^Ce test ouvre une fenêtre d’Orca et remplace ta plaque par la pièce de test\./);
     const r = L.rawTestResult({ ok: true, target: t, replaced: true });
     assert.equal(r.back, true);
-    assert.match(r.text, /« Mes conversations »/);
+    assert.match(r.text, /« Mes projets »/);
   }
   assert.match(L.rawTestText('tolerance').before, /Rien n’est remplacé/);
   assert.equal(L.rawTestText('cornering'), null);

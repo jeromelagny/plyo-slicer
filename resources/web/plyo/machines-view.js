@@ -6,8 +6,9 @@
   function renderDrawer(body, ui, opts) {
     var J = root.PlyoJourney, M = root.PlyoMachines, hidden = (opts.habits && opts.habits.hidden) || [];
     body.textContent = '';
-    var groups = J.groupPrinters(opts.printers).main;
-    if (!groups.length) body.appendChild(ui.el('p', 'muted', 'Aucune machine reliée pour l’instant. Ajoute la tienne ci-dessous.'));
+    // Machines reliées au réseau, puis celles installées sans liaison (on imprime par carte SD ou clé USB) : toutes comptent.
+    var grouped = J.groupPrinters(opts.printers), groups = grouped.main.concat(grouped.others);
+    if (!groups.length) body.appendChild(ui.el('p', 'muted', 'Aucune imprimante pour l’instant. Ajoute la tienne ci-dessous.'));
     groups.forEach(function (m) {
       var isHidden = hidden.indexOf(m.preset) >= 0;
       var card = ui.el('div', 'machine-row' + (isHidden ? ' off' : ''));
@@ -16,8 +17,9 @@
       head.appendChild(isHidden ? ui.button('Afficher', function () { opts.handlers.show(m.preset); }, 'link')
         : ui.button('Retirer de la liste', function () { opts.handlers.hide(m.preset); }, 'link'));
       card.appendChild(head);
+      if (!m.linked) card.appendChild(ui.el('p', 'muted small', 'Non reliée : tu imprimes par carte SD ou clé USB.'));
       var fil = M.habitFor(opts.habits, m.preset);
-      card.appendChild(ui.el('p', 'muted small', fil ? 'Dernier filament : ' + fil.type + (fil.nozzle_temp != null ? ' · ' + fil.nozzle_temp + '/' + fil.bed_temp + ' °C' : '') : 'Pas encore de filament mémorisé.'));
+      card.appendChild(ui.el('p', 'muted small', fil ? 'Dernière bobine : ' + (fil.spool || fil.type) + (fil.nozzle_temp != null ? ' · ' + fil.nozzle_temp + '/' + fil.bed_temp + ' °C' : '') : 'Pas encore de bobine retenue.'));
       var others = groups.filter(function (o) { return o.preset !== m.preset && M.habitFor(opts.habits, o.preset); });
       others.forEach(function (o) {
         card.appendChild(ui.button('Reprendre les habitudes de « ' + o.label + ' »', function () { opts.handlers.copyHabits(o.preset, m.preset); }, 'link'));

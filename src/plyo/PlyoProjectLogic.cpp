@@ -320,6 +320,9 @@ nlohmann::json sanitize_habits(const nlohmann::json& habits)
                 if (v != nullptr && v->is_number() && std::isfinite(v->get<double>()) && v->get<double>() >= 0 && v->get<double>() <= 400)
                     f[key] = *v;
             }
+            // Nom de la dernière bobine (« Mes machines ») : un texte court, rien d'autre.
+            if (const std::string spool = Json::str(*filament, "spool", 60); !spool.empty())
+                f["spool"] = spool;
             out["machines"][it.key()] = {{"filament", f}};
         }
     }

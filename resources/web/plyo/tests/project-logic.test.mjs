@@ -117,7 +117,7 @@ test('projet de la conversation : rouvert seulement quand la fiche a une pièce'
 
 test('projet de la conversation : texte quand le plateau ne revient pas', () => {
   assert.equal(P.projectOpenedText(''), '');
-  const lost = 'Je n’ai pas retrouvé le plateau de cette conversation : je remets ta machine et ta bobine.';
+  const lost = 'Je n’ai pas retrouvé le plateau de ce projet : je remets ta machine et ta bobine.';
   assert.equal(P.projectOpenedText('absent'), lost);
   assert.equal(P.projectOpenedText('abime'), lost);
   assert.equal(P.projectOpenedText('trop_gros'), lost);
@@ -142,7 +142,7 @@ test('projet de la conversation : jamais attaché à un fichier de l’utilisate
 test('projet de la conversation : slicer occupé, plateau trop lourd d’une conversation quittée', () => {
   assert.equal(P.restoresAfterOpen('occupe'), false);
   assert.match(P.projectOpenedText('occupe'), /occupé/);
-  assert.match(P.tooHeavyText(true), /conversation précédente/);
+  assert.match(P.tooHeavyText(true), /projet précédent/);
   assert.doesNotMatch(P.tooHeavyText(false), /précédente/);
 });
 
@@ -154,7 +154,7 @@ test('projet de la conversation : plateau détaché par Orca, rouvert seulement 
 
 test('projet de la conversation : 3MF impossible à écrire (disque plein, droits)', () => {
   assert.match(P.projectFileText('echec', false), /place sur ton disque/);
-  assert.match(P.projectFileText('echec', true), /conversation précédente/);
+  assert.match(P.projectFileText('echec', true), /projet précédent/);
   assert.equal(P.projectFileText('', false), P.tooHeavyText(false));
   assert.equal(P.projectFileText('trop_gros', true), P.tooHeavyText(true));
 });
@@ -170,5 +170,5 @@ test('ouverture refusée parce qu’Orca est occupé : le panneau redemande, pui
   assert.equal(P.openRetryStep('occupe', 20), 'give_up');
   assert.equal(P.OPEN_RETRY_MS, 3000);
   assert.match(P.projectOpenedText('occupe'), /dès qu’il a fini/);
-  assert.match(P.openGiveUpText(), /Mes conversations/);
+  assert.match(P.openGiveUpText(), /Mes projets/);
 });

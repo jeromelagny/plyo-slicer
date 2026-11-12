@@ -399,6 +399,9 @@
   .conv-item button.open { flex: 1; border: 0; background: none; text-align: left; cursor: pointer; padding: 0; min-width: 0; }
   .conv-item .t { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conv-item .d { display: block; color: var(--muted); font-size: var(--fs-xs); }
+  .conv-confirm { flex: 1; display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+  .conv-confirm p { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .btn.danger { background: transparent; color: var(--danger-text); border-color: var(--danger-text); }
   .empty-state { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); padding: var(--s4); border: 1px dashed var(--border); border-radius: var(--r-md); }
   .empty-state > .ic { color: var(--accent-text); }
   .empty-state b { font-size: var(--fs-md); }
@@ -419,17 +422,18 @@
 <body>
   <div class="top">
     <h1>Assistant Plyo</h1>
-    <button class="linked hidden push" id="phone-linked" type="button" title="Téléphone relié à cette conversation : clique pour revoir le QR code"></button>
+    <button class="linked hidden push" id="phone-linked" type="button" title="Téléphone relié à ce projet : clique pour revoir le QR code"></button>
     <button class="gauge hidden push" id="gauge" type="button" title="Jauge IA : ton utilisation ce mois-ci. Clique pour le détail." aria-label="Jauge IA du mois"><span class="gauge-name">Jauge IA</span><span class="bar"><i id="gauge-fill"></i></span><span id="gauge-label">…</span></button>
     <button class="btn sm hidden push" id="btn-login" type="button" title="Connexion par un code envoyé par e-mail, sans mot de passe">Me connecter</button>
     <button class="icon-btn" id="btn-more" type="button" title="Plus d’options" aria-haspopup="menu" aria-label="Plus d’options"></button>
     <!-- Menu en trois groupes ; chaque entrée a son icône, une entrée indisponible reste visible mais grisée. -->
     <div class="menu hidden" id="menu" role="menu">
-      <div class="group" role="presentation">Conversation</div>
-      <button type="button" id="m-new" role="menuitem" data-icon="plus">Nouvelle conversation</button>
-      <button type="button" id="m-convs" role="menuitem" data-icon="chat">Mes conversations</button>
+      <div class="group" role="presentation">Projet</div>
+      <button type="button" id="m-new" role="menuitem" data-icon="plus">Nouveau projet</button>
+      <button type="button" id="m-convs" role="menuitem" data-icon="folder">Mes projets</button>
+      <button type="button" id="m-parts" role="menuitem" data-icon="cube">Mes pièces</button>
       <button type="button" id="m-intent" role="menuitem" data-icon="help" class="hidden">Reposer les questions sur ma pièce</button>
-      <button type="button" id="m-level" role="menuitem" data-icon="chat">Mes explications : détaillées</button>
+      <button type="button" id="m-level" role="menuitem" data-icon="chat">Réponses plus courtes</button>
       <button type="button" id="m-undo" role="menuitem" data-icon="undo" disabled title="Rien à annuler pour l’instant">Annuler les derniers réglages appliqués</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
@@ -453,7 +457,7 @@
     <!-- Premiers pas : étape du parcours en cours -->
     <div class="view" id="view-guide" role="tabpanel" aria-labelledby="tab-guide">
     <div id="journey-bar"></div>
-    <section class="step-card"><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="project-card"></div></div></section>
+    <section class="step-card"><div id="resume-slot"></div><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="project-card"></div></div></section>
     <div id="spool-slot"></div>
     <div id="tour-slot"></div>
     <div id="outcome-slot"></div>
@@ -473,7 +477,7 @@
         <div id="hello-spool"></div>
       </div>
       <div class="home-more hidden" id="goals-wrap">
-        <p class="label">Ou choisis un objectif</p>
+        <p class="label">Ou choisis un objectif (utilise ta jauge)</p>
         <div class="chips" id="goals">
           <button class="chip" type="button">Je veux une surface du dessus bien lisse</button>
           <button class="chip" type="button">Je veux imprimer plus vite</button>
@@ -496,8 +500,8 @@
       <div class="tools">
         <button class="icon-btn" id="btn-files" type="button" title="Joindre des photos ou un modèle 3D (STL, 3MF…)" aria-label="Joindre un fichier"></button>
         <button class="icon-btn" id="btn-phone" type="button" title="Prendre des photos avec mon téléphone" aria-label="Photos avec le téléphone"></button>
-        <span class="hint" id="note-hint">Entrée pour envoyer</span>
-        <button class="send" id="btn-send" type="button" title="Envoyer (Entrée) · Maj + Entrée pour aller à la ligne" aria-label="Envoyer"></button>
+        <span class="hint" id="note-hint">Entrée pour envoyer (utilise ta jauge)</span>
+        <button class="send" id="btn-send" type="button" title="Envoyer à l’assistant (utilise ta jauge) · Entrée envoie, Maj + Entrée va à la ligne" aria-label="Envoyer à l’assistant (utilise ta jauge)"></button>
       </div>
     </div>
     <input id="file-input" type="file" accept="image/*,.stl,.3mf,.obj,.step,.stp,.amf" multiple hidden>
@@ -849,7 +853,7 @@
   // Pendant une réponse, on ne change pas de conversation (elle arriverait dans la mauvaise).
   function blockedWhileBusy() {
     if (!busy) return false;
-    noteLine('Attends la fin de la réponse (ou annule-la) avant de changer de conversation.', '', 'info');
+    noteLine('Attends la fin de la réponse (ou annule-la) avant de changer de projet.', '', 'info');
     return true;
   }
   function clearThread() {
@@ -1102,9 +1106,9 @@
     // Le message est posé après le passage à l'étape suivante (qui efface les messages du guide) : voir renderProject.
     // (les températures de la bobine sont ensuite demandées à l'étape Filament : PlyoJourney.tempsPending)
   }
+  // Simple information : l'entrée vers les températures de l'étiquette est celle de la fiche (une seule par écran).
   function spoolHint() {
-    var tip = noteLine('J’ai pris les températures conseillées pour ce filament.', '', 'info', 'guide');
-    tip.appendChild(button('Ma bobine indique d’autres températures', function () { if (!projectUI.spool.open) projectHandlers.toggleSpool(); }, 'link'));
+    noteLine('J’ai pris les températures conseillées pour ce filament. Ton étiquette dit autre chose ? « Températures de l’étiquette », dans la fiche en haut.', '', 'info', 'guide');
   }
   // Le plan d'envoi (carte des emplacements) suit le projet affiché ; il n'est renvoyé que s'il change.
   function syncCanvasPlan(force) {
@@ -1196,7 +1200,7 @@
     projectUI.endNote = null;
     if (!n) return;
     n.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
-    n.appendChild(el('p', 'muted small', 'Cette question concerne une autre conversation.'));
+    n.appendChild(el('p', 'muted small', 'Cette question concerne un autre projet.'));
   }
   // La fin déjà répondue sans jugement, pour l'étape Résultat de cette conversation ('' sinon).
   function endOutcome() { var s = sendOf(); return s && !conv.project.success ? s.outcome || '' : ''; }
@@ -1410,12 +1414,12 @@
   // celles de l'étiquette de la bobine. « Garder … » (ligne d'action) ou le formulaire valident l'étape.
   function renderTempsStep() {
     var f = conv.project.filament, slot = $('project-card'), sp = projectUI.spool;
-    if (projectUI.tempsAsked !== conv) { projectUI.tempsAsked = conv; sp.open = true; sp.error = ''; window.orca.postMessage({ type: 'limits_get' }); }
+    // Formulaire fermé par défaut : garder les températures conseillées est le cas courant (un seul lien pour l'ouvrir).
+    if (projectUI.tempsAsked !== conv) { projectUI.tempsAsked = conv; sp.open = false; sp.error = ''; window.orca.postMessage({ type: 'limits_get' }); }
     slot.textContent = '';
     var body = el('div', 'project-body');
-    body.appendChild(el('p', '', 'J’ai mis les températures conseillées pour du ' + f.type + ' : buse ' + (f.nozzle_temp != null ? f.nozzle_temp : '?') + ' °C, plateau ' + (f.bed_temp != null ? f.bed_temp : '?') + ' °C.'));
-    body.appendChild(el('p', 'muted small', 'Regarde l’étiquette de ta bobine : si le fabricant indique d’autres températures, entre-les ci-dessous. Sinon, garde celles-ci.'));
-    if (!sp.open) body.appendChild(button('Entrer les températures de ma bobine', projectHandlers.toggleSpool, 'link'));
+    body.appendChild(el('p', '', 'J’ai mis les températures conseillées pour du ' + f.type + ' : buse ' + (f.nozzle_temp != null ? f.nozzle_temp : '?') + ' °C, plateau ' + (f.bed_temp != null ? f.bed_temp : '?') + ' °C. Ton étiquette dit autre chose ?'));
+    if (!sp.open) body.appendChild(button(PlyoProjectCard.LABEL_LINK, projectHandlers.toggleSpool, 'link'));
     slot.appendChild(body);
   }
   function confirmTemps() {
@@ -1423,6 +1427,19 @@
     conv.project.filament.temps_ok = true;
     projectUI.spool.open = false;
     projectChanged();
+  }
+  // Changement d'étape : les simples informations partent. Une note qui porte encore une action (un bouton actif : « Annuler »,
+  // « Réessayer »…) ou une erreur reste, jusqu'à ce qu'elle soit traitée (bouton cliqué) ou remplacée : trois au plus, les
+  // plus anciennes partent. Un autre projet repart d'une zone vide (startConversation, restoreConversation).
+  var KEPT_NOTES = 3;
+  function clearStepNotes() {
+    var box = $('guide-notes');
+    var kept = Array.prototype.filter.call(box.children, function (n) {
+      var live = Array.prototype.some.call(n.querySelectorAll('button'), function (b) { return !b.disabled; });
+      return live || n.classList.contains('error');
+    });
+    box.textContent = '';
+    kept.slice(-KEPT_NOTES).forEach(function (n) { box.appendChild(n); });
   }
   function renderProject() {
     if (!conv) return;
@@ -1433,10 +1450,10 @@
     if (projectUI.endNote && projectUI.endNoteConv !== conv) staleEndNote();
     else if (projectUI.endNote && step === 'resultat' && endQuestionNow()) dropEndNote();
     if (step !== 'imprimer') { projectUI.sentConv = null; projectUI.exported = null; } // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
-    if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; } }
+    if (step !== journeyUI.lastStep) { clearStepNotes(); journeyUI.lastStep = step; if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; } }
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
-    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, handlers: projectHandlers });
+    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, spoolLinkInStep: step === 'filament', handlers: projectHandlers });
     PlyoProjectCard.renderSpoolEditor($('spool-slot'), ui, { spool: projectUI.spool, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth, onRevisit: barBusy() ? null : revisitStep });
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
@@ -1471,6 +1488,7 @@
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
     PlyoJourneyView.renderSuggestions($('suggestions'), ui, { step: step, handlers: suggestionHandlers });
     renderSetupFlow();
+    renderResume();
   }
   // Une étape faite de la barre, rouverte en mode « changer » avec les gestes de la fiche : changer de machine ou de bobine refait
   // la préparation (resetStepOnChange) ; la pièce se rechoisit comme à l'étape Pièce (une autre pièce = un autre projet) ;
@@ -1745,7 +1763,7 @@
       habits = PlyoMachines.noteIntent(habits, true);
       saveHabits();
       projectChanged();
-      noteLine('D’accord, je garde les réglages actuels de ta machine.', '', 'info', 'guide');
+      noteLine('D’accord, je garde les réglages d’impression actuels.', '', 'info', 'guide');
       if (PlyoMachines.offerStopAsking(habits)) {
         var offer = noteLine('Tu passes souvent ces questions.', '', 'info', 'guide');
         offer.appendChild(button('Ne plus me les poser', function () { habits = PlyoMachines.stopAsking(habits, true); saveHabits(); offer.remove(); }, 'link'));
@@ -1834,7 +1852,12 @@
   }
   // Niveau d'explication : deviné d'après tes messages tant que tu ne l'as pas choisi (menu « Mes explications »).
   function updateIntentMenu() { $('m-intent').classList.toggle('hidden', PlyoMachines.askIntent(habits) && !(conv && conv.project.intent && (conv.project.intent.skipped || conv.project.intent.applied))); }
-  function updateLevelLabel() { $('m-level').textContent = fr('Mes explications : ' + (PlyoMachines.levelOf(habits) === 'short' ? 'courtes' : 'détaillées')); }
+  // L'entrée dit ce que le clic va faire (passer à l'autre niveau), pas le niveau en cours.
+  // Seul le texte change : l'icône de l'entrée reste.
+  function updateLevelLabel() {
+    var item = $('m-level'), label = fr(PlyoMachines.levelOf(habits) === 'short' ? 'Réponses plus détaillées' : 'Réponses plus courtes');
+    if (item.lastChild && item.lastChild.nodeType === 3) item.lastChild.nodeValue = label; else item.appendChild(txt(label));
+  }
   // Début d'une impression : que demander pour la machine ? (voir PlyoMachines.machineQuestion)
   function applyMachineQuestion() {
     if (!conv || !projectUI.printers || !lastValues) return; // sans les réglages lus, on ne sait pas encore sur quelle machine est Orca
@@ -2220,8 +2243,10 @@
   }
   // Une conversation rouverte redevient active : son projet 3MF revient sur le plateau (pièce, positions, réglages
   // d'impression ; le filament vient de la bobine), et ses fiches de réglages non appliquées s'appliquent de nouveau.
-  function restoreConversation(id, c) {
+  // `attached` : panneau rouvert sur la conversation dont le plateau est encore attaché : le plateau est déjà le sien.
+  function restoreConversation(id, c, attached) {
     if (!c || !Array.isArray(c.entries) || busy) return;
+    resumeUI.offer = null;
     openRetryReset(); // une ouverture redemandée pour une autre conversation (ou celle-ci) repart de zéro
     unlinkPhone(true);
     clearThread();
@@ -2238,7 +2263,9 @@
     dropReplaced();
     applyTab('reset');
     $('guide-notes').textContent = '';
-    if (PlyoProject.opensProjectFile(conv.project)) {
+    if (attached) {
+      attachPlate(); // le slicer garde l'attache (même conversation) : rien n'est rechargé
+    } else if (PlyoProject.opensProjectFile(conv.project)) {
       // Le slicer écrit d'abord le plateau quitté, puis rouvre celui-ci sans fenêtre ; s'il manque, la machine et la bobine reviennent (onProjectOpened).
       projectUI.restoringUntil = Date.now() + 4000; // Orca change de profil : pas d'alerte de divergence pendant ce temps
       window.orca.postMessage({ type: 'project_open', conv: id });
@@ -2275,6 +2302,41 @@
     if (entry.kind === 'fiche') return renderFiche(entry.msg, archived, reopened);
     if (entry.kind === 'model') return renderModel(entry, archived);
     if (entry.kind === 'note') return noteLine(entry.text, entry.tone, entry.icon, 'chat');
+  }
+
+  // ---------- Reprise d'un projet à l'ouverture du panneau ----------
+  // `waiting` : réponse du slicer attendue (la pièce du plateau n'est pas encore reprise) ; `offer` : projet récent proposé
+  // ({ id, title, detail }) ; `declined` : « Nouveau projet » cliqué, l'offre ne revient pas dans ce panneau.
+  var resumeUI = { waiting: true, timer: null, offer: null, declined: false };
+  function onProjectResume(msg) {
+    if (!resumeUI.waiting) return;
+    resumeUI.waiting = false;
+    clearTimeout(resumeUI.timer);
+    // Le plateau est encore celui d'une conversation (panneau fermé puis rouvert) : on la rouvre telle quelle, à son étape.
+    if (msg.attached && msg.conversation && Array.isArray(msg.conversation.entries)) { restoreConversation(msg.attached, msg.conversation, true); return; }
+    detachPlate(); // conversation neuve : le plateau d'avant n'est plus attaché (ses réglages ne suivent pas)
+    var pick = Logic.resumeCandidate(msg.items, Date.now());
+    resumeUI.offer = pick ? Object.assign({ id: pick.id }, Logic.projectEntry(pick)) : null;
+    renderProject();
+  }
+  // Proposé en tête de l'étape seulement sur un plateau vide et un projet neuf : jamais quand une pièce est déjà là (elle
+  // serait remplacée), ni une fois le projet commencé.
+  function renderResume() {
+    var slot = $('resume-slot');
+    slot.textContent = '';
+    var o = resumeUI.offer;
+    if (!o || resumeUI.declined || !conv || conv.entries.length || PlyoProject.nextStep(conv.project) === 'ready' || (conv.project.part && conv.project.part.name) || (tourSignals && tourSignals.objects > 0)) return;
+    var box = alertBox('info', 'Reprendre « ' + o.title + ' » ?', 'folder');
+    if (o.detail) box.body.appendChild(el('p', 'muted small', o.detail));
+    var acts = el('div', 'printer-actions');
+    acts.appendChild(button('Reprendre', function () { resumeUI.offer = null; slot.textContent = ''; openConversation(o.id); }, 'btn sm', 'undo'));
+    acts.appendChild(button('Nouveau projet', function () { resumeUI.offer = null; resumeUI.declined = true; slot.textContent = ''; }, 'btn ghost sm', 'plus'));
+    box.body.appendChild(acts);
+    slot.appendChild(box);
+  }
+  // Un ancien projet effacé pour faire de la place : toujours dit, jamais en silence.
+  function onConvPruned(msg) {
+    (Array.isArray(msg.names) ? msg.names : []).forEach(function (name) { noteLine(Logic.prunedText(name), '', 'info'); });
   }
 
   // ---------- Compte : session, solde, connexion ----------
@@ -2440,8 +2502,8 @@
   }
 
   function openConversations() {
-    openDrawer('Mes conversations', function (body) {
-      body.appendChild(el('p', 'muted', 'Tes 30 dernières conversations restent sur cet ordinateur.'));
+    openDrawer('Mes projets', function (body) {
+      body.appendChild(el('p', 'muted', 'Chaque pièce a son projet : son plateau, ses réglages et ta discussion avec moi. Tes projets restent sur cet ordinateur ; au-delà de 30, je range le plus ancien et je te le dis.'));
       var list = el('div', 'conv-list');
       body.appendChild(list);
       list.appendChild(el('p', 'muted', 'Chargement…'));
@@ -2455,30 +2517,46 @@
     var list = convListTarget;
     list.textContent = '';
     if (!items.length) {
-      list.appendChild(emptyState('chat', 'Pas encore de conversation', 'Pose ta première question ou envoie une photo : la conversation sera gardée ici.',
-        'Poser une question', function () { closeDrawer(); noteInput.focus(); }));
+      list.appendChild(emptyState('folder', 'Pas encore de projet', 'Ajoute une pièce à l’étape Pièce, ou pose une question : ton projet sera gardé ici.',
+        'Poser une question', function () { closeDrawer(); applyTab('show-chat'); noteInput.focus(); }));
       return;
     }
     items.forEach(function (it) {
+      var entry = Logic.projectEntry(it);
       var row = el('div', 'conv-item' + (conv && conv.id === it.id ? ' current' : ''));
       var open = el('button', 'open');
       open.type = 'button';
-      open.appendChild(el('span', 't', it.title || 'Conversation'));
-      open.appendChild(el('span', 'd', dayOf(it.updated) ? dayOf(it.updated) + ' à ' + timeOf(it.updated) : ''));
+      open.appendChild(el('span', 't', entry.title));
+      open.appendChild(el('span', 'd', entry.detail));
       open.addEventListener('click', function () { closeDrawer(); openConversation(it.id); });
       var del = el('button', 'icon-btn');
       del.type = 'button';
-      del.title = 'Supprimer cette conversation';
-      del.setAttribute('aria-label', 'Supprimer « ' + (it.title || 'Conversation') + ' »');
+      del.title = 'Supprimer ce projet';
+      del.setAttribute('aria-label', 'Supprimer « ' + entry.title + ' »');
       del.appendChild(icon('x', 14));
-      del.addEventListener('click', function () {
-        if (conv && conv.id === it.id) newConversation();
-        window.orca.postMessage({ type: 'conv_delete', id: it.id });
-      });
+      // Jamais en un clic : la question remplace la ligne, « Garder » la remet.
+      del.addEventListener('click', function () { confirmDelete(row, it, entry); });
       row.appendChild(open);
       row.appendChild(del);
       list.appendChild(row);
     });
+  }
+  function confirmDelete(row, it, entry) {
+    var kept = Array.prototype.slice.call(row.childNodes);
+    row.textContent = '';
+    row.classList.add('confirm');
+    var box = el('div', 'conv-confirm');
+    box.appendChild(el('p', '', Logic.deleteQuestion(entry)));
+    var acts = el('div', 'printer-actions');
+    acts.appendChild(button('Supprimer', function () {
+      if (conv && conv.id === it.id) newConversation();
+      window.orca.postMessage({ type: 'conv_delete', id: it.id });
+    }, 'btn sm danger', 'x'));
+    var keep = button('Garder', function () { row.textContent = ''; row.classList.remove('confirm'); kept.forEach(function (n) { row.appendChild(n); }); }, 'btn ghost sm');
+    acts.appendChild(keep);
+    box.appendChild(acts);
+    row.appendChild(box);
+    keep.focus();
   }
 
   // Relier : vérifier le profil, tester la connexion, puis la fenêtre « Connexion » d'Orca préremplie (OK = enregistré).
@@ -2507,7 +2585,7 @@
     if (msg.matches) { testLink(); return; }
     var candidates = Array.isArray(msg.candidates) ? msg.candidates : [];
     var box = linkStep('Ton profil actuel est « ' + msg.current + ' », mais l’imprimante trouvée est **' + name + '**. ' +
-      (candidates.length ? 'Choisis le profil qui lui correspond :' : 'Je n’ai pas encore son profil : ajoute-la dans la liste des imprimantes, puis reviens ici.'), 'warn', 'alert');
+      (candidates.length ? 'Choisis le profil qui lui correspond :' : 'Je n’ai pas encore son profil : cherche son modèle ci-dessous.'), 'warn', 'alert');
     var acts = el('div', 'printer-actions');
     candidates.forEach(function (c) {
       acts.appendChild(button('Utiliser « ' + c + ' »', function () {
@@ -2515,7 +2593,13 @@
         window.orca.postMessage({ type: 'printer_select_profile', name: c });
       }, 'btn ghost sm'));
     });
-    if (!candidates.length) acts.appendChild(button('Ajouter mon imprimante', function () { window.orca.postMessage({ type: 'printer_wizard' }); }, 'btn sm', 'plus'));
+    // Pas l'assistant de configuration d'Orca (autres mots, autre ton) : la recherche du panneau, sur la marque trouvée.
+    if (!candidates.length) acts.appendChild(button('Ajouter mon imprimante', function () {
+      var found = link.printer;
+      projectUI.adopt = true;
+      setup.found = found; setup.query = found.brand || ''; setup.offered = true;
+      openSearch();
+    }, 'btn sm', 'plus'));
     box.appendChild(acts);
   }
   function onProfileSelected(msg) {
@@ -2776,13 +2860,14 @@
       window.orca.postMessage({ type: 'journal_list' });
     });
   }
-  function fillJournal(events) {
+  // `projects` : identifiants des projets encore gardés (absent : on ne sait pas, le bouton reste).
+  function fillJournal(events, projects) {
     if (!journalTarget || $('drawer').classList.contains('hidden')) return;
     var list = journalTarget;
     list.textContent = '';
     var groups = Logic.journalGroups(events);
     if (!groups.length) {
-      list.appendChild(emptyState('cube', 'Pas encore de pièce', 'Exporte ou imprime une pièce, ou pose une question à son sujet : elle apparaîtra ici, avec les réglages essayés et le résultat.',
+      list.appendChild(emptyState('cube', 'Pas encore de pièce', 'Exporte ou imprime une pièce, ou pose une question à son sujet : elle apparaîtra ici, avec les réglages essayés et le résultat. Ses projets en cours sont dans « Mes projets ».',
         'Poser une question', function () { closeDrawer(); noteInput.focus(); }));
       return;
     }
@@ -2810,9 +2895,11 @@
         }
         if (e.note) col.appendChild(el('p', 'meta', 'Ton mot : « ' + e.note + ' »'));
         var acts = el('div', 'row-acts');
-        var reopen = button('Conversation', function () { closeDrawer(); openConversation(e.conv); }, 'btn ghost sm', 'chat');
-        reopen.title = fr('Rouvrir la conversation');
-        acts.appendChild(reopen);
+        if (!Array.isArray(projects) || projects.indexOf(e.conv) >= 0) {
+          var reopen = button('Ouvrir le projet', function () { closeDrawer(); openConversation(e.conv); }, 'btn ghost sm', 'folder');
+          reopen.title = fr('Rouvrir le projet de cette pièce : son plateau, ses réglages et ta discussion');
+          acts.appendChild(reopen);
+        } else col.appendChild(el('p', 'meta', 'Son projet a été supprimé : ses réglages restent ici.'));
         var again = Logic.reapplyChanges(e, here, lastValues && lastValues.params);
         if (again) {
           var re = button('Réappliquer', function () {
@@ -2901,12 +2988,12 @@
   function openHelp() {
     openDrawer('Aide', function (body) {
       [
-        ['Une IA qui te guide', 'L’assistant est une IA : il peut se tromper. Il propose, et **tu valides chaque réglage** avant qu’il soit appliqué. Les réglages restent toujours dans des plages sûres, vérifiées par le slicer, et tout s’annule d’un clic.'],
-        ['Ce que je sais faire', '- Regarder la photo d’une impression ratée et te dire ce qui cloche\n- Proposer des réglages : tu choisis ce qu’on applique, et tout s’annule d’un clic\n- Répondre à tes questions d’impression 3D, avec tes mots\n- Te montrer où se trouve un bouton ou un réglage dans le slicer\n- Orienter, ranger, réduire ou découper tes pièces quand tu me le demandes\n- Te guider pour calibrer ton filament, photo à l’appui'],
+        ['Une IA qui te guide', 'L’assistant est une IA : il peut se tromper. Il propose, et **tu valides chaque réglage** avant qu’il soit appliqué. Les réglages restent toujours dans des plages sûres, vérifiées par Plyo, et tout s’annule d’un clic.'],
+        ['Ce que je sais faire', '- Regarder la photo d’une impression ratée et te dire ce qui cloche\n- Proposer des réglages : tu choisis ce qu’on applique, et tout s’annule d’un clic\n- Répondre à tes questions d’impression 3D, avec tes mots\n- Te montrer où se trouve un bouton ou un réglage dans la fenêtre de Plyo\n- Orienter, ranger, réduire ou découper tes pièces quand tu me le demandes\n- Te guider pour calibrer ton filament, photo à l’appui'],
         ['Gratuit, sans compte', 'Le parcours en étapes, les explications des réglages (le « ? » à côté d’un réglage, ou « c’est quoi la rétraction ? »), « Montre-moi où il est » et la pose d’un modèle sur le plateau.'],
         ['Avec ton compte', 'Les réponses de l’IA et la lecture des photos remplissent ta jauge du mois, en haut à droite. Elle se recharge chaque mois.'],
-        ['Astuces', '- **Entrée** envoie, **Maj + Entrée** va à la ligne\n- Clique dans un réglage du slicer : je te propose de l’expliquer\n- Glisse une photo ou un fichier STL directement dans ce panneau'],
-        ['Tes données', 'Tes conversations restent sur cet ordinateur. Tes photos servent seulement à répondre à ta demande. Une réponse te semble fausse ? Clique sur « Signaler » sous la réponse : ça nous aide à corriger l’assistant.']
+        ['Astuces', '- **Entrée** envoie, **Maj + Entrée** va à la ligne\n- Clique dans un réglage des onglets de Plyo : je te propose de l’expliquer\n- Glisse une photo ou le fichier 3D de ta pièce (STL, 3MF…) directement dans ce panneau'],
+        ['Tes données', 'Tes projets et tes discussions avec moi restent sur cet ordinateur. Tes photos servent seulement à répondre à ta demande. Une réponse te semble fausse ? Clique sur « Signaler » sous la réponse : ça nous aide à corriger l’assistant.']
       ].forEach(function (s) { body.appendChild(el('h3', '', s[0])); body.appendChild(rich(s[1])); });
     });
   }
@@ -2916,6 +3003,7 @@
   document.addEventListener('click', function (e) { if (!menu.contains(e.target)) menu.classList.add('hidden'); });
   $('m-new').addEventListener('click', function () { menu.classList.add('hidden'); newConversation(); });
   $('m-convs').addEventListener('click', openConversations);
+  $('m-parts').addEventListener('click', openJournal);
   $('m-usage').addEventListener('click', openUsage);
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });
@@ -3077,9 +3165,9 @@
   function offerNewProject(file) {
     var slot = $('project-alert');
     slot.textContent = '';
-    var box = alertBox('warn', '« ' + file.name + ' » est une autre pièce que « ' + conv.project.part.name + ' ». Chaque pièce a son propre projet : j’ouvre une nouvelle conversation ?', 'alert');
+    var box = alertBox('warn', '« ' + file.name + ' » est une autre pièce : je lui ouvre un nouveau projet ? « ' + conv.project.part.name + ' » reste dans « Mes projets ».', 'alert');
     var acts = el('div', 'printer-actions');
-    acts.appendChild(button('Nouvelle conversation', function () {
+    acts.appendChild(button('Nouveau projet', function () {
       slot.textContent = '';
       if (busy) { blockedWhileBusy(); return; }
       newConversation();
@@ -3220,7 +3308,7 @@
   function showMe(target) { window.orca.postMessage({ type: 'show_me', target: target }); }
   function showSetting(key) { window.orca.postMessage({ type: 'show_setting', key: key }); }
   function onShowSetting(msg) {
-    if (!msg.ok) noteLine('Je n’ai pas trouvé ce réglage dans le slicer.', 'error', 'alert');
+    if (!msg.ok) noteLine('Je n’ai pas trouvé ce réglage dans les onglets de Plyo.', 'error', 'alert');
     else if (msg.hidden) noteLine('J’ai ouvert la bonne page. Si tu ne vois pas le réglage, active le bouton « Avancé » en haut des réglages.', '', 'info');
   }
 
@@ -3634,7 +3722,7 @@
     var said = FS.modelAddedText(msg);
     var dims = msg.size_mm.join(' × ') + ' mm';
     function adviceButton() {
-      var ask = button('Conseille-moi des réglages pour cette pièce', function () {
+      var ask = button('Conseille-moi des réglages pour cette pièce (utilise ta jauge)', function () {
         ask.disabled = true;
         send('Je viens de poser « ' + msg.name + ' » sur le plateau (' + dims + '). Quels réglages me conseilles-tu pour l’imprimer ? ' +
           'Si tu as besoin de savoir à quoi sert la pièce, demande-le-moi d’abord.');
@@ -3856,7 +3944,7 @@
     temperature: { name: 'Tour de température', shows: 'la température où ton filament fait le moins de fils et soude bien ses couches', duration: '≈ 45 min', parts: 'Ta tour, étage par étage', pick: 'Choisis l’étage le plus propre', tower: true },
     flow: { name: 'Test de débit', shows: 'la quantité de plastique juste : ni trous, ni bourrelets sur le dessus', duration: '≈ 20 min par passe', parts: 'Les carrés du test', pick: 'Choisis le carré le plus lisse' },
     retraction: { name: 'Tour de rétraction', shows: 'la rétraction la plus courte qui supprime les fils', duration: '≈ 40 min', parts: 'Ta tour, bande par bande', pick: 'Choisis la bande la plus propre', tower: true },
-    pressure_advance: { name: 'Test de pressure advance', shows: 'le réglage qui rend les angles nets, sans bourrelet', duration: '≈ 10 min', parts: 'Les lignes du motif', pick: 'Choisis la ligne aux angles les plus nets' },
+    pressure_advance: { name: 'Test des angles (pressure advance)', shows: 'le réglage qui rend les angles nets, sans bourrelet', duration: '≈ 10 min', parts: 'Les lignes du motif', pick: 'Choisis la ligne aux angles les plus nets' },
     ironing: { name: 'Plaque de lissage', shows: 'le débit et l’espacement qui donnent le dessus le plus lisse', duration: '≈ 15 min', parts: 'Les carrés de la plaque', pick: 'Choisis le carré le plus lisse' }
   };
   var calibHistory = [];   // calibrations déjà faites pour ce filament sur cette imprimante (slicer)
@@ -3914,14 +4002,14 @@
     });
     // La liste vient du test posé : elle ne suit pas les carrés retirés ensuite du plateau.
     if (msg.test === 'flow') sheet.appendChild(el('p', 'muted small', 'Si tu as retiré un carré du plateau, ne le choisis pas : il n’aura pas été imprimé.'));
-    var status = el('div', 'status', 'Pas sûr ? Une fois le test imprimé, envoie-moi une photo : je t’aide à choisir.');
+    var status = el('div', 'status', 'Pas sûr ? Une fois le test imprimé, envoie-moi une photo : je t’aide à choisir (la lecture de la photo utilise ta jauge).');
     sheet.appendChild(status);
     var footer = el('footer');
     // Libellés courts et parallèles : les deux boutons tiennent côte à côte à 320 px.
     var photoBtn = button('Photo', null, 'btn', 'camera');
-    photoBtn.title = fr('Ajouter une photo depuis l’ordinateur');
+    photoBtn.title = fr('Ajouter une photo depuis l’ordinateur (utilise ta jauge)');
     var phoneBtn = button('Téléphone', null, 'btn ghost', 'phone');
-    phoneBtn.title = fr('Prendre la photo avec ton téléphone');
+    phoneBtn.title = fr('Prendre la photo avec ton téléphone (utilise ta jauge)');
     var action = button('', null, 'btn full hidden');
     var back = button('Remettre ma pièce', null, 'link');
     footer.appendChild(photoBtn);
@@ -4516,7 +4604,7 @@
     acts.appendChild(fixAll);
     box.appendChild(acts);
     box.appendChild(fail);
-    var talk = button('En parler à l’assistant', function () {
+    var talk = button('En parler à l’assistant (utilise ta jauge)', function () {
       closeCard();
       send('Avant d’imprimer, Plyo me signale : ' + risks.map(function (r) { return r.text; }).join(' ') + ' Que me conseilles-tu ?');
     }, 'link');
@@ -4652,7 +4740,7 @@
     tourSignals = signals;
     // Pièce posée sur le plateau autrement que par ce panneau (Fichier › Importer d'Orca, glisser-déposer) : elle remplit la fiche.
     if (signals.objects === 0) projectUI.oldPart = null;
-    var plated = projectUI.waitingFile ? null : PlyoProject.partFromPlate(conv && conv.project, signals, projectUI.oldPart);
+    var plated = projectUI.waitingFile || resumeUI.waiting ? null : PlyoProject.partFromPlate(conv && conv.project, signals, projectUI.oldPart);
     if (plated) { conv.project.part = { name: plated, fromPlate: true }; projectUI.oldPart = null; projectChanged(); attachPlate(); }
     var step = currentTourStep();
     // La découpe est périmée (un réglage a changé) : on redécoupe avant d'imprimer, y compris après une correction à l'étape Résultat.
@@ -4700,7 +4788,7 @@
     }
     var acts = el('div', 'row-acts');
     acts.appendChild(button('Montre-moi où il est', function () { showSetting(msg.key); }, 'btn ghost sm', 'eye'));
-    if (!archived || reopened) acts.appendChild(button('Et dans mon cas, je mets combien ?', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }, 'btn ghost sm'));
+    if (!archived || reopened) acts.appendChild(button('Et dans mon cas, je mets combien ? (utilise ta jauge)', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }, 'btn ghost sm'));
     box.appendChild(acts);
     thread.appendChild(box);
     scrollDown();
@@ -4755,7 +4843,7 @@
     var levelMove = PlyoMachines.levelChange(habits, guessed);
     if (guessed.level !== habits.level || !!guessed.level_hold !== !!habits.level_hold) { habits = guessed; saveHabits(); updateLevelLabel(); }
     renderProject();
-    if (!lastValues) { noteLine('Je lis encore les réglages du slicer : réessaie dans une seconde.', '', 'info'); return; }
+    if (!lastValues) { noteLine('Je lis encore tes réglages : réessaie dans une seconde.', '', 'info'); return; }
     // « C'est quoi la rétraction ? » : la fiche du réglage répond, gratuitement et sans compte.
     var ficheKey = !opts.photos && !photos.length ? FS.matchSettingQuestion(note, window.PLYO_FICHES) : null;
     if (ficheKey) {
@@ -4801,7 +4889,7 @@
     var acts = el('div', 'row-acts');
     function settle() { box.remove(); delete entry.pending; scheduleSave(); }
     var id = function () { return Logic.resendRequestId(entry.pending, new Date(), Logic.newRequestId(window.crypto)); };
-    acts.appendChild(button('Renvoyer ma question', function () {
+    acts.appendChild(button('Renvoyer ma question (utilise ta jauge)', function () {
       var rid = id();
       if (!view.photos) { settle(); send(entry.text || '', { photos: [], shown: true, me: entry, requestId: rid }); return; }
       // Photos d'origine perdues : le texte revient dans le champ, tu rejoins tes photos, puis tu envoies (même identifiant).
@@ -5059,7 +5147,7 @@
       // Un souci d'affichage n'est pas une erreur réseau : la réponse est gardée, rien n'est redemandé.
       if (target !== conv) return;
       try { renderAnswer(entry, false); }
-      catch (e) { noteLine('La réponse est arrivée mais n’a pas pu s’afficher. Rouvre la conversation depuis « Mes conversations ».', 'error', 'alert'); }
+      catch (e) { noteLine('La réponse est arrivée mais n’a pas pu s’afficher. Rouvre ce projet depuis « Mes projets » (menu « ⋯ »).', 'error', 'alert'); }
     }
   }
 
@@ -5306,7 +5394,9 @@
         [Logic.addedText(result.applied), Logic.alsoChangedText(result.also_changed)].forEach(function (t) { if (t) footer.appendChild(el('p', 'small footnote orca-also', fr(t))); });
         var savedLine = Logic.savedText(result);
         if (savedLine) footer.appendChild(el('p', 'muted small footnote', fr(savedLine)));
-        else if (preset) footer.appendChild(el('p', 'muted small footnote', 'Le préréglage « ' + preset + ' » est marqué modifié : enregistre-le si tu veux garder ces réglages.'));
+        // Sans texte d'enregistrement : cas qui ne devrait plus arriver (save_applied répond toujours) ; noté pour le débogage,
+        // sans rien demander à l'utilisateur.
+        else if (preset && window.console) console.warn('Plyo : lot appliqué sans retour d’enregistrement pour « ' + preset + ' »');
         function showUndone(done) {
           entry.applied = false;
           if (entry.hist) entry.hist.cards = 'undone';
@@ -5349,7 +5439,7 @@
     var qs = entry.data.questions;
     var picks = entry.answers || {};
     var wrap = el('div', 'questions');
-    var sendBtn = button('Envoyer mes réponses', null, 'btn sm');
+    var sendBtn = button('Envoyer mes réponses (utilise ta jauge)', null, 'btn sm');
     qs.forEach(function (q, i) {
       wrap.appendChild(el('p', 'q', q.text));
       var row = el('div', 'chips');
@@ -5579,7 +5669,7 @@
     } else if (msg.type === 'limits') {
       onLimits(msg);
     } else if (msg.type === 'journal') {
-      fillJournal(msg.events || []);
+      fillJournal(msg.events || [], msg.projects);
     } else if (msg.type === 'printer_scan_result' && projectUI.bgScan) {
       var asked = setup.phase === 'scan'; // l'installation a demandé la même recherche pendant celle d'arrière-plan : le résultat sert aux deux
       onBackgroundScan(msg.printers);
@@ -5644,11 +5734,15 @@
       if (waiter) waiter(msg);
     } else if (msg.type === 'open_tool') {
       noteLine(msg.text, msg.ok ? '' : 'error', msg.ok ? 'eye' : 'alert');
+    } else if (msg.type === 'project_resume') {
+      onProjectResume(msg);
+    } else if (msg.type === 'conv_pruned') {
+      onConvPruned(msg);
     } else if (msg.type === 'conv_list') {
       // Au lancement, le panneau reste sur son accueil (plus de réouverture d'office) : la liste ne sert qu'au volet.
       fillConversations(msg.items || []);
     } else if (msg.type === 'conv_save_failed') {
-      if (!saveFailedShown) { saveFailedShown = true; noteLine('Cette conversation est devenue trop longue pour être gardée : commence-en une nouvelle depuis le menu « ⋯ ».', 'error', 'alert'); }
+      if (!saveFailedShown) { saveFailedShown = true; noteLine('Ce projet est devenu trop long pour être gardé : commence un nouveau projet depuis le menu « ⋯ ».', 'error', 'alert'); }
     } else if (msg.type === 'project_restored') {
       onProjectRestored(msg);
     } else if (msg.type === 'project_opened') {
@@ -5704,14 +5798,25 @@
       var loaded = Logic.convLoaded(msg, !!then, auto);
       if (loaded.restore) restoreConversation(msg.id, msg.conversation);
       if (loaded.followUp) then();
-      if (loaded.error) noteLine('Cette conversation n’a pas pu être ouverte.', 'error', 'alert');
+      if (loaded.error) {
+        // Supprimé, ou rangé pour faire de la place : on le dit, et la suite reste à portée (la liste à jour).
+        var gone = noteLine('Ce projet n’existe plus : il a été supprimé, ou rangé pour faire de la place.', 'error', 'alert');
+        gone.appendChild(button('Voir mes projets', openConversations, 'btn ghost sm', 'folder'));
+      }
       // Projet d'une correction introuvable : sa question « Ça a marché ? » est posée ici, elle n'est jamais perdue.
       if (!loaded.restore && outcomeOpening && outcomeOpening.conv === msg.id) { var lost = outcomeOpening; outcomeOpening = null; renderOutcome(lost, false); }
     }
   });
 
   startConversation();
-  detachPlate(); // panneau rouvert : conversation neuve, le plateau d'avant n'est plus attaché (ses réglages ne suivent pas)
+  // Panneau ouvert : le plateau encore attaché à une conversation (panneau fermé puis rouvert) la rouvre à son étape ; sinon le
+  // plateau d'avant est détaché comme avant, et un projet récent peut être proposé (onProjectResume). Sans réponse du slicer
+  // en 1,5 s, on fait comme avant (détachement), pour ne jamais bloquer la reprise de la pièce posée.
+  window.orca.postMessage({ type: 'project_resume_get' });
+  resumeUI.timer = setTimeout(function () { if (resumeUI.waiting) onProjectResume({}); }, 1500);
+  // Fermeture du panneau : ce qui attend d'être enregistré part tout de suite.
+  window.addEventListener('pagehide', flushSave);
+  window.addEventListener('beforeunload', flushSave);
   window.orca.postMessage({ type: 'habits_get' });
   askProjectPrinters();
   showLoggedIn(false);
