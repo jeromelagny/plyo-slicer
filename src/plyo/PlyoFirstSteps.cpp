@@ -3,6 +3,7 @@
 #include "PlyoSanitize.hpp"
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoOrcaMessages.hpp"
 #include "PlyoAssistant.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoWelcomeDialog.hpp"
@@ -279,9 +280,13 @@ nlohmann::json tour_signals()
             name = boost::filesystem::path(first->input_file).filename().string();
         signals["part_name"] = Json::utf8_prefix(name, 120);
     }
+    // Orca découpe en ce moment : une découpe demandée qui n'a pas démarré a été refusée sans un mot (le panneau demande pourquoi).
+    signals["slicing"]            = plater->is_background_process_slicing();
     Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
     if (plate != nullptr && plate->is_slice_result_valid()) {
         signals["sliced"] = true;
+        // Découpée mais pas imprimable (trajet hors plateau, filament refusé par la surface…) : le parcours ne propose pas d'imprimer.
+        signals["ready_for_print"] = OrcaMessages::ready_for_print();
         if (const Slic3r::GCodeProcessorResult* result = plate->get_slice_result())
             signals["time_s"] = result->print_statistics.modes[static_cast<size_t>(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal)].time;
         signals["weight_g"] = plater->get_partplate_list().get_current_fff_print().print_statistics().total_weight;
@@ -419,8 +424,13 @@ void on_export_done(bool finished, const std::string& error, const std::string& 
     if (!finished) {
         if (error.empty())
             waiting({{"ok", false}, {"cancelled", true}}); // arrêté par « Annuler » d'Orca
-        else
-            waiting({{"ok", false}, {"reason", "error"}, {"text", Json::utf8_prefix(error, 400)}});
+        else {
+            // Famille de l'erreur d'après le type de l'exception (lu juste avant par OrcaMessages), texte sans le dossier.
+            nlohmann::json failed = OrcaMessages::export_failure(error, path);
+            failed["ok"]           = false;
+            failed["reason"]       = "error";
+            waiting(failed);
+        }
         return;
     }
     // Orca peut renommer le fichier en le finalisant : si ce nom n'existe pas, on ne cite que le dossier.

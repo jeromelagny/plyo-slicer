@@ -17,6 +17,7 @@
 #include "PlyoMemory.hpp"
 #include "PlyoModelImport.hpp"
 #include "PlyoConfig.hpp"
+#include "PlyoOrcaMessages.hpp"
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoPlateActions.hpp"
 #include "PlyoPreflight.hpp"
@@ -313,7 +314,13 @@ void handle_page_message(const nlohmann::json& data)
             Journal::record(data);
         else if (type == "journal_list")
             send({{"type", "journal"}, {"events", Journal::list()}});
-        else if (type == "preflight")
+        else if (type == "orca_issues") {
+            // Ce qu'Orca dit de la plaque (après un lot appliqué, une découpe qui ne démarre pas, une plaque non imprimable).
+            nlohmann::json r = OrcaMessages::report();
+            r["type"]        = "orca_issues";
+            r["purpose"]     = Json::str(data, "purpose", 40);
+            send(r);
+        } else if (type == "preflight")
             // Après un découpage (ou sur demande) : mesures du plateau pour la vérification avant impression.
             send({{"type", "preflight"}, {"data", Preflight::measure()}});
         else if (type == "plate_action") {
@@ -684,6 +691,7 @@ void toggle_assistant(Plater* plater)
         return;
 
     ProjectFiles::set_listener([](const nlohmann::json& message) { send(message); });
+    OrcaMessages::set_listener([](const nlohmann::json& message) { send(message); }); // fin de chaque découpe (slice_result)
     FirstSteps::set_focus_listener([](const nlohmann::json& focus) {
         nlohmann::json message = focus;
         message["type"]        = "focus_setting";

@@ -143,7 +143,130 @@
     return { text: (settings ? 'Réglages d’avant remis. ' : '') + 'La pièce reste ' + still + ' : fais Cmd + Z (Ctrl + Z sur Windows) dans le slicer pour la remettre.', tone: 'warn' };
   }
 
-  var api = { preflightRisks: preflightRisks, riskKey: riskKey, preflightPlan: preflightPlan, fixChanges: fixChanges, undoText: undoText };
+  // ---------- Ce qu'Orca dit de la plaque (PlyoOrcaMessages.cpp) ----------
+  // Chaque problème : { source, code, level, text, opt_key?, scope?, object_ref?, object_name?, fix? }. Le code vient des types
+  // et identifiants d'Orca, jamais de son texte : c'est lui qui choisit l'explication. Le texte d'Orca n'est que montré (entre
+  // guillemets) et passé à l'assistant.
+  var ASK_LABEL = 'Demander à l’assistant (utilise ta jauge)';
+  var ARRANGE_ACT = { kind: 'plate', action: 'arrange', label: 'Ranger le plateau' };
+  var SCOPES = { print: true, filament: true }; // réglages que l'assistant peut changer (catalogue Impression et Filament)
+
+  function pieceOf(issue, capital) {
+    var n = issue && typeof issue.object_name === 'string' && issue.object_name ? '« ' + issue.object_name + ' »' : '';
+    return n || (capital ? 'Ta pièce' : 'ta pièce');
+  }
+  function decimal(v) { return String(v).replace('.', ','); }
+
+  // Explication Plyo par code : { title?, text, actions }. `p` : la pièce nommée (« … » ou « ta pièce »), `P` : en début de phrase.
+  var EXPLAIN = {
+    no_layers: function (i, p) { return { text: 'Orca ne trouve aucune couche à imprimer dans ' + p + ' : elle est sans doute trop petite ou trop fine, ou son fichier est abîmé. Regarde sa taille sur le plateau : un modèle dessiné en pouces paraît 25 fois trop petit.', actions: [] }; },
+    empty_first_layer: function (i, p) { return { text: 'La première couche de ' + p + ' est vide : la pièce ne pose pas à plat sur le plateau (elle flotte, ou repose sur une pointe).', actions: [
+      { kind: 'plate', action: 'orient', label: 'Orienter automatiquement' },
+      { kind: 'fix', label: 'Activer les supports', changes: [{ key: 'enable_support', value: true, label: 'Supports' }] }] }; },
+    nothing_to_print: function (i, p) { return { text: 'Orca n’a rien trouvé à imprimer : ' + p + ' est sans doute trop petite pour la buse de ton imprimante.', actions: [] }; },
+    print_empty: function () { return { text: 'Avec les réglages actuels, ta plaque ne donne rien à imprimer : la pièce est peut-être trop petite ou trop fine.', actions: [] }; },
+    prime_tower: function () { return { text: 'La tour de purge (le petit bloc qui nettoie la buse entre deux couleurs) sort du plateau ou touche une zone interdite.', actions: [ARRANGE_ACT] }; },
+    PlaceholderParserError: function () { return { text: 'Le G-code de ton imprimante (les commandes de début et de fin, dans les réglages de l’imprimante) contient une erreur. Je ne modifie jamais ces commandes : corrige-les dans l’onglet de l’imprimante, ou reprends son profil d’origine.', actions: [{ kind: 'show_me', target: 'printer', label: 'Montre-moi l’imprimante' }] }; },
+    bad_alloc: function () { return { text: 'Ton ordinateur a manqué de mémoire pendant la découpe. Ferme d’autres logiciels, puis découpe à nouveau.', actions: [{ kind: 'slice', label: 'Découper à nouveau' }], noAsk: true }; },
+    plate_empty: function () { return { text: 'Il n’y a aucune pièce sur cette plaque.', actions: [{ kind: 'import', label: 'Choisir un fichier' }], noAsk: true }; },
+    layer_height_over_nozzle: function (i) {
+      var fix = i.fix && SCOPES[i.scope] ? [{ kind: 'fix', label: 'Mettre la hauteur de couche à ' + decimal(i.fix.value) + ' mm', changes: [{ key: i.fix.key, value: i.fix.value, label: 'Hauteur de couche' }] }] : [];
+      return { text: 'La hauteur de couche est plus grande que le trou de la buse : la buse ne peut pas déposer une couche aussi épaisse, alors Orca refuse de découper.', actions: fix }; },
+    vase_several_objects: function (i) {
+      var fix = i.fix && SCOPES[i.scope] ? [{ kind: 'fix', label: 'Désactiver le mode vase', changes: [{ key: i.fix.key, value: i.fix.value, label: 'Mode vase' }] }] : [];
+      return { text: 'Le mode vase imprime une seule pièce, en un seul trait qui monte en spirale. Avec plusieurs pièces sur la plaque, Orca refuse.', actions: fix }; },
+    spiral_mode: function () { return { text: 'Le mode vase ne marche pas avec une pièce de plusieurs couleurs ou matières.', actions: [] }; },
+    object_too_tall: function (i, p, P) { return { text: P + ' est trop haute pour ton imprimante : son sommet dépasse la hauteur maximale.', actions: [{ kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour qu’elle tienne' }] }; },
+    filament_bed_type: function () { return { text: 'Orca déconseille ce filament sur le type de plateau choisi : pour cette surface, sa température de plateau est à 0.', actions: [{ kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' }] }; },
+    collision: function () { return { text: 'Des pièces sont trop proches : la buse ou la tête d’impression les toucherait.', actions: [ARRANGE_ACT] }; },
+    collision_by_object: function () { return { text: 'En impression pièce par pièce, la tête de l’imprimante toucherait une pièce déjà imprimée : elles sont trop proches, ou l’une est trop haute.', actions: [ARRANGE_ACT] }; },
+    object_outside: function () { return { text: 'Une pièce touche le bord du plateau ou en sort. Orca vérifie la vraie forme du plateau, zones interdites comprises.', actions: [ARRANGE_ACT] }; },
+    plate_refused: function () { return { text: 'Orca refuse de découper cette plaque sans me dire pourquoi. Range le plateau, puis découpe à nouveau.', actions: [ARRANGE_ACT] }; },
+    toolpath_outside: function () { return { text: 'Une partie du trajet de la buse sort du plateau : souvent la bordure ou la jupe d’une pièce placée trop près du bord.', actions: [ARRANGE_ACT] }; },
+    height_outside: function () { return { text: 'Le trajet de la buse monte plus haut que ce que ton imprimante peut atteindre.', actions: [{ kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour que ça tienne' }] }; },
+    filament_bed_surface: function () { return { text: 'Un filament de ta plaque ne peut pas être imprimé directement sur la surface de ce plateau.', actions: [{ kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' }] }; },
+    nozzle_area: function () { return { text: 'Une partie de la plaque est hors de la zone que peut atteindre l’une des buses.', actions: [ARRANGE_ACT] }; },
+    nozzle_height: function () { return { text: 'Une partie de la plaque est trop haute pour l’une des buses.', actions: [] }; },
+    not_printable: function () { return { text: 'Orca a découpé ta plaque, mais ne la juge pas imprimable telle quelle.', actions: [] }; },
+    empty_layers: function (i, p, P) { return { text: P + ' a des couches vides à certaines hauteurs : des parties sont trop fines, ou le fichier est abîmé. L’impression risque de rater à cet endroit.', actions: [] }; },
+    exclusion_area: function () { return { text: 'Un trajet de la buse passe dans une zone interdite du plateau.', actions: [ARRANGE_ACT] }; }
+  };
+  // « Pièce flottante » : déjà dans la carte « Avant d'imprimer » (risque « support »), avec ses corrections.
+  var LEFT_TO_PREFLIGHT = { need_support: true };
+
+  var TITLES = { slicing_error: 'Orca n’a pas pu préparer ta pièce', validate_error: 'Orca refuse de découper cette plaque',
+    gcode_check: 'Orca bloque l’impression de cette plaque', validate_warning: 'Orca prévient', step_warning: 'Orca prévient' };
+
+  // Problèmes à montrer en carte : les erreurs d'abord ; les avertissements seulement si `warnings` ; au plus `max` (3).
+  function orcaCards(issues, opts) {
+    var o = opts || {};
+    var list = (Array.isArray(issues) ? issues : []).filter(function (i) {
+      return i && typeof i.code === 'string' && !LEFT_TO_PREFLIGHT[i.code] && (i.level === 'error' || o.warnings);
+    });
+    list.sort(function (a, b) { return (a.level === 'error' ? 0 : 1) - (b.level === 'error' ? 0 : 1); });
+    return list.slice(0, o.max || 3);
+  }
+  function issueKey(i) { return [i.source, i.code, i.object_ref || '', i.text || ''].join('|'); }
+
+  // La question préremplie pour l'assistant : le texte d'Orca tel quel, et la pièce quand elle est connue.
+  function askPrompt(issue, explained) {
+    var on = issue.object_name ? ' pour « ' + issue.object_name + ' »' : '';
+    var said = issue.text ? 'Orca m’affiche ce message' + on + ' : « ' + issue.text + ' ».'
+      : 'Orca signale un problème sur ma plaque' + on + (explained ? ' (' + explained + ')' : '') + '.';
+    return said + ' Explique-moi simplement ce qui se passe et comment le corriger.';
+  }
+
+  // Carte d'un problème : { tone, title, text, quote, actions: [{ kind: fix|show_setting|show_me|plate|slice|import|ask, label, … }] }.
+  // Réglage de l'imprimante ou G-code : expliqué, montré, jamais modifié.
+  function orcaIssueView(issue) {
+    var i = issue || {}, p = pieceOf(i, false), P = pieceOf(i, true);
+    var known = EXPLAIN[i.code] ? EXPLAIN[i.code](i, p, P) : null;
+    var warn = i.level !== 'error';
+    var view = { tone: warn ? 'warn' : 'error', title: TITLES[i.source] || (warn ? 'Orca prévient' : 'Orca a un souci'), text: '', quote: i.text || '', actions: [] };
+    if (known) {
+      view.text = known.text;
+      view.actions = known.actions.filter(function (a) { return a.kind !== 'fix' || a.changes.every(function (c) { return c.key; }); });
+    } else {
+      // Pas d'explication Plyo : le texte d'Orca est montré comme tel, et l'assistant peut l'expliquer.
+      view.text = i.text ? (warn ? 'Orca prévient' : 'Orca dit') + (i.object_name ? ' à propos de ' + p : '') + ' :' : 'Orca signale un problème' + (i.object_name ? ' sur ' + p : '') + ', sans me donner de détail.';
+      view.quoteMain = !!i.text;
+    }
+    if (i.opt_key && !view.actions.some(function (a) { return a.kind === 'fix'; })) {
+      view.actions.push({ kind: 'show_setting', key: i.opt_key, label: 'Montre-moi ce réglage' });
+      if (i.scope === 'printer') view.note = 'Ce réglage fait partie du profil de l’imprimante : je ne le modifie pas, je te montre où il est.';
+    }
+    if (!(known && known.noAsk)) view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: askPrompt(i, known ? known.text.replace(/[.:]$/, '') : '') });
+    return view;
+  }
+
+  // Erreur d'export (`kind` : FirstSteps::on_export_done) : la phrase vient de Plyo, le texte d'Orca n'est qu'un détail.
+  var EXPORT_TEXTS = {
+    write: { text: 'Je n’ai pas pu écrire le fichier : le disque est peut-être plein, le dossier protégé, ou un fichier du même nom est ouvert dans un autre logiciel.', actions: [{ kind: 'export', label: 'Choisir un autre dossier' }] },
+    gcode_template: { text: 'Le G-code de ton imprimante contient une erreur : le fichier n’a pas pu être préparé. Je ne modifie jamais ces commandes.', actions: [{ kind: 'show_me', target: 'printer', label: 'Montre-moi l’imprimante' }] },
+    slicing: { text: 'La découpe a échoué pendant l’export : aucun fichier n’a été écrit.', actions: [{ kind: 'slice', label: 'Découper à nouveau' }] },
+    memory: { text: 'Ton ordinateur a manqué de mémoire pendant l’export. Ferme d’autres logiciels, puis exporte à nouveau.', actions: [{ kind: 'export', label: 'Exporter à nouveau' }] },
+    other: { text: 'L’export n’a pas abouti : aucun fichier n’a été écrit.', actions: [{ kind: 'export', label: 'Choisir un autre dossier' }] }
+  };
+  function exportErrorView(msg) {
+    var m = msg || {}, t = EXPORT_TEXTS[m.kind] || EXPORT_TEXTS.other;
+    var actions = t.actions.slice();
+    if (m.kind !== 'slicing' && m.kind !== 'memory')
+      actions.push({ kind: 'ask', label: ASK_LABEL, prompt: (m.text ? 'L’export de mon fichier a échoué. Orca dit : « ' + m.text + ' ».' : 'L’export de mon fichier a échoué.') + ' Que faire ?' });
+    return { text: t.text, quote: typeof m.text === 'string' ? m.text : '', actions: actions };
+  }
+
+  // Découpe sans nouvelle au bout du délai (filet de sécurité) ou arrêtée avant la fin : la suite, jamais « lis le message d'Orca ».
+  var SLICE_SLOW = { text: 'La découpe prend plus longtemps que prévu, et Orca ne m’a rien dit. Relance-la ; si rien ne change, demande-moi.',
+    actions: [{ kind: 'slice', label: 'Découper à nouveau' }, { kind: 'ask', label: ASK_LABEL, prompt: 'J’ai lancé la découpe de ma plaque il y a deux minutes et rien ne se passe. Que faire ?' }] };
+  // Découpe demandée qui ne démarre pas, sans refus lisible : Orca ne redécoupe pas une plaque restée en erreur tant que rien ne change.
+  var SLICE_NOT_STARTED = { text: 'Orca n’a pas lancé la découpe. Après une erreur, il attend qu’un réglage ou la pièce change avant de redécouper : corrige ce qui a été signalé, ou demande-moi.',
+    actions: [{ kind: 'ask', label: ASK_LABEL, prompt: 'Je clique sur « Découper » mais Orca ne lance pas la découpe de ma plaque. Que faire ?' }] };
+  var SLICE_STOPPED = { text: 'La découpe s’est arrêtée avant la fin : un réglage a changé pendant qu’Orca découpait, ou elle a été annulée.',
+    actions: [{ kind: 'slice', label: 'Découper à nouveau' }] };
+
+  var api = { preflightRisks: preflightRisks, riskKey: riskKey, preflightPlan: preflightPlan, fixChanges: fixChanges, undoText: undoText,
+    orcaCards: orcaCards, orcaIssueView: orcaIssueView, issueKey: issueKey, askPrompt: askPrompt, exportErrorView: exportErrorView,
+    SLICE_SLOW: SLICE_SLOW, SLICE_STOPPED: SLICE_STOPPED, SLICE_NOT_STARTED: SLICE_NOT_STARTED, ASK_LABEL: ASK_LABEL };
   root.PlyoPreflight = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

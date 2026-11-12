@@ -20,6 +20,7 @@
 #include "../../PlyoCommandsLogic.hpp"
 #include "../../PlyoSpoolsLogic.hpp"
 #include "../../PlyoProjectFilesLogic.hpp"
+#include "../../PlyoOrcaMessagesLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -2933,4 +2934,123 @@ TEST_CASE("Bobines : une réussite dite ne marque qu'un envoi récent, sans rép
     CHECK(sent_refusal(bad, "b1", "2026-11-12T10:30:00") == "answered");
     CHECK(answered(pointer, "autre") == pointer);
     CHECK(answered(json::object(), "bad").empty());
+}
+
+TEST_CASE("Messages d'Orca : le texte montré n'a ni chemin de l'utilisateur ni caractère de contrôle, et reste court")
+{
+    using namespace Plyo::OrcaMessagesLogic;
+    // Le fichier exporté connu : remplacé par son nom, même suivi de « .tmp » ou avec des espaces dans le dossier.
+    const std::string file = "/Users/Jérôme Lagny/Desktop/crochet PLA.gcode";
+    CHECK(clean_text("Renaming failed. Current path is " + file + ".tmp. Please try again.", {file, "/Users/Jérôme Lagny"}) ==
+          "Renaming failed. Current path is crochet PLA.gcode.tmp. Please try again.");
+    // Un dossier connu suivi d'un sous-dossier : réduit au nom du fichier.
+    CHECK(clean_text("Copie vers /Users/moi/Documents/pieces/x.gcode impossible", {"/Users/moi"}) == "Copie vers x.gcode impossible");
+    // Chemins inconnus sans espace (Unix, Windows, réseau), entre guillemets ou en fin de phrase.
+    CHECK(clean_text("G-code export to /var/folders/ab/T/plyo.gcode failed.\nIs the disk full?") == "G-code export to plyo.gcode failed. Is the disk full?");
+    CHECK(clean_text("Fichier « C:\\Users\\moi\\Bureau\\a.gcode » protégé") == "Fichier « a.gcode » protégé");
+    CHECK(clean_text("(\\\\serveur\\partage\\b.gcode)") == "(b.gcode)");
+    CHECK(clean_text("Erreur dans ~/plyo/c.3mf.") == "Erreur dans c.3mf.");
+    // Ce qui n'est pas un chemin absolu reste tel quel.
+    CHECK(clean_text("Mélange PLA/PETG détecté, 1/2 couche") == "Mélange PLA/PETG détecté, 1/2 couche");
+    // Contrôles retirés, espaces resserrées, 300 octets au plus sans couper un caractère.
+    CHECK(clean_text("  a\t\tb\r\n c\x01" "d\x7F  ") == "a b cd");
+    const std::string longer = clean_text(std::string(299, 'x') + "é");
+    CHECK(longer.size() == 299);
+    CHECK(clean_text(std::string(500, 'y')).size() == MAX_TEXT);
+}
+
+TEST_CASE("Messages d'Orca : le code d'une erreur de découpe vient du type et de l'étape, jamais du texte")
+{
+    using namespace Plyo::OrcaMessagesLogic;
+    CHECK(slicing_code("SlicingError", {"posSlice", false, false}) == "no_layers");
+    CHECK(slicing_code("SlicingError", {"psGCodeExport", true, false}) == "empty_first_layer");
+    CHECK(slicing_code("SlicingErrors", {"psGCodeExport", true, false}) == "empty_first_layer");
+    CHECK(slicing_code("SlicingError", {"psGCodeExport", false, false}) == "nothing_to_print");
+    CHECK(slicing_code("SlicingError", {"psWipeTower", false, false}) == "print_empty");
+    CHECK(slicing_code("SlicingError", {"psWipeTower", false, true}) == "prime_tower");
+    CHECK(slicing_code("SlicingError", {"psSkirtBrim", false, false}) == "skirt_brim");
+    CHECK(slicing_code("SlicingError", {"", false, false}) == "SlicingError");
+    // Les autres types gardent leur nom : l'étape ne change rien.
+    CHECK(slicing_code("PlaceholderParserError", {"psGCodeExport", false, false}) == "PlaceholderParserError");
+    CHECK(slicing_code("bad_alloc", {"posSlice", false, false}) == "bad_alloc");
+    CHECK(slicing_code("", {}) == "unknown");
+}
+
+TEST_CASE("Messages d'Orca : le code d'un refus de validation, d'un avertissement d'étape et d'un export")
+{
+    using namespace Plyo::OrcaMessagesLogic;
+    CHECK(validate_code(1, "", false, {}) == "filament_bed_type");
+    CHECK(validate_code(3, "", true, {}) == "collision_by_object");
+    CHECK(validate_code(4, "", true, {}) == "collision");
+    CHECK(validate_code(5, "layer_height", true, {true, false, false}) == "layer_height_limit");
+    CHECK(validate_code(0, "layer_height", true, {true, false, false}) == "layer_height_over_nozzle");
+    CHECK(validate_code(0, "initial_layer_print_height", true, {true, false, false}) == "layer_height_over_nozzle");
+    // Même clé, autre cause (tour de purge et hauteurs différentes) : la clé seule.
+    CHECK(validate_code(0, "initial_layer_print_height", true, {false, false, false}) == "initial_layer_print_height");
+    CHECK(validate_code(0, "spiral_mode", false, {false, true, false}) == "vase_several_objects");
+    CHECK(validate_code(0, "spiral_mode", false, {false, false, false}) == "spiral_mode");
+    CHECK(validate_code(0, "", true, {false, false, true}) == "object_too_tall");
+    CHECK(validate_code(0, "", false, {false, false, true}) == "validate");
+    CHECK(validate_code(0, "enable_prime_tower", false, {}) == "enable_prime_tower");
+    CHECK(validate_code(0, "", false, {}) == "validate");
+    CHECK(step_warning_code(2) == "need_support");
+    CHECK(step_warning_code(3) == "empty_layers");
+    CHECK(step_warning_code(5) == "exclusion_area");
+    CHECK(step_warning_code(0) == "step_warning");
+    CHECK(step_warning_code(42) == "step_warning");
+    CHECK(export_kind("ExportError") == "write");
+    CHECK(export_kind("FileIOError") == "write");
+    CHECK(export_kind("PlaceholderParserError") == "gcode_template");
+    CHECK(export_kind("SlicingErrors") == "slicing");
+    CHECK(export_kind("bad_alloc") == "memory");
+    CHECK(export_kind("RuntimeError") == "other");
+    CHECK(safe_layer_height(0.4) == Catch::Approx(0.2));
+    CHECK(safe_layer_height(0.2) == Catch::Approx(0.1));
+    CHECK(safe_layer_height(0.6) == Catch::Approx(0.3));
+    CHECK(safe_layer_height(1.0) == Catch::Approx(0.3));
+    CHECK(safe_layer_height(0.0) == 0);
+}
+
+namespace {
+Plyo::OrcaMessagesLogic::Issue issue(const std::string& source, const std::string& code, const std::string& level, const std::string& text)
+{
+    Plyo::OrcaMessagesLogic::Issue i;
+    i.source = source;
+    i.code   = code;
+    i.level  = level;
+    i.text   = text;
+    return i;
+}
+} // namespace
+
+TEST_CASE("Messages d'Orca : dix au plus, les erreurs d'abord, sans doublon ni champ vide")
+{
+    using namespace Plyo::OrcaMessagesLogic;
+    std::vector<Issue> list;
+    for (int i = 0; i < 12; ++i)
+        list.push_back(issue("step_warning", "empty_layers", "warning", "avertissement " + std::to_string(i)));
+    list.push_back(issue("validate_warning", "enable_support", "warning", "doublon"));
+    list.push_back(issue("validate_warning", "enable_support", "warning", "doublon"));
+    Issue err = issue("validate_error", "layer_height_over_nozzle", "error", "Layer height cannot exceed nozzle diameter.");
+    err.opt_key     = "layer_height";
+    err.scope       = "print";
+    err.object_ref  = "12";
+    err.object_name = "Cube";
+    err.fix = {{"key", "layer_height"}, {"value", 0.2}};
+    list.push_back(err);
+    const json out = to_json(list);
+    REQUIRE(out.size() == MAX_ISSUES);
+    CHECK(out[0]["code"] == "layer_height_over_nozzle");
+    CHECK(out[0]["object_ref"] == "12");
+    CHECK(out[0]["scope"] == "print");
+    CHECK(out[0]["fix"]["value"] == 0.2);
+    CHECK(out[1]["code"] == "empty_layers");
+    CHECK(!out[1].contains("opt_key"));
+    CHECK(!out[1].contains("object_ref"));
+    CHECK(!out[1].contains("fix"));
+    CHECK(has_error(out));
+    CHECK(!has_error(to_json({list[0]})));
+    CHECK(!has_error(json()));
+    CHECK(to_json({list[12], list[13]}).size() == 1);
+    CHECK(to_json({issue("x", "", "error", "sans code")}).empty());
 }

@@ -47,7 +47,7 @@
   // Découpe lancée depuis une réponse de l'assistant : la suite à proposer sur cette réponse une fois la plaque découpée.
   function afterSliceFollow(ctx) {
     var c = ctx || {};
-    if (!c.sliced) return null;
+    if (!c.sliced || c.blocked) return null; // plaque refusée par Orca pour l'impression : la carte d'Orca dit quoi faire
     return c.linked ? { label: 'Envoyer et imprimer', kind: 'send' } : { label: 'Exporter le fichier', kind: 'export' };
   }
 
@@ -75,11 +75,14 @@
       if (!c.sliced && c.intent === 'asking') return { label: '', kind: 'none', enabled: false };
       if (!c.sliced && c.intent === 'ready') return { label: 'Appliquer et préparer', kind: 'applyIntent', enabled: true };
       if (!c.sliced) return slice;
+      // Découpée mais refusée par Orca pour l'impression (`blocked`) : la carte d'Orca porte les corrections, pas de « Continuer ».
+      if (c.blocked) return { label: '', kind: 'none', enabled: false };
       // Des risques : le seul bouton est « Tout corriger » dans la carte de vérification (il suit les cases cochées).
       return c.risks > 0 ? { label: '', kind: 'none', enabled: false } : { label: 'Continuer', kind: 'advance', enabled: true };
     }
     if (step === 'imprimer') {
       if (!c.sliced) return slice;
+      if (c.blocked) return { label: '', kind: 'none', enabled: false }; // jamais « Imprimer » sur une plaque qu'Orca juge non imprimable
       return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: !c.sending } : { label: 'Exporter le fichier', kind: 'export', enabled: !c.sending };
     }
     if (step === 'resultat') {
@@ -143,9 +146,11 @@
       case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
         if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';
         if (!c.sliced && c.slicing) return 'Je découpe ta plaque…';
+        if (!c.sliced && c.sliceFailed) return 'Orca n’a pas pu découper ta plaque : je t’explique ci-dessous';
+        if (c.sliced && c.blocked) return 'Orca bloque l’impression de cette plaque : je t’explique ci-dessous';
         return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler : coche ce que tu veux corriger ci-dessous'
           : c.checked === 'clean' ? 'Tout est bon, on passe à l’impression' : c.checked === 'ignored' ? 'Tu as ignoré des points : à toi de voir' : 'Je vérifie ta plaque…');
-      case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : 'Prêt à imprimer';
+      case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : c.blocked ? 'Orca bloque l’impression de cette plaque : je t’explique ci-dessous' : 'Prêt à imprimer';
       default: if (c.success) return 'Bravo, c’est réussi !';
         if (c.failed) return 'Dommage. Montre-moi ta pièce en photo';
         // La question de fin d'impression est dans l'étape : la consigne dit seulement ce qui s'est passé.

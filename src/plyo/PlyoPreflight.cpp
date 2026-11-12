@@ -1,5 +1,6 @@
 #include "PlyoPreflight.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoOrcaMessages.hpp"
 #include "PlyoPlateActions.hpp"
 
 #include "libslic3r/Model.hpp"
@@ -58,12 +59,10 @@ std::set<Slic3r::ObjectID> needing_support(Slic3r::GUI::Plater& plater)
     Slic3r::GUI::PartPlate*              plate = plater.get_partplate_list().get_curr_plate();
     if (plate == nullptr || !plate->is_slice_result_valid())
         return out;
-    for (const Slic3r::PrintObject* po : plater.get_partplate_list().get_current_fff_print().objects()) {
-        const auto state = po->step_state_with_warnings(Slic3r::posSupportMaterial);
-        for (const auto& w : state.warnings)
-            if (w.current && w.message_id == Slic3r::PrintStateBase::SlicingNeedSupportOn)
-                out.insert(po->model_object()->id());
-    }
+    // Lecture commune de tous les avertissements d'étape (OrcaMessages) : seul « supports nécessaires » compte ici.
+    for (const OrcaMessages::StepWarning& w : OrcaMessages::step_warnings(plater.get_partplate_list().get_current_fff_print()))
+        if (w.message_id == Slic3r::PrintStateBase::SlicingNeedSupportOn && w.object_id != 0)
+            out.insert(Slic3r::ObjectID(w.object_id));
     return out;
 }
 

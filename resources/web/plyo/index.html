@@ -789,6 +789,7 @@
     openRisks = 0;
     plateChecked = '';
     dropTooBig();
+    dropOrcaCards(true);
     dropReplaced();
     dropLoginCard();
     if (typeof intentUI !== 'undefined') { intentUI.idk = false; intentUI.manual = null; }
@@ -1367,6 +1368,9 @@
   function journeyCtx() {
     var p = conv && conv.project || {}, ctx = { sliced: plateSliced(), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, editing: projectUI.editing === 'filament', checked: plateChecked, success: !!p.success, slicing: slicing.conv === conv && !!conv,
       plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
+    // Orca a refusé la découpe (carte d'Orca affichée), ou juge la plaque découpée non imprimable : pas de « Continuer » ni d'« Imprimer ».
+    ctx.sliceFailed = !ctx.sliced && orcaUI.failedConv === conv && !!conv;
+    ctx.blocked = ctx.sliced && !!(tourSignals && tourSignals.ready_for_print === false);
     var endQ = conv && PlyoJourney.currentStep(conv.project) === 'resultat' ? endQuestionNow() : null;
     ctx.failed = !!(sendOf() && sendOf().failed); // « raté » dit pour l'envoi de cette conversation
     ctx.endAsk = !!endQ;
@@ -1581,6 +1585,13 @@
   function onExportDone(msg) {
     unlockSend();
     if (msg.cancelled) return;
+    if (!msg.ok && msg.reason === 'error') {
+      // La phrase vient du type de l'erreur (kind), avec la suite : jamais le texte brut d'Orca seul.
+      var ev = window.PlyoPreflight.exportErrorView(msg);
+      var line = orcaNote(ev, 'error');
+      if (ev.quote) line.appendChild(el('span', 'muted small', ' Message d’Orca : « ' + ev.quote + ' »'));
+      return;
+    }
     if (!msg.ok) {
       noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque : clique sur « Découper ».' : msg.text || 'L’export n’a pas abouti : aucun fichier n’a été écrit.', 'error', 'alert', 'guide');
       return;
@@ -2161,6 +2172,7 @@
     openRisks = 0;
     plateChecked = '';
     dropTooBig();
+    dropOrcaCards(true);
     dropReplaced();
     applyTab('reset');
     $('guide-notes').textContent = '';
@@ -3055,19 +3067,22 @@
   var plateCounts = {};      // demande → nombre de pièces concernées (singulier ou pluriel du texte affiché)
   var plateSent = {};        // demande → message envoyé et essais déjà faits (relance d'une action refusée pour un temps)
   var plateQuiet = {};       // demande dont le résultat est dit par celui qui l'a faite (annulation groupée) : pas de ligne à part
-  // Découpe demandée : le bouton attend le résultat. Sans résultat au bout d'un délai (Orca refuse sans le dire au panneau,
-  // découpe très longue), il redevient cliquable et le panneau le dit.
+  // Découpe demandée : le bouton attend le résultat. Orca prévient de la fin de chaque découpe (slice_result, avec l'erreur) ;
+  // une découpe refusée sans un mot se voit aux signaux (Orca ne découpe pas) et le panneau demande pourquoi (orca_issues).
+  // Le délai n'est qu'un filet de sécurité : sans nouvelle, le bouton redevient cliquable et le panneau propose la suite.
   var SLICE_WAIT_MS = 120000;
   var slicing = { conv: null, timer: null };
   function stopSlicing() { clearTimeout(slicing.timer); slicing = { conv: null, timer: null }; }
   function startSlicing() {
     stopSlicing();
     dropReplaced();
-    slicing = { conv: conv, timer: setTimeout(function () {
+    dropOrcaCards();
+    orcaUI.failedConv = null;
+    slicing = { conv: conv, since: Date.now(), timer: setTimeout(function () {
       var mine = slicing.conv === conv;
       stopSlicing();
       if (!mine) return;
-      noteLine('La découpe prend plus longtemps que prévu. Si Orca affiche un message, lis-le ; sinon, reclique sur « Découper ».', 'warn', 'alert', 'guide');
+      orcaNote(window.PlyoPreflight.SLICE_SLOW, 'warn');
       renderProject();
     }, SLICE_WAIT_MS) };
   }
@@ -3089,6 +3104,13 @@
     delete plateWaiters[msg.request];
     if (msg.kind === 'slice') { if (!msg.ok) stopSlicing(); renderProject(); }
     if (msg.kind === 'scale_to_fit' && msg.ok) stopSlicing(); // une découpe encore attendue ne doit pas bloquer celle d'après la réduction
+    // Découpe refusée par Orca (Print::validate) : sa vraie raison, expliquée, avec la correction quand elle est sûre.
+    if (msg.kind === 'slice' && msg.reason === 'orca_refused') {
+      delete plateCounts[msg.request];
+      orcaFailed(msg.issues, 'refused');
+      if (after) after(false);
+      return;
+    }
     // Découpe refusée parce que la pièce ne tient pas : dit tout de suite, avec la carte qui répare.
     if (msg.kind === 'slice' && msg.reason === 'too_big') {
       delete plateCounts[msg.request];
@@ -3118,6 +3140,160 @@
   function onShowSetting(msg) {
     if (!msg.ok) noteLine('Je n’ai pas trouvé ce réglage dans le slicer.', 'error', 'alert');
     else if (msg.hidden) noteLine('J’ai ouvert la bonne page. Si tu ne vois pas le réglage, active le bouton « Avancé » en haut des réglages.', '', 'info');
+  }
+
+  // ---------- Ce qu'Orca dit de la plaque (PlyoOrcaMessages.cpp) ----------
+  // Erreur de découpe, refus de validation, plaque non imprimable, avertissement après un lot : une carte par problème (trois au
+  // plus), dans l'étape en cours comme la carte « trop grande ». L'explication vient du code du problème (preflight.js), le
+  // texte d'Orca n'est que cité ; chaque carte a une suite (corriger, montrer, demander à l'assistant).
+  // `failedConv` : conversation dont la dernière découpe a échoué ; `known` : problèmes déjà vus (pas de redite après un lot) ;
+  // `blockSig` : découpe dont le blocage a déjà été expliqué ; `afterApply` : relecture demandée après un lot appliqué.
+  var orcaUI = { failedConv: null, known: {}, blockSig: '', afterApply: null };
+  // `all` : aussi les corrections faites (avec leur « Annuler »), qui restent sinon le temps de la conversation.
+  function dropOrcaCards(all) { $('project-alert').querySelectorAll(all ? '.orca-issue, .orca-fixed' : '.orca-issue').forEach(function (b) { b.remove(); }); }
+  function rememberIssues(issues) { (issues || []).forEach(function (i) { orcaUI.known[window.PlyoPreflight.issueKey(i)] = true; }); }
+  // `warnings` : montrer aussi les avertissements ; `keep` : garder les cartes déjà là. Rend le nombre de cartes montrées.
+  function showOrcaIssues(issues, opts) {
+    var o = opts || {}, list = window.PlyoPreflight.orcaCards(issues, { warnings: !!o.warnings });
+    if (!o.keep) dropOrcaCards();
+    list.forEach(function (issue) { $('project-alert').appendChild(orcaCard(issue)); });
+    if (list.length && viewUI.tab === 'guide') $('project-alert').lastChild.scrollIntoView({ block: 'nearest' });
+    return list.length;
+  }
+  function orcaCard(issue) {
+    var v = window.PlyoPreflight.orcaIssueView(issue);
+    var box = alertBox(v.tone, '', 'alert');
+    box.classList.add('orca-issue');
+    box.body.appendChild(el('b', '', fr(v.title)));
+    box.body.appendChild(el('p', '', fr(v.text)));
+    if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message d’Orca : ') + '« ' + v.quote + ' »'));
+    if (v.note) box.body.appendChild(el('p', 'muted small', fr(v.note)));
+    box.body.appendChild(orcaActions(v.actions, box));
+    return box;
+  }
+  function orcaActions(actions, box) {
+    var acts = el('div', 'printer-actions');
+    actions.forEach(function (a) {
+      var b = button(a.label, function () {
+        if (a.kind === 'show_setting') showSetting(a.key);
+        else if (a.kind === 'show_me') showMe(a.target);
+        else if (a.kind === 'import') projectHandlers.importPart();
+        else if (a.kind === 'ask') send(a.prompt);
+        else if (a.kind === 'export') { box.remove(); runAction('export'); }
+        else if (a.kind === 'slice') { box.remove(); plateAction('slice'); }
+        else if (a.kind === 'plate') {
+          b.disabled = true;
+          // Le plateau change : la découpe repart, et dit à son tour si Orca est d'accord.
+          plateAction(a.action, function (ok) { if (!ok) { b.disabled = false; return; } box.remove(); plateAction('slice'); });
+        } else if (a.kind === 'fix') { b.disabled = true; applyOrcaFix(a, box, function (ok) { if (!ok) b.disabled = false; }); }
+      }, 'btn ghost sm', a.kind === 'fix' || a.kind === 'plate' ? 'wand' : a.kind === 'show_setting' || a.kind === 'show_me' ? 'eye' : '');
+      acts.appendChild(b);
+    });
+    acts.appendChild(button('Fermer', function () { box.remove(); }, 'link'));
+    return acts;
+  }
+  // Correction d'un clic : par le chemin d'application habituel (vérifiée par le slicer, annulable), puis la découpe repart.
+  function applyOrcaFix(a, box, done) {
+    var names = Logic.namesForApply(null, lastValues && lastValues.context), mine = conv;
+    pendingSheet = { kind: 'apply', onResult: function (ok, text, result) {
+      if (!ok) { noteLine(text, 'error', 'alert', 'guide'); done(false); return; }
+      // La carte devient « Corrigé : … » avec son « Annuler » ; elle reste quand la découpe repart (autre classe que les cartes d'Orca).
+      var fixed = alertBox('tip', '', 'check');
+      fixed.classList.add('orca-fixed');
+      var row = el('div', 'undo-row');
+      row.appendChild(el('span', 'note-text', fr('Corrigé : ' + a.label.charAt(0).toLowerCase() + a.label.slice(1) + '.')));
+      var undoId = (result && result.undo_id) || 0;
+      if (undoId) row.appendChild(undoButton('Annuler', function (u) {
+        pendingSheet = { kind: 'undo', onResult: function (undone, t) {
+          if (!undone) { u.disabled = false; noteLine(t, 'error', 'alert', 'guide'); return; }
+          fixed.remove();
+          noteLine('Réglage d’avant remis : découpe à nouveau quand tu veux.', '', 'undo', 'guide');
+        } };
+        window.orca.postMessage({ type: 'undo', undo_id: undoId });
+      }));
+      fixed.body.appendChild(row);
+      box.replaceWith(fixed);
+      if (conv === mine) plateAction('slice');
+      done(true);
+    } };
+    window.orca.postMessage({ type: 'apply', changes: a.changes, print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: 'Correction demandée par Orca' });
+  }
+  // Ligne d'étape avec ses boutons (découpe sans nouvelle, découpe arrêtée, export en échec).
+  function orcaNote(view, tone) {
+    var line = noteLine(view.text, tone, 'alert', 'guide');
+    view.actions.forEach(function (a) {
+      line.appendChild(button(a.label, function () {
+        if (a.kind === 'slice') { line.remove(); plateAction('slice'); }
+        else if (a.kind === 'export') { line.remove(); runAction('export'); }
+        else if (a.kind === 'show_me') showMe(a.target);
+        else if (a.kind === 'ask') send(a.prompt);
+      }, 'link'));
+    });
+    return line;
+  }
+  // La découpe n'a pas eu lieu (erreur ou refus) : plus d'attente, la raison tout de suite, notée dans la conversation.
+  function orcaFailed(issues, origin) {
+    stopSlicing();
+    assistSlice = null;
+    orcaUI.failedConv = conv;
+    projectUI.sliceRefused = null;
+    var PF = window.PlyoPreflight, list = PF.orcaCards(issues, {});
+    if (!list.length) list = [{ source: origin === 'refused' ? 'validate_error' : 'slicing_error', code: 'unknown', level: 'error', text: '' }];
+    showOrcaIssues(list, {});
+    record({ kind: 'note', text: PF.orcaIssueView(list[0]).title + ' : ' + PF.orcaIssueView(list[0]).text, tone: 'error', icon: 'alert' });
+    renderProject();
+  }
+  function askOrca(purpose) { if (conv) window.orca.postMessage({ type: 'orca_issues', purpose: purpose }); }
+  // Fin d'une découpe, envoyée par le slicer dès qu'Orca a fini (erreur comprise).
+  function onSliceResult(msg) {
+    if (!conv) return;
+    if (msg.status === 'error') { orcaFailed(msg.issues, 'slice'); return; }
+    if (msg.status === 'cancelled') {
+      if (slicing.conv !== conv) return; // une découpe que le panneau n'attendait pas : rien à dire
+      stopSlicing();
+      orcaNote(window.PlyoPreflight.SLICE_STOPPED, 'warn');
+      renderProject();
+      return;
+    }
+    orcaUI.failedConv = null;
+    if (slicing.conv === conv) { stopSlicing(); window.orca.postMessage({ type: 'tour_signals' }); } // finie : les signaux le disent tout de suite
+    var issues = Array.isArray(msg.issues) ? msg.issues : [];
+    // Découpée mais refusée pour l'impression : les erreurs bloquantes ; sinon les avertissements de la découpe, et ceux de la
+    // validation qu'on n'a pas encore vus.
+    var fresh = issues.filter(function (i) { return i.level === 'error' || i.source === 'step_warning' || !orcaUI.known[window.PlyoPreflight.issueKey(i)]; });
+    rememberIssues(issues);
+    if (msg.ready_for_print === false) orcaUI.blockSig = 'shown';
+    showOrcaIssues(fresh, { warnings: msg.ready_for_print !== false });
+    renderProject();
+  }
+  // Réponse à une question du panneau (`purpose`) : découpe qui n'a pas démarré, plaque bloquée, ou relecture après un lot.
+  function onOrcaIssues(msg) {
+    if (!conv) return;
+    var issues = Array.isArray(msg.issues) ? msg.issues : [];
+    if (msg.purpose === 'stalled') {
+      if (slicing.conv !== conv || msg.busy) return; // Orca découpe finalement : sa fin arrivera
+      if (window.PlyoPreflight.orcaCards(issues, {}).length) { orcaFailed(issues, 'refused'); return; }
+      if (msg.pending) { slicing.asked = false; slicing.since = Date.now(); return; } // un changement attend d'être lu : on redemande
+      // Aucune raison lisible et rien en cours : Orca n'a pas relancé (plaque restée en erreur). On le dit au lieu d'attendre.
+      stopSlicing();
+      orcaNote(window.PlyoPreflight.SLICE_NOT_STARTED, 'warn');
+      renderProject();
+      return;
+    }
+    if (msg.purpose === 'blocked') { rememberIssues(issues); showOrcaIssues(issues, {}); renderProject(); return; }
+    if (msg.purpose === 'after_apply') {
+      var wait = orcaUI.afterApply;
+      if (!wait) return;
+      // Le lot n'est pas encore pris en compte par Orca : on relit un peu plus tard (cinq fois au plus).
+      if ((msg.pending || msg.busy) && wait.tries < 5) { wait.tries += 1; setTimeout(function () { askOrca('after_apply'); }, 700); return; }
+      orcaUI.afterApply = null;
+      // Erreurs : toujours (la prochaine découpe serait refusée) ; avertissements : ceux des réglages du lot, ou nouveaux.
+      var said = issues.filter(function (i) {
+        return i.source === 'validate_error' || (i.source === 'validate_warning' && (wait.keys.indexOf(i.opt_key) >= 0 || !orcaUI.known[window.PlyoPreflight.issueKey(i)]));
+      });
+      rememberIssues(issues);
+      if (said.length) showOrcaIssues(said, { warnings: true, keep: true });
+    }
   }
 
   // ---------- Ordres exécutés tout de suite (« penche la pièce de 20° ») ----------
@@ -3927,8 +4103,9 @@
     openRisks = fresh.length;
     plateChecked = !risks.length ? 'clean' : fresh.length ? 'open' : 'ignored';
     renderPreflight(manual || fresh.length ? risks : [], data);
-    // Découpe faite et aucun risque : on passe à l'impression sans demander.
-    if (!manual && currentTourStep() === 'slice' && data && data.sliced && data.objects && data.objects.length && PlyoJourney.afterPreflight(openRisks) === 'advance') {
+    // Découpe faite et aucun risque : on passe à l'impression sans demander (jamais si Orca juge la plaque non imprimable).
+    var orcaBlocks = !!(tourSignals && tourSignals.ready_for_print === false);
+    if (!manual && !orcaBlocks && currentTourStep() === 'slice' && data && data.sliced && data.objects && data.objects.length && PlyoJourney.afterPreflight(openRisks) === 'advance') {
       setTourStep('print'); // d'abord : le changement d'étape efface les messages de l'étape
       var advance = PlyoJourney.advanceNote(risks.length); // une carte déjà ignorée compte : jamais « Pas de risque » avec un risque
       noteLine(advance.text, advance.tone, advance.icon, 'guide');
@@ -4144,7 +4321,15 @@
     pending.row.appendChild(b);
   }
   function onTourSignals(signals) {
-    if (signals.sliced) stopSlicing();
+    if (signals.sliced) { stopSlicing(); orcaUI.failedConv = null; }
+    // Découpe demandée qui n'a pas démarré (Orca la refuse sans événement, Plater::reslice) : on demande pourquoi, une fois.
+    if (slicing.conv && slicing.conv === conv && !signals.sliced && signals.slicing === false && !slicing.asked && Date.now() - (slicing.since || 0) > 2500) {
+      slicing.asked = true;
+      askOrca('stalled');
+    }
+    // Découpée mais non imprimable (contrôles d'Orca) : la raison, une fois par découpe, même sans la fin vue (panneau rouvert).
+    if (!signals.sliced) orcaUI.blockSig = '';
+    else if (signals.ready_for_print === false && !orcaUI.blockSig) { orcaUI.blockSig = 'asked'; askOrca('blocked'); }
     followAssistSlice(signals);
     watchSlice(signals);
     var hadSummary = !!printSummary();
@@ -4824,6 +5009,11 @@
       if (msg.undone_id && undoneListeners[msg.undone_id]) { undoneListeners[msg.undone_id](); delete undoneListeners[msg.undone_id]; }
       if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text, msg); }
       else noteLine(msg.text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
+      // Un lot appliqué : Orca peut le refuser ou prévenir (validation). On relit ce qu'il en dit, une fois le lot pris en compte.
+      if (msg.ok && msg.undo_id && conv) {
+        orcaUI.afterApply = { tries: 0, keys: (Array.isArray(msg.applied) ? msg.applied : []).map(function (a) { return a && a.id; }) };
+        setTimeout(function () { askOrca('after_apply'); }, 600);
+      }
       // Corriger à l'étape Résultat, c'est préparer la prochaine impression : la découpe est à refaire.
       if (msg.ok && msg.undo_id && currentTourStep() === 'after') {
         projectUI.fixedAfter = conv;
@@ -4906,6 +5096,10 @@
       onOutcomePending(msg.items);
     } else if (msg.type === 'preflight') {
       onPreflight(msg.data);
+    } else if (msg.type === 'slice_result') {
+      onSliceResult(msg);
+    } else if (msg.type === 'orca_issues') {
+      onOrcaIssues(msg);
     } else if (msg.type === 'plate_action') {
       onPlateAction(msg);
     } else if (msg.type === 'commands') {

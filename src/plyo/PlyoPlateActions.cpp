@@ -1,6 +1,8 @@
 #include "PlyoPlateActions.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoFirstSteps.hpp"
+#include "PlyoOrcaMessages.hpp"
+#include "PlyoOrcaMessagesLogic.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Model.hpp"
@@ -64,7 +66,7 @@ bool same_sizes(const std::vector<Slic3r::Vec3d>& a, const std::vector<Slic3r::V
 }
 
 // Découpe vouée au refus d'Orca, dite avant de la lancer : une pièce plus grande que le plateau (avec sa mesure pour la carte du
-// panneau), ou une plaque qu'Orca n'accepte pas (le même test que son bouton « Découper la plaque », MainFrame). null si tout va bien.
+// panneau), ou une plaque qu'Orca n'accepte pas, avec sa vraie raison (Print::validate, lue par OrcaMessages). null si tout va bien.
 nlohmann::json slice_refusal(Slic3r::GUI::Plater& plater)
 {
     Slic3r::GUI::PartPlate* plate = plater.get_partplate_list().get_curr_plate();
@@ -78,9 +80,12 @@ nlohmann::json slice_refusal(Slic3r::GUI::Plater& plater)
             return {{"ok", false}, {"reason", "too_big"}, {"text", "« " + Json::utf8_prefix(object->name, 120) + " » ne tient pas sur le plateau : je ne lance pas la découpe."},
                     {"name", Json::utf8_prefix(object->name, 120)}, {"count", objects.size()}, {"size_mm", size_json(size)}, {"bed_mm", size_json(bed)}, {"fits", false}};
     }
-    if (!plate->can_slice())
-        return {{"ok", false}, {"reason", "not_ready"},
-                {"text", "Orca ne peut pas découper cette plaque pour l'instant : une pièce dépasse sans doute du plateau. Regarde le plateau, déplace-la ou range-le, puis reclique sur « Découper »."}};
+    // Un réglage changé à l'instant n'est pas encore lu par Orca (pending) : sa découpe le lira, on ne refuse pas d'après l'ancien
+    // état. Orca qui découpe déjà (busy) : il garde la main.
+    const OrcaMessages::Validation checked = OrcaMessages::validate_plate();
+    if (!checked.busy && !checked.pending && OrcaMessagesLogic::has_error(checked.issues))
+        return {{"ok", false}, {"reason", "orca_refused"}, {"issues", checked.issues},
+                {"text", "Orca refuse de découper cette plaque pour l'instant : je t'explique pourquoi juste en dessous."}};
     return nullptr;
 }
 
@@ -132,8 +137,9 @@ nlohmann::json context()
             item["plate"] = plate + 1;
         objects.push_back(item);
     }
+    // Ce qu'Orca dit de la plaque (refus, avertissements, contrôles du G-code), 10 au plus, textes nettoyés : l'IA l'explique.
     return {{"objects", objects}, {"bed_mm", size_json(bed_size())}, {"sliced", Json::boolean(signals, "sliced", false)},
-            {"time_s", Json::num(signals, "time_s", 0.0)}, {"weight_g", Json::num(signals, "weight_g", 0.0)}};
+            {"time_s", Json::num(signals, "time_s", 0.0)}, {"weight_g", Json::num(signals, "weight_g", 0.0)}, {"issues", OrcaMessages::report()["issues"]}};
 }
 
 nlohmann::json run(const std::string& kind)

@@ -17,7 +17,7 @@ nlohmann::json state();
 // Fusionne `patch` dans l'état (clés connues seulement) et l'enregistre.
 void set_state(const nlohmann::json& patch);
 
-// Parcours : {objects, sliced, time_s, weight_g} pour la plaque en cours (0 si pas encore tranchée).
+// Parcours : {objects, sliced, slicing, ready_for_print, time_s, weight_g} pour la plaque en cours (0 si pas encore tranchée).
 nlohmann::json tour_signals();
 // Pose le petit bateau (3DBenchy, fourni par Orca) sur le plateau.
 nlohmann::json add_benchy();
@@ -34,7 +34,8 @@ bool select_filament(const std::string& name);
 // la fenêtre de confirmation d'Orca). { ok, reason: "not_sliced" }
 nlohmann::json start_print();
 // Bouton « Exporter » : la fenêtre d'enregistrement d'Orca s'ouvre (dans cet appel), `done` n'est appelé qu'à la fin réelle :
-// { ok: true, path } fichier écrit ; { ok: false, cancelled: true } rien n'a été choisi ; { ok: false, reason, text } refus ou erreur.
+// { ok: true, path } fichier écrit ; { ok: false, cancelled: true } rien n'a été choisi ; { ok: false, reason, text } refus ;
+// { ok: false, reason: "error", kind, text } erreur (kind : OrcaMessagesLogic::export_kind, texte sans le dossier).
 // Dossier proposé : le dernier choisi, sinon le Bureau, jamais le dossier interne des modèles posés par le panneau.
 void export_file(std::function<void(nlohmann::json)> done);
 // Appelé par Orca (Plater::priv::on_process_completed) à la fin d'un export.

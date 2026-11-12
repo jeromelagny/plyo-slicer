@@ -3,6 +3,7 @@
 #include "plyo/PlyoFirstSteps.hpp" // PLYO: fin réelle d'un export demandé par le panneau, voir on_process_completed()
 #include "plyo/PlyoCanvas.hpp" // PLYO: envoi armé par le panneau, voir send_gcode_legacy
 #include "plyo/PlyoProjectFiles.hpp" // PLYO: projet de la conversation gardé par Plyo, voir close_with_confirm
+#include "plyo/PlyoOrcaMessages.hpp" // PLYO: fin de chaque découpe vue par le panneau Assistant, voir on_process_completed()
 #include "../Utils/NetworkAgent.hpp"
 #include "IPrinterAgent.hpp"
 #include "CalibUtils.hpp"
@@ -13368,6 +13369,7 @@ void Plater::priv::on_process_completed(SlicingProcessCompletedEvent &evt)
     // so the following call just confirms, that the produced data were consumed.
     this->background_process.stop();
     notification_manager->set_slicing_progress_export_possible();
+    Plyo::OrcaMessages::on_slicing_done(evt); // PLYO: le panneau Assistant voit tout de suite une découpe en erreur ou finie (lu avant le crochet d'export)
 
     // PLYO: le panneau Assistant attend la fin réelle de l'export (fichier écrit, ou erreur) pour le dire.
     if (this->background_process.is_export_scheduled())
