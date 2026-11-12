@@ -32,6 +32,7 @@
 #include "PlyoProjectLogic.hpp"
 #include "PlyoProjectFiles.hpp"
 #include "PlyoPrinterSetup.hpp"
+#include "PlyoSelfTest.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoSpools.hpp"
@@ -123,6 +124,11 @@ std::string load_page()
         const std::string marker = std::string("<!--plyo-include:") + name + "-->";
         if (const size_t at = page.find(marker); at != std::string::npos)
             page.replace(at, marker.size(), "<script>\n" + read_resource(name) + "\n</script>");
+    }
+    // Banc d'essai (PLYO_SELFTEST) : le pilote passe après tous les scripts du panneau. Hors banc, chaîne vide : page inchangée.
+    if (const std::string driver = SelfTest::page_script(); !driver.empty()) {
+        const size_t body_end = page.rfind("</body>");
+        page.insert(body_end == std::string::npos ? page.size() : body_end, driver);
     }
     return page;
 }
@@ -688,7 +694,9 @@ void handle_page_message(const nlohmann::json& data)
             Session::clear();
             send({{"type", "session"}, {"session", nullptr}});
         }
-        else
+        else if (SelfTest::handle(type, data, send)) {
+            // message du banc d'essai : accepté seulement quand PLYO_SELFTEST est actif (sinon handle rend false)
+        } else
             BOOST_LOG_TRIVIAL(warning) << "Plyo: message inconnu reçu du panneau : " << data.dump();
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: erreur en traitant « " << type << " » : " << e.what();

@@ -8,6 +8,7 @@
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoWelcomeDialog.hpp"
 #include "PlyoPrinterSetup.hpp"
+#include "PlyoSelfTest.hpp"
 
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/Print.hpp"
@@ -242,7 +243,9 @@ void on_startup()
         if (frame == nullptr || frame == s_watched_frame || !wxGetApp().is_editor())
             return;
         s_watched_frame = frame;
-        new StartupWatcher(!Json::boolean(load_state(), "seen", false)); // s'arrête seul ; vit autant que l'application
+        // Banc d'essai (PLYO_SELFTEST) : jamais l'accueil modal, le panneau s'ouvre directement ; hors banc, inchangé.
+        const bool first_run = !SelfTest::active() && !Json::boolean(load_state(), "seen", false);
+        new StartupWatcher(first_run); // s'arrête seul ; vit autant que l'application
     });
 }
 

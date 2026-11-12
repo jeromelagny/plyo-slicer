@@ -33,6 +33,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJson.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSanitize.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSanitize.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSelfTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSelfTest.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoStore.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoStore.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoConversations.cpp
