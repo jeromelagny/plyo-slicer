@@ -11,6 +11,14 @@
 // Calibration guidée : la part sans Orca (testée par src/plyo/tests/cpp).
 namespace Plyo { namespace CalibrationLogic {
 
+// Nom du préréglage qui reçoit le résultat d'une calibration. Une bobine garde son propre nom (on écrit dans son
+// préréglage, sans « (calibré Plyo) ») ; sinon « origine — imprimante (calibré Plyo) ».
+inline std::string target_name(bool is_spool, const std::string& filament, const std::string& origin, const std::string& printer,
+                               const std::string& suffix)
+{
+    return is_spool ? filament : origin + " — " + printer + suffix;
+}
+
 enum class CaptureStep {
     First,   // aucune capture en mémoire : on capture
     Keep,    // la capture reste valable : le plateau est celui du test, vidé ou réduit

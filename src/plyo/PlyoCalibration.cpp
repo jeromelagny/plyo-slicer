@@ -5,6 +5,7 @@
 #include "PlyoSanitize.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoSettingsBridge.hpp"
+#include "PlyoSpools.hpp"
 
 #include "libslic3r/Format/STL.hpp"
 #include "libslic3r/Model.hpp"
@@ -95,7 +96,13 @@ std::string origin_filament(const std::string& name)
     return name.size() > suffix.size() && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0 ? name.substr(0, name.size() - suffix.size()) : name;
 }
 
-std::string calibrated_name() { return origin_filament(filament_name()) + " — " + printer_name() + CALIBRATED_SUFFIX; }
+// Le filament en cours est-il une bobine ? Alors la calibration s'écrit dans son préréglage.
+bool filament_is_spool() { return Spools::is_spool_preset(filament_name()); }
+
+std::string calibrated_name()
+{
+    return CalibrationLogic::target_name(filament_is_spool(), filament_name(), origin_filament(filament_name()), printer_name(), CALIBRATED_SUFFIX);
+}
 
 // Capture puis projet vide, sans fenêtre : Orca n'a plus de projet ni de préréglage modifié à signaler.
 // Un plateau sans aucun objet du test (l'utilisateur a ouvert autre chose entre-temps) est capturé à son tour, dans un
@@ -451,6 +458,7 @@ nlohmann::json save_result(const std::string& test, double value)
 
     // Base : le préréglage de filament ENREGISTRÉ (pas l'édité, qui porte les réglages du test). Si le préréglage
     // calibré existe déjà, on part de lui pour garder les valeurs des tests précédents.
+    const bool        spool     = filament_is_spool();
     const std::string name      = calibrated_name();
     const std::string base_name = bundle().filaments.find_preset(name, false) != nullptr ? name : filament_name();
     if (bundle().filaments.find_preset(base_name, false) == nullptr)
@@ -476,7 +484,9 @@ nlohmann::json save_result(const std::string& test, double value)
         }
         cfg.set_deserialize_strict(range.key, serialized);
     }
-    cfg.set_key_value("compatible_printers", new Slic3r::ConfigOptionStrings({s_before->printer}));
+    // Une bobine garde ses `inherits` (repris du préréglage) et son imprimante : seuls les préréglages calibrés sont liés ici.
+    if (!spool)
+        cfg.set_key_value("compatible_printers", new Slic3r::ConfigOptionStrings({s_before->printer}));
 
     Slic3r::GUI::Tab* tab = Slic3r::GUI::wxGetApp().get_tab(Preset::TYPE_FILAMENT);
     if (tab == nullptr)

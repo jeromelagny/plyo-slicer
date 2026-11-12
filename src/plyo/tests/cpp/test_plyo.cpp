@@ -728,6 +728,19 @@ TEST_CASE("Project: un booléen ou un texte d'un 3MF passe tel quel quand la cl�
     CHECK_FALSE(secret);
 }
 
+TEST_CASE("Calibration : une bobine reçoit le résultat dans son propre préréglage")
+{
+    using namespace Plyo;
+    const std::string spool = "Sunlu PLA+ noir — CR-10 SE";
+    const std::string sfx   = " (calibré Plyo)";
+    // Bobine : le nom ne change pas, jamais de « (calibré Plyo) ».
+    CHECK(CalibrationLogic::target_name(true, spool, "Generic PLA", "CR-10 SE", sfx) == spool);
+    CHECK(CalibrationLogic::target_name(true, spool, "Generic PLA", "CR-10 SE", sfx).find("calibré") == std::string::npos);
+    CHECK(ProjectLogic::same_filament(spool, spool));
+    // Hors bobine : le nom d'avant.
+    CHECK(CalibrationLogic::target_name(false, "Generic PLA", "Generic PLA", "CR-10 SE", sfx) == "Generic PLA — CR-10 SE (calibré Plyo)");
+}
+
 TEST_CASE("Project: le filament copié ou calibré par Plyo reste celui du projet")
 {
     using namespace Plyo::ProjectLogic;
