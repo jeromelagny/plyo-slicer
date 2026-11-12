@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PlyoSpoolsLogic.hpp"
+
 // Enregistrement automatique du préréglage de la bobine : un réglage du filament changé (par l'assistant ou à la main)
 // est écrit dans le préréglage de la bobine sous son propre nom, environ 2 s après le dernier changement, quand Orca ne
 // découpe pas et n'envoie pas. Jamais de fenêtre, jamais de nouveau préréglage, et seulement pour une bobine du registre
@@ -25,5 +27,11 @@ bool calibrating();
 // Vrai s'il ne reste rien à perdre : filament non modifié, ou bobine bien enregistrée. Faux pour un préréglage qui
 // n'est pas une bobine, pendant une calibration, si Orca refuserait les températures ou si l'écriture échoue.
 bool save_spool_now();
+
+// Avant que Plyo change de filament (bobine choisie, projet remis, calibration) : le filament modifié est écrit dans sa
+// bobine. Clean (rien à perdre : non modifié, ou bobine écrite), NotSpool (préréglage qui n'est pas une bobine : Orca garde
+// sa question), Refuse (bobine qu'on ne peut pas écrire maintenant : l'appelant ne change rien et dit
+// SpoolsLogic::FLUSH_REFUSED_TEXT, plutôt que de laisser Orca transférer ou Plyo jeter ses réglages).
+SpoolsLogic::Flush flush_spool();
 
 }} // namespace Plyo::AutoSave

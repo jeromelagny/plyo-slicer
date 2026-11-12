@@ -208,29 +208,34 @@ bool calibrating()
     return plater != nullptr && calibrating_impl(plater);
 }
 
-bool save_spool_now()
+SpoolsLogic::Flush flush_spool()
 {
+    using SpoolsLogic::Flush;
     Slic3r::GUI::GUI_App& app = Slic3r::GUI::wxGetApp();
     if (app.preset_bundle == nullptr)
-        return false;
+        return Flush::Refuse;
     Slic3r::PresetCollection& filaments = app.preset_bundle->filaments;
-    if (!filaments.current_is_dirty())
-        return true;
-    const std::string name = filaments.get_selected_preset_name();
-    if (!filaments.get_selected_preset().can_overwrite() || !Spools::is_spool_preset(name) || calibrating())
-        return false;
-    if (!SpoolsLogic::temperature_pairs_ok(temperature_pairs(filaments.get_edited_preset().config)))
-        return false;
+    const bool        dirty = filaments.current_is_dirty();
+    const std::string name  = filaments.get_selected_preset_name();
+    const bool        spool = dirty && filaments.get_selected_preset().can_overwrite() && Spools::is_spool_preset(name);
+    // Calibration et températures : consultées seulement pour une bobine modifiée.
+    const bool        calib = spool && calibrating();
+    const bool        temps = spool && !calib && SpoolsLogic::temperature_pairs_ok(temperature_pairs(filaments.get_edited_preset().config));
+    const Flush       step  = SpoolsLogic::flush_before_switch(dirty, spool, calib, temps);
+    if (step != Flush::Save)
+        return step;
     s_saving                          = true;
     const Profiles::SaveOutcome saved = Profiles::save_current_as(false, name);
     s_saving                          = false;
     if (saved != Profiles::SaveOutcome::Ok)
-        return false;
+        return Flush::Refuse;
     s_has_skip = false;
     s_dirty_name.clear();
-    BOOST_LOG_TRIVIAL(info) << "Plyo: préréglage de bobine enregistré (avant de quitter le projet) « " << name << " »";
-    return true;
+    BOOST_LOG_TRIVIAL(info) << "Plyo: préréglage de bobine enregistré (avant un changement de filament ou de projet) « " << name << " »";
+    return Flush::Clean;
 }
+
+bool save_spool_now() { return flush_spool() == SpoolsLogic::Flush::Clean; }
 
 void start()
 {

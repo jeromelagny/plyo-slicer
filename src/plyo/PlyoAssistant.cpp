@@ -175,8 +175,9 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "get_values")
             send_values();
         else if (type == "apply") {
-            // Le plateau est encore celui de la conversation quittée (son 3MF attend qu'Orca ait fini) : rien ne s'y applique.
-            if (ProjectFiles::detach_pending()) {
+            // Le plateau est encore celui d'une autre conversation (départ ou ouverture en attente qu'Orca ait fini) : rien
+            // ne s'y applique.
+            if (ProjectFiles::edits_blocked()) {
                 send_result({{"ok", false}, {"text", ProjectFiles::busy_text()}});
                 return;
             }
@@ -204,6 +205,7 @@ void handle_page_message(const nlohmann::json& data)
                 result["saved"]            = saved["saved"];
                 result["save_error"]       = saved["save_error"];
                 result["in_project"]       = saved["in_project"];
+                result["print_edited"]     = saved["print_edited"];
                 result["manual_saved"]     = manual;
                 const nlohmann::json ask = data.contains("ask") ? data["ask"] : nlohmann::json();
                 nlohmann::json       after = SettingsBridge::read_values();
@@ -235,6 +237,7 @@ void handle_page_message(const nlohmann::json& data)
                 result["saved"]            = saved["saved"];
                 result["save_error"]       = saved["save_error"];
                 result["in_project"]       = saved["in_project"];
+                result["print_edited"]     = saved["print_edited"];
             }
             send_result(result);
         } else if (type == "ai_context")
@@ -276,12 +279,13 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "spool_success") {
             // Réussite déclarée hors de la carte « Ça a marché ? » (phrase dans la discussion).
             // Elle vise le dernier envoi, même si une autre bobine a été choisie depuis.
-            nlohmann::json done = Profiles::mark_sent_success();
+            // Seulement pour la bobine de la conversation (`spool`, son id) : jamais un autre envoi, ancien ou déclaré raté.
+            nlohmann::json done = Profiles::mark_sent_success(Json::str(data, "spool"), Json::boolean(data, "change_of_mind", false));
             done["type"]        = "spool_success_done";
             send(done);
         } else if (type == "spool_failure") {
             // « Non, c'est raté » à l'étape Résultat : vise le dernier envoi, comme spool_success.
-            nlohmann::json done = Profiles::mark_sent_failure();
+            nlohmann::json done = Profiles::mark_sent_failure(Json::str(data, "spool"));
             done["type"]        = "spool_failure_done";
             send(done);
         } else if (type == "journal_add")
@@ -404,7 +408,7 @@ void handle_page_message(const nlohmann::json& data)
             // préréglage d'impression partagé). Pièce refusée : le plateau n'est pas attaché.
             const std::string conv   = Json::str(data, "conv");
             const std::string before = ProjectFiles::attached();
-            if (!conv.empty() && ProjectFiles::attach(conv) == "occupe") {
+            if (ProjectFiles::edits_blocked() || (!conv.empty() && ProjectFiles::attach(conv) == "occupe")) {
                 // Le plateau d'avant n'est pas encore rangé (Orca découpe ou envoie) : la pièce n'est pas posée.
                 send({{"type", "model_added"}, {"ok", false}, {"busy", true}, {"text", ProjectFiles::busy_text()}});
                 return;
@@ -566,6 +570,10 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "spools_get") {
             send({{"type", "spools"}, {"items", Spools::list(Json::str(data, "printer"))}});
         } else if (type == "spool_choose") {
+            if (ProjectFiles::edits_blocked()) { // le plateau est encore celui d'une autre conversation
+                send({{"type", "spool_chosen"}, {"ok", false}, {"text", ProjectFiles::busy_text()}});
+                return;
+            }
             // Bobine nommée : son préréglage pour cette machine est choisi, ou créé depuis le profil de la matière de cette machine.
             nlohmann::json r = Spools::create_or_choose(Json::str(data, "name"), Json::str(data, "material"), Json::str(data, "printer"));
             r["type"]        = "spool_chosen";

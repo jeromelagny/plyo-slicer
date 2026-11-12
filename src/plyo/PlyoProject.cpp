@@ -1,4 +1,5 @@
 #include "PlyoProject.hpp"
+#include "PlyoAutoSave.hpp"
 
 #include "PlyoCanvas.hpp"
 #include "PlyoCatalog.hpp"
@@ -163,6 +164,10 @@ nlohmann::json restore(const nlohmann::json& project, bool discard_unsaved)
     // Réglages d'impression d'un plateau de conversation : ce sont ceux de la pièce. Un changement de filament ne les touche
     // pas ; un changement de machine les vide, et cela se demande comme pour tout réglage non enregistré.
     const bool           printer_changing = Json::str(now, "printer_preset") != printer;
+    // La bobine en cours est écrite d'abord : ses réglages ne comptent plus comme « non enregistrés », et ne sont jamais
+    // jetés par « Les abandonner ». Si elle ne peut pas l'être maintenant, rien ne change.
+    if (changing && AutoSave::flush_spool() == SpoolsLogic::Flush::Refuse)
+        return {{"ok", false}, {"text", SpoolsLogic::FLUSH_REFUSED_TEXT}};
     const bool           keep_prints      = ProjectFiles::owns_print_edits() && !printer_changing;
     const bool           dirty    = bundle().printers.current_is_dirty() || (bundle().prints.current_is_dirty() && !keep_prints) || bundle().filaments.current_is_dirty();
     if (changing && dirty && !discard_unsaved)

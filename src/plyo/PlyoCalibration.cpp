@@ -1,6 +1,7 @@
 #include "PlyoCalibration.hpp"
 #include "PlyoCalibrationLogic.hpp"
 #include "PlyoAssistant.hpp"
+#include "PlyoAutoSave.hpp"
 #include "PlyoStore.hpp"
 #include "PlyoSanitize.hpp"
 #include "PlyoJson.hpp"
@@ -99,9 +100,9 @@ std::string origin_filament(const std::string& name)
 // Le filament en cours est-il une bobine ? Alors la calibration s'écrit dans son préréglage.
 bool filament_is_spool() { return Spools::is_spool_preset(filament_name()); }
 
-std::string calibrated_name()
+std::string calibrated_name(bool spool)
 {
-    return CalibrationLogic::target_name(filament_is_spool(), filament_name(), origin_filament(filament_name()), printer_name(), CALIBRATED_SUFFIX);
+    return CalibrationLogic::target_name(spool, filament_name(), origin_filament(filament_name()), printer_name(), CALIBRATED_SUFFIX);
 }
 
 // Capture puis projet vide, sans fenêtre : Orca n'a plus de projet ni de préréglage modifié à signaler.
@@ -415,6 +416,11 @@ nlohmann::json start_test(const std::string& test, int pass, double base_value)
             return {{"ok", false}, {"text", tower.refusal}};
     }
 
+    // Avant la capture : la bobine en cours, modifiée, est écrite (la capture vide les modifications). Pendant un test déjà
+    // lancé, le filament porte les valeurs du test : elles n'entrent jamais dans la bobine (flush_spool refuse, on ne
+    // lance rien), et les tests suivants repartent de la capture du premier.
+    if (!s_before.has_value() && AutoSave::flush_spool() == SpoolsLogic::Flush::Refuse)
+        return {{"ok", false}, {"text", SpoolsLogic::FLUSH_REFUSED_TEXT}};
     const ProjectNotificationsPause quiet; // capture et fonctions calib_* d'Orca : plusieurs « nouveau projet »
     if (!capture())
         return {{"ok", false}, {"text", "Ta pièce n'a pas pu être mise de côté : le test n'est pas lancé."}};
@@ -459,7 +465,7 @@ nlohmann::json save_result(const std::string& test, double value)
     // Base : le préréglage de filament ENREGISTRÉ (pas l'édité, qui porte les réglages du test). Si le préréglage
     // calibré existe déjà, on part de lui pour garder les valeurs des tests précédents.
     const bool        spool     = filament_is_spool();
-    const std::string name      = calibrated_name();
+    const std::string name      = calibrated_name(spool);
     const std::string base_name = bundle().filaments.find_preset(name, false) != nullptr ? name : filament_name();
     if (bundle().filaments.find_preset(base_name, false) == nullptr)
         return {{"ok", false}, {"text", "Refusé : ton filament d'avant le test est introuvable."}};

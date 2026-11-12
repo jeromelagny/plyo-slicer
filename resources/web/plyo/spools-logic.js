@@ -50,7 +50,11 @@
     var day = shortDate(date);
     return day ? 'Revenir aux réglages réussis du ' + day : 'Revenir aux réglages réussis';
   }
-  function doneText(name) { return 'C’est noté : je reprendrai ces réglages pour ' + name + '.'; }
+  // `date` : jour de l'envoi retenu (« AAAA-MM-JJ ») ; l'utilisateur voit quelle impression a été retenue.
+  function doneText(name, date) {
+    var day = shortDate(date);
+    return day ? 'C’est noté : je reprendrai les réglages de ton impression du ' + day + ' pour ' + name + '.' : 'C’est noté : je reprendrai ces réglages pour ' + name + '.';
+  }
 
   // Préréglage de l'utilisateur choisi dans Orca, hors registre : proposé une fois, plus jamais après un « non ».
   function adoptQuestion(preset) { return 'Faire de « ' + preset + ' » une bobine que je retiens ?'; }

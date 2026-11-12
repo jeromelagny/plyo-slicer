@@ -2,6 +2,7 @@
 
 #include <boost/filesystem/path.hpp>
 #include <nlohmann/json.hpp>
+#include <wx/string.h>
 
 #include <functional>
 #include <string>
@@ -51,11 +52,16 @@ bool attachable();
 // appliquer pour une autre conversation).
 bool detach_pending();
 
+// Rien de la conversation affichée ne s'applique (réglages, bobine, pièce) : départ en attente, ou ouverture refusée par
+// « occupe » que le panneau redemande (le plateau est encore celui d'une autre conversation). Le refus dit busy_text().
+bool edits_blocked();
+
 // Texte honnête du refus quand le projet d'avant n'est pas encore rangé.
 const char* busy_text();
 
 // Rouvre le projet de la conversation, sans fenêtre : {ok, reason} (reason : "" | "absent" | "abime" | "trop_gros" |
 // "occupe" pendant une calibration | "annule" si l'utilisateur a gardé son propre projet non enregistré).
+// Après "occupe", la conversation attend son plateau (edits_blocked) jusqu'à la prochaine ouverture ou au départ (detach).
 // Le projet attaché avant est d'abord écrit. En cas de succès, la conversation est attachée.
 nlohmann::json open(const std::string& conv);
 
@@ -67,10 +73,12 @@ bool opening();
 // fichier de l'utilisateur, ou si l'écriture échoue : Orca pose alors sa question comme avant.
 bool keeps_project();
 
-// Retouche Orca (PLYO:, GUI_App::check_and_save/keep_current_preset_changes) : si keeps_project() et que l'imprimante
-// n'est pas modifiée, écrit le filament en attente dans sa bobine, écrit le 3MF s'il a changé, oublie les modifications
-// d'impression et de filament, et renvoie vrai : Orca n'a rien à demander. Sinon faux, et Orca demande comme avant.
-bool take_preset_changes();
+// Retouche Orca (PLYO:, GUI_App::check_and_save/keep_current_preset_changes, `caption` : le titre de la question d'Orca) :
+// seulement pour la fermeture, un nouveau projet ou l'ouverture d'un projet (ProjectFilesLogic::project_question), si
+// keeps_project() et que l'imprimante n'est pas modifiée : écrit le filament en attente dans sa bobine, écrit le 3MF s'il
+// a changé, oublie les modifications d'impression et de filament, et renvoie vrai : Orca n'a rien à demander. Sinon faux,
+// et Orca demande comme avant (mise à jour des profils, assistants, déconnexion, export, instantanés : jamais rien de jeté).
+bool take_preset_changes(const wxString& caption);
 
 // Appelé par Plyo::on_project_changed() (nouveau projet, projet chargé). `paused` : c'est Plyo qui recharge (calibration,
 // réouverture d'une conversation) ; sinon c'est l'utilisateur, et le plateau n'est plus celui de la conversation.

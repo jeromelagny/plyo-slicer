@@ -158,3 +158,17 @@ test('projet de la conversation : 3MF impossible à écrire (disque plein, droit
   assert.equal(P.projectFileText('', false), P.tooHeavyText(false));
   assert.equal(P.projectFileText('trop_gros', true), P.tooHeavyText(true));
 });
+
+test('ouverture refusée parce qu’Orca est occupé : le panneau redemande, puis le dit, sans rien changer d’ici là', () => {
+  // Rouvert, ou refusé pour une autre raison : plus rien à redemander.
+  assert.equal(P.openRetryStep('', 0), 'done');
+  assert.equal(P.openRetryStep('absent', 3), 'done');
+  assert.equal(P.openRetryStep('annule', 0), 'done');
+  // Occupé : nouvel essai toutes les 3 s, une minute au plus (20 essais), puis on s’arrête et on le dit.
+  assert.equal(P.openRetryStep('occupe', 0), 'retry');
+  assert.equal(P.openRetryStep('occupe', 19), 'retry');
+  assert.equal(P.openRetryStep('occupe', 20), 'give_up');
+  assert.equal(P.OPEN_RETRY_MS, 3000);
+  assert.match(P.projectOpenedText('occupe'), /dès qu’il a fini/);
+  assert.match(P.openGiveUpText(), /Mes conversations/);
+});

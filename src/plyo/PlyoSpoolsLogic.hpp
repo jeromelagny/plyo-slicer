@@ -98,9 +98,36 @@ std::string version_stem(const std::string& id, const std::string& printer);
 // texte sont écartées.
 nlohmann::json sanitize_version(const nlohmann::json& raw);
 
-// Dernier envoi (plyo/essai/dernier-envoi.json) relu : {spool, printer, date, at}, ou {} s'il manque l'un d'eux.
-// Une réussite dite dans la discussion vise cet envoi, même si une autre bobine a été choisie depuis.
+// Dernier envoi (plyo/essai/dernier-envoi.json) relu : {spool, printer, date, at[, answered: "bad"]}, ou {} s'il manque
+// l'un d'eux. Une réussite dite dans la discussion vise cet envoi, même si une autre bobine a été choisie depuis.
 nlohmann::json last_sent(const nlohmann::json& raw);
+
+// Au-delà, un envoi est trop ancien pour qu'une réussite dite dans la discussion le marque.
+constexpr long long SENT_MAX_AGE_HOURS = 48;
+
+// Dernier envoi déjà déclaré (`outcome` "bad" : « c'est raté ») : {…, answered: "bad"}. Une réussite dite ensuite ne le
+// marque plus. Autre résultat : inchangé ; pointeur invalide : {}.
+nlohmann::json answered(const nlohmann::json& pointer, const std::string& outcome);
+
+// Une réussite dite peut-elle marquer ce dernier envoi ? "" (oui), "none" (pas d'envoi), "answered" (déjà déclaré raté),
+// "old" (plus de SENT_MAX_AGE_HOURS avant `now_iso`, plus d'une heure dans le futur, ou instant illisible), "other" (pas
+// la bobine `expected_spool` de la conversation, ou bobine non dite). Instants « AAAA-MM-JJTHH:MM:SS », heure locale.
+std::string sent_refusal(const nlohmann::json& pointer, const std::string& expected_spool, const std::string& now_iso);
+
+// Avant que Plyo change de filament (bobine choisie, projet remis, calibration), la bobine en cours modifiée est écrite :
+// sinon Orca proposerait de transférer ses modifications sur l'autre filament, ou Plyo les jetterait.
+// Clean (rien de modifié), Save (l'écrire d'abord), NotSpool (pas une bobine : Orca garde sa question), Refuse (bobine
+// qu'on ne peut pas écrire maintenant, test en cours ou températures refusées par Orca : on ne change rien).
+enum class Flush { Clean, Save, NotSpool, Refuse };
+Flush flush_before_switch(bool filament_dirty, bool is_spool, bool calibrating, bool temperatures_ok);
+
+constexpr const char* FLUSH_REFUSED_TEXT = "Je n’arrive pas à enregistrer les derniers réglages de ta bobine (un test est en cours, ou Orca refuse ses "
+                                           "températures) : je ne change rien pour ne pas les perdre. Termine le test ou vérifie ses températures, puis réessaie.";
+
+// Matière d'un préréglage de l'utilisateur qui peut devenir une bobine (« filament_type », première valeur), ou "" :
+// jamais un profil système, le préréglage par défaut ou une bobine, seulement une matière connue de Plyo, et seulement
+// s'il hérite d'un profil système d'Orca (sinon Orca avertit à chaque réouverture d'un 3MF qui le nomme).
+std::string adoptable_material(const std::string& filament_type, bool is_system, bool is_default, bool is_spool, bool has_system_parent);
 
 // L'essai relu est-il bien celui de ce dernier envoi (même bobine, même imprimante, même instant) ? Sinon il a été
 // réécrit depuis, ou n'a jamais été écrit : la réussite est refusée.

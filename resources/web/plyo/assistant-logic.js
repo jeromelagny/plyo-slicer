@@ -401,9 +401,18 @@
   function plainValue(v) { return typeof v === 'boolean' ? (v ? 'oui' : 'non') : v === null || v === undefined ? '—' : String(v); }
   function manualEditsText(list) {
     if (!Array.isArray(list) || !list.length) return '';
-    var shown = list.slice(0, 6).map(function (e) { return (e.title || e.key || '?') + ' (' + plainValue(e.before) + ' → ' + plainValue(e.after) + ')'; });
-    var more = list.length - shown.length;
-    return 'J’enregistre aussi tes modifications manuelles : ' + shown.join(', ') + (more > 0 ? ' et ' + more + ' autre' + (more > 1 ? 's' : '') : '') + '.';
+    function listed(items) {
+      var shown = items.slice(0, 6).map(function (e) { return (e.title || e.key || '?') + ' (' + plainValue(e.before) + ' → ' + plainValue(e.after) + ')'; });
+      var more = items.length - shown.length;
+      return shown.join(', ') + (more > 0 ? ' et ' + more + ' autre' + (more > 1 ? 's' : '') : '') + '.';
+    }
+    // Les réglages de la pièce (impression) ne vont jamais dans un profil partagé : ils restent sur le plateau.
+    var piece = list.filter(function (e) { return e && e.preset === 'print'; });
+    var saved = list.filter(function (e) { return e && e.preset !== 'print'; });
+    var out = [];
+    if (saved.length) out.push('J’enregistre aussi tes modifications manuelles : ' + listed(saved));
+    if (piece.length) out.push('Tes modifications manuelles de la pièce restent en place : ' + listed(piece));
+    return out.join(' ');
   }
   // Ce que l'assistant dit après avoir enregistré (ou tenté d'enregistrer) le profil.
   function savedText(result) {
@@ -411,7 +420,9 @@
     if (r.save_error) return 'Appliqué, mais je n’ai pas pu enregistrer le profil (' + r.save_error + '). Enregistre-le toi-même si tu veux le garder.';
     var saved = Array.isArray(r.saved) ? r.saved : [];
     // Réglages d'impression du plateau d'une conversation : gardés dans son projet 3MF, pas dans un profil partagé.
-    var kept = r.in_project ? 'Gardé avec le projet de cette conversation.' : '';
+    // Sans projet de conversation, ils restent modifiés sur ce plateau (Orca demandera quoi en faire à la fermeture).
+    var kept = r.in_project ? 'Gardé avec le projet de cette conversation.'
+      : r.print_edited ? 'Réglages de la pièce appliqués à ce plateau seulement : ton profil d’impression ne change pas.' : '';
     if (!saved.length) return kept;
     return saved.map(function (s) {
       return s.created ? 'Enregistré dans une copie à toi, « ' + s.name + ' » : « ' + s.from + ' » est un profil d’Orca, qui ne se modifie pas.' : 'Enregistré dans le profil « ' + s.name + ' ».';

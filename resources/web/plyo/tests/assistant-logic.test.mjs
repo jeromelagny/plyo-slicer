@@ -351,3 +351,15 @@ test('réglages d’impression gardés avec le projet de la conversation', () =>
   assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Sunlu PLA+ noir — CR-10 SE', created: false }], in_project: true }),
     'Enregistré dans le profil « Sunlu PLA+ noir — CR-10 SE ». Gardé avec le projet de cette conversation.');
 });
+
+test('réglages d’impression jamais enregistrés dans un profil partagé, même sans projet de conversation', () => {
+  // Plateau sans conversation (fichier de l’utilisateur, ancienne conversation) : appliqués, laissés modifiés, sans profil.
+  assert.equal(L.savedText({ saved: [], print_edited: true }), 'Réglages de la pièce appliqués à ce plateau seulement : ton profil d’impression ne change pas.');
+  assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Sunlu PLA+ noir — CR-10 SE', created: false }], print_edited: true }),
+    'Enregistré dans le profil « Sunlu PLA+ noir — CR-10 SE ». Réglages de la pièce appliqués à ce plateau seulement : ton profil d’impression ne change pas.');
+  // Modifications manuelles : seules celles du filament partent dans un profil ; celles de la pièce restent sur le plateau.
+  assert.equal(L.manualEditsText([{ preset: 'print', title: 'Densité de remplissage', before: '15%', after: '20%' }]),
+    'Tes modifications manuelles de la pièce restent en place : Densité de remplissage (15% → 20%).');
+  assert.equal(L.manualEditsText([{ preset: 'filament', title: 'Débit', before: 1, after: 0.9 }, { preset: 'print', title: 'Parois', before: 2, after: 3 }]),
+    'J’enregistre aussi tes modifications manuelles : Débit (1 → 0.9). Tes modifications manuelles de la pièce restent en place : Parois (2 → 3).');
+});

@@ -13,6 +13,7 @@
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/miniz_extension.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/I18N.hpp"
 #include "slic3r/GUI/Plater.hpp"
 #include "slic3r/Utils/UndoRedo.hpp"
 
@@ -25,6 +26,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace Plyo { namespace ProjectFiles {
 
@@ -62,6 +64,9 @@ Fingerprint                                 s_kept_fp;
 // restent en place, et le départ se fait à la première écriture réussie.
 bool                                        s_pending_detach = false;
 bool                                        s_pending_forget = false;
+// Ouverture d'une conversation refusée par « occupe » : le panneau la montre et redemande, le plateau est encore celui
+// d'avant. Tant qu'elle attend, rien de la conversation affichée ne s'applique (edits_blocked).
+std::string                                 s_pending_open;
 // Orca a vidé les réglages de la pièce sans changer de projet (take_preset_changes) : le panneau est prévenu au calme.
 struct Notice
 {
@@ -322,6 +327,8 @@ bool opening() { return s_opening; }
 
 bool detach_pending() { return s_pending_detach; }
 
+bool edits_blocked() { return ProjectFilesLogic::edits_blocked(s_pending_detach, s_pending_open); }
+
 const char* busy_text() { return ProjectFilesLogic::BUSY_TEXT; }
 
 std::string attach(const std::string& conv)
@@ -336,6 +343,9 @@ std::string attach(const std::string& conv)
         BOOST_LOG_TRIVIAL(info) << "Plyo: plateau non attaché à la conversation : c'est un fichier de l'utilisateur";
         return "fichier";
     }
+    // Une conversation attend encore son plateau (ouverture refusée par « occupe ») : le plateau en place n'est pas à prendre.
+    if (!s_pending_open.empty())
+        return "occupe";
     // Le plateau d'une autre conversation n'est jamais repris tant qu'il n'est pas rangé dans son 3MF.
     if (!ProjectFilesLogic::attach_allowed(s_pending_detach, other_plate_unsaved(conv), busy())) {
         BOOST_LOG_TRIVIAL(info) << "Plyo: plateau pas encore rangé dans le projet d'avant (Orca occupé) : attache refusée";
@@ -362,6 +372,7 @@ std::string attach(const std::string& conv)
 
 void detach(bool forget_print_edits_now)
 {
+    s_pending_open.clear(); // le panneau a quitté la conversation qui attendait son plateau
     if (s_conv.empty()) {
         if (forget_print_edits_now)
             forget_print_edits(); // plateau trop lourd, ou panneau rouvert : ses réglages ne suivent pas
@@ -397,7 +408,9 @@ void forget(const std::string& conv)
     fs::remove(path_of(conv), ec);
 }
 
-nlohmann::json open(const std::string& conv)
+namespace {
+
+nlohmann::json open_now(const std::string& conv)
 {
     if (!Conversations::valid_id(conv) || plater() == nullptr)
         return {{"ok", false}, {"reason", "absent"}};
@@ -479,6 +492,19 @@ nlohmann::json open(const std::string& conv)
     return {{"ok", true}, {"reason", ""}};
 }
 
+} // namespace
+
+nlohmann::json open(const std::string& conv)
+{
+    // Une ouverture déjà en attente (celle-ci, redemandée, ou une autre) ne bloque pas celle-ci.
+    s_pending_open.clear();
+    nlohmann::json out = open_now(conv);
+    s_pending_open     = ProjectFilesLogic::pending_open_after(conv, Json::str(out, "reason"));
+    if (!s_pending_open.empty())
+        BOOST_LOG_TRIVIAL(info) << "Plyo: ouverture du projet de la conversation en attente (Orca occupé) : rien ne s'y applique d'ici là";
+    return out;
+}
+
 bool keeps_project()
 {
     if (s_conv.empty() || s_opening || !attachable_now() || busy())
@@ -486,8 +512,13 @@ bool keeps_project()
     return write_if_changed(); // le 3MF doit être écrit, sinon Orca demande
 }
 
-bool take_preset_changes()
+bool take_preset_changes(const wxString& caption)
 {
+    // Seulement la question de la fermeture, d'un nouveau projet ou de l'ouverture d'un projet : mise à jour des profils,
+    // assistants, déconnexion, export de configuration et instantanés gardent la fenêtre d'Orca (rien n'est jeté en silence).
+    const std::vector<std::string> project_captions = {_u8L("Closing application"), _u8L("Creating a new project"), _u8L("Load project")};
+    if (!ProjectFilesLogic::project_question(caption.ToUTF8().data(), project_captions))
+        return false;
     if (wxGetApp().preset_bundle == nullptr || !keeps_project())
         return false;
     if (bundle().printers.current_is_dirty())
@@ -516,8 +547,18 @@ void on_project_changed(bool paused)
         s_kept_plate   = false;
         s_owns_edits   = false;
         s_notice       = {};
+        s_pending_open.clear();
         Slic3r::GUI::Plater* p = plater();
         s_user_loaded  = p != nullptr && !p->model().objects.empty();
+        // Fichier de l'utilisateur qui nomme une bobine : Orca a remis le filament du fichier en « modifié » sur elle. La
+        // bobine fait foi : ces valeurs sont oubliées avant que l'enregistrement automatique ne les écrive dans la bobine.
+        if (wxGetApp().preset_bundle != nullptr &&
+            ProjectFilesLogic::drops_loaded_filament_edits(s_user_loaded, bundle().filaments.current_is_dirty(),
+                                                           Spools::is_spool_preset(bundle().filaments.get_selected_preset_name()))) {
+            BOOST_LOG_TRIVIAL(info) << "Plyo: fichier ouvert : les valeurs de filament du fichier ne remplacent pas celles de la bobine « "
+                                    << bundle().filaments.get_selected_preset_name() << " »";
+            discard(false, true);
+        }
     }
 }
 

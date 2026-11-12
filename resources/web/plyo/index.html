@@ -834,6 +834,7 @@
   function newConversation() {
     if (blockedWhileBusy()) return;
     flushSave();
+    openRetryReset();
     unlinkPhone(true);
     clearThread();
     attachments = [];
@@ -857,10 +858,30 @@
   function attachPlate() { if (conv && PlyoProject.mayAttach(tourSignals)) window.orca.postMessage({ type: 'project_attach', conv: conv.id }); }
   // Le plateau quitté est écrit dans son 3MF ; ses réglages d'impression ne suivent pas la conversation suivante.
   function detachPlate() { window.orca.postMessage({ type: 'project_detach' }); }
+  // Ouverture refusée parce qu'Orca est occupé : le slicer ne laisse rien s'appliquer à cette conversation (le plateau est
+  // encore celui d'avant) ; on le dit une fois et on redemande toutes les 3 s tant qu'elle est affichée, une minute au plus.
+  var openRetry = { conv: null, tries: 0, timer: null };
+  function openRetryReset() { clearTimeout(openRetry.timer); openRetry = { conv: null, tries: 0, timer: null }; }
   function onProjectOpened(msg) {
     if (!conv || msg.conv !== conv.id) return;
-    var text = PlyoProject.projectOpenedText(msg.reason);
+    var again = openRetry.conv === conv.id;
+    var step = PlyoProject.openRetryStep(msg.reason, again ? openRetry.tries : 0);
+    if (step === 'done') openRetryReset();
+    var text = again && step !== 'give_up' ? '' : step === 'give_up' ? PlyoProject.openGiveUpText() : PlyoProject.projectOpenedText(msg.reason);
     if (text) noteLine(text, msg.reason === 'annule' ? '' : 'warn', msg.reason === 'annule' ? 'info' : 'alert', 'guide');
+    if (step === 'give_up') { openRetryReset(); return; }
+    if (step === 'retry') {
+      if (!again) openRetry = { conv: conv.id, tries: 0, timer: null };
+      openRetry.tries++;
+      clearTimeout(openRetry.timer);
+      var id = conv.id;
+      openRetry.timer = setTimeout(function () {
+        if (!conv || conv.id !== id) return;
+        projectUI.restoringUntil = Date.now() + 4000;
+        window.orca.postMessage({ type: 'project_open', conv: id });
+      }, PlyoProject.OPEN_RETRY_MS);
+      return;
+    }
     if (PlyoProject.restoresAfterOpen(msg.reason)) restoreProjectInOrca(false);
   }
   // Le plateau trop lourd peut être celui de la conversation qu'on vient de quitter (écrit à son départ) : on le dit aussi.
@@ -1857,7 +1878,7 @@
   // demande alors si ça a marché. Pas pour les emplacements (Canvas, CFS…) : la v1 ne suit que la bobine du filament 1.
   function noteSpoolSent() {
     var p = conv && conv.project, f = p && p.filament;
-    projectUI.spoolSent = f && f.spool && !(Array.isArray(p.canvas) && p.canvas.length) ? { conv: conv, name: f.spool.name } : null;
+    projectUI.spoolSent = f && f.spool && !(Array.isArray(p.canvas) && p.canvas.length) ? { conv: conv, id: f.spool.id, name: f.spool.name } : null;
     projectUI.spoolNo = null;
   }
   // La question de l'étape Résultat ; elle se tait quand la carte « Ça a marché ? » est déjà là (elle note aussi la bobine).
@@ -1866,24 +1887,30 @@
     return s && s.conv === conv && !conv.project.success && !$('outcome-slot').childNodes.length ? s.name : '';
   }
   // « Oui, c'est réussi » après un envoi ou un export avec une bobine : le slicer retient les réglages de cet envoi.
+  // Le slicer ne marque le dernier envoi que s'il est celui de cette bobine (`spool`), récent et pas déclaré raté ;
+  // `change_of_mind` : « Oui » juste après « Non » dans cette même étape.
   function spoolSuccess() {
-    if (!projectUI.spoolSent || projectUI.spoolSent.conv !== conv) return;
+    var s = projectUI.spoolSent;
+    if (!s || s.conv !== conv) return;
     projectUI.spoolSent = null;
-    window.orca.postMessage({ type: 'spool_success' });
+    window.orca.postMessage({ type: 'spool_success', spool: s.id || '', change_of_mind: !!s.failed });
   }
   function onSpoolSuccessDone(msg) {
     projectUI.spools.printer = null; // « ✓ réussie le … » à jour la prochaine fois
-    if (msg.ok && msg.name) noteLine(PlyoSpools.doneText(msg.name), 'ok', 'check', 'guide');
-    else noteLine('Je n’ai pas pu retenir ces réglages : je ne retrouve pas ceux de cet envoi. Ta prochaine impression réussie avec cette bobine les retiendra.', '', 'info', 'guide');
+    if (msg.ok && msg.name) noteLine(PlyoSpools.doneText(msg.name, msg.date), 'ok', 'check', 'guide');
+    else noteLine(msg.text || 'Je n’ai pas pu retenir ces réglages : je ne retrouve pas ceux de cet envoi. Ta prochaine impression réussie avec cette bobine les retiendra.', '', 'info', 'guide');
   }
   // « Non, c'est raté » : la bobine de cet envoi passe à « dernière impression ratée » dans la liste.
   function spoolFailure() {
     var s = projectUI.spoolSent;
     if (!s || s.conv !== conv || s.failed) return;
     s.failed = true; // « Oui » reste possible ensuite (tu as changé d'avis) : la réussite remplace l'échec
-    window.orca.postMessage({ type: 'spool_failure' });
+    window.orca.postMessage({ type: 'spool_failure', spool: s.id || '' });
   }
-  function onSpoolFailureDone() { projectUI.spools.printer = null; }
+  function onSpoolFailureDone(msg) {
+    projectUI.spools.printer = null;
+    if (msg && !msg.ok && msg.text) noteLine(msg.text, '', 'info', 'guide');
+  }
   // Mode écrit : sans bobine, l'accueil et une question de l'assistant sur le filament mènent au même choix.
   function spoolMissing() { return !!conv && PlyoSpools.needsSpool(conv.project); }
   function chooseSpoolButton() {
@@ -1927,6 +1954,7 @@
   // d'impression ; le filament vient de la bobine), et ses fiches de réglages non appliquées s'appliquent de nouveau.
   function restoreConversation(id, c) {
     if (!c || !Array.isArray(c.entries) || busy) return;
+    openRetryReset(); // une ouverture redemandée pour une autre conversation (ou celle-ci) repart de zéro
     unlinkPhone(true);
     clearThread();
     var previous = previousPart();
@@ -2959,10 +2987,12 @@
         else if (a.kind === 'open_tool') window.orca.postMessage({ type: 'open_tool', tool: a.target });
         else if (a.kind === 'show_setting') showSetting(a.target);
         else if (a.kind === 'remember_success') {
-          // Le slicer marque la dernière bobine envoyée (pointeur gardé) : marche aussi après un redémarrage d'Orca ; sa réponse dit si c'est noté.
+          // Le slicer marque le dernier envoi (pointeur gardé, marche aussi après un redémarrage d'Orca), seulement s'il est
+          // celui de la bobine de cette conversation, récent et pas déclaré raté ; sa réponse dit ce qui est noté, ou pourquoi pas.
           b.disabled = true;
           if (projectUI.spoolSent && projectUI.spoolSent.conv === conv) projectUI.spoolSent = null;
-          window.orca.postMessage({ type: 'spool_success' });
+          var convSpool = conv && conv.project && conv.project.filament && conv.project.filament.spool;
+          window.orca.postMessage({ type: 'spool_success', spool: (convSpool && convSpool.id) || '' });
         } else {
           b.disabled = true;
           if (a.kind === 'slice') assistSlice = { conv: conv, row: row };

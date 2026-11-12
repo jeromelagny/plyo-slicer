@@ -91,11 +91,21 @@
   function projectOpenedText(reason) {
     if (!reason) return '';
     if (reason === 'annule') return 'D’accord, ton plateau reste tel quel.';
-    if (reason === 'occupe') return 'Orca est occupé (découpe, envoi ou calibration) : je n’ai pas changé de plateau. Réessaie dans un instant.';
+    if (reason === 'occupe') return 'Orca est occupé (découpe, envoi, test ou fenêtre ouverte) : je rouvre le plateau de cette conversation dès qu’il a fini. D’ici là, je ne change rien.';
     return 'Je n’ai pas retrouvé le plateau de cette conversation : je remets ta machine et ta bobine.';
   }
   // Plateau pas retrouvé : la machine et la bobine de la fiche reviennent, comme avant les projets 3MF. Pas si l'utilisateur
   // a gardé son propre projet.
+  // Ouverture refusée par « occupe » : le slicer bloque réglages, bobine et pièce de cette conversation (le plateau est encore
+  // celui d'avant) ; le panneau redemande toutes les OPEN_RETRY_MS, 20 fois au plus, puis le dit (openGiveUpText).
+  var OPEN_RETRY_MS = 3000, OPEN_RETRY_MAX = 20;
+  function openRetryStep(reason, tries) {
+    if (reason !== 'occupe') return 'done';
+    return tries < OPEN_RETRY_MAX ? 'retry' : 'give_up';
+  }
+  function openGiveUpText() {
+    return 'Orca est toujours occupé : je n’ai pas pu rouvrir le plateau de cette conversation. Rouvre-la depuis « Mes conversations » quand il aura fini ; d’ici là, je ne change rien.';
+  }
   function restoresAfterOpen(reason) { return !!reason && reason !== 'annule' && reason !== 'occupe'; }
   // `previous` : le plateau trop lourd est celui de la conversation qu'on vient de quitter.
   function tooHeavyText(previous) {
@@ -118,7 +128,7 @@
     return msg.same_printer ? 'open' : 'attach';
   }
 
-  var api = { opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, projectFileText: projectFileText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  var api = { opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, openRetryStep: openRetryStep, openGiveUpText: openGiveUpText, OPEN_RETRY_MS: OPEN_RETRY_MS, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, projectFileText: projectFileText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

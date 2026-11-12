@@ -2727,3 +2727,102 @@ TEST_CASE("Projets : départ d'une conversation selon l'écriture de son 3MF")
     // Seul un vrai état occupé mérite « occupe ».
     CHECK(BUSY_TEXT == std::string("J’attends qu’Orca ait fini ce qu’il fait (découpe, envoi, test ou fenêtre ouverte) pour ranger le projet d’avant ; réessaie dans un instant."));
 }
+
+TEST_CASE("Projets : après « occupe » à l'ouverture, rien ne s'applique au plateau de l'autre conversation")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    // Ouverture refusée parce qu'Orca est occupé : le panneau montre B, le plateau est encore celui d'avant.
+    CHECK(pending_open_after("B", "occupe") == "B");
+    // Ouverte, ou refusée pour une autre raison (absent, abîmé, annulé) : plus rien n'attend.
+    CHECK(pending_open_after("B", "").empty());
+    CHECK(pending_open_after("B", "absent").empty());
+    CHECK(pending_open_after("B", "annule").empty());
+    // Réglages, bobine et pièce bloqués tant qu'un départ ou une ouverture attend.
+    CHECK(edits_blocked(true, ""));
+    CHECK(edits_blocked(false, "B"));
+    CHECK(edits_blocked(true, "B"));
+    CHECK_FALSE(edits_blocked(false, ""));
+}
+
+TEST_CASE("Projets : un 3MF de l'utilisateur ne fait jamais reculer la bobine")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    // Fichier de l'utilisateur chargé, filament d'une bobine remis en « modifié » par Orca : ces valeurs sont oubliées.
+    CHECK(drops_loaded_filament_edits(true, true, true));
+    // Pas une bobine (préréglage de l'utilisateur) : ses valeurs restent, Orca demandera comme avant.
+    CHECK_FALSE(drops_loaded_filament_edits(true, true, false));
+    // Rien de modifié, ou nouveau projet vide : rien à faire.
+    CHECK_FALSE(drops_loaded_filament_edits(true, false, true));
+    CHECK_FALSE(drops_loaded_filament_edits(false, true, true));
+}
+
+TEST_CASE("Projets : les réglages ne sont pris sans question que pour fermer, ouvrir ou commencer un projet")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    const std::vector<std::string> project = {"Closing application", "Creating a new project", "Load project"};
+    CHECK(project_question("Closing application", project));
+    CHECK(project_question("Creating a new project", project));
+    CHECK(project_question("Load project", project));
+    // Mise à jour des profils, assistant, déconnexion, paquet de configuration, export, instantané : Orca demande.
+    CHECK_FALSE(project_question("Configuration updates", project));
+    CHECK_FALSE(project_question("User logged out", project));
+    CHECK_FALSE(project_question("Configuration package changed", project));
+    CHECK_FALSE(project_question("", project));
+    CHECK_FALSE(project_question("Load project", {}));
+}
+
+TEST_CASE("Bobines : avant de changer de bobine, la bobine en cours est enregistrée, jamais transférée ni jetée")
+{
+    using namespace Plyo::SpoolsLogic;
+    CHECK(flush_before_switch(false, true, false, true) == Flush::Clean);
+    CHECK(flush_before_switch(false, false, true, false) == Flush::Clean);
+    CHECK(flush_before_switch(true, true, false, true) == Flush::Save);
+    // Pas une bobine : Orca garde la main (sa question), comme avant.
+    CHECK(flush_before_switch(true, false, false, true) == Flush::NotSpool);
+    // Bobine qu'on ne peut pas écrire maintenant (test en cours, températures refusées par Orca) : on ne change rien.
+    CHECK(flush_before_switch(true, true, true, true) == Flush::Refuse);
+    CHECK(flush_before_switch(true, true, false, false) == Flush::Refuse);
+    CHECK(std::string(FLUSH_REFUSED_TEXT).find("bobine") != std::string::npos);
+}
+
+TEST_CASE("Bobines : seul un préréglage relié à un profil d'Orca peut devenir une bobine")
+{
+    using namespace Plyo::SpoolsLogic;
+    CHECK(adoptable_material("PLA", false, false, false, true) == "PLA");
+    CHECK(adoptable_material("PETG", false, false, false, true) == "PETG");
+    // Sans parent système, Orca avertirait à chaque réouverture du 3MF.
+    CHECK(adoptable_material("PLA", false, false, false, false).empty());
+    CHECK(adoptable_material("PLA", true, false, false, true).empty());
+    CHECK(adoptable_material("PLA", false, true, false, true).empty());
+    CHECK(adoptable_material("PLA", false, false, true, true).empty());
+    CHECK(adoptable_material("PA", false, false, false, true).empty());
+    CHECK(adoptable_material("", false, false, false, true).empty());
+}
+
+TEST_CASE("Bobines : une réussite dite ne marque qu'un envoi récent, sans réponse, de la bobine nommée")
+{
+    using namespace Plyo::SpoolsLogic;
+    const json pointer = last_sent({{"spool", "b1"}, {"printer", "P"}, {"date", "2026-11-12"}, {"at", "2026-11-12T10:00:00"}});
+    CHECK(sent_refusal(pointer, "b1", "2026-11-12T10:30:00") == "");
+    CHECK(sent_refusal(pointer, "b1", "2026-11-14T09:59:59") == ""); // moins de 48 h
+    CHECK(SENT_MAX_AGE_HOURS == 48);
+    CHECK(sent_refusal(pointer, "b1", "2026-11-14T10:00:01") == "old");
+    CHECK(sent_refusal(pointer, "b1", "2026-12-01T10:00:00") == "old");
+    CHECK(sent_refusal(pointer, "b1", "2026-11-11T08:00:00") == "old"); // instant dans le futur : horloge douteuse
+    CHECK(sent_refusal(pointer, "b1", "pas une date") == "old");
+    // Fin de mois et d'année.
+    const json eoy = last_sent({{"spool", "b1"}, {"printer", "P"}, {"date", "2026-12-31"}, {"at", "2026-12-31T23:00:00"}});
+    CHECK(sent_refusal(eoy, "b1", "2027-01-01T01:00:00") == "");
+    CHECK(sent_refusal(eoy, "b1", "2027-01-03T00:00:00") == "old");
+    // Autre bobine que celle de la conversation : refusé.
+    CHECK(sent_refusal(pointer, "b2", "2026-11-12T10:30:00") == "other");
+    CHECK(sent_refusal(pointer, "", "2026-11-12T10:30:00") == "other");
+    CHECK(sent_refusal(json::object(), "b1", "2026-11-12T10:30:00") == "none");
+    // Envoi déjà déclaré raté : une réussite dite ensuite ne le marque plus.
+    const json bad = answered(pointer, "bad");
+    CHECK(bad["answered"] == "bad");
+    CHECK(last_sent(bad) == bad);
+    CHECK(sent_refusal(bad, "b1", "2026-11-12T10:30:00") == "answered");
+    CHECK(answered(pointer, "autre") == pointer);
+    CHECK(answered(json::object(), "bad").empty());
+}

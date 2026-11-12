@@ -308,7 +308,87 @@ nlohmann::json last_sent(const nlohmann::json& raw)
     const std::string at      = Json::str(raw, "at", 40);
     if (spool.empty() || printer.empty() || !valid_date(date) || at.empty())
         return nlohmann::json::object();
-    return {{"spool", spool}, {"printer", printer}, {"date", date}, {"at", at}};
+    nlohmann::json out = {{"spool", spool}, {"printer", printer}, {"date", date}, {"at", at}};
+    if (Json::str(raw, "answered") == "bad")
+        out["answered"] = "bad";
+    return out;
+}
+
+namespace {
+
+// Jours depuis le 1970-01-01 (calendrier grégorien), sans fuseau : les deux instants comparés sont en heure locale.
+long long days_from_civil(long long y, unsigned m, unsigned d)
+{
+    y -= m <= 2;
+    const long long era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned  yoe = static_cast<unsigned>(y - era * 400);
+    const unsigned  doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const unsigned  doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + static_cast<long long>(doe) - 719468;
+}
+
+// « AAAA-MM-JJTHH:MM:SS » en secondes ; faux si illisible.
+bool iso_seconds(const std::string& iso, long long& out)
+{
+    if (iso.size() < 19 || iso[10] != 'T' || iso[13] != ':' || iso[16] != ':' || !valid_date(iso.substr(0, 10)))
+        return false;
+    for (const size_t i : {11, 12, 14, 15, 17, 18})
+        if (std::isdigit(static_cast<unsigned char>(iso[i])) == 0)
+            return false;
+    const int h = std::stoi(iso.substr(11, 2)), mi = std::stoi(iso.substr(14, 2)), s = std::stoi(iso.substr(17, 2));
+    if (h > 23 || mi > 59 || s > 60)
+        return false;
+    const long long days = days_from_civil(std::stoll(iso.substr(0, 4)), static_cast<unsigned>(std::stoi(iso.substr(5, 2))),
+                                           static_cast<unsigned>(std::stoi(iso.substr(8, 2))));
+    out = days * 86400 + h * 3600 + mi * 60 + s;
+    return true;
+}
+
+} // namespace
+
+nlohmann::json answered(const nlohmann::json& pointer, const std::string& outcome)
+{
+    nlohmann::json p = last_sent(pointer);
+    if (!p.empty() && outcome == "bad")
+        p["answered"] = "bad";
+    return p;
+}
+
+std::string sent_refusal(const nlohmann::json& pointer, const std::string& expected_spool, const std::string& now_iso)
+{
+    const nlohmann::json p = last_sent(pointer);
+    if (p.empty())
+        return "none";
+    if (expected_spool.empty() || p["spool"] != expected_spool)
+        return "other";
+    if (Json::str(p, "answered") == "bad")
+        return "answered";
+    long long sent = 0, now = 0;
+    if (!iso_seconds(p["at"], sent) || !iso_seconds(now_iso, now))
+        return "old";
+    const long long age = now - sent;
+    // Une heure en arrière permise (passage à l'heure d'hiver) ; au-delà, l'horloge a bougé : on ne se fie pas à l'envoi.
+    if (age < -3600 || age > SENT_MAX_AGE_HOURS * 3600)
+        return "old";
+    return "";
+}
+
+Flush flush_before_switch(bool filament_dirty, bool is_spool, bool calibrating, bool temperatures_ok)
+{
+    if (!filament_dirty)
+        return Flush::Clean;
+    if (!is_spool)
+        return Flush::NotSpool;
+    if (calibrating || !temperatures_ok)
+        return Flush::Refuse;
+    return Flush::Save;
+}
+
+std::string adoptable_material(const std::string& filament_type, bool is_system, bool is_default, bool is_spool, bool has_system_parent)
+{
+    if (is_system || is_default || is_spool || !has_system_parent || !valid_material(filament_type))
+        return "";
+    return filament_type;
 }
 
 bool sent_trial_matches(const nlohmann::json& pointer, const nlohmann::json& trial)

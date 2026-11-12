@@ -527,7 +527,7 @@ test('Résultat : après un envoi ou un export avec une bobine, « Oui » retien
   const page = read('index.html');
   assert.match(page, /type: 'spool_success'/);
   assert.match(page, /msg\.type === 'spool_success_done'/);
-  assert.match(page, /PlyoSpools\.doneText\(msg\.name\)/);
+  assert.match(page, /PlyoSpools\.doneText\(msg\.name, msg\.date\)/);
   // Seulement après un envoi ou un export depuis le panneau (le C++ note les réglages à print_start).
   const started = page.slice(page.indexOf('function onPrintStarted'), page.indexOf('function repaintPanel'));
   assert.equal((started.match(/noteSpoolSent\(\)/g) || []).length, 2, 'envoi et export');
@@ -593,7 +593,22 @@ test('l’action remember_success poste spool_success, se grise au clic et dispa
   const html = read('index.html');
   const start = html.indexOf('function renderActions');
   const fn = html.slice(start, html.indexOf('// ---------- Modèle 3D joint', start));
-  assert.match(fn, /a\.kind === 'remember_success'\) \{[\s\S]*?b\.disabled = true;[\s\S]*?postMessage\(\{ type: 'spool_success' \}\)/);
+  // Avec l’id de la bobine de la conversation : le slicer refuse un dernier envoi fait avec une autre bobine.
+  assert.match(fn, /a\.kind === 'remember_success'\) \{[\s\S]*?b\.disabled = true;[\s\S]*?postMessage\(\{ type: 'spool_success', spool: \(convSpool && convSpool\.id\) \|\| '' \}\)/);
   assert.match(fn, /archived && \(PLATE_KINDS\.indexOf\(a\.kind\) >= 0 \|\| a\.kind === 'remember_success'\)/);
   assert.match(html, /msg\.type === 'spool_success_done'[\s\S]{0,80}onSpoolSuccessDone\(msg\)/);
+  // « Oui » de l’étape Résultat : la bobine de l’envoi, et le changement d’avis après « Non ».
+  assert.match(html, /postMessage\(\{ type: 'spool_success', spool: s\.id \|\| '', change_of_mind: !!s\.failed \}\)/);
+  assert.match(html, /postMessage\(\{ type: 'spool_failure', spool: s\.id \|\| '' \}\)/);
+  // Refus du slicer (autre bobine, envoi ancien ou raté) : son texte honnête est montré.
+  assert.match(html, /noteLine\(msg\.text \|\| 'Je n’ai pas pu retenir ces réglages/);
+});
+
+test('ouverture refusée par « occupe » : le panneau redemande project_open tant que la conversation est affichée', () => {
+  const html = read('index.html');
+  const start = html.indexOf('function onProjectOpened');
+  const fn = html.slice(start, html.indexOf('function onProjectFile', start));
+  assert.match(fn, /PlyoProject\.openRetryStep\(msg\.reason/);
+  assert.match(fn, /setTimeout\(function \(\) \{\s*if \(!conv \|\| conv\.id !== id\) return;[\s\S]*?postMessage\(\{ type: 'project_open', conv: id \}\)/);
+  assert.match(fn, /PlyoProject\.openGiveUpText\(\)/);
 });

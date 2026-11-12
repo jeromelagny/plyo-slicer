@@ -109,6 +109,34 @@ inline Leave leave_after(WriteResult r, bool forget_print_edits)
     return {true, forget_print_edits, false};
 }
 
+// Ouverture d'une conversation refusée parce qu'Orca est occupé (`reason` "occupe") : le panneau la montre déjà, mais le
+// plateau est encore celui d'avant. Renvoie la conversation qui attend son plateau ("" : aucune).
+inline std::string pending_open_after(const std::string& conv, const std::string& reason)
+{
+    return reason == "occupe" ? conv : std::string();
+}
+
+// Réglages, bobine et pièce de la conversation affichée : refusés tant que le plateau est encore celui d'une autre (départ
+// en attente d'écriture, ou ouverture refusée par « occupe » que le panneau redemande).
+inline bool edits_blocked(bool pending_detach, const std::string& pending_open) { return pending_detach || !pending_open.empty(); }
+
+// Fichier de l'utilisateur chargé dans Orca (Fichier › Ouvrir, projet récent, sauvegarde de secours) : Orca remet le
+// filament du fichier en « modifié » sur le préréglage qu'il nomme. Si c'est une bobine, la bobine fait foi : ces valeurs
+// sont oubliées, sinon l'enregistrement automatique les écrirait dans la bobine 2 s plus tard.
+inline bool drops_loaded_filament_edits(bool user_loaded, bool filament_dirty, bool is_spool)
+{
+    return user_loaded && filament_dirty && is_spool;
+}
+
+// Question « enregistrer les modifications ? » d'Orca (`caption`) que Plyo peut prendre à sa place : seulement celles de la
+// fermeture, d'un nouveau projet ou de l'ouverture d'un projet (`project_captions`, traduits comme Orca les affiche).
+// Mise à jour des profils, assistants, déconnexion, export de configuration, instantanés : Orca demande comme avant (les
+// réglages de la pièce ne sont pas oubliés en silence).
+inline bool project_question(const std::string& caption, const std::vector<std::string>& project_captions)
+{
+    return !caption.empty() && std::find(project_captions.begin(), project_captions.end(), caption) != project_captions.end();
+}
+
 // Projets dont la conversation n'existe plus (effacée, ou au-delà des 30 gardées), dans l'ordre de `files`.
 inline std::vector<std::string> orphans(const std::vector<std::string>& kept_conversations, const std::vector<std::string>& files)
 {

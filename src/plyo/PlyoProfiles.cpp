@@ -1,5 +1,7 @@
 #include "PlyoProfiles.hpp"
+#include "PlyoAutoSave.hpp"
 #include "PlyoCatalog.hpp"
+#include "PlyoJson.hpp"
 #include "PlyoLimits.hpp"
 #include "PlyoMemory.hpp"
 #include "PlyoProfilesLogic.hpp"
@@ -105,42 +107,35 @@ nlohmann::json save_applied()
     nlohmann::json    saved = nlohmann::json::array();
     std::string       error;
     const std::string old_machine = Limits::machine_key();
-    // Plateau d'une conversation : les réglages d'impression sont ceux de la pièce. Ils restent modifiés et vivent dans le
-    // 3MF de la conversation, jamais dans le préréglage d'impression partagé (ils suivraient le projet suivant).
-    const bool in_project = ProjectFiles::owns_print_edits();
-    bool       kept       = false;
-    for (const Preset::Type type : {Preset::TYPE_PRINT, Preset::TYPE_FILAMENT}) {
-        Slic3r::PresetCollection& col = collection(type);
-        if (!col.current_is_dirty())
-            continue;
-        if (type == Preset::TYPE_PRINT && in_project) {
-            kept = true;
-            continue;
-        }
-        if (Slic3r::GUI::wxGetApp().get_tab(type) == nullptr)
-            continue;
+    // Les réglages d'impression sont ceux de la pièce : jamais enregistrés dans le préréglage d'impression partagé (ils
+    // suivraient le projet suivant), ni dans une copie « (Plyo) ». Ils restent modifiés : dans le 3MF de la conversation
+    // quand son plateau est attaché, sinon Orca les protège par sa question (fermeture, nouveau projet).
+    const bool print_dirty = collection(Preset::TYPE_PRINT).current_is_dirty();
+    const bool in_project  = print_dirty && ProjectFiles::owns_print_edits();
+    Slic3r::PresetCollection& col = collection(Preset::TYPE_FILAMENT);
+    if (col.current_is_dirty() && Slic3r::GUI::wxGetApp().get_tab(Preset::TYPE_FILAMENT) != nullptr) {
         const std::string from = col.get_selected_preset().name;
         // Une bobine n'a qu'un préréglage par machine : on l'écrase, jamais de copie « (Plyo) ».
-        const bool spool   = type == Preset::TYPE_FILAMENT && col.get_selected_preset().can_overwrite() && Spools::is_spool_preset(from);
+        const bool spool   = col.get_selected_preset().can_overwrite() && Spools::is_spool_preset(from);
         const bool created = !spool && !col.get_selected_preset().can_overwrite();
         std::vector<std::string> existing;
         for (const Slic3r::Preset& p : col)
             existing.push_back(p.name);
         const std::string name    = created ? copy_name(from, existing) : from;
-        const SaveOutcome outcome = save_current_as(type == Preset::TYPE_PRINT, name);
-        if (outcome != SaveOutcome::Ok) {
+        const SaveOutcome outcome = save_current_as(false, name);
+        if (outcome != SaveOutcome::Ok)
             error = outcome == SaveOutcome::Refused ? "Orca a refusé l'enregistrement" : "Orca n'a pas pu écrire le fichier";
-            break;
+        else {
+            SettingsBridge::retarget_undo(false, from, name);
+            saved.push_back({{"type", scope_of(Preset::TYPE_FILAMENT)}, {"name", name}, {"created", created}, {"from", from}});
         }
-        SettingsBridge::retarget_undo(type == Preset::TYPE_PRINT, from, name);
-        saved.push_back({{"type", scope_of(type)}, {"name", name}, {"created", created}, {"from", from}});
     }
     // Le couple imprimante + filament change de nom avec une copie : limites et mémoire du profil d'origine la suivent.
     if (const std::string now = Limits::machine_key(); now != old_machine) {
         Limits::carry_over(old_machine);
         Memory::carry_over(old_machine, now);
     }
-    return {{"saved", saved}, {"save_error", error}, {"in_project", kept}};
+    return {{"saved", saved}, {"save_error", error}, {"in_project", in_project}, {"print_edited", print_dirty && !in_project}};
 }
 
 bool note_trial(const std::string& at)
@@ -196,12 +191,16 @@ nlohmann::json restore_reliable()
         result["saved"]            = saved["saved"];
         result["save_error"]       = saved["save_error"];
         result["in_project"]       = saved["in_project"];
+        result["print_edited"]     = saved["print_edited"];
     }
     return result;
 }
 
 bool note_sent()
 {
+    // Plateau de test d'une calibration : ses valeurs ne sont pas celles de la bobine, ce n'est pas un envoi à retenir.
+    if (AutoSave::calibrating())
+        return false;
     const nlohmann::json spool = Spools::current_full();
     if (spool.empty())
         return false;
@@ -235,33 +234,71 @@ bool mark_spool_success()
     return true;
 }
 
-nlohmann::json mark_sent_success()
+namespace {
+
+// Refus honnête d'une réussite (ou d'un échec) dite pour la bobine `expected` de la conversation : le dernier envoi doit
+// être le sien, récent, et pas déjà déclaré raté. "" si le dernier envoi peut être marqué. `answered_ok` : un envoi déjà
+// déclaré raté peut l'être (un nouvel échec, ou « Oui » juste après « Non » à l'étape Résultat : changement d'avis).
+std::string sent_refusal_text(const nlohmann::json& pointer, const std::string& expected, bool answered_ok)
 {
-    const nlohmann::json pointer = Spools::read_last_sent();
-    if (pointer.empty())
-        return {{"ok", false}, {"name", ""}};
-    const nlohmann::json sent = Spools::read_version(false, pointer["spool"], pointer["printer"]);
-    // Essai réécrit par un envoi plus récent de la même bobine… sans pointeur à jour, ou disparu : on ne marque rien.
-    if (!SpoolsLogic::sent_trial_matches(pointer, sent) || !Spools::write_version(true, sent))
-        return {{"ok", false}, {"name", ""}};
-    Spools::note_outcome(pointer["spool"], pointer["printer"], "ok", sent["date"]);
-    const std::string name = Spools::name_of(pointer["spool"]);
-    BOOST_LOG_TRIVIAL(info) << "Plyo: version réussie retenue pour la bobine « " << name << " » (dernier envoi, " << sent["date"].get<std::string>() << ")";
-    return {{"ok", true}, {"name", name}};
+    const std::string why = SpoolsLogic::sent_refusal(pointer, expected, now_iso());
+    if (why.empty() || (answered_ok && why == "answered"))
+        return "";
+    if (why == "none")
+        return "Je ne retrouve pas d'impression envoyée par Plyo avec cette bobine : je ne retiens rien. Ta prochaine impression réussie la retiendra.";
+    if (why == "other") {
+        const std::string sent = Spools::name_of(pointer["spool"]);
+        return "Ma dernière impression envoyée était avec " + (sent.empty() ? std::string("une autre bobine") : "« " + sent + " »") +
+               ", pas avec la bobine de cette conversation : je ne retiens rien. Ta prochaine impression réussie avec elle la retiendra.";
+    }
+    if (why == "answered")
+        return "Tu m'as dit que la dernière impression avait raté : je n'en retiens pas les réglages. Ta prochaine impression réussie les retiendra.";
+    return "Ma dernière impression envoyée date de plus de 2 jours : je ne sais plus si c'est celle-là, je ne retiens rien. Ta prochaine impression réussie la retiendra.";
 }
 
-nlohmann::json mark_sent_failure()
+} // namespace
+
+nlohmann::json mark_sent_success(const std::string& expected_spool, bool change_of_mind)
 {
     const nlohmann::json pointer = Spools::read_last_sent();
-    if (pointer.empty() || !Spools::note_outcome(pointer["spool"], pointer["printer"], "bad", today()))
-        return {{"ok", false}, {"name", ""}};
+    if (const std::string refused = sent_refusal_text(pointer, expected_spool, change_of_mind); !refused.empty())
+        return {{"ok", false}, {"name", ""}, {"text", refused}};
+    const nlohmann::json sent = Spools::read_version(false, pointer["spool"], pointer["printer"]);
+    if (!SpoolsLogic::sent_trial_matches(pointer, sent) || !Spools::write_version(true, sent))
+        return {{"ok", false}, {"name", ""}, {"text", ""}};
+    Spools::note_outcome(pointer["spool"], pointer["printer"], "ok", sent["date"]);
+    if (Json::str(pointer, "answered") == "bad") {
+        nlohmann::json again = pointer;
+        again.erase("answered"); // changement d'avis : cet envoi est réussi
+        Spools::write_last_sent(again);
+    }
+    const std::string name = Spools::name_of(pointer["spool"]);
+    BOOST_LOG_TRIVIAL(info) << "Plyo: version réussie retenue pour la bobine « " << name << " » (dernier envoi, " << sent["date"].get<std::string>() << ")";
+    return {{"ok", true}, {"name", name}, {"date", sent["date"]}};
+}
+
+nlohmann::json mark_sent_failure(const std::string& expected_spool)
+{
+    const nlohmann::json pointer = Spools::read_last_sent();
+    if (const std::string refused = sent_refusal_text(pointer, expected_spool, true); !refused.empty())
+        return {{"ok", false}, {"name", ""}, {"text", refused}};
+    if (!Spools::note_outcome(pointer["spool"], pointer["printer"], "bad", today()) && Json::str(pointer, "answered") != "bad")
+        return {{"ok", false}, {"name", ""}, {"text", ""}};
+    // Cet envoi a raté : une réussite dite plus tard ne le marque plus.
+    Spools::write_last_sent(SpoolsLogic::answered(pointer, "bad"));
     return {{"ok", true}, {"name", Spools::name_of(pointer["spool"])}};
 }
 
 bool mark_spool_failure()
 {
     const nlohmann::json spool = Spools::current_full();
-    return !spool.empty() && Spools::note_outcome(spool["id"], spool["printer"], "bad", today());
+    if (spool.empty() || !Spools::note_outcome(spool["id"], spool["printer"], "bad", today()))
+        return false;
+    // Carte « Ça a marché ? » : « non » pour la bobine du dernier envoi le marque comme déclaré raté.
+    const nlohmann::json pointer = Spools::read_last_sent();
+    if (!pointer.empty() && pointer["spool"] == spool["id"] && pointer["printer"] == spool["printer"])
+        Spools::write_last_sent(SpoolsLogic::answered(pointer, "bad"));
+    return true;
 }
 
 }} // namespace Plyo::Profiles

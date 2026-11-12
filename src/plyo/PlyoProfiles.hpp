@@ -20,10 +20,12 @@ enum class SaveOutcome { Ok, Failed, Refused, NotWritten };
 // modifié), NotWritten (fichier absent, vide ou pas réécrit). Chaque échec est noté dans le journal.
 SaveOutcome save_current_as(bool print, const std::string& name);
 
-// Enregistre les profils impression et filament modifiés. Un profil d'Orca (non écrasable) est copié sous « <nom> (Plyo) ».
+// Enregistre le profil filament modifié. Un profil d'Orca (non écrasable) est copié sous « <nom> (Plyo) ».
 // Le préréglage d'une bobine (registre des bobines) est toujours écrasé sous son propre nom, jamais copié.
-// Renvoie {"saved": [{"type", "name", "created", "from"}], "save_error": "" ou le motif}. Les valeurs restent appliquées
-// en mémoire si l'écriture échoue.
+// Les réglages d'impression (ceux de la pièce) ne sont JAMAIS enregistrés : ils restent modifiés, gardés dans le 3MF de la
+// conversation (`in_project`) ou, sans plateau de conversation (`print_edited`), protégés par la question d'Orca.
+// Renvoie {"saved": [{"type", "name", "created", "from"}], "save_error": "" ou le motif, "in_project", "print_edited"}.
+// Les valeurs restent appliquées en mémoire si l'écriture échoue.
 nlohmann::json save_applied();
 
 // Version fiable de l'imprimante + filament en cours : copie des réglages du catalogue, gardée par Plyo (dossier
@@ -43,20 +45,23 @@ nlohmann::json restore_reliable();
 // Bobines : la version qui a réussi est celle qui est partie à l'imprimante. À chaque envoi ou export réussi, les valeurs
 // filament du catalogue de la bobine en cours sont notées à l'essai (plyo/essai, {spool, printer, date, at, values}), et
 // cet envoi devient le « dernier envoi » (plyo/essai/dernier-envoi.json, {spool, printer, date, at}).
-// Faux si le filament en cours n'est pas une bobine, ou si l'écriture échoue.
+// Faux si le filament en cours n'est pas une bobine, pendant une calibration (plateau de test), ou si l'écriture échoue.
 bool note_sent();
 // « Ça a marché » : la dernière version envoyée de la bobine en cours sur cette imprimante devient sa version réussie
 // (plyo/fiable), et le registre note last_outcome "ok" et last_ok_at (date de l'envoi). Faux sans bobine ni envoi noté.
 bool mark_spool_success();
-// Réussite dite hors de la carte (phrase dans la discussion) : elle vise le DERNIER envoi (bobine et imprimante notées par
-// note_sent), même si une autre bobine a été choisie depuis. Refusée si l'essai de cette bobine a été réécrit ou manque.
-// {ok, name} : `name` est la bobine réellement marquée ("" si refus).
-nlohmann::json mark_sent_success();
-// « Ça n'a pas marché » : le registre note last_outcome "bad" pour la bobine en cours sur cette imprimante.
+// Réussite dite hors de la carte (phrase dans la discussion, ou « Oui » à l'étape Résultat) : elle vise le DERNIER envoi
+// (bobine et imprimante notées par note_sent), et seulement s'il est celui de la bobine `expected_spool` (id de la bobine
+// de la conversation), date de moins de SpoolsLogic::SENT_MAX_AGE_HOURS et n'a pas été déclaré raté (sauf
+// `change_of_mind` : « Oui » juste après « Non » à l'étape Résultat). Refusée aussi si l'essai a été réécrit ou manque.
+// {ok, name, date, text} : `name` et `date` (de l'envoi) sont ceux réellement marqués ; `text`, le refus à montrer.
+nlohmann::json mark_sent_success(const std::string& expected_spool, bool change_of_mind = false);
+// « Ça n'a pas marché » : le registre note last_outcome "bad" pour la bobine en cours sur cette imprimante ; si le dernier
+// envoi est le sien, il est déclaré raté (une réussite dite ensuite ne le marque plus).
 bool mark_spool_failure();
 
-// « Non, c'est raté » à l'étape Résultat : le dernier envoi ou export (plyo/essai/dernier-envoi.json) est noté « bad » au
-// registre pour sa bobine et son imprimante. { ok, name }.
-nlohmann::json mark_sent_failure();
+// « Non, c'est raté » à l'étape Résultat : le dernier envoi ou export (plyo/essai/dernier-envoi.json), s'il est celui de la
+// bobine `expected_spool` et récent, est noté « bad » au registre et déclaré raté. {ok, name, text}.
+nlohmann::json mark_sent_failure(const std::string& expected_spool);
 
 }} // namespace Plyo::Profiles

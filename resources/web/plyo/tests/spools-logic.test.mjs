@@ -51,6 +51,8 @@ test('resumeText : la phrase de reprise dit la vérité sur ce qui est repris', 
 
 test('réussite retenue : la phrase cite la bobine', () => {
   assert.equal(S.doneText('Sunlu PLA+ noir'), 'C’est noté : je reprendrai ces réglages pour Sunlu PLA+ noir.');
+  // Avec la date de l’envoi : l’utilisateur voit quelle impression a été retenue.
+  assert.equal(S.doneText('Sunlu PLA+ noir', '2026-11-12'), 'C’est noté : je reprendrai les réglages de ton impression du 12/11 pour Sunlu PLA+ noir.');
 });
 
 test('préréglage de l’utilisateur : proposé une fois, plus jamais après un non', () => {
