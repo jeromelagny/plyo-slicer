@@ -19,7 +19,7 @@ if [ ! -f "$OUT/catch_amalgamated.o" ]; then
 fi
 
 "$CXX" "${FLAGS[@]}" \
-    "$HERE/test_plyo.cpp" "$ROOT/src/plyo/PlyoFiles.cpp" "$ROOT/src/plyo/PlyoSanitize.cpp" "$ROOT/src/plyo/PlyoDiscoveryLogic.cpp" "$ROOT/src/plyo/PlyoCatalogPolicy.cpp" "$ROOT/src/plyo/PlyoProjectLogic.cpp" "$ROOT/src/plyo/PlyoCC2Logic.cpp" "$ROOT/src/plyo/PlyoSlotsLogic.cpp" "$ROOT/src/plyo/PlyoCfsLogic.cpp" "$ROOT/src/plyo/PlyoIfsLogic.cpp" "$ROOT/src/plyo/PlyoU1Logic.cpp" "$ROOT/src/plyo/PlyoCanvasLogic.cpp" "$ROOT/src/plyo/PlyoPrinterStatusLogic.cpp" "$ROOT/src/plyo/PlyoSpoolsLogic.cpp" "$ROOT/src/plyo/PlyoOrcaMessagesLogic.cpp" "$ROOT/src/plyo/PlyoConfigRulesLogic.cpp" \
+    "$HERE/test_plyo.cpp" "$ROOT/src/plyo/PlyoFiles.cpp" "$ROOT/src/plyo/PlyoSanitize.cpp" "$ROOT/src/plyo/PlyoMemoryLogic.cpp" "$ROOT/src/plyo/PlyoDiscoveryLogic.cpp" "$ROOT/src/plyo/PlyoCatalogPolicy.cpp" "$ROOT/src/plyo/PlyoProjectLogic.cpp" "$ROOT/src/plyo/PlyoCC2Logic.cpp" "$ROOT/src/plyo/PlyoSlotsLogic.cpp" "$ROOT/src/plyo/PlyoCfsLogic.cpp" "$ROOT/src/plyo/PlyoIfsLogic.cpp" "$ROOT/src/plyo/PlyoU1Logic.cpp" "$ROOT/src/plyo/PlyoCanvasLogic.cpp" "$ROOT/src/plyo/PlyoPrinterStatusLogic.cpp" "$ROOT/src/plyo/PlyoSpoolsLogic.cpp" "$ROOT/src/plyo/PlyoOrcaMessagesLogic.cpp" "$ROOT/src/plyo/PlyoConfigRulesLogic.cpp" \
     "$OUT/catch_amalgamated.o" \
     -L"$DEPS/lib" -lboost_filesystem -lboost_nowide \
     -o "$OUT/plyo_tests"

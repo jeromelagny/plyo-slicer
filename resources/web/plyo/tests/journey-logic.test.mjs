@@ -392,7 +392,7 @@ test('barre : seules les étapes faites parmi Machine, Pièce, Filament et Prép
 test('fin d’impression : la question suit la façon dont elle s’est finie', () => {
   const fin = J.endQuestion('finished', 'CR-10 SE', 'cube.gcode');
   assert.equal(fin.text, 'CR-10 SE a fini d’imprimer « cube.gcode ». Ça s’est bien passé ?');
-  assert.deepEqual(fin.choices.map((c) => c.label), ['Oui', 'Non, pas vraiment']);
+  assert.deepEqual(fin.choices.map((c) => c.label), ['Oui, c’est réussi', 'Non, c’est raté']);
   const stop = J.endQuestion('cancelled', 'CR-10 SE', 'cube.gcode');
   assert.equal(stop.text, 'L’impression de « cube.gcode » a été arrêtée sur CR-10 SE. Qu’est-ce qui s’est passé ? Je suis là pour t’aider à trouver la cause et à la régler pour la prochaine fois.');
   assert.deepEqual(stop.choices.map((c) => c.label), ['Ça se décollait du plateau', 'Le fil ne sortait plus bien', 'Ça faisait des fils ou des spaghettis', 'J’ai changé d’avis', 'Autre chose']);

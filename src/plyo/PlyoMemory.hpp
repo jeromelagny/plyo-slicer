@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include <string>
+#include <vector>
 
 // Mémoire de la machine : les changements de réglages appliqués par l'assistant, rangés par imprimante et
 // filament (datadir/plyo/memoire.json), renvoyés à l'IA pour qu'elle reparte de ce qui a déjà été essayé.
@@ -24,8 +25,18 @@ std::string    forget(const std::string& machine_key);
 nlohmann::json for_current();
 
 // Entrées de l'imprimante et du filament en cours qui attendent leur résultat, de la plus récente à la plus
-// ancienne : [{machine, printer, filament, at, date, why, defect, conv, changes}].
+// ancienne : [{machine, printer, filament, at, date, why, defect, conv, printed, changes}].
 nlohmann::json pending();
+
+// Changements notés sans libellé (versions d'avant le lot 4) : complétés par le titre du catalogue, jamais une clé brute.
+nlohmann::json with_labels(const nlohmann::json& changes);
+
+// L'étape Résultat du projet `conv` commence : ses corrections en attente sont rattachées à cette impression (sa question
+// les couvre, la carte « Ça a marché ? » ne les redemande plus). Rend le nombre d'entrées rattachées.
+int            note_printed(const std::string& conv);
+// Réponse de l'étape Résultat (« ok » ou « bad ») pour les corrections de `conv` rattachées à l'impression ; `ats` non vide :
+// exactement ces entrées (changement d'avis). Rend les entrées marquées ({machine, at, why, conv, changes…}).
+nlohmann::json set_result(const std::string& conv, const std::string& outcome, const std::vector<std::string>& ats);
 
 // Profil copié par l'assistant : l'historique de l'ancien couple imprimante + filament passe au nouveau.
 void carry_over(const std::string& old_key, const std::string& new_key);

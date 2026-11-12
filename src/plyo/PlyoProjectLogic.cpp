@@ -236,6 +236,17 @@ nlohmann::json sanitize(const nlohmann::json& project)
         }
         if (const std::string outcome = Json::str(*s, "outcome"); verdict(outcome))
             o["outcome"] = outcome;
+        // Lot 4 : la réponse de Résultat pour les corrections de cette impression (« ok » / « bad ») et les entrées de la
+        // mémoire qu'elle a marquées (instants « at »), pour qu'un changement d'avis vise les mêmes. Absents avant le lot 4.
+        if (const std::string said = Json::str(*s, "corrections_outcome"); said == "ok" || said == "bad")
+            o["corrections_outcome"] = said;
+        if (const nlohmann::json* c = Json::field(*s, "corrections"); c != nullptr && c->is_array()) {
+            nlohmann::json ats = nlohmann::json::array();
+            for (const nlohmann::json& at : *c)
+                if (at.is_string() && !at.get_ref<const std::string&>().empty() && at.get_ref<const std::string&>().size() <= 40 && ats.size() < 20)
+                    ats.push_back(at);
+            o["corrections"] = ats;
+        }
         out["send"] = o;
     }
     const std::string step = Json::str(project, "step");

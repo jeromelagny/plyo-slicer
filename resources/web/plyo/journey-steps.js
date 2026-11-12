@@ -153,8 +153,9 @@
         // opts.spoolAsk : nom de la bobine de l'envoi (ou de l'export) fait depuis le panneau ; « réussi » retient ses réglages.
         body.appendChild(ui.el('p', '', opts.spoolAsk ? 'Quand elle est finie, dis-moi si c’est réussi : je retiendrai les réglages de ta bobine « ' + opts.spoolAsk + ' ».'
           : 'Quand elle est finie, dis-moi si c’est réussi. Si quelque chose cloche, je t’aide à trouver pourquoi.'));
-        after.appendChild(ui.button('C’est fini : réussi', h.success, 'btn ghost sm', 'check'));
-        after.appendChild(ui.button('C’est fini : raté', h.failed, 'btn ghost sm', 'x'));
+        // Mêmes libellés que la carte « Ça a marché ? » et la fin suivie (UX-22) : une seule question, un seul vocabulaire.
+        after.appendChild(ui.button('Oui, c’est réussi', h.success, 'btn ghost sm', 'check'));
+        after.appendChild(ui.button('Non, c’est raté', h.failed, 'btn ghost sm', 'x'));
         after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
       }
       body.appendChild(after);

@@ -146,11 +146,37 @@ nlohmann::json save_applied()
     return {{"saved", saved}, {"save_error", error}, {"in_project", in_project}, {"print_edited", print_dirty && !in_project}};
 }
 
+namespace {
+
+// Réglages réussis sans bobine : seulement ceux du filament (ROB-07). Ceux d'impression sont ceux de la pièce d'alors.
+nlohmann::json filament_values() { return {{"filament", SettingsBridge::snapshot_raw()["filament"]}}; }
+
+// Envoi ou export (ROB-19) : l'essai en cours de ce couple imprimante + filament prend les valeurs qui partent vraiment
+// (une retouche faite après le lot et avant l'impression y est). Sans envoi, l'essai pris à l'application reste (repli).
+void refresh_trial()
+{
+    const nlohmann::json trial = Sanitize::reliable(Store::read(trial_file()));
+    if (trial.empty() || trial["machine"] != Limits::machine_key() || Json::str(trial, "at").empty())
+        return;
+    Store::write(trial_file(), {{"machine", trial["machine"]}, {"date", today()}, {"at", trial["at"]}, {"sent", now_iso()}, {"values", filament_values()}});
+}
+
+// Ce que la remise changerait : le nombre et les réglages (les principaux d'abord, côté panneau).
+nlohmann::json with_preview(nlohmann::json info, const nlohmann::json& values)
+{
+    const nlohmann::json changes = SettingsBridge::preview_values(values);
+    info["count"]                = changes.size();
+    info["changes"]              = changes;
+    return info;
+}
+
+} // namespace
+
 bool note_trial(const std::string& at)
 {
     if (at.empty())
         return false;
-    return Store::write(trial_file(), {{"machine", Limits::machine_key()}, {"date", today()}, {"at", at}, {"values", SettingsBridge::snapshot_raw()}});
+    return Store::write(trial_file(), {{"machine", Limits::machine_key()}, {"date", today()}, {"at", at}, {"values", filament_values()}});
 }
 
 bool mark_reliable(const std::string& at)
@@ -167,12 +193,16 @@ nlohmann::json reliable_info()
     const nlohmann::json spool = Spools::current_full();
     if (!spool.empty()) {
         const nlohmann::json ok = Spools::read_version(true, spool["id"], spool["printer"]);
-        return {{"available", !ok.empty()}, {"date", ok.empty() ? nlohmann::json("") : ok["date"]}};
+        if (ok.empty())
+            return {{"available", false}, {"date", ""}};
+        return with_preview({{"available", true}, {"date", ok["date"]}}, {{"filament", ok["values"]}});
     }
     const nlohmann::json stored = Sanitize::reliable(Store::read(reliable_file()));
     // Le nom du fichier vient d'une empreinte : on vérifie aussi que c'est bien ce couple imprimante + filament.
     const bool available = !stored.empty() && stored["machine"] == Limits::machine_key();
-    return {{"available", available}, {"date", available ? stored["date"] : nlohmann::json("")}};
+    if (!available)
+        return {{"available", false}, {"date", ""}};
+    return with_preview({{"available", true}, {"date", stored["date"]}}, stored["values"]);
 }
 
 nlohmann::json restore_reliable()
@@ -182,7 +212,7 @@ nlohmann::json restore_reliable()
     if (!spool.empty()) {
         const nlohmann::json ok = Spools::read_version(true, spool["id"], spool["printer"]);
         if (ok.empty())
-            return {{"ok", false}, {"text", "Je n'ai pas encore de version réussie pour la bobine « " + spool["name"].get<std::string>() + " » sur cette imprimante."}};
+            return {{"ok", false}, {"text", "Je n'ai pas encore de réglages réussis pour la bobine « " + spool["name"].get<std::string>() + " » sur cette imprimante."}};
         // Les valeurs vont dans l'onglet Filament : il doit montrer le préréglage de la bobine (filament 1).
         if (collection(Preset::TYPE_FILAMENT).get_edited_preset().name != spool["preset"])
             return {{"ok", false}, {"text", "Ouvre le filament de la bobine « " + spool["name"].get<std::string>() + " » dans Orca, puis redemande-moi."}};
@@ -190,7 +220,7 @@ nlohmann::json restore_reliable()
     } else {
         const nlohmann::json stored = Sanitize::reliable(Store::read(reliable_file()));
         if (stored.empty() || stored["machine"] != Limits::machine_key())
-            return {{"ok", false}, {"text", "Je n'ai pas de version fiable pour cette imprimante et ce filament."}};
+            return {{"ok", false}, {"text", "Je n'ai pas encore de réglages réussis pour cette imprimante et ce filament."}};
         values = stored["values"];
     }
     nlohmann::json result = SettingsBridge::restore_values(values);
@@ -209,6 +239,7 @@ bool note_sent()
     // Plateau de test d'une calibration : ses valeurs ne sont pas celles de la bobine, ce n'est pas un envoi à retenir.
     if (AutoSave::calibrating())
         return false;
+    refresh_trial(); // réglages réussis sans bobine : relevés à l'envoi, pas seulement à l'application
     const nlohmann::json spool = Spools::current_full();
     if (spool.empty())
         return false;

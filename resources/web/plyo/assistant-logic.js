@@ -151,12 +151,21 @@
 
   function frValue(v) { return typeof v === 'number' ? String(v).replace('.', ',') : String(v); }
 
+  // Un changement noté (mémoire, journal) tel qu'on le montre : « Température de buse : 220 → 210 °C », « Taux de
+  // remplissage : 15 % → 20 % », « Supports activés : non → oui ». Le libellé et l'unité notés avec le changement d'abord
+  // (lot 4), sinon ceux de la liste des réglages lus (`labelOf(id)` → { label, unit }), jamais une clé brute si on les connaît.
+  function changeLine(c, labelOf) {
+    var id = c.key || c.id, p = (labelOf && labelOf(c.id)) || {};
+    var label = c.label || p.label || id, unit = c.unit || p.unit || '';
+    if (typeof c.before === 'number' && typeof c.after === 'number')
+      return label + ' : ' + frValue(c.before) + ' → ' + frValue(c.after) + (unit ? ' ' + unit : /temp/.test(String(id)) ? ' °C' : '');
+    var show = function (v) { return typeof v === 'string' && !/^-?\d/.test(v) ? choiceLabel(v) : valueText(v, id) + (unit && typeof v === 'number' ? ' ' + unit : ''); };
+    return label + ' : ' + show(c.before) + ' → ' + show(c.after);
+  }
+
   // `labelOf(id)` → { label, unit } du réglage (lus dans le slicer), ou undefined.
   function outcomeQuestion(item, labelOf) {
-    var changes = (item.changes || []).map(function (c) {
-      var p = labelOf(c.id) || { label: c.id, unit: '' };
-      return p.label + ' : ' + frValue(c.before) + ' → ' + frValue(c.after) + (p.unit ? ' ' + p.unit : '');
-    });
+    var changes = (item.changes || []).filter(function (c) { return c && (c.id || c.key); }).map(function (c) { return changeLine(c, labelOf); });
     var day = shortDate(item.at || item.date);
     var text = (day ? 'Le ' + day + ', on' : 'On') + ' a changé des réglages' + (item.why ? ' pour « ' + item.why + ' »' : '') +
       '. Ta dernière impression avec ces réglages, ça a marché ?';
@@ -165,13 +174,99 @@
 
   // « Ça n'a pas marché » : remettre les valeurs d'avant, mais seulement là où la valeur essayée est encore en
   // place (un réglage changé à la main depuis n'est pas écrasé). `params` absent : tout est remis.
-  function revertChanges(item, params) {
+  // `snapshot` (relevé du catalogue, clé d'Orca → valeur) donné : les lots du catalogue sont traités aussi (revertPlan).
+  function revertChanges(item, params, snapshot) {
+    if (snapshot !== undefined) return revertPlan(item, params, snapshot).changes;
     return ((item && item.changes) || []).filter(function (c) {
       if (!params) return true;
       var p = params.find(function (x) { return x.id === c.id; });
       if (!p) return false;
       return typeof p.value === 'number' && typeof c.after === 'number' ? Math.abs(p.value - c.after) < 1e-6 : p.value === c.after;
     }).map(function (c) { return { id: c.id, value: c.before }; });
+  }
+
+  // Même réglage, même valeur ? Le relevé du catalogue et la mémoire peuvent écrire autrement la même chose : « 20% » et 20,
+  // 0,2 et 0.2000001. Un booléen ne vaut qu'un booléen ; « 20% » et « 20 » (un texte sans %) ne sont pas la même chose.
+  function sameSetting(a, b) {
+    if (a === null || a === undefined || b === null || b === undefined) return false;
+    if (typeof a === 'boolean' || typeof b === 'boolean') return a === b;
+    function read(v) {
+      if (typeof v === 'number') return { n: v, pct: null };
+      var m = /^\s*(-?\d+(?:[.,]\d+)?)\s*(%?)\s*$/.exec(String(v));
+      return m ? { n: Number(m[1].replace(',', '.')), pct: !!m[2] } : { s: String(v).trim() };
+    }
+    var x = read(a), y = read(b);
+    if (x.s !== undefined || y.s !== undefined) return x.s !== undefined && x.s === y.s;
+    return Math.abs(x.n - y.n) < 1e-6 && (x.pct === null || y.pct === null || x.pct === y.pct);
+  }
+  function hasKey(o, k) { return !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k); }
+  // Changement de l'ancienne liste des réglages (`id` comme « nozzle_temp », valeurs en nombre ou choix) : il se remet par
+  // un lot de cette liste. Tout le reste est un réglage du catalogue (clé d'Orca), remis par un lot du catalogue.
+  function whitelistParam(c, params) {
+    if (c.key || !Array.isArray(params)) return null;
+    var p = params.find(function (x) { return x.id === c.id; });
+    if (!p) return null;
+    return typeof c.after === 'number' || typeof c.after === 'boolean' || Array.isArray(p.values) ? p : null;
+  }
+  // Plan du retour arrière d'une correction : `changes` (le lot à envoyer : { key, value, label, confirmed } pour le catalogue,
+  // { id, value } pour l'ancienne liste), `changed` (réglages retouchés depuis : laissés tels quels, avec leur valeur
+  // d'aujourd'hui), `unread` (valeur actuelle illisible : rien n'est remis sans vérifier).
+  function revertPlan(item, params, snapshot) {
+    var out = { changes: [], changed: [], unread: [] };
+    ((item && item.changes) || []).forEach(function (c) {
+      if (!c || !(c.key || c.id)) return;
+      var id = c.key || c.id, wl = whitelistParam(c, params);
+      var label = c.label || (wl && wl.label) || id;
+      if (wl && (typeof wl.value === 'number' && typeof c.after === 'number' ? Math.abs(wl.value - c.after) < 1e-6 : wl.value === c.after)) {
+        out.changes.push({ id: c.id, value: c.before });
+        return;
+      }
+      if (hasKey(snapshot, id)) {
+        if (!sameSetting(snapshot[id], c.after)) out.changed.push({ key: id, label: label, value: snapshot[id] });
+        // Valeur d'avant inconnue (« nil » d'Orca) : rien à remettre pour ce réglage.
+        else if (c.before !== null && c.before !== undefined) out.changes.push({ key: id, value: c.before, label: label, confirmed: true });
+        return;
+      }
+      if (wl) out.changed.push({ key: id, label: label, value: wl.value });
+      else out.unread.push({ key: id, label: label });
+    });
+    return out;
+  }
+  // Ce que dit la carte « Ça n'a pas marché » : toujours vrai, et les réglages retouchés depuis sont nommés.
+  function revertText(plan) {
+    var p = plan || { changes: [], changed: [], unread: [] };
+    var named = listOf(p.changed.slice(0, 4).map(function (k) { return k.label + ' (' + valueText(k.value, k.key) + ')'; })
+      .concat(p.changed.length > 4 ? [(p.changed.length - 4) + ' autre' + (p.changed.length > 5 ? 's' : '')] : []));
+    var lead = 'C’est noté, je ne te reproposerai pas ces réglages.';
+    if (p.changes.length && !p.changed.length) return lead + ' Ils sont encore appliqués : tu peux remettre ceux d’avant, puis on cherche une autre piste.';
+    if (p.changes.length) return lead + ' Tu as retouché depuis : ' + named + '. Je n’y touche pas ; je peux remettre les autres comme avant.';
+    if (p.changed.length) return lead + ' Tes réglages ont déjà changé depuis : ' + named + '. On peut chercher une autre piste.';
+    if (p.unread.length) return lead + ' Je n’arrive pas à relire tes réglages actuels : je ne remets rien sans vérifier.';
+    return lead + ' On peut chercher une autre piste.';
+  }
+  // Lots à envoyer pour une liste mêlant réglages du catalogue (`key`) et de l'ancienne liste (`id`) : le slicer lit un lot
+  // dans un seul mode (celui du premier changement). Le catalogue d'abord.
+  function batchesOf(list) {
+    var items = Array.isArray(list) ? list.filter(Boolean) : [];
+    return [items.filter(function (c) { return c.key; }), items.filter(function (c) { return !c.key; })].filter(function (b) { return b.length; });
+  }
+  // Plusieurs corrections pour la même impression (de la plus récente à la plus ancienne) : une seule, dont chaque réglage
+  // part de sa valeur avant la plus ancienne et va à sa valeur après la plus récente.
+  function mergeCorrections(items) {
+    var list = (Array.isArray(items) ? items : []).filter(function (it) { return it && Array.isArray(it.changes); });
+    if (!list.length) return null;
+    var byId = {}, order = [];
+    list.slice().reverse().forEach(function (it) {
+      it.changes.forEach(function (c) {
+        if (!c || !(c.key || c.id)) return;
+        var id = c.key || c.id;
+        if (!byId[id]) { byId[id] = JSON.parse(JSON.stringify(c)); order.push(id); }
+        else { var keep = byId[id].before; byId[id] = JSON.parse(JSON.stringify(c)); byId[id].before = keep; }
+      });
+    });
+    var first = list[0];
+    return { machine: first.machine, at: first.at, conv: first.conv, why: first.why || '', defect: first.defect || '', printer: first.printer, filament: first.filament,
+      changes: order.map(function (id) { return byId[id]; }).filter(function (c) { return !sameSetting(c.before, c.after) || typeof c.before !== typeof c.after; }) };
   }
 
   // Demande préremplie de « Chercher une autre piste » : l'IA repart du problème et de ce que l'utilisateur a vu.
@@ -192,6 +287,18 @@
   function firstDueOutcome(items, now) {
     var due = (items || []).filter(function (it) { return outcomeDue(it, now); });
     return due.length ? due[0] : null;
+  }
+  // Une seule question par impression (UX-22). Une correction rattachée à une impression (`printed` : son projet est passé à
+  // l'étape Résultat) a sa question dans ce projet : la carte se tait quand ce projet est ouvert et que son étape Résultat
+  // pose la question (`openAsks`) ; projet fermé, la carte invite à l'ouvrir (`open`). Sans impression rattachée (impression
+  // lancée depuis Orca, pas encore imprimé), la carte pose la question elle-même. null : rien à demander.
+  function outcomeCard(items, now, openConv, openAsks) {
+    var due = (items || []).filter(function (it) {
+      return outcomeDue(it, now) && !(it.printed && it.conv && it.conv === openConv && openAsks);
+    });
+    if (!due.length) return null;
+    var it = due[0];
+    return { item: it, open: !!(it.printed && it.conv && it.conv !== openConv) };
   }
 
   // Nouveau découpage : la signature du résultat (temps, poids, nombre de pièces) change. `prev` vaut null au
@@ -248,13 +355,30 @@
   }
 
   // Réglages à réappliquer (valeurs d'après), seulement pour l'imprimante et le filament où ils ont été trouvés,
-  // et jamais s'ils n'ont pas réglé le problème.
-  function reapplyChanges(e, context) {
+  // et jamais s'ils n'ont pas réglé le problème. `params` (réglages lus de l'ancienne liste) donné : un réglage du catalogue
+  // part dans un lot du catalogue ({ key, value, label, confirmed : le bouton annonce ces valeurs }).
+  function reapplyChanges(e, context, params) {
     if (!e.changes || !e.changes.length || e.outcome === 'bad' || !context) return null;
     // Orca passe sur la copie « (Plyo) » juste après une application : c'est le même profil.
     var base = (root.PlyoJourney || require('./journey-logic.js')).baseName;
     if (base(context.printer) !== base(e.printer) || base(context.filament) !== base(e.filament)) return null;
-    return e.changes.map(function (c) { return { id: c.id, value: c.after }; });
+    var out = e.changes.filter(function (c) { return c && (c.key || c.id) && c.after !== null && c.after !== undefined; }).map(function (c) {
+      if (c.key || (Array.isArray(params) && !whitelistParam(c, params))) return { key: c.key || c.id, value: c.after, label: c.label || c.key || c.id, confirmed: true };
+      return { id: c.id, value: c.after };
+    });
+    return out.length ? out : null;
+  }
+  // Réglages réussis : ce que la remise va changer, dit avant le clic. Les températures et le débit d'abord.
+  var MAIN_SETTING = /temperature|temp|flow_ratio|volumetric|pressure_advance|retraction|fan/;
+  function reliablePreview(info) {
+    var list = (info && Array.isArray(info.changes) ? info.changes : []).filter(function (c) { return c && c.key; });
+    var count = info && typeof info.count === 'number' ? info.count : list.length;
+    if (!count) return 'Tes réglages du filament sont déjà ceux de ta dernière impression réussie.';
+    var main = list.filter(function (c) { return MAIN_SETTING.test(c.key); }).concat(list.filter(function (c) { return !MAIN_SETTING.test(c.key); })).slice(0, 3);
+    var more = count - main.length;
+    return 'Ça remet ' + count + ' réglage' + (count > 1 ? 's' : '') + ' du filament comme lors de ta dernière impression réussie : ' +
+      listOf(main.map(function (c) { return (c.label || c.key) + ' (' + valueText(c.before, c.key) + ' → ' + valueText(c.after, c.key) + ')'; })
+        .concat(more > 0 ? [more + ' autre' + (more > 1 ? 's' : '')] : [])) + '.';
   }
 
   // Ordres exécutés par le slicer : l'outil d'Orca qui fait la même chose (« Comment le faire moi-même »).
@@ -528,7 +652,9 @@
   function sheetChange(s, confirmedKeys) {
     if (!s || !s.catalog) return s && s.delta !== null && s.delta !== undefined ? { id: s.id, delta: s.delta } : { id: s && s.id, value: s && s.value };
     var byHand = !defaultChecked(s) || (Array.isArray(confirmedKeys) && confirmedKeys.indexOf(s.id) >= 0);
-    return { key: s.id, value: s.value, label: s.label, confirmed_outside_range: !!s.beyond && byHand, confirmed: byHand };
+    var out = { key: s.id, value: s.value, label: s.label, confirmed_outside_range: !!s.beyond && byHand, confirmed: byHand };
+    if (s.unit) out.unit = s.unit; // gardée dans la mémoire avec le libellé (« Ça a marché ? », « Mes pièces »)
+    return out;
   }
   // Issue d'un lot refusé : réessayer (fenêtre d'Orca ouverte, valeur remise par Orca), confirmer (grand écart ou réglage
   // sensible pas coché à la main), et montrer le réglage en cause.
@@ -578,7 +704,7 @@
     return box.bottom - port.bottom > 24;
   }
 
-  var api = { valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, manualEditsNote: manualEditsNote, splitManualEdits: splitManualEdits, noteWritten: noteWritten, forgetBatch: forgetBatch, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { changeLine: changeLine, sameSetting: sameSetting, revertPlan: revertPlan, revertText: revertText, batchesOf: batchesOf, mergeCorrections: mergeCorrections, outcomeCard: outcomeCard, reliablePreview: reliablePreview, valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, manualEditsNote: manualEditsNote, splitManualEdits: splitManualEdits, noteWritten: noteWritten, forgetBatch: forgetBatch, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

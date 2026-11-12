@@ -56,6 +56,9 @@ nlohmann::json typed_value_of(const Slic3r::DynamicPrintConfig& config, const st
 // Valeurs actuelles du catalogue, en texte d'Orca : { "print": {clé: texte}, "filament": {...} } (version fiable).
 nlohmann::json snapshot_raw();
 
+// Ce que restore_values changerait, sans rien écrire : [{key, scope, label, before, after}] (valeurs affichables).
+nlohmann::json preview_values(const nlohmann::json& values);
+
 // Remet ces valeurs (clés du catalogue seulement, celles qui diffèrent), comme un lot annulable et relu. {ok, text, undo_id?}
 nlohmann::json restore_values(const nlohmann::json& values);
 

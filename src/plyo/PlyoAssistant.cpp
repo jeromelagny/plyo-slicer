@@ -251,17 +251,28 @@ void handle_page_message(const nlohmann::json& data)
                     nlohmann::json       after = SettingsBridge::read_values();
                     if (catalog) {
                         // Ce qui est réellement en place : le lot relu, et ce qu'Orca a changé en plus (clés du catalogue).
+                        // La valeur d'après est celle du relevé du catalogue (même forme que ce que le panneau relira pour un
+                        // retour arrière : « 20% », true…) ; le libellé et l'unité sont ceux de la fiche (titre du catalogue sinon).
                         after["params"]  = nlohmann::json::array();
                         before["params"] = nlohmann::json::array();
-                        for (const nlohmann::json& a : Json::arr(result, "applied")) {
-                            after["params"].push_back({{"id", a["id"]}, {"value", a["after"]}});
-                            before["params"].push_back({{"id", a["id"]}, {"value", a["before"]}});
-                        }
+                        const nlohmann::json snap = SettingsBridge::read_snapshot();
+                        const auto           unit_of = [&changes](const std::string& key) {
+                            for (const nlohmann::json& c : changes)
+                                if (c.is_object() && Json::str(c, "key") == key)
+                                    return Json::str(c, "unit", 20);
+                            return std::string();
+                        };
+                        const auto note = [&](const std::string& key, const std::string& label, const nlohmann::json& was, const nlohmann::json& now) {
+                            const nlohmann::json in_place = snap.contains(key) && !snap[key].is_null() ? snap[key] : now;
+                            const std::string    title    = label.empty() || label == key ? Catalog::policy().title(key) : label;
+                            after["params"].push_back({{"id", key}, {"value", in_place}, {"label", title}, {"unit", unit_of(key)}, {"catalog", true}});
+                            before["params"].push_back({{"id", key}, {"value", was}});
+                        };
+                        for (const nlohmann::json& a : Json::arr(result, "applied"))
+                            note(Json::str(a, "id"), Json::str(a, "label"), a["before"], a["after"]);
                         for (const nlohmann::json& a : Json::arr(result, "also_changed"))
-                            if (Catalog::policy().allows(Json::str(a, "scope"), Json::str(a, "key"))) {
-                                after["params"].push_back({{"id", a["key"]}, {"value", a["after"]}});
-                                before["params"].push_back({{"id", a["key"]}, {"value", a["before"]}});
-                            }
+                            if (Catalog::policy().allows(Json::str(a, "scope"), Json::str(a, "key")))
+                                note(Json::str(a, "key"), Json::str(a, "label"), a["before"], a["after"]);
                     }
                     const std::string    key = Memory::note_applied(before, after, Json::str(data, "why"), ask);
                     SettingsBridge::set_memory_key(Json::integer(result, "undo_id", 0), key);
@@ -330,6 +341,27 @@ void handle_page_message(const nlohmann::json& data)
             else if (current_pair && Json::str(data, "outcome") == "bad")
                 Profiles::mark_spool_failure();
             send({{"type", "outcome_saved"}, {"ok", saved_outcome}});
+        } else if (type == "outcome_printed") {
+            // Le projet passe à l'étape Résultat : ses corrections en attente sont celles de cette impression (une seule question).
+            Memory::note_printed(Json::str(data, "conv", 40));
+        } else if (type == "outcome_result") {
+            // Réponse de l'étape Résultat (ou de la fin suivie) : elle marque aussi la mémoire des corrections de cette impression,
+            // le journal de la pièce, et leurs réglages réussis (la bobine est marquée par spool_success / spool_failure).
+            const std::string        conv    = Json::str(data, "conv", 40);
+            const std::string        outcome = Json::str(data, "outcome");
+            std::vector<std::string> ats;
+            for (const nlohmann::json& a : Json::arr(data, "ats"))
+                if (a.is_string() && ats.size() < 20)
+                    ats.push_back(a.get<std::string>());
+            const nlohmann::json items    = Memory::set_result(conv, outcome, ats);
+            bool                 reliable = false;
+            if (!items.empty()) {
+                Journal::set_outcome(conv, outcome);
+                if (outcome == "ok")
+                    for (const nlohmann::json& e : items)
+                        reliable = Profiles::mark_reliable(Json::str(e, "at")) || reliable;
+            }
+            send({{"type", "outcome_result_done"}, {"conv", conv}, {"outcome", outcome}, {"items", items}, {"reliable", reliable}});
         } else if (type == "spool_success") {
             // Réussite déclarée hors de la carte « Ça a marché ? » (phrase dans la discussion).
             // Elle vise le dernier envoi, même si une autre bobine a été choisie depuis.

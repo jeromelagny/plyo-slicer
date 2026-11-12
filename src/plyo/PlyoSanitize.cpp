@@ -73,7 +73,9 @@ json reliable(const json& stored)
         return json::object();
     json values = json::object();
     const json src = Json::obj(stored, "values");
-    for (const char* scope : {"print", "filament"}) {
+    // Seuls les réglages du filament : ceux d'impression sont ceux de la pièce d'alors (une version écrite avant le lot 4
+    // les contient encore, ils sont ignorés à la lecture : remettre une équerre en mode vase n'est jamais un retour arrière).
+    for (const char* scope : {"filament"}) {
         json       kept   = json::object();
         const json scoped = Json::obj(src, scope); // copie nommée : items() d'un temporaire pointerait dans le vide
         for (const auto& [key, value] : scoped.items())

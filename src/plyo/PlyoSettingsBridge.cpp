@@ -787,6 +787,27 @@ nlohmann::json snapshot_raw()
     return out;
 }
 
+nlohmann::json preview_values(const nlohmann::json& values)
+{
+    // Mêmes règles que restore_values : clés du catalogue présentes dans le profil, et seulement celles qui changeraient.
+    const Catalog::Policy& policy = Catalog::policy();
+    nlohmann::json         out    = nlohmann::json::array();
+    for (const char* scope : {"print", "filament"}) {
+        const Preset::Type   type = std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
+        const nlohmann::json one  = Json::obj(values, scope);
+        for (const auto& [key, value] : one.items()) {
+            if (!value.is_string() || !policy.allows(scope, key) || edited_config(type).option(key) == nullptr)
+                continue;
+            const std::string now = edited_config(type).opt_serialize(key);
+            if (now == value.get<std::string>())
+                continue;
+            out.push_back({{"key", key}, {"scope", scope}, {"label", label_of(key)}, {"before", shown_value(type, key, now)},
+                           {"after", shown_value(type, key, value.get<std::string>())}});
+        }
+    }
+    return out;
+}
+
 nlohmann::json restore_values(const nlohmann::json& values)
 {
     if (const nlohmann::json busy = orca_dialog_refusal(); !busy.is_null())
@@ -807,13 +828,13 @@ nlohmann::json restore_values(const nlohmann::json& values)
             try {
                 configs[type].set_deserialize_strict(key, value.get<std::string>());
             } catch (const std::exception&) {
-                return {{"ok", false}, {"text", "Je n'ai pas pu relire « " + key + " » dans la version fiable : rien n'a été remis."}};
+                return {{"ok", false}, {"text", "Je n'ai pas pu relire « " + label_of(key) + " » dans tes réglages réussis : rien n'a été remis."}};
             }
             keys.push_back({type, key});
         }
     }
     if (keys.empty())
-        return {{"ok", true}, {"text", "Tes réglages sont déjà ceux de ta dernière version fiable."}};
+        return {{"ok", true}, {"text", "Tes réglages du filament sont déjà ceux de ta dernière impression réussie."}};
     const size_t count = keys.size();
     const Batch  batch = write_batch(configs, keys);
     if (!batch.ok)
@@ -821,7 +842,7 @@ nlohmann::json restore_values(const nlohmann::json& values)
     const int id = s_next_undo_id++;
     s_undo_stack.push_back({id, batch.saved, std::string()});
     return {{"ok", true},
-            {"text", std::to_string(count) + (count > 1 ? " réglages remis" : " réglage remis") + " comme dans ta dernière version fiable." + also_text(batch.also)},
+            {"text", std::to_string(count) + (count > 1 ? " réglages remis" : " réglage remis") + " du filament comme lors de ta dernière impression réussie." + also_text(batch.also)},
             {"undo_id", id}, {"also_changed", batch.also}, {"written", written_of(batch.saved)}};
 }
 

@@ -37,7 +37,9 @@ bool           note_trial(const std::string& at);
 bool           mark_reliable(const std::string& at);
 // Filament en cours qui est une bobine : la version réussie de la bobine sur cette imprimante (plyo/fiable, voir
 // mark_spool_success) remplace celle du couple imprimante + filament.
-nlohmann::json reliable_info(); // {"available": bool, "date": "2026-10-28"}
+// Réglages du FILAMENT seulement (ceux d'impression sont ceux de la pièce d'alors) ; `count` et `changes` : ce que la remise
+// changerait aujourd'hui ([{key, scope, label, before, after}]), à dire avant de remettre.
+nlohmann::json reliable_info(); // {"available": bool, "date": "2026-10-28", "count": 3, "changes": [...]}
 // Remet la version fiable (annulable) puis enregistre les profils (le préréglage d'une bobine est écrasé sous son nom).
 // Refuse si l'imprimante ou le filament ne sont plus ceux de la version fiable. {ok, text, undo_id?, saved, save_error}
 nlohmann::json restore_reliable();

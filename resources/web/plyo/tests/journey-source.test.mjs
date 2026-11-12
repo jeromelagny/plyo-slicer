@@ -532,11 +532,13 @@ test('Résultat : après un envoi ou un export avec une bobine, « Oui » retien
   // Seulement après un envoi ou un export depuis le panneau (le C++ note les réglages à print_start).
   const started = page.slice(page.indexOf('function onPrintStarted'), page.indexOf('function repaintPanel'));
   assert.equal((started.match(/noteSpoolSent\(\)/g) || []).length, 2, 'envoi et export');
-  // Pas une deuxième carte : la question est dans l'étape Résultat, et se tait quand la carte « Ça a marché ? » est là.
+  // Pas une deuxième carte (lot 4, UX-22) : la question est dans l'étape Résultat ; c'est la carte « Ça a marché ? » qui se
+  // tait pour les corrections de cette impression (Logic.outcomeCard), plus la question de Résultat.
   const steps = read('journey-steps.js');
   assert.match(steps, /opts\.spoolAsk/);
   assert.match(page, /spoolAsk: /);
-  assert.match(page, /outcome-slot'\)\.childNodes\.length/);
+  assert.doesNotMatch(page, /outcome-slot'\)\.childNodes\.length/);
+  assert.match(page, /Logic\.outcomeCard\(/);
 });
 
 test('bobine : plus de « version fiable » à l’écran, mais « Revenir aux réglages réussis du … »', () => {
@@ -702,8 +704,9 @@ test('fin d’impression : le panneau la relie au suivi, aux gestes du Résultat
   assert.match(chat, /applyTab\('show-chat'\)/);
   assert.match(chat, /openPhone\(\)/, 'l’invitation à la photo reprend le téléphone');
   assert.match(chat, /noteInput\.focus\(\)/);
-  assert.match(page, /success: function \(\) \{[^\n]*spoolSuccess\(\); markSendAnswered\(\);/, 'répondre au Résultat ferme la question de fin');
-  assert.match(page, /failed: function \(\) \{[^\n]*spoolFailure\(\); markSendAnswered\(\);/);
+  // Lot 4 (UX-22) : la même réponse marque aussi la mémoire des corrections de cette impression.
+  assert.match(page, /success: function \(\) \{[^\n]*spoolSuccess\(\); markCorrections\('ok'\); markSendAnswered\(\);/, 'répondre au Résultat ferme la question de fin');
+  assert.match(page, /failed: function \(\) \{[^\n]*spoolFailure\(\); markCorrections\('bad'\); markSendAnswered\(\);/);
   assert.equal((page.match(/noteSendWatched\(\)/g) || []).length, 3, 'définie, et notée aux deux envois suivis');
   assert.match(cppSrc('PlyoPrinterStatus.cpp'), /ended\["phase"\]\s*= "end"/);
   const status = cppSrc('PlyoPrinterStatus.cpp');
@@ -799,7 +802,10 @@ test('lot 1 · UX-06 : l’envoi est gardé dans le projet, plus en mémoire par
   assert.match(note, /delete conv\.project\.send;\s*sendRecord\(\);\s*scheduleSave\(\);/, 'un nouvel envoi remplace le précédent et s’enregistre');
   const success = page.slice(page.indexOf('function spoolSuccess'), page.indexOf('function onSpoolSuccessDone'));
   assert.match(success, /var s = sendRecord\(\);/, 'sans envoi noté : la bobine du projet, comme remember_success');
-  assert.match(success, /if \(!s\.spool\) \{ noteLine\('Je ne retiens les réglages que d’une bobine/, 'rien à retenir : on le dit');
+  // Sans bobine : la phrase vient après la réponse du slicer (corrections marquées ou non), mais elle est toujours dite.
+  assert.match(success, /if \(!s\.spool\) \{ projectUI\.noSpoolNote = conv\.id; return; \}/);
+  const result = page.slice(page.indexOf('function onOutcomeResult'), page.indexOf('function onOutcomeResult') + 2000);
+  assert.match(result, /noteLine\('Je ne retiens les réglages que d’une bobine/, 'rien à retenir : on le dit');
   const record = page.slice(page.indexOf('function sendRecord'), page.indexOf('function noteSendWatched'));
   assert.match(record, /f\.spool\.id && !\(Array\.isArray\(p\.canvas\) && p\.canvas\.length\)/);
   // Réouverture : la fin lue pendant l'absence est redemandée au slicer, qui la garde par id d'envoi.
@@ -821,12 +827,13 @@ test('lot 1 · UX-04 et UX-05 : Résultat en cours, puis « Oui, c’est réussi
   const printing = fakeUi().el('div');
   S.render(printing, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: '', endAsk: null, handlers: h });
   assert.match(textOf(printing), /Quand elle est finie, dis-moi si c’est réussi\./);
-  assert.deepEqual(labels(printing), ['C’est fini : réussi', 'C’est fini : raté', 'Nouvelle pièce', 'Réimprimer cette pièce']);
+  // Lot 4 (UX-22) : les mêmes libellés que la carte et la fin suivie.
+  assert.deepEqual(labels(printing), ['Oui, c’est réussi', 'Non, c’est raté', 'Nouvelle pièce', 'Réimprimer cette pièce']);
   // Fin lue : le « Oui » est le bouton plein, la carte ne garde que « Non ».
   const finished = fakeUi().el('div');
   S.render(finished, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', endAsk: J.endQuestion('finished', 'K2', 'a.gcode'), handlers: h });
-  assert.ok(!labels(finished).includes('Oui'));
-  assert.ok(labels(finished).includes('Non, pas vraiment'));
+  assert.ok(!labels(finished).includes('Oui, c’est réussi'));
+  assert.ok(labels(finished).includes('Non, c’est raté'));
   assert.ok(labels(finished).includes('Photo depuis l’ordinateur (utilise ta jauge)'));
   // « Raté » dit : les photos, avec leur coût, et le changement d'avis.
   const failed = fakeUi().el('div');

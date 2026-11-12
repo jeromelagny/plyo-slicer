@@ -1515,10 +1515,11 @@
     },
     skip: function () { $('preflight-slot').textContent = ''; preflightFix = null; plateChecked = 'ignored'; setTourStep('print'); },
     exportFile: function () { runAction('export'); },
-    started: function () { rememberHabit(); journalPart(''); delete conv.project.success; setTourStep('after'); },
+    // L'étape Résultat commence : les corrections en attente de ce projet sont celles de cette impression (sa question les couvre).
+    started: function () { rememberHabit(); journalPart(''); delete conv.project.success; setTourStep('after'); window.orca.postMessage({ type: 'outcome_printed', conv: conv.id }); },
     photo: function () { pickFiles(); },
-    success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; spoolSuccess(); markSendAnswered(); projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
-    failed: function () { spoolFailure(); markSendAnswered(); renderProject(); },
+    success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; spoolSuccess(); markCorrections('ok'); markSendAnswered(); projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
+    failed: function () { spoolFailure(); markCorrections('bad'); markSendAnswered(); renderProject(); },
     newPart: function () { newConversation(); },
     endChoice: function (id) { answerEnd(id); },
     reprint: function () { delete conv.project.success; setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
@@ -2043,7 +2044,12 @@
       reliableResult = function (res) {
         if (!res.ok) { back.disabled = false; noteLine(res.text || 'Je n’ai pas pu remettre ces réglages.', 'error', 'alert', 'guide'); return; }
         back.remove();
-        noteLine('Réglages réussis remis pour ' + pend.spool.name + '.' + (Logic.savedText(res) ? ' ' + Logic.savedText(res) : ''), 'ok', 'undo', 'guide');
+        var line = noteLine('Réglages réussis remis pour ' + pend.spool.name + '.' + (Logic.savedText(res) ? ' ' + Logic.savedText(res) : ''), 'ok', 'undo', 'guide');
+        // « Annuler » : la remise est un lot comme un autre (identifiant rendu par le slicer).
+        if (res.undo_id) line.appendChild(undoButton('Annuler', function (u) {
+          pendingSheet = { kind: 'undo', onResult: function (ok, t) { if (!ok) { u.disabled = false; noteLine(t, 'error', 'alert', 'guide'); return; } line.remove(); noteLine('Réglages d’avant remis.', 'ok', 'undo', 'guide'); } };
+          postRequest({ type: 'undo', undo_id: res.undo_id });
+        }));
       };
       window.orca.postMessage({ type: 'restore_reliable' });
     }, 'link');
@@ -2058,10 +2064,42 @@
     sendRecord();
     scheduleSave();
   }
-  // La question de l'étape Résultat ; elle se tait quand la carte « Ça a marché ? » est déjà là (elle note aussi la bobine).
+  // La question de l'étape Résultat. La carte « Ça a marché ? » ne la double plus : elle se tait pour les corrections de
+  // cette impression (Logic.outcomeCard), et cette question marque aussi leur mémoire (markCorrections).
   function spoolAsk() {
     var s = sendOf();
-    return s && s.spool && !conv.project.success && !$('outcome-slot').childNodes.length ? s.spool.name : '';
+    return s && s.spool && !conv.project.success ? s.spool.name : '';
+  }
+  // La réponse de Résultat (ou de la fin suivie) marque aussi la mémoire des corrections de cette impression, le journal de la
+  // pièce et leurs réglages réussis : une seule question par impression. Changement d'avis (« Oui » après « Non ») : les
+  // mêmes corrections, gardées avec l'envoi (`corrections`). Réponse du slicer : onOutcomeResult.
+  function markCorrections(outcome) {
+    var s = sendRecord();
+    if (s.corrections_outcome === outcome) { if (projectUI.noSpoolNote === conv.id) projectUI.noSpoolNote = null; return; }
+    var ats = s.corrections_outcome && Array.isArray(s.corrections) ? s.corrections : [];
+    s.corrections_outcome = outcome;
+    scheduleSave();
+    window.orca.postMessage({ type: 'outcome_result', conv: conv.id, outcome: outcome, ats: ats });
+  }
+  function onOutcomeResult(msg) {
+    var items = Array.isArray(msg.items) ? msg.items : [];
+    var mine = conv && conv.id === msg.conv;
+    if (mine && items.length) {
+      var s = sendRecord();
+      s.corrections = items.map(function (it) { return it.at; });
+      scheduleSave();
+    }
+    var noSpool = projectUI.noSpoolNote === msg.conv;
+    if (noSpool) projectUI.noSpoolNote = null;
+    if (msg.outcome === 'ok') {
+      if (items.length && noSpool) noteLine(msg.reliable ? 'C’est noté : ces réglages ont marché. Je m’en souviendrai pour mes prochains conseils, et je les garde comme réglages réussis de ce filament.'
+        : 'C’est noté : ces réglages ont marché, je m’en souviendrai pour mes prochains conseils.', 'ok', 'check', 'guide');
+      else if (noSpool) noteLine('Je ne retiens les réglages que d’une bobine choisie à l’étape Filament : rien de noté pour cette impression.', '', 'info', 'guide');
+      return;
+    }
+    // « Non, c'est raté » avec des corrections en cause : la carte « Ça n'a pas marché » (remettre, réglages réussis, autre
+    // piste, photo). Sans correction, l'étape Résultat propose déjà la photo.
+    if (msg.outcome === 'bad' && mine && items.length) renderOutcomeBad(Logic.mergeCorrections(items), '');
   }
   // « Oui, c'est réussi » : le slicer retient les réglages du dernier envoi, seulement s'il est celui de cette bobine (`spool`),
   // récent et pas déclaré raté ; `change_of_mind` : « Oui » après « Non » pour ce même envoi. Sa réponse dit ce qui est noté,
@@ -2069,7 +2107,8 @@
   function spoolSuccess() {
     var s = sendRecord();
     if (s.marked) return;
-    if (!s.spool) { noteLine('Je ne retiens les réglages que d’une bobine choisie à l’étape Filament : rien de noté pour cette impression.', '', 'info', 'guide'); return; }
+    // Sans bobine : la phrase dépend des corrections marquées par la même réponse (onOutcomeResult).
+    if (!s.spool) { projectUI.noSpoolNote = conv.id; return; }
     s.marked = true;
     scheduleSave();
     window.orca.postMessage({ type: 'spool_success', spool: s.spool.id, change_of_mind: !!s.failed });
@@ -2753,15 +2792,19 @@
         var reopen = button('Conversation', function () { closeDrawer(); openConversation(e.conv); }, 'btn ghost sm', 'chat');
         reopen.title = fr('Rouvrir la conversation');
         acts.appendChild(reopen);
-        var again = Logic.reapplyChanges(e, here);
+        var again = Logic.reapplyChanges(e, here, lastValues && lastValues.params);
         if (again) {
           var re = button('Réappliquer', function () {
             re.disabled = true;
-            pendingSheet = { kind: 'apply', onResult: function (ok, text) {
-              noteLine(ok ? 'Réglages de « ' + g.part + ' » réappliqués.' : text, ok ? 'ok' : 'error', ok ? 'check' : 'alert');
-              if (ok) closeDrawer(); else re.disabled = false;
-            } };
-            postRequest({ type: 'apply', changes: again, why: 'Journal : ' + g.part });
+            // Lot du catalogue (clés d'Orca) ou de l'ancienne liste, vérifié par le slicer comme les autres, avec son « Annuler ».
+            postBatches(Logic.batchesOf(again), 'Journal : ' + g.part, null, function (ok, text, ids) {
+              if (!ok) { re.disabled = false; noteLine(text, 'error', 'alert'); return; }
+              closeDrawer();
+              var line = noteLine('Réglages de « ' + g.part + ' » réappliqués.', 'ok', 'check');
+              if (ids.length) line.appendChild(undoButton('Annuler', function (u) {
+                undoBatches(ids, function (okU, t) { if (!okU) { u.disabled = false; noteLine(t, 'error', 'alert'); return; } line.remove(); noteLine('Réglages d’avant remis.', 'ok', 'undo'); });
+              }));
+            });
           }, 'btn ghost sm', 'wand');
           re.title = fr('Remettre ces réglages sur ton profil actuel');
           acts.appendChild(re);
@@ -3998,16 +4041,25 @@
   // anonymement seulement si l'utilisateur a coché la case (désactivée par défaut).
   var outcomeAsked = {};      // entrées déjà montrées pendant cette session
   var afterConvLoaded = null; // suite à donner une fois une conversation rouverte (réponse « Non »)
+  var outcomeOpening = null;  // correction dont on ouvre le projet pour répondre à sa question (repli : la carte, si l'ouverture échoue)
   function askOutcome() { window.orca.postMessage({ type: 'outcome_pending' }); }
   setInterval(askOutcome, 3 * 60 * 60 * 1000);
+  // L'étape Résultat du projet ouvert pose sa question (pas encore répondue) : elle couvre les corrections de cette impression.
+  function resultAsks() {
+    return !!conv && PlyoJourney.currentStep(conv.project) === 'resultat' && !conv.project.success && !(sendOf() && sendOf().failed);
+  }
   function onOutcomePending(items) {
-    var item = Logic.firstDueOutcome((items || []).filter(function (it) { return !outcomeAsked[it.at]; }), new Date());
-    if (!item) return;
-    outcomeAsked[item.at] = true;
-    renderOutcome(item);
+    var card = Logic.outcomeCard((items || []).filter(function (it) { return !outcomeAsked[it.at]; }), new Date(), conv && conv.id, resultAsks());
+    if (!card) return;
+    outcomeAsked[card.item.at] = true;
+    renderOutcome(card.item, card.open);
   }
   var outcomeSeq = 0;
-  function renderOutcome(item) {
+  // Libellés uniques de la question, partout : carte, étape Résultat, fin suivie (UX-22).
+  var OUTCOME_YES = 'Oui, c’est réussi', OUTCOME_NO = 'Non, c’est raté', OUTCOME_LATER = 'Pas encore imprimé';
+  // `open` : la correction a été imprimée depuis un projet qui n'est pas ouvert ; sa question est dans ce projet (une seule
+  // question par impression), la carte l'ouvre. Projet introuvable : la carte pose la question ici.
+  function renderOutcome(item, open) {
     var slot = $('outcome-slot');
     slot.textContent = '';
     var q = Logic.outcomeQuestion(item, function (id) { var p = paramOf(id); return p.label === id ? null : p; });
@@ -4022,6 +4074,28 @@
     title.id = titleId;
     head.appendChild(title);
     box.appendChild(head);
+    if (open) {
+      var day = Logic.dayText(item.printed || item.at);
+      box.appendChild(el('p', '', (day ? 'Le ' + day + ', tu' : 'Tu') + ' as lancé une impression avec les réglages changés' + (item.why ? ' pour « ' + item.why + ' »' : '') +
+        '. Ouvre son projet pour me dire si c’est réussi.'));
+      var go = button('Ouvrir le projet', function () {
+        go.disabled = true;
+        outcomeOpening = item;
+        afterConvLoaded = function () {
+          outcomeOpening = null;
+          slot.textContent = '';
+          applyTab('show-guide');
+          // Le projet ne pose plus la question (déjà répondue, ou plus à l'étape Résultat) : la carte la pose elle-même.
+          if (!resultAsks()) renderOutcome(item, false);
+          else $('project-card').scrollIntoView({ block: 'nearest' });
+        };
+        openConversation(item.conv);
+        setTimeout(function () { if (outcomeOpening === item && go.isConnected) go.disabled = false; }, 4000); // ouverture refusée (demande en cours) : on peut réessayer
+      }, 'btn', 'folder');
+      box.appendChild(go);
+      slot.appendChild(box);
+      return;
+    }
     box.appendChild(el('p', '', q.text));
     if (q.changes.length) {
       var list = el('ul', 'meta');
@@ -4051,23 +4125,64 @@
         apiFetch('/api/outcomes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Logic.outcomePayload(item, outcome)) }).catch(function () {});
       if (outcome === 'ok') noteLine('Super ! Je m’en souviendrai pour mes prochains conseils sur cette imprimante.', 'ok', 'check');
       if (outcome === 'bad') renderOutcomeBad(item, note);
-      if (conv) renderProject(); // carte partie (ou remplacée) : la question de l'étape Résultat suit (spoolAsk)
+      if (outcome === 'later') noteLine('D’accord : je te redemanderai plus tard.', '', 'info', 'guide');
+      if (conv) renderProject();
     }
     // Oui et Non pèsent le même poids : la carte ne souffle pas la réponse.
     var answers = el('div', 'answers');
-    answers.appendChild(button('Oui', function () { answer('ok'); }, 'btn ghost'));
-    answers.appendChild(button('Non', function () { answer('bad'); }, 'btn ghost'));
+    answers.appendChild(button(OUTCOME_YES, function () { answer('ok'); }, 'btn ghost', 'check'));
+    answers.appendChild(button(OUTCOME_NO, function () { answer('bad'); }, 'btn ghost', 'x'));
     box.appendChild(said);
     box.appendChild(answers);
-    box.appendChild(button('Pas encore imprimé, redemande-moi plus tard', function () { answer('later'); }, 'link'));
+    box.appendChild(button(OUTCOME_LATER, function () { answer('later'); }, 'link'));
     box.appendChild(shareLabel);
     slot.appendChild(box);
-    if (conv) renderProject(); // la question de l'étape Résultat se tait sous cette carte (spoolAsk)
   }
 
-  // « Ça n'a pas marché » : les réglages essayés sont encore appliqués. On propose de les retirer (sans appel à
-  // l'IA), puis de chercher une autre piste ou d'envoyer une photo.
+  // Lots d'un retour arrière ou d'une réapplication (catalogue, puis ancienne liste : Logic.batchesOf), envoyés l'un après
+  // l'autre, chacun vérifié par le slicer comme un lot de l'IA. `extra` : champs ajoutés à chaque lot (`revert`).
+  // `done(ok, text, undoIds)` à la fin, ou au premier refus (les lots déjà passés restent annulables).
+  function postBatches(batches, why, extra, done) {
+    var names = Logic.namesForApply(null, lastValues && lastValues.context), undoIds = [];
+    (function next(i) {
+      if (i >= batches.length) { done(true, '', undoIds); return; }
+      pendingSheet = { kind: 'apply', onResult: function (ok, text, result) {
+        if (!ok) { done(false, text, undoIds); return; }
+        if (result && result.undo_id) undoIds.push(result.undo_id);
+        next(i + 1);
+      } };
+      postRequest(Object.assign({ type: 'apply', changes: batches[i], print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: why }, extra || {}));
+    })(0);
+  }
+  // « Annuler » d'une remise en plusieurs lots : le plus récent d'abord. `done(ok, text)`.
+  function undoBatches(ids, done) {
+    (function next(i) {
+      if (i < 0) { done(true, ''); return; }
+      pendingSheet = { kind: 'undo', onResult: function (ok, t) { if (!ok) { done(false, t); return; } next(i - 1); } };
+      postRequest({ type: 'undo', undo_id: ids[i] });
+    })(ids.length - 1);
+  }
+  // Réglages réussis remis (restore_reliable) : ce qui a été fait, et « Annuler » avec l'identifiant rendu par le slicer.
+  // `status` : où dire un refus d'annulation.
+  function reliableDone(res, status) {
+    var done = el('div', 'undo-row');
+    var saved = Logic.savedText(res);
+    done.appendChild(doneLabel((res.text || 'Réglages réussis remis.') + (saved ? ' ' + saved : ''), 'undo'));
+    if (res.undo_id) done.appendChild(undoButton('Annuler', function (u) {
+      pendingSheet = { kind: 'undo', onResult: function (ok, t) {
+        if (!ok) { u.disabled = false; status.textContent = fr(t); status.classList.remove('hidden'); return; }
+        done.replaceWith(doneLabel('Réglages d’avant remis.', 'undo'));
+      } };
+      postRequest({ type: 'undo', undo_id: res.undo_id });
+    }));
+    return done;
+  }
+
+  // « Ça n'a pas marché » : les réglages essayés sont peut-être encore appliqués. On relit les réglages actuels (relevé du
+  // catalogue) et on propose de remettre ceux d'avant là où la valeur essayée est encore en place (sans appel à l'IA), les
+  // réglages réussis, une autre piste ou une photo. Un réglage retouché depuis est laissé tel quel, et c'est dit.
   function renderOutcomeBad(item, note) {
+    if (!item) return;
     var slot = $('outcome-slot');
     slot.textContent = '';
     var box = el('div', 'card');
@@ -4085,46 +4200,63 @@
     close.appendChild(icon('x', 14));
     head.appendChild(close);
     box.appendChild(head);
-    var revert = Logic.revertChanges(item, lastValues && lastValues.params);
-    box.appendChild(el('p', '', revert.length
-      ? 'C’est noté, je ne te reproposerai pas ces réglages. Ils sont encore appliqués : tu peux remettre ceux d’avant, puis on cherche une autre piste.'
-      : 'C’est noté, je ne te reproposerai pas ces réglages. Tes réglages ont déjà changé depuis : on peut chercher une autre piste.'));
+    var lead = el('p', '', 'Je relis tes réglages…');
+    box.appendChild(lead);
     var acts = el('div', 'stack');
     var status = el('p', 'fail-text hidden');
-    if (revert.length) {
-      var undo = button(revert.length > 1 ? 'Remettre mes anciens réglages' : 'Remettre mon ancien réglage', function () {
-        undo.disabled = true;
-        status.classList.add('hidden');
-        pendingSheet = { kind: 'apply', onResult: function (ok, text) {
-          // Valeur d'avant hors des plages d'aujourd'hui : le slicer refuse, et on montre pourquoi.
-          if (!ok) { undo.disabled = false; status.textContent = fr(text); status.classList.remove('hidden'); return; }
-          var done = el('div', 'undo-row');
-          done.appendChild(doneLabel('Anciens réglages remis. Découpe à nouveau la plaque pour en tenir compte.', 'undo'));
-          done.appendChild(button('Découper la plaque', function () { sliceAgain(); }, 'btn ghost sm', 'wand'));
-          undo.replaceWith(done);
-        } };
-        // Sans « ask » : un retour en arrière ne doit pas reposer la question « Ça a marché ? ».
-        postRequest({ type: 'apply', revert: true, changes: revert, why: 'Retour aux réglages d’avant' + (item.why ? ' (' + item.why + ')' : '') });
-      }, 'btn', 'undo');
-      acts.appendChild(undo);
+    var revertSlot = el('div');
+    acts.appendChild(revertSlot);
+    var why = 'Retour aux réglages d’avant' + (item.why ? ' (' + item.why + ')' : '');
+    // Relit les réglages actuels, puis dit ce qui peut être remis (et ce qui a été retouché depuis).
+    function fillRevert() {
+      aiContext().then(function (ctx) {
+        if (!box.isConnected) return;
+        var plan = Logic.revertPlan(item, lastValues && lastValues.params, ctx && ctx.snapshot ? ctx.snapshot : null);
+        lead.textContent = fr(Logic.revertText(plan));
+        revertSlot.textContent = '';
+        if (!plan.changes.length) {
+          if (plan.unread.length) revertSlot.appendChild(button('Relire mes réglages', function () { lead.textContent = fr('Je relis tes réglages…'); fillRevert(); }, 'btn ghost', 'undo'));
+          return;
+        }
+        var undo = button(plan.changes.length > 1 ? 'Remettre mes anciens réglages' : 'Remettre mon ancien réglage', function () {
+          undo.disabled = true;
+          status.classList.add('hidden');
+          // Sans « ask » : un retour en arrière ne doit pas reposer la question « Ça a marché ? ». Valeur d'avant hors des
+          // plages d'aujourd'hui : le slicer refuse, et on montre pourquoi.
+          postBatches(Logic.batchesOf(plan.changes), why, { revert: true }, function (ok, text, ids) {
+            if (!ok) { undo.disabled = false; status.textContent = fr(text); status.classList.remove('hidden'); return; }
+            var done = el('div', 'undo-row');
+            done.appendChild(doneLabel('Anciens réglages remis. Découpe à nouveau la plaque pour en tenir compte.', 'undo'));
+            done.appendChild(button('Découper la plaque', function () { sliceAgain(); }, 'btn ghost sm', 'wand'));
+            if (ids.length) done.appendChild(undoButton('Annuler', function (u) {
+              undoBatches(ids, function (okU, t) {
+                if (!okU) { u.disabled = false; status.textContent = fr(t); status.classList.remove('hidden'); return; }
+                fillRevert(); // les réglages essayés sont de nouveau en place : la carte le redit, avec son bouton
+              });
+            }));
+            undo.replaceWith(done);
+          });
+        }, 'btn', 'undo');
+        revertSlot.appendChild(undo);
+      });
     }
-    // Version fiable : les réglages d'une impression qui avait marché, gardés par Plyo pour cette imprimante + ce filament.
+    fillRevert();
+    // Réglages réussis : ceux du filament lors de la dernière impression réussie (bobine, ou imprimante + filament).
     var reliableSlot = el('div');
     acts.appendChild(reliableSlot);
     askReliable(function (info) {
-      if (!info.available) return;
-      var sp = conv && conv.project.filament && conv.project.filament.spool; // bobine : « réglages réussis », plus de « version fiable »
-      var back = button(sp ? PlyoSpools.restoreLabel(info.date) : 'Revenir à ma dernière version fiable', function () {
+      if (!info.available || !box.isConnected) return;
+      reliableSlot.appendChild(el('p', 'muted small', Logic.reliablePreview(info)));
+      if (info.count === 0) return;
+      var back = button(PlyoSpools.restoreLabel(info.date), function () {
         back.disabled = true;
         status.classList.add('hidden');
         reliableResult = function (res) {
           if (!res.ok) { back.disabled = false; status.textContent = fr(res.text); status.classList.remove('hidden'); return; }
-          var done = el('div', 'undo-row');
-          done.appendChild(doneLabel(Logic.savedText(res) || res.text, 'undo'));
-          back.replaceWith(done);
+          back.replaceWith(reliableDone(res, status));
         };
         window.orca.postMessage({ type: 'restore_reliable' });
-      }, 'btn', 'undo');
+      }, 'btn ghost', 'undo');
       reliableSlot.appendChild(back);
     });
     acts.appendChild(button('Chercher une autre piste', function () {
@@ -4133,16 +4265,18 @@
         noteInput.focus();
         noteInput.setSelectionRange(noteInput.value.length, noteInput.value.length);
       };
+      applyTab('show-chat');
       // La conversation d'origine se recharge sans attendre : la suite vient une fois qu'elle est affichée.
-      if (item.conv && (!conv || conv.id !== item.conv)) { afterConvLoaded = followUp; openConversation(item.conv); }
+      if (item.conv && (!conv || conv.id !== item.conv)) { afterConvLoaded = function () { applyTab('show-chat'); followUp(); }; openConversation(item.conv); }
       else followUp();
-    }, revert.length ? 'btn ghost' : 'btn', 'search'));
+    }, 'btn ghost', 'search'));
     box.appendChild(acts);
     box.appendChild(status);
-    box.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () {
-      noteInput.value = Logic.retryPrompt(item, note);
-      pickFiles();
-    }, 'link', 'camera'));
+    // Montrer la pièce : les deux mêmes boutons que partout (avec leur coût).
+    var photos = el('div', 'row-acts');
+    photos.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { noteInput.value = Logic.retryPrompt(item, note); openPhone(); }, 'link', 'camera'));
+    photos.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { noteInput.value = Logic.retryPrompt(item, note); pickFiles(); }, 'link', 'camera'));
+    box.appendChild(photos);
     slot.appendChild(box);
   }
 
@@ -5188,6 +5322,12 @@
     } else if (msg.type === 'reliable') {
       if (reliableWaiter) { var rw = reliableWaiter; reliableWaiter = null; rw(msg); }
     } else if (msg.type === 'restore_reliable_result') {
+      // Réglages posés par l'assistant pour ce projet (comme un lot appliqué) : jamais présentés comme tes modifications.
+      if (conv && msg.ok && msg.undo_id && Array.isArray(msg.written) && conv.project.assistant && typeof conv.project.assistant === 'object') {
+        conv.project.assistant = Logic.noteWritten(conv.project.assistant, msg.written, BATCH_TAG + ':' + msg.undo_id);
+        scheduleSave();
+      }
+      if (msg.ok && msg.undo_id) orcaUI.changedAt = Date.now(); // un réglage vient de changer (découpe à relancer)
       if (reliableResult) { var rr = reliableResult; reliableResult = null; rr(msg); }
     } else if (msg.type === 'manual_edits') {
       if (manualWaiter) { var waiter = manualWaiter; manualWaiter = null; waiter(msg.items || []); }
@@ -5236,6 +5376,8 @@
       onLinkDialogClosed(msg);
     } else if (msg.type === 'outcome_pending') {
       onOutcomePending(msg.items);
+    } else if (msg.type === 'outcome_result_done') {
+      onOutcomeResult(msg);
     } else if (msg.type === 'preflight') {
       onPreflight(msg.data);
     } else if (msg.type === 'slice_result') {
@@ -5311,6 +5453,8 @@
       if (loaded.restore) restoreConversation(msg.id, msg.conversation);
       if (loaded.followUp) then();
       if (loaded.error) noteLine('Cette conversation n’a pas pu être ouverte.', 'error', 'alert');
+      // Projet d'une correction introuvable : sa question « Ça a marché ? » est posée ici, elle n'est jamais perdue.
+      if (!loaded.restore && outcomeOpening && outcomeOpening.conv === msg.id) { var lost = outcomeOpening; outcomeOpening = null; renderOutcome(lost, false); }
     }
   });
 

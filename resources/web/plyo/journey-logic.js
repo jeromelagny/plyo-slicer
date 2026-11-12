@@ -290,7 +290,7 @@
     var f = file ? '« ' + file + ' »' : '';
     switch (verdict) {
       case 'finished': return { verdict: verdict, text: machine + ' a fini d’imprimer ' + (f || 'ta pièce') + '. Ça s’est bien passé ?',
-        choices: [{ id: 'yes', label: 'Oui' }, { id: 'no', label: 'Non, pas vraiment' }] };
+        choices: [{ id: 'yes', label: 'Oui, c’est réussi' }, { id: 'no', label: 'Non, c’est raté' }] };
       case 'cancelled': return { verdict: verdict, text: 'L’impression ' + (f ? 'de ' + f + ' ' : '') + 'a été arrêtée sur ' + machine + '. Qu’est-ce qui s’est passé ? Je suis là pour t’aider à trouver la cause et à la régler pour la prochaine fois.',
         choices: END_REASONS.map(function (r) { return { id: r.id, label: r.label }; }) };
       case 'error': return { verdict: verdict, text: machine + ' signale une erreur et l’impression s’est arrêtée. Regarde son écran et dis-moi ce qu’il affiche : je t’aide à comprendre.',

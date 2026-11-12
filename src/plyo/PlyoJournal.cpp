@@ -1,5 +1,6 @@
 #include "PlyoJournal.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoMemory.hpp"
 #include "PlyoSanitize.hpp"
 #include "PlyoStore.hpp"
 
@@ -112,6 +113,14 @@ void set_outcome(const std::string& conv, const std::string& outcome, const std:
     Store::write(file(), all);
 }
 
-nlohmann::json list() { return load(); }
+nlohmann::json list()
+{
+    nlohmann::json all = load();
+    // Une fiche écrite avant le lot 4 n'a pas le libellé de ses réglages : le titre du catalogue, jamais une clé brute.
+    for (nlohmann::json& e : all)
+        if (e.contains("changes"))
+            e["changes"] = Memory::with_labels(e["changes"]);
+    return all;
+}
 
 }} // namespace Plyo::Journal

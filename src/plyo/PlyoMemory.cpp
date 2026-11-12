@@ -1,5 +1,7 @@
 #include "PlyoMemory.hpp"
+#include "PlyoCatalog.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoMemoryLogic.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoSanitize.hpp"
 #include "PlyoStore.hpp"
@@ -46,8 +48,18 @@ std::string note_applied(const nlohmann::json& before, const nlohmann::json& aft
     nlohmann::json changes = nlohmann::json::array();
     for (const nlohmann::json& p : Json::arr(after, "params"))
         for (const nlohmann::json& q : Json::arr(before, "params"))
-            if (Json::str(q, "id") == Json::str(p, "id") && !same(q["value"], p["value"]))
-                changes.push_back({{"id", p["id"]}, {"before", q["value"]}, {"after", p["value"]}});
+            if (Json::str(q, "id") == Json::str(p, "id") && !same(q["value"], p["value"])) {
+                nlohmann::json c{{"id", p["id"]}, {"before", q["value"]}, {"after", p["value"]}};
+                // Le libellé et l'unité du réglage, pour que la question « Ça a marché ? » et « Mes pièces » parlent comme le
+                // panneau ; `key` : réglage du catalogue (clé d'Orca), remis par un lot du catalogue.
+                if (!Json::str(p, "label").empty())
+                    c["label"] = Json::str(p, "label", 120);
+                if (!Json::str(p, "unit").empty())
+                    c["unit"] = Json::str(p, "unit", 20);
+                if (Json::boolean(p, "catalog", false))
+                    c["key"] = p["id"];
+                changes.push_back(c);
+            }
     if (changes.empty())
         return std::string();
     const std::string key  = machine_key(after);
@@ -121,6 +133,41 @@ void carry_over(const std::string& old_key, const std::string& new_key)
     Store::write(file(), all);
 }
 
+nlohmann::json with_labels(const nlohmann::json& changes)
+{
+    return MemoryLogic::with_labels(changes, [](const std::string& key) { return Catalog::policy().title(key); });
+}
+
+static std::string now_iso() { return boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time()); }
+
+int note_printed(const std::string& conv)
+{
+    nlohmann::json    all = load_all();
+    const std::string key = machine_key(SettingsBridge::read_values());
+    if (!all.contains(key))
+        return 0;
+    const int marked = MemoryLogic::mark_printed(all[key], conv, now_iso());
+    if (marked > 0)
+        Store::write(file(), all);
+    return marked;
+}
+
+nlohmann::json set_result(const std::string& conv, const std::string& outcome, const std::vector<std::string>& ats)
+{
+    nlohmann::json    all = load_all();
+    const std::string key = machine_key(SettingsBridge::read_values());
+    if (!all.contains(key))
+        return nlohmann::json::array();
+    nlohmann::json marked = MemoryLogic::mark_result(all[key], conv, outcome, ats);
+    if (marked.empty() || !Store::write(file(), all))
+        return nlohmann::json::array();
+    for (nlohmann::json& e : marked) {
+        e["machine"] = key;
+        e["changes"] = with_labels(Json::arr(e, "changes"));
+    }
+    return marked;
+}
+
 nlohmann::json pending()
 {
     const nlohmann::json all    = load_all();
@@ -141,7 +188,8 @@ nlohmann::json pending()
                     {"why", Json::str(e, "why")},
                     {"defect", Json::str(e, "defect")},
                     {"conv", Json::str(e, "conv")},
-                    {"changes", Json::arr(e, "changes")}});
+                    {"printed", Json::str(e, "printed")},
+                    {"changes", with_labels(Json::arr(e, "changes"))}});
     return out;
 }
 

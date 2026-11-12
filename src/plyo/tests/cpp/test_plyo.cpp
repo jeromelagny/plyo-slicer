@@ -22,6 +22,7 @@
 #include "../../PlyoProjectFilesLogic.hpp"
 #include "../../PlyoOrcaMessagesLogic.hpp"
 #include "../../PlyoConfigRulesLogic.hpp"
+#include "../../PlyoMemoryLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -510,7 +511,8 @@ TEST_CASE("Sanitize::reliable ne garde que des réglages sous forme de texte, pa
                          {"values", {{"print", {{"layer_height", "0.2"}, {"bad", 3}}}, {"filament", {{"fan_max_speed", "100"}}}, {"autre", {{"x", "y"}}}}}};
     const json out = Plyo::Sanitize::reliable(stored);
     CHECK(out["machine"] == "K2 | TPU");
-    CHECK(out["values"]["print"] == json{{"layer_height", "0.2"}});
+    // ROB-07 : la portée impression d'une version d'avant le lot 4 est ignorée à la lecture (réglages de la pièce d'alors).
+    CHECK_FALSE(out["values"].contains("print"));
     CHECK(out["values"]["filament"] == json{{"fan_max_speed", "100"}});
     CHECK_FALSE(out["values"].contains("autre"));
     CHECK(Plyo::Sanitize::reliable(json("n'importe quoi")).empty());
@@ -3499,4 +3501,106 @@ TEST_CASE("Project: sanitize garde les réglages posés par l'assistant, bornés
     CHECK(sanitize({{"assistant", nlohmann::json::object()}})["assistant"] == nlohmann::json::object()); // connu et vide
     CHECK_FALSE(sanitize({{"assistant", "oui"}}).contains("assistant"));
     CHECK_FALSE(sanitize(nlohmann::json::object()).contains("assistant")); // conversation ancienne : inconnu
+}
+
+// --- Lot 4 de l'audit : retours arrière, réglages réussis, une seule question par impression ---
+TEST_CASE("Lot 4 · Sanitize::reliable : ancienne version (deux portées) et nouvelle (filament seul) restent lisibles")
+{
+    const json old_format = {{"machine", "K2 | PLA"}, {"date", "2026-11-01"}, {"at", "2026-11-01T10:00:00"},
+                             {"values", {{"print", {{"spiral_mode", "1"}, {"wall_loops", "1"}}}, {"filament", {{"nozzle_temperature", "215"}}}}}};
+    const json a = Plyo::Sanitize::reliable(old_format);
+    CHECK(a["values"] == json{{"filament", {{"nozzle_temperature", "215"}}}});
+    const json new_format = {{"machine", "K2 | PLA"}, {"date", "2026-11-12"}, {"at", "2026-11-12T09:00:00"},
+                             {"values", {{"filament", {{"nozzle_temperature", "210"}, {"filament_flow_ratio", "0.95"}}}}}};
+    const json b = Plyo::Sanitize::reliable(new_format);
+    CHECK(b["values"]["filament"].size() == 2);
+    CHECK(b["at"] == "2026-11-12T09:00:00");
+    CHECK(Plyo::Sanitize::reliable(json{{"machine", "K2 | PLA"}})["values"] == json{{"filament", json::object()}});
+}
+
+TEST_CASE("Lot 4 · Sanitize::memory garde les changements avec ou sans libellé, clé et unité")
+{
+    const json stored = {{"K2 | PLA", json::array({
+        json{{"date", "2026-11-12"}, {"changes", json::array({json{{"id", "nozzle_temperature"}, {"key", "nozzle_temperature"}, {"label", "Température de buse"}, {"unit", "°C"}, {"before", 220}, {"after", 210}}})}},
+        json{{"date", "2026-11-01"}, {"changes", json::array({json{{"id", "sparse_infill_density"}, {"before", "15%"}, {"after", "20%"}}})}},
+        json{{"date", "2026-10-01"}, {"changes", json::array({json{{"id", "nozzle_temp"}, {"before", 220}, {"after", 215}}})}}})}};
+    const json m = Plyo::Sanitize::memory(stored);
+    REQUIRE(m["K2 | PLA"].size() == 3);
+    CHECK(m["K2 | PLA"][0]["changes"][0]["label"] == "Température de buse");
+    CHECK(m["K2 | PLA"][1]["changes"][0]["after"] == "20%");
+}
+
+TEST_CASE("Lot 4 · MemoryLogic::mark_printed : seules les corrections en attente de ce projet, une seule fois")
+{
+    json list = json::array({
+        json{{"at", "2026-11-12T10:00:00"}, {"conv", "c1"}, {"outcome", "pending"}},
+        json{{"at", "2026-11-12T09:00:00"}, {"conv", "c2"}, {"outcome", "pending"}},
+        json{{"at", "2026-11-11T09:00:00"}, {"conv", "c1"}, {"outcome", "ok"}},
+        json{{"at", "2026-11-10T09:00:00"}, {"conv", "c1"}, {"outcome", "pending"}, {"printed", "2026-11-10T12:00:00"}},
+        json{{"date", "2026-11-09"}, {"changes", json::array()}}});
+    CHECK(Plyo::MemoryLogic::mark_printed(list, "c1", "2026-11-12T11:00:00") == 1);
+    CHECK(list[0]["printed"] == "2026-11-12T11:00:00");
+    CHECK_FALSE(list[1].contains("printed"));
+    CHECK_FALSE(list[2].contains("printed"));
+    CHECK(list[3]["printed"] == "2026-11-10T12:00:00"); // déjà rattachée à une impression : inchangée
+    CHECK(Plyo::MemoryLogic::mark_printed(list, "c1", "2026-11-12T12:00:00") == 0);
+    CHECK(Plyo::MemoryLogic::mark_printed(list, "", "2026-11-12T12:00:00") == 0);
+    json bad = "abîmé";
+    CHECK(Plyo::MemoryLogic::mark_printed(bad, "c1", "x") == 0);
+}
+
+TEST_CASE("Lot 4 · MemoryLogic::mark_result : la réponse de Résultat marque les corrections de cette impression")
+{
+    json list = json::array({
+        json{{"at", "T3"}, {"conv", "c1"}, {"outcome", "pending"}},                    // appliquée pendant l'impression : pas celle-ci
+        json{{"at", "T2"}, {"conv", "c1"}, {"outcome", "pending"}, {"printed", "P"}},
+        json{{"at", "T1"}, {"conv", "c1"}, {"outcome", "unknown"}, {"printed", "P"}},
+        json{{"at", "T0"}, {"conv", "c1"}, {"outcome", "bad"}, {"printed", "P0"}},     // impression d'avant, déjà répondue
+        json{{"at", "T9"}, {"conv", "c2"}, {"outcome", "pending"}, {"printed", "P"}}});
+    const json marked = Plyo::MemoryLogic::mark_result(list, "c1", "bad", {});
+    REQUIRE(marked.size() == 2);
+    CHECK(marked[0]["at"] == "T2");
+    CHECK(marked[1]["at"] == "T1");
+    CHECK(list[0]["outcome"] == "pending");
+    CHECK(list[3]["outcome"] == "bad");
+    CHECK(list[4]["outcome"] == "pending");
+    // Changement d'avis (« Oui » après « Non ») : exactement les entrées marquées par la première réponse.
+    const json again = Plyo::MemoryLogic::mark_result(list, "c1", "ok", {"T2", "T1"});
+    CHECK(again.size() == 2);
+    CHECK(list[1]["outcome"] == "ok");
+    CHECK(list[2]["outcome"] == "ok");
+    CHECK(list[3]["outcome"] == "bad");
+    // Rien à marquer : réponse inconnue, projet absent.
+    CHECK(Plyo::MemoryLogic::mark_result(list, "c1", "later", {}).empty());
+    CHECK(Plyo::MemoryLogic::mark_result(list, "", "ok", {}).empty());
+}
+
+TEST_CASE("Lot 4 · MemoryLogic::with_labels : le titre du catalogue pour un ancien changement, jamais une clé brute")
+{
+    const auto title = [](const std::string& k) { return k == "nozzle_temperature" ? std::string("Température de buse") : std::string(); };
+    const json changes = json::array({json{{"id", "nozzle_temperature"}, {"before", 220}, {"after", 210}},
+                                      json{{"id", "nozzle_temperature"}, {"label", "Buse (libellé noté)"}},
+                                      json{{"id", "nozzle_temp"}, {"before", 220}, {"after", 215}},
+                                      json{{"key", "nozzle_temperature"}, {"id", "x"}}, "abîmé"});
+    const json out = Plyo::MemoryLogic::with_labels(changes, title);
+    CHECK(out[0]["label"] == "Température de buse");
+    CHECK(out[1]["label"] == "Buse (libellé noté)");
+    CHECK_FALSE(out[2].contains("label")); // identifiant de l'ancienne liste : le panneau a son libellé
+    CHECK(out[3]["label"] == "Température de buse");
+    CHECK(out[4] == "abîmé");
+    CHECK(Plyo::MemoryLogic::with_labels(json("x"), title) == json::array());
+}
+
+TEST_CASE("Lot 4 · Project: sanitize garde la réponse de Résultat pour les corrections, et lit les envois d'avant le lot 4")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json now = sanitize({{"send", {{"watch", "w1"}, {"corrections_outcome", "bad"},
+                                                   {"corrections", nlohmann::json::array({"2026-11-12T10:00:00", 3, "", std::string(80, 'x'), "2026-11-12T09:00:00"})}}}});
+    CHECK(now["send"]["corrections_outcome"] == "bad");
+    CHECK(now["send"]["corrections"] == nlohmann::json::array({"2026-11-12T10:00:00", "2026-11-12T09:00:00"}));
+    const nlohmann::json odd = sanitize({{"send", {{"corrections_outcome", "peut-être"}, {"corrections", "x"}}}});
+    CHECK(odd["send"] == nlohmann::json::object());
+    // Envoi écrit avant le lot 4 : rien de nouveau n'apparaît.
+    const nlohmann::json old = sanitize({{"send", {{"spool", {{"id", "s1"}, {"name", "PLA"}}}, {"failed", true}}}});
+    CHECK(old["send"] == nlohmann::json({{"spool", {{"id", "s1"}, {"name", "PLA"}}}, {"failed", true}}));
 }
