@@ -387,3 +387,53 @@ test('barre : seules les étapes faites parmi Machine, Pièce, Filament et Prép
   assert.deepEqual(open(J.steps(null)), [], 'étapes à venir et étape en cours : rien');
   assert.equal(J.revisitLabel({ label: 'Pièce' }), 'Revenir à l’étape Pièce');
 });
+
+test('fin d’impression : la question suit la façon dont elle s’est finie', () => {
+  const fin = J.endQuestion('finished', 'CR-10 SE', 'cube.gcode');
+  assert.equal(fin.text, 'CR-10 SE a fini d’imprimer « cube.gcode ». Ça s’est bien passé ?');
+  assert.deepEqual(fin.choices.map((c) => c.label), ['Oui', 'Non, pas vraiment']);
+  const stop = J.endQuestion('cancelled', 'CR-10 SE', 'cube.gcode');
+  assert.equal(stop.text, 'L’impression de « cube.gcode » a été arrêtée sur CR-10 SE. Qu’est-ce qui s’est passé ? Je suis là pour t’aider à trouver la cause et à la régler pour la prochaine fois.');
+  assert.deepEqual(stop.choices.map((c) => c.label), ['Ça se décollait du plateau', 'Le fil ne sortait plus bien', 'Ça faisait des fils ou des spaghettis', 'J’ai changé d’avis', 'Autre chose']);
+  const err = J.endQuestion('error', 'CR-10 SE', 'cube.gcode');
+  assert.equal(err.text, 'CR-10 SE signale une erreur et l’impression s’est arrêtée. Regarde son écran et dis-moi ce qu’il affiche : je t’aide à comprendre.');
+  assert.equal(err.choices.length, 1);
+  for (const v of ['unknown_end', 'lost', 'started', 'timeout', '']) assert.equal(J.endQuestion(v, 'CR-10 SE', 'cube.gcode'), null, v + ' : on ne prétend rien');
+  assert.equal(J.endQuestion('finished', 'K2', '').text, 'K2 a fini d’imprimer ta pièce. Ça s’est bien passé ?', 'sans nom de fichier');
+});
+
+test('fin d’impression : chaque réponse a sa suite', () => {
+  const act = (v, id) => J.endAction(v, id, 'cube.gcode');
+  assert.deepEqual(act('finished', 'yes'), { mark: 'success', chat: false, prefill: '', photo: false });
+  assert.deepEqual(act('finished', 'no'), { mark: 'failure', chat: true, prefill: '', photo: true });
+  assert.deepEqual(act('cancelled', 'bed'), { mark: 'failure', chat: true, prefill: 'L’impression de « cube.gcode » a été arrêtée : ça se décollait du plateau. Comment l’éviter la prochaine fois ?', photo: true });
+  assert.match(act('cancelled', 'flow').prefill, /: le fil ne sortait plus bien\./);
+  assert.match(act('cancelled', 'spaghetti').prefill, /: ça faisait des fils ou des spaghettis\./);
+  assert.deepEqual(act('cancelled', 'other'), { mark: 'failure', chat: true, prefill: '', photo: true }, '« Autre chose » : un champ vide, prêt à écrire');
+  assert.deepEqual(act('cancelled', 'mind'), { mark: '', chat: false, prefill: '', photo: false }, '« J’ai changé d’avis » ne marque rien');
+  assert.deepEqual(act('error', 'screen'), { mark: '', chat: true, prefill: 'Mon imprimante signale une erreur. Son écran affiche : ', photo: false }, 'une erreur n’est jamais marquée ratée d’office ; le champ attend ce que dit l’écran');
+});
+
+test('fin d’impression : pas de question deux fois pour le même envoi', () => {
+  const send = { end: { verdict: 'finished', file: 'cube.gcode' } };
+  assert.equal(J.endAsk(send, {}), true);
+  assert.equal(J.endAsk(Object.assign({}, send, { answered: true }), {}), false, 'Résultat déjà répondu');
+  assert.equal(J.endAsk(send, { success: true }), false, 'réussite déjà dite');
+  assert.equal(J.endAsk({ end: { verdict: 'unknown_end' } }, {}), false);
+  assert.equal(J.endAsk({}, {}), false, 'fin pas encore connue');
+  assert.equal(J.endAsk(null, {}), false);
+});
+
+test('fin d’impression : watchText se tait, la question prend le relais', () => {
+  for (const v of ['finished', 'cancelled', 'unknown_end', 'lost']) assert.equal(J.watchText(v, 'K2', 'a.gcode'), null, v);
+});
+
+test('fin d’impression : la consigne dit ce qui s’est passé, la question est dans l’étape', () => {
+  assert.equal(J.prompt('resultat', { ended: 'finished' }), 'Impression terminée');
+  assert.equal(J.prompt('resultat', { ended: 'cancelled' }), 'Impression arrêtée');
+  assert.equal(J.prompt('resultat', { ended: 'error' }), 'Ta machine signale une erreur');
+  assert.equal(J.prompt('resultat', {}), 'Alors, ça a marché ? Envoie-moi une photo', 'fin inconnue : la question d’aujourd’hui');
+  assert.equal(J.prompt('resultat', { ended: 'finished', success: true }), 'Bravo, c’est réussi !');
+  assert.equal(J.shortMachine({ preset: 'Creality CR-10 SE 0.4 nozzle', name: 'Creality CR-10 SE 0.4 nozzle' }), 'Creality CR-10 SE');
+  assert.equal(J.shortMachine({ name: 'Ma K2 Plus' }), 'K2 Plus');
+});

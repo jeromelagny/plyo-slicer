@@ -2,8 +2,8 @@
 // Pas d'état propre : index.html donne le contexte et les gestes. Aucun bouton plein ici : le bouton plein de l'étape est
 // celui de la ligne d'action (journey-view.js). Chargé par index.html (window.PlyoJourneySteps).
 (function (root) {
-  // ui : { el, button, icon }. opts : { step, ctx {sliced, linked, risks}, summary (texte durée et poids), handlers }.
-  // handlers : { skip(), exportFile(), started(), photo(), success(), failed(), changeMachine(), recheck() }. opts.machine : { name, reachable (true|false|null) }.
+  // ui : { el, button, icon }. opts : { step, ctx {sliced, linked, risks}, summary (texte durée et poids), endAsk (question de fin), handlers }.
+  // handlers : { skip(), exportFile(), started(), photo(), success(), failed(), endChoice(id), changeMachine(), recheck() }. opts.machine : { name, reachable (true|false|null) }.
   function line(ui, iconName, text, tone) {
     var row = ui.el('div', 'printer-step' + (tone ? ' ' + tone : ''));
     row.appendChild(ui.icon(iconName, 14));
@@ -63,6 +63,19 @@
     return checked === 'ignored' ? 'Points ignorés : ils restent à ta charge' : 'Vérification en cours';
   }
 
+  // Question de fin d'impression (PlyoJourney.endQuestion) : son texte et ses choix, tous discrets. À l'étape Résultat, ou
+  // en note du guide quand on est ailleurs (index.html).
+  function endCard(ui, q, onChoice) {
+    var box = ui.el('div', 'end-question');
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', 'Fin de l’impression');
+    box.appendChild(ui.el('p', '', q.text));
+    var acts = ui.el('div', 'printer-actions');
+    q.choices.forEach(function (c) { acts.appendChild(ui.button(c.label, function () { onChoice(c.id); }, 'btn ghost sm')); });
+    box.appendChild(acts);
+    return box;
+  }
+
   function render(slot, ui, opts) {
     var c = opts.ctx || {}, h = opts.handlers;
     slot.textContent = '';
@@ -109,7 +122,14 @@
       body.appendChild(acts);
     } else if (opts.step === 'resultat') {
       var after = ui.el('div', 'printer-actions');
-      if (!c.success) {
+      if (!c.success && opts.endAsk) {
+        // La machine a dit comment l'impression a fini : sa question remplace « Ça a marché ? ». Après une erreur, « Non,
+        // c'est raté » reste là : la bobine n'est marquée que si tu le dis.
+        body.appendChild(endCard(ui, opts.endAsk, h.endChoice));
+        if (opts.endAsk.verdict === 'error' && opts.spoolAsk && !opts.spoolNo) after.appendChild(ui.button('Non, c’est raté', h.failed, 'btn ghost sm', 'x'));
+        after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
+        after.appendChild(ui.button('Ajouter une photo depuis l’ordinateur', h.photo, 'btn ghost sm', 'camera'));
+      } else if (!c.success) {
         // opts.spoolAsk : nom de la bobine de l'envoi (ou de l'export) fait depuis le panneau. « Oui » retient ses réglages,
         // « Non » mène à la photo du défaut. opts.spoolNo : « Non » vient d'être répondu.
         if (opts.spoolNo) body.appendChild(ui.el('p', '', 'Dommage. Envoie-moi une photo de ta pièce : je te dis ce qui cloche et comment corriger.'));
@@ -126,6 +146,6 @@
     if (body.childNodes.length) slot.appendChild(body);
   }
 
-  root.PlyoJourneySteps = { render: render };
+  root.PlyoJourneySteps = { render: render, endCard: endCard };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.PlyoJourneySteps;
 })(typeof window !== 'undefined' ? window : globalThis);

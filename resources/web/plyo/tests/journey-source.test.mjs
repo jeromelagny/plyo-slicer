@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (name) => fs.readFileSync(path.join(dir, name), 'utf8');
+const cppSrc = (name) => fs.readFileSync(path.join(dir, '..', '..', '..', 'src', 'plyo', name), 'utf8');
 // Un bouton plein : classe « btn » ou « btn sm » sans « ghost » (les autres sont discrets).
 const FULL_BUTTON = /['"]btn(?: sm)?['"]/;
 
@@ -664,4 +665,53 @@ test('barre : chaque étape rouverte reprend le geste existant de la fiche', () 
   assert.match(fn, /key === 'preparer'\) \{ delete conv\.project\.success; setTourStep\('slice'\); \}/);
   assert.match(page, /renderBar\(\$\('journey-bar'\), ui, \{[^}]*onRevisit: revisitStep/);
   assert.match(page, /\.journey-go \{[^}]*cursor: pointer/);
+});
+
+test('fin d’impression : la question s’affiche avec ses choix et chaque choix a sa suite', () => {
+  const req = createRequire(import.meta.url);
+  const J = req('../journey-logic.js');
+  const S = req('../journey-steps.js');
+  for (const v of ['finished', 'cancelled', 'error']) {
+    const q = J.endQuestion(v, 'CR-10 SE', 'cube.gcode'), picked = [];
+    const card = S.endCard(fakeUi(), q, (id) => picked.push(id));
+    assert.ok(textOf(card).startsWith(q.text), v);
+    const buttons = all(card).filter((n) => n.tag === 'button');
+    assert.deepEqual(buttons.map((b) => b.textContent), q.choices.map((c) => c.label));
+    assert.ok(buttons.every((b) => b.className === 'btn ghost sm'), 'aucun bouton plein');
+    buttons.forEach((b) => b.on.click());
+    assert.deepEqual(picked, q.choices.map((c) => c.id));
+  }
+  // À l'étape Résultat, la question remplace « Ça a marché ? » ; sans elle, la question d'aujourd'hui reste.
+  const slot = fakeUi().el('div'), h = new Proxy({}, { get: () => () => {} });
+  S.render(slot, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', endAsk: J.endQuestion('finished', 'CR-10 SE', 'cube.gcode'), handlers: h });
+  assert.match(textOf(slot), /CR-10 SE a fini d’imprimer « cube\.gcode »/);
+  assert.doesNotMatch(textOf(slot), /Ça a marché avec/);
+  const plain = fakeUi().el('div');
+  S.render(plain, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', endAsk: null, handlers: h });
+  assert.match(textOf(plain), /Ça a marché avec Sunlu PLA/);
+});
+
+test('fin d’impression : le panneau la relie au suivi, aux gestes du Résultat et à la discussion', () => {
+  const page = read('index.html');
+  assert.match(page, /if \(msg\.phase === 'end'\) \{ onPrintEnd\(msg\); return; \}/);
+  const answer = page.slice(page.indexOf('function answerEnd'), page.indexOf('function openChatAbout'));
+  assert.match(answer, /a\.mark === 'success'\) stepHandlers\.success\(\)/, '« Oui » : la réussite de la bobine, comme au Résultat');
+  assert.match(answer, /a\.mark === 'failure'\) stepHandlers\.failed\(\)/, 'un vrai problème : la bobine marquée ratée');
+  assert.match(answer, /if \(a\.chat\) openChatAbout\(a\.prefill, a\.photo\)/);
+  const chat = page.slice(page.indexOf('function openChatAbout'), page.indexOf('function onCanvasSent'));
+  assert.match(chat, /applyTab\('show-chat'\)/);
+  assert.match(chat, /openPhone\(\)/, 'l’invitation à la photo reprend le téléphone');
+  assert.match(chat, /noteInput\.focus\(\)/);
+  assert.match(page, /success: function \(\) \{[^\n]*spoolSuccess\(\); markSendAnswered\(\);/, 'répondre au Résultat ferme la question de fin');
+  assert.match(page, /failed: function \(\) \{[^\n]*spoolFailure\(\); markSendAnswered\(\);/);
+  assert.equal((page.match(/noteSendWatched\(\)/g) || []).length, 3, 'définie, et notée aux deux envois suivis');
+  assert.match(cppSrc('PlyoPrinterStatus.cpp'), /ended\["phase"\]\s*= "end"/);
+  assert.match(cppSrc('PlyoAssistant.cpp'), /PrinterStatus::stop\(\)/, 'le suivi s’arrête avec Orca');
+});
+
+test('suivi Creality : le journal porte un préfixe fixe et jamais de code d’accès', () => {
+  const src = cppSrc('PlyoPrinterStatus.cpp');
+  assert.match(src, /BOOST_LOG_TRIVIAL\(info\) << "Plyo: état Creality : " << line/);
+  assert.match(src, /pause\(END_POLL_SECONDS\)/);
+  assert.doesNotMatch(src, /access_code|accessCode|printhost_apikey"\)\s*<</);
 });

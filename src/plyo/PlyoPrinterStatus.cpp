@@ -41,7 +41,9 @@ std::string host_type_of(const Slic3r::DynamicPrintConfig& c)
 }
 
 // Creality : les messages d'état arrivent d'eux-mêmes sur le WebSocket 9999 ; on fusionne ceux reçus pendant ~3 s.
-Status read_creality(const std::string& print_host)
+// `full` : toute la fenêtre de 3 s (suivi de la fin, pour le journal), sinon on s'arrête dès que l'état et le fichier sont là.
+// Champs fusionnés ; null si la machine n'a pas répondu.
+nlohmann::json read_creality(const std::string& print_host, bool full)
 {
     try {
         const std::string host = Slic3r::Http::get_host_from_url(print_host.find("://") == std::string::npos ? "http://" + print_host : print_host);
@@ -54,7 +56,7 @@ Status read_creality(const std::string& print_host)
         ws.text(true);
         nlohmann::json fields = nlohmann::json::object();
         const auto     until  = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-        while (std::chrono::steady_clock::now() < until && !(fields.contains("state") && fields.contains("printFileName"))) {
+        while (std::chrono::steady_clock::now() < until && (full || !(fields.contains("state") && fields.contains("printFileName")))) {
             beast::get_lowest_layer(ws).expires_after(std::chrono::seconds(3));
             beast::flat_buffer buf;
             beast::error_code  ec;
@@ -74,10 +76,10 @@ Status read_creality(const std::string& print_host)
         }
         beast::error_code close_ec;
         ws.close(websocket::close_code::normal, close_ec);
-        return creality_status(fields);
+        return fields;
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(info) << "Plyo: état Creality illisible : " << e.what();
-        return Status{"unknown", "", -1};
+        return nlohmann::json();
     }
 }
 
@@ -100,10 +102,18 @@ Status read_moonraker(const Slic3r::DynamicPrintConfig& c)
     return ok ? moonraker_status(nlohmann::json::parse(body, nullptr, false)) : Status{"unknown", "", -1};
 }
 
-Status read(const std::string& kind, const Slic3r::DynamicPrintConfig& c)
+// `logged` : dernière ligne d'état Creality écrite au journal (une ligne par changement, pour apprendre les codes de fin).
+Status read(const std::string& kind, const Slic3r::DynamicPrintConfig& c, bool full, std::string& logged)
 {
-    if (kind == "crealityprint")
-        return read_creality(c.opt_string("print_host"));
+    if (kind == "crealityprint") {
+        const nlohmann::json fields = read_creality(c.opt_string("print_host"), full);
+        const std::string    line   = creality_status_fields(fields);
+        if (!line.empty() && line != logged) {
+            BOOST_LOG_TRIVIAL(info) << "Plyo: état Creality : " << line;
+            logged = line;
+        }
+        return fields.is_object() ? creality_status(fields) : Status{"unknown", "", -1};
+    }
     if (kind == "moonraker")
         return read_moonraker(c);
     return Status{"unknown", "", -1};
@@ -130,24 +140,60 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
     auto              config = std::make_shared<Slic3r::DynamicPrintConfig>(p->config);
     const std::string kind   = host_type_of(*config);
     std::thread([config, kind, post, gen]() {
-        const Status before = read(kind, *config);
+        // Un nouvel envoi (ou stop()) remplace ce suivi ; Orca qui se ferme l'arrête aussi.
+        const auto alive = [gen]() { return gen == g_generation.load() && !Slic3r::GUI::wxGetApp().is_closing(); };
+        const auto pause = [&alive](int seconds) {
+            for (int i = 0; i < seconds && alive(); ++i)
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            return alive();
+        };
+        std::string  logged;
+        const Status before = read(kind, *config, false, logged);
         if (before.state == "unknown") {
             post(to_json("unknown", before));
             return;
         }
         Status last = before;
-        for (int i = 0; i < 48 && gen == g_generation.load(); ++i) { // 48 × 5 s = 4 min
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-            last                 = read(kind, *config);
-            const std::string v  = verdict(before, last);
-            if (v == "started" || v == "busy" || v == "error") {
+        bool   started = false;
+        for (int i = 0; i < 48 && !started; ++i) { // 48 × 5 s = 4 min
+            if (!pause(5))
+                return;
+            last                = read(kind, *config, false, logged);
+            const std::string v = verdict(before, last);
+            if (v == "busy" || v == "error") {
                 post(to_json(v, last));
                 return;
             }
+            if (v == "started") {
+                post(to_json(v, last));
+                started = true;
+            }
         }
-        if (gen == g_generation.load())
-            post(to_json("timeout", last));
+        if (!started) {
+            if (alive())
+                post(to_json("timeout", last));
+            return;
+        }
+        // L'impression a démarré : relue toutes les 30 s jusqu'à sa fin, sans limite de durée.
+        const Status printing = last;
+        auto         answered = std::chrono::steady_clock::now();
+        while (pause(END_POLL_SECONDS)) {
+            Status now = read(kind, *config, true, logged);
+            if (now.state != "unknown")
+                answered = std::chrono::steady_clock::now();
+            const int silent = int(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - answered).count());
+            const std::string v = end_verdict(printing, now, silent);
+            if (v.empty())
+                continue;
+            now.file             = printing.file; // la question de fin parle du fichier envoyé
+            nlohmann::json ended = to_json(v, now);
+            ended["phase"]       = "end"; // « error » existe aussi au démarrage : le panneau les distingue
+            post(ended);
+            return;
+        }
     }).detach();
 }
+
+void stop() { ++g_generation; }
 
 } // namespace Plyo::PrinterStatus

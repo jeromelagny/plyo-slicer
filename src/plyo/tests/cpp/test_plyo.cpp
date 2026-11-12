@@ -2099,6 +2099,60 @@ TEST_CASE("PrinterStatus : état d'impression lu, puis verdict après un envoi")
     CHECK(verdict(idle, unknown) == "unknown");
 }
 
+TEST_CASE("PrinterStatus : fin d'une impression démarrée")
+{
+    using namespace Plyo::PrinterStatus;
+    CHECK(END_POLL_SECONDS == 30);
+    CHECK(LOST_AFTER_SECONDS == 600);
+    const Status started{"printing", "a.gcode", 3};
+    const auto   mr = [](const char* state) {
+        return moonraker_status({{"result", {{"status", {{"print_stats", {{"state", state}, {"filename", "a.gcode"}}}}}}}});
+    };
+    CHECK(end_verdict(started, mr("printing"), 0).empty());
+    CHECK(end_verdict(started, mr("paused"), 0).empty());
+    CHECK(end_verdict(started, mr("complete"), 0) == "finished");
+    CHECK(end_verdict(started, mr("cancelled"), 0) == "cancelled");
+    CHECK(end_verdict(started, mr("error"), 0) == "error");
+    CHECK(end_verdict(started, mr("standby"), 0) == "unknown_end"); // revenue au repos sans dire comment
+    CHECK(verdict(Status{"idle", "", -1}, mr("complete")) == "waiting"); // le démarrage n'est pas changé : une fin n'est pas un départ
+
+    // Creality : seul « 1 » (impression) est connu ; tout autre code à la sortie de l'impression ne dit rien de la fin.
+    CHECK(creality_states().size() == 1);
+    CHECK(creality_states().at("1") == "printing");
+    CHECK(end_verdict(started, creality_status({{"state", "1"}, {"printFileName", "/d/a.gcode"}}), 0).empty());
+    CHECK(end_verdict(started, creality_status({{"state", "0"}, {"printFileName", "/d/a.gcode"}}), 0) == "unknown_end");
+    CHECK(end_verdict(started, creality_status({{"state", 4}}), 0) == "unknown_end");
+    // Un code appris s'ajoute à la table en une ligne : il donne alors sa fin.
+    const std::map<std::string, std::string> learned = {{"1", "printing"}, {"4", "finished"}, {"5", "cancelled"}, {"6", "error"}};
+    CHECK(end_verdict(started, creality_status({{"state", "4"}}, learned), 0) == "finished");
+    CHECK(end_verdict(started, creality_status({{"state", 5}}, learned), 0) == "cancelled");
+    CHECK(end_verdict(started, creality_status({{"state", "6"}}, learned), 0) == "error");
+    CHECK(end_verdict(started, creality_status({{"state", "7"}}, learned), 0) == "unknown_end");
+
+    // Une autre impression a pris la place de la nôtre : elle est finie, sans savoir comment.
+    CHECK(end_verdict(started, Status{"printing", "b.gcode", 1}, 0) == "unknown_end");
+    CHECK(end_verdict(started, Status{"printing", "", 40}, 0).empty()); // nom absent de ce message : rien à conclure
+
+    // Plus de réponse : on attend, puis « perdue » au-delà de 10 minutes de silence.
+    const Status silent{"unknown", "", -1};
+    CHECK(end_verdict(started, silent, 0).empty());
+    CHECK(end_verdict(started, silent, 600).empty());
+    CHECK(end_verdict(started, silent, 601) == "lost");
+}
+
+TEST_CASE("PrinterStatus : champs d'état Creality écrits dans le journal, sans secret")
+{
+    using namespace Plyo::PrinterStatus;
+    const nlohmann::json fields = {{"state", "1"}, {"printProgress", 21}, {"printFileName", "/d/a.gcode"}, {"nozzleTemp", "200.5"},
+                                   {"accessCode", "12345678"}, {"password", "x"}, {"token", "t"}, {"err", {{"errcode", 0}, {"key", 1}}},
+                                   {"errCode", 0}, {"printLeftTime", 1200}, {"deviceState", 3}, {"isPaused", false},
+                                   {"printJobStatus", std::string(200, 'x')}};
+    CHECK(creality_status_fields(fields) == "deviceState=3 errCode=0 isPaused=false printFileName=/d/a.gcode printJobStatus=" + std::string(80, 'x') +
+                                                "… printProgress=21 state=1");
+    CHECK(creality_status_fields(nlohmann::json()).empty());
+    CHECK(creality_status_fields({{"nozzleTemp", 200}}).empty());
+}
+
 TEST_CASE("Discovery : modèles appris (code d'une imprimante → modèle du catalogue)")
 {
     using namespace Plyo::Discovery;

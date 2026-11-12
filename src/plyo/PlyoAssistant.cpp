@@ -671,9 +671,10 @@ void toggle_assistant(Plater* plater)
         AutoSave::stop();
         // Fermeture d'Orca : la minuterie part avec lui. Sinon le plateau reste attaché (derniers changements écrits) ;
         // le panneau rouvert, qui commence une conversation neuve, le détache.
-        if (Slic3r::GUI::wxGetApp().is_closing())
+        if (Slic3r::GUI::wxGetApp().is_closing()) {
             ProjectFiles::stop();
-        else
+            PrinterStatus::stop(); // le suivi d'une impression s'arrête avec Orca
+        } else
             ProjectFiles::panel_closed();
         if (s_topbar_button)
             s_topbar_button->CallAfter([] { refresh_topbar_button(); });

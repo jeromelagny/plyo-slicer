@@ -941,7 +941,7 @@
     spool: { open: false, limits: null, error: '' }, // plage de températures de l'étiquette de la bobine (fiche)
     // « Quelle bobine ? » : bobines de la machine `printer` (items null tant que le slicer ne les a pas données), saisie d'une
     // nouvelle bobine, envoi ou export fait avec une bobine (question de l'étape Résultat), préréglages déjà proposés.
-    spools: { printer: null, items: null }, newSpool: { open: false, material: '', name: '', error: '', focus: false }, spoolSent: null, spoolNo: null, adoptAsked: {} };
+    spools: { printer: null, items: null }, newSpool: { open: false, material: '', name: '', error: '', focus: false }, spoolSent: null, spoolNo: null, adoptAsked: {}, lastSend: null, endNote: null };
   // Emplacements (Canvas, CFS, IFS, U1) à l'étape Filament : lecture, proposition, application, plan d'envoi.
   // readId : numéro de la dernière lecture (une réponse plus ancienne est ignorée) ; planKey null : le premier affichage
   // envoie le plan ou l'efface (rien ne reste d'un panneau rechargé) ; refusedConv : conversation du départ refusé.
@@ -1130,9 +1130,54 @@
   }
   // Vérification du démarrage sur l'imprimante (PlyoPrinterStatus.cpp) : un seul message par envoi, une fois le verdict connu.
   function onPrintWatch(msg) {
+    if (msg.phase === 'end') { onPrintEnd(msg); return; }
     var name = conv && conv.project.printer ? PlyoJourney.machineLabel(conv.project.printer) : 'ton imprimante';
     var line = PlyoJourney.watchText(msg.verdict, name, msg.file);
     if (line) noteLine(line.text, line.tone, line.icon, 'guide');
+  }
+  // Fin de l'impression suivie (second message du suivi, phase « end ») : une question adaptée à la façon dont elle a fini, à
+  // l'étape Résultat, ou en note de l'onglet ouvert si on est ailleurs. Une seule question par envoi (PlyoJourney.endAsk).
+  function noteSendWatched() { projectUI.lastSend = { conv: conv, answered: false, end: null }; dropEndNote(); }
+  function markSendAnswered() { if (projectUI.lastSend && projectUI.lastSend.conv === conv) projectUI.lastSend.answered = true; dropEndNote(); }
+  function dropEndNote() { if (projectUI.endNote) { projectUI.endNote.remove(); projectUI.endNote = null; } }
+  function endQuestionNow() {
+    var s = projectUI.lastSend;
+    if (!conv || !s || s.conv !== conv || !PlyoJourney.endAsk(s, conv.project)) return null;
+    return PlyoJourney.endQuestion(s.end.verdict, conv.project.printer ? PlyoJourney.shortMachine(conv.project.printer) : 'ton imprimante', s.end.file);
+  }
+  function onPrintEnd(msg) {
+    var s = projectUI.lastSend;
+    if (!s || s.end) return;
+    s.end = { verdict: msg.verdict, file: msg.file || '' };
+    var q = endQuestionNow();
+    if (!q) return; // fin sans détail, autre conversation ouverte, ou Résultat déjà répondu : rien de plus
+    if (PlyoJourney.currentStep(conv.project) === 'resultat' && viewUI.tab === 'guide') { renderProject(); $('project-card').scrollIntoView({ block: 'nearest' }); return; }
+    dropEndNote();
+    projectUI.endNote = placeInOpenTab(PlyoJourneySteps.endCard({ el: el, button: button, icon: icon }, q, answerEnd));
+  }
+  function answerEnd(id) {
+    var s = projectUI.lastSend;
+    if (!conv || !s || s.conv !== conv || !s.end || s.answered) return;
+    var a = PlyoJourney.endAction(s.end.verdict, id, s.end.file);
+    markSendAnswered();
+    // L'impression a eu lieu : une réponse qui la juge mène au Résultat, comme « L'impression a démarré ».
+    if (a.mark && currentTourStep() === 'print') stepHandlers.started();
+    if (a.mark === 'success') stepHandlers.success();
+    else if (a.mark === 'failure') stepHandlers.failed();
+    else renderProject();
+    if (a.chat) openChatAbout(a.prefill, a.photo);
+  }
+  // La discussion ouverte, prête à écrire (`prefill` déjà dedans), avec au besoin l'invitation à envoyer une photo.
+  function openChatAbout(prefill, photo) {
+    applyTab('show-chat');
+    if (photo) {
+      var line = noteLine('Une photo de ta pièce m’aide à trouver la cause.', '', 'camera', 'chat');
+      line.appendChild(button('Envoyer une photo', function () { openPhone(); }, 'link'));
+    }
+    noteInput.value = prefill || '';
+    growNote();
+    noteInput.focus();
+    noteInput.setSelectionRange(noteInput.value.length, noteInput.value.length);
   }
   function onCanvasSent(msg) {
     if (!msg.ok) {
@@ -1148,7 +1193,7 @@
     projectUI.sentConv = conv;
     projectUI.sentArmed = conv;
     noteLine(msg.text || 'J’envoie le fichier : la répartition part avec. Regarde l’écran de ton imprimante.', '', 'info', 'guide');
-    if (conv && conv.project.printer) window.orca.postMessage({ type: 'print_watch_start', preset: conv.project.printer.preset });
+    if (conv && conv.project.printer) { noteSendWatched(); window.orca.postMessage({ type: 'print_watch_start', preset: conv.project.printer.preset }); }
     unlockSendSoon();
     if (conv) renderProject();
   }
@@ -1276,6 +1321,8 @@
   function journeyCtx() {
     var p = conv && conv.project || {}, ctx = { sliced: plateSliced(), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, editing: projectUI.editing === 'filament', checked: plateChecked, success: !!p.success, slicing: slicing.conv === conv && !!conv,
       plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
+    var endQ = conv && PlyoJourney.currentStep(conv.project) === 'resultat' ? endQuestionNow() : null;
+    if (endQ) ctx.ended = endQ.verdict;
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
     else if (p.filament && p.filament.proposed && p.filament.spool && p.filament.spool.name) ctx.proposal = { name: p.filament.spool.name }; // la bobine du projet précédent
     var cctx = conv ? canvasCtx(PlyoJourney.currentStep(conv.project)) : null;
@@ -1336,7 +1383,7 @@
         spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
-      intent: intentState(step, plateSliced()), spoolAsk: spoolAsk(), spoolNo: projectUI.spoolNo === conv,
+      intent: intentState(step, plateSliced()), spoolAsk: spoolAsk(), spoolNo: projectUI.spoolNo === conv, endAsk: step === 'resultat' ? endQuestionNow() : null,
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     $('hello-spool').textContent = '';
@@ -1390,9 +1437,10 @@
     exportFile: function () { runAction('export'); },
     started: function () { rememberHabit(); journalPart(''); delete conv.project.success; setTourStep('after'); },
     photo: function () { pickFiles(); },
-    success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; spoolSuccess(); projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
-    failed: function () { projectUI.spoolNo = conv; spoolFailure(); renderProject(); },
+    success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; spoolSuccess(); markSendAnswered(); projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
+    failed: function () { projectUI.spoolNo = conv; spoolFailure(); markSendAnswered(); renderProject(); },
     newPart: function () { newConversation(); },
+    endChoice: function (id) { answerEnd(id); },
     reprint: function () { delete conv.project.success; setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
     changeMachine: function () { projectHandlers.change('printer'); },
     recheck: function () { recheckMachine(); },
@@ -1454,6 +1502,7 @@
     }
     projectUI.sentConv = conv;
     noteSpoolSent();
+    noteSendWatched(); // le slicer suit cet envoi sur la machine (print_watch) jusqu'à la fin de l'impression
     noteLine(PlyoCanvas.orcaConfirm(conv && conv.project.canvas) || 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
     unlockSendSoon();
     renderProject();

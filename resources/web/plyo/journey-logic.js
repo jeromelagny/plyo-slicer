@@ -123,7 +123,12 @@
         return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler : coche ce que tu veux corriger ci-dessous'
           : c.checked === 'clean' ? 'Tout est bon, on passe à l’impression' : c.checked === 'ignored' ? 'Tu as ignoré des points : à toi de voir' : 'Je vérifie ta plaque…');
       case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : 'Prêt à imprimer';
-      default: return c.success ? 'Bravo, c’est réussi !' : 'Alors, ça a marché ? Envoie-moi une photo';
+      default: if (c.success) return 'Bravo, c’est réussi !';
+        // La question de fin d'impression est dans l'étape : la consigne dit seulement ce qui s'est passé.
+        if (c.ended === 'finished') return 'Impression terminée';
+        if (c.ended === 'cancelled') return 'Impression arrêtée';
+        if (c.ended === 'error') return 'Ta machine signale une erreur';
+        return 'Alors, ça a marché ? Envoie-moi une photo';
     }
   }
 
@@ -240,6 +245,47 @@
   function canRevisit(s) { return !!s && s.state === 'done' && REVISIT.indexOf(s.key) >= 0; }
   function revisitLabel(s) { return 'Revenir à l’étape ' + s.label; }
 
+  // Fin d'une impression suivie sur la machine (PlyoPrinterStatus.cpp, message de phase « end ») : la question de
+  // l'étape Résultat. null pour une fin dont on ne sait rien (« unknown_end », « lost ») : la question d'aujourd'hui reste.
+  var END_REASONS = [
+    { id: 'bed', label: 'Ça se décollait du plateau', said: 'ça se décollait du plateau' },
+    { id: 'flow', label: 'Le fil ne sortait plus bien', said: 'le fil ne sortait plus bien' },
+    { id: 'spaghetti', label: 'Ça faisait des fils ou des spaghettis', said: 'ça faisait des fils ou des spaghettis' },
+    { id: 'mind', label: 'J’ai changé d’avis' },
+    { id: 'other', label: 'Autre chose' }
+  ];
+  function endQuestion(verdict, machine, file) {
+    var f = file ? '« ' + file + ' »' : '';
+    switch (verdict) {
+      case 'finished': return { verdict: verdict, text: machine + ' a fini d’imprimer ' + (f || 'ta pièce') + '. Ça s’est bien passé ?',
+        choices: [{ id: 'yes', label: 'Oui' }, { id: 'no', label: 'Non, pas vraiment' }] };
+      case 'cancelled': return { verdict: verdict, text: 'L’impression ' + (f ? 'de ' + f + ' ' : '') + 'a été arrêtée sur ' + machine + '. Qu’est-ce qui s’est passé ? Je suis là pour t’aider à trouver la cause et à la régler pour la prochaine fois.',
+        choices: END_REASONS.map(function (r) { return { id: r.id, label: r.label }; }) };
+      case 'error': return { verdict: verdict, text: machine + ' signale une erreur et l’impression s’est arrêtée. Regarde son écran et dis-moi ce qu’il affiche : je t’aide à comprendre.',
+        choices: [{ id: 'screen', label: 'Écrire ce que dit l’écran' }] };
+      default: return null;
+    }
+  }
+  // La suite d'une réponse : `mark` « success » / « failure » (bobine de l'envoi, comme « Oui, c'est réussi » / « Non, c'est raté »)
+  // ou rien ; `chat` ouvre la discussion, prête à écrire, avec `prefill` ; `photo` y invite à envoyer une photo.
+  function endAction(verdict, id, file) {
+    var none = { mark: '', chat: false, prefill: '', photo: false };
+    if (verdict === 'finished') return id === 'yes' ? { mark: 'success', chat: false, prefill: '', photo: false } : { mark: 'failure', chat: true, prefill: '', photo: true };
+    if (verdict === 'error') return { mark: '', chat: true, prefill: 'Mon imprimante signale une erreur. Son écran affiche : ', photo: false }; // ratée seulement si tu le dis ensuite
+    if (verdict !== 'cancelled' || id === 'mind') return none;
+    var r = END_REASONS.filter(function (x) { return x.id === id; })[0];
+    if (!r) return none;
+    return { mark: 'failure', chat: true, photo: true,
+      prefill: r.said ? 'L’impression ' + (file ? 'de « ' + file + ' » ' : '') + 'a été arrêtée : ' + r.said + '. Comment l’éviter la prochaine fois ?' : '' };
+  }
+  // Une seule question par envoi : pas si le Résultat a déjà eu sa réponse (ou la question de fin la sienne).
+  function endAsk(send, project) {
+    return !!(send && send.end && !send.answered && !(project && project.success) && endQuestion(send.end.verdict, '', ''));
+  }
+
+  // Nom court d'une machine dans une phrase, comme la fiche repliée : sans la buse (« CR-10 SE », pas « … 0.4 nozzle »).
+  function shortMachine(p) { return machineLabel(p).replace(/\s+\d+(\.\d+)?\s*nozzle$/i, ''); }
+
   // Nom d'une machine : le nom du profil sans « Ma » devant ni « - Copie » derrière.
   function machineLabel(p) { return String(p && (p.name || p.preset) || '').replace(/^Ma\s+/i, '').replace(/\s*-\s*Copie.*$/i, '').trim(); }
 
@@ -295,7 +341,7 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { canRevisit: canRevisit, revisitLabel: revisitLabel, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;
