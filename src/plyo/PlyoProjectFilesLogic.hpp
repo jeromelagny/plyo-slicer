@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cstring>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -80,6 +79,14 @@ inline bool attach_allowed(bool pending_detach, bool other_plate_unsaved, bool b
 }
 
 // Texte du refus quand Orca n'a pas fini (découpe, envoi) et que le projet d'avant n'est pas encore rangé.
+// À l'attache de `attaching` : les réglages d'impression en cours appartiennent au plateau de `owner` (owns_edits). Ils
+// sont oubliés s'ils sont ceux d'une autre conversation (jamais repris par elle), gardés si la conversation revient sur
+// son propre plateau (perdu : disque plein, trop lourd ; ils n'ont été écrits nulle part).
+inline bool forget_edits_on_attach(bool owns_edits, const std::string& owner, const std::string& attaching)
+{
+    return owns_edits && owner != attaching;
+}
+
 constexpr const char* BUSY_TEXT = "J’attends qu’Orca ait fini ce qu’il fait (découpe, envoi, test ou fenêtre ouverte) pour ranger le projet d’avant ; réessaie dans un instant.";
 
 // Résultat d'une écriture du 3MF : écrit, Orca occupé (rien n'est tenté), ou perdu (trop lourd, disque plein, droits :

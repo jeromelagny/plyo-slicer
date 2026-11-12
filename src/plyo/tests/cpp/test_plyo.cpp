@@ -2691,6 +2691,20 @@ TEST_CASE("Projets : une conversation ne prend jamais le plateau d'une autre qui
     CHECK_FALSE(attach_allowed(true, true, true));
 }
 
+TEST_CASE("Projets : réglages d'impression du plateau à l'attache d'une conversation")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    // Réglages de la pièce de A (écrite ou perdue) : jamais repris par B.
+    CHECK(forget_edits_on_attach(true, "A", "B"));
+    // A revient sur son propre plateau (perdu : disque plein, trop lourd) : ses réglages, jamais écrits, restent.
+    CHECK_FALSE(forget_edits_on_attach(true, "A", "A"));
+    // Réglages qui ne sont pas ceux d'un plateau de conversation : rien à oublier.
+    CHECK_FALSE(forget_edits_on_attach(false, "", "B"));
+    CHECK_FALSE(forget_edits_on_attach(false, "A", "B"));
+    // Propriétaire inconnu : prudence, ils ne passent pas à la conversation qui s'attache.
+    CHECK(forget_edits_on_attach(true, "", "B"));
+}
+
 TEST_CASE("Projets : départ d'une conversation selon l'écriture de son 3MF")
 {
     using namespace Plyo::ProjectFilesLogic;

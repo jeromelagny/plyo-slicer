@@ -51,6 +51,7 @@ bool                                        s_opening = false;
 // Les réglages d'impression modifiés en cours sont ceux d'un plateau de conversation (même s'il n'est plus attaché :
 // plateau trop lourd, écriture en attente). Ils ne vont jamais dans le préréglage partagé et sont oubliés en quittant.
 bool                                        s_owns_edits = false;
+std::string                                 s_edits_conv;        // conversation à qui sont ces réglages (si s_owns_edits)
 // L'utilisateur a chargé un fichier à lui (jusqu'au prochain nouveau projet vide) : ce plateau ne s'attache pas.
 bool                                        s_user_loaded = false;
 // Le plateau en place vient d'une conversation et a été écrit dans son 3MF en la quittant (empreinte s_kept_fp) : tant
@@ -347,11 +348,13 @@ std::string attach(const std::string& conv)
         if (written == WriteResult::Ok)
             clear_attachment(true);
     }
-    // Réglages d'un plateau qui n'a pas pu être gardé (perdu maintenant ou avant) : ils ne passent pas à celle-ci.
-    if (s_owns_edits)
+    // Réglages du plateau d'une autre conversation (écrit, ou perdu maintenant ou avant) : ils ne passent pas à celle-ci.
+    // Ceux de son propre plateau perdu (jamais écrits) restent.
+    if (ProjectFilesLogic::forget_edits_on_attach(s_owns_edits, s_edits_conv, conv))
         forget_print_edits();
     s_conv        = conv;
     s_owns_edits  = true;
+    s_edits_conv  = conv;
     s_last_change = Clock::now();
     ensure_timer();
     return "";
@@ -465,6 +468,7 @@ nlohmann::json open(const std::string& conv)
 
     s_conv        = conv;
     s_owns_edits  = true;
+    s_edits_conv  = conv;
     s_user_loaded = false;
     s_saved       = current();
     s_seen        = s_saved;
