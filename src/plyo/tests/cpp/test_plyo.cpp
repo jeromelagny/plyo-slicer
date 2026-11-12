@@ -2675,3 +2675,18 @@ TEST_CASE("Projets : aucune écriture du 3MF pendant une découpe, un envoi, une
     CHECK_FALSE(write_allowed(false, false, true, false));
     CHECK_FALSE(write_allowed(false, false, false, true));
 }
+
+TEST_CASE("Projets : une conversation ne prend jamais le plateau d'une autre qui n'est pas encore rangé")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    // Rien en attente, aucun autre plateau à ranger : permis, même si Orca est occupé.
+    CHECK(attach_allowed(false, false, false));
+    CHECK(attach_allowed(false, false, true));
+    // Autre plateau modifié mais Orca libre : il est écrit d'abord, puis permis.
+    CHECK(attach_allowed(false, true, false));
+    // Autre plateau modifié et Orca occupé (découpe, envoi) : refusé, ses réglages iraient dans la nouvelle conversation.
+    CHECK_FALSE(attach_allowed(false, true, true));
+    // Départ d'une conversation en attente d'écriture : refusé.
+    CHECK_FALSE(attach_allowed(true, false, false));
+    CHECK_FALSE(attach_allowed(true, true, true));
+}

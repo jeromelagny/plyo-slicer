@@ -175,6 +175,11 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "get_values")
             send_values();
         else if (type == "apply") {
+            // Le plateau est encore celui de la conversation quittée (son 3MF attend qu'Orca ait fini) : rien ne s'y applique.
+            if (ProjectFiles::detach_pending()) {
+                send_result({{"ok", false}, {"text", ProjectFiles::busy_text()}});
+                return;
+            }
             if (const nlohmann::json refused = project_refusal(data); !refused.is_null()) {
                 send_result(refused);
                 return;
@@ -399,7 +404,11 @@ void handle_page_message(const nlohmann::json& data)
             // préréglage d'impression partagé). Pièce refusée : le plateau n'est pas attaché.
             const std::string conv   = Json::str(data, "conv");
             const std::string before = ProjectFiles::attached();
-            ProjectFiles::attach(conv);
+            if (!conv.empty() && ProjectFiles::attach(conv) == "occupe") {
+                // Le plateau d'avant n'est pas encore rangé (Orca découpe ou envoie) : la pièce n'est pas posée.
+                send({{"type", "model_added"}, {"ok", false}, {"busy", true}, {"text", ProjectFiles::busy_text()}});
+                return;
+            }
             nlohmann::json added = ModelImport::add(Json::str(data, "name"), Json::str(data, "data"), data.contains("project") ? data["project"] : nlohmann::json(), Json::boolean(data, "replace", false));
             if (!Json::boolean(added, "ok", false) && before.empty())
                 ProjectFiles::release(conv); // rien d'écrit pour elle : le plateau n'a pas changé
@@ -407,7 +416,9 @@ void handle_page_message(const nlohmann::json& data)
             send(added);
         } else if (type == "project_attach") {
             // Pièce précédente reprise, ou pièce posée autrement que par le panneau : le plateau est celui de la conversation.
-            ProjectFiles::attach(Json::str(data, "conv"));
+            const std::string conv = Json::str(data, "conv");
+            if (ProjectFiles::attach(conv) == "occupe")
+                send({{"type", "project_attach_refused"}, {"conv", conv}, {"text", ProjectFiles::busy_text()}});
         } else if (type == "project_detach") {
             // Autre conversation : le plateau quitté est écrit, ses réglages d'impression ne suivent pas.
             ProjectFiles::detach(true);

@@ -71,6 +71,16 @@ inline bool plate_unchanged(const Fingerprint& kept, const Fingerprint& now, boo
 // test n'est pas celui du projet) ou une fenêtre modale.
 inline bool write_allowed(bool slicing, bool sending, bool calibrating, bool modal) { return !slicing && !sending && !calibrating && !modal; }
 
+// Une conversation peut prendre le plateau : pas de départ en attente d'écriture, et pas d'autre plateau modifié qu'Orca,
+// occupé, ne laisserait pas écrire (ses réglages, et ses derniers changements, iraient dans la nouvelle conversation).
+inline bool attach_allowed(bool pending_detach, bool other_plate_unsaved, bool busy)
+{
+    return !pending_detach && !(other_plate_unsaved && busy);
+}
+
+// Texte du refus quand Orca n'a pas fini (découpe, envoi) et que le projet d'avant n'est pas encore rangé.
+constexpr const char* BUSY_TEXT = "J’attends qu’Orca ait fini (découpe ou envoi) pour ranger le projet d’avant ; réessaie dans un instant.";
+
 // Projets dont la conversation n'existe plus (effacée, ou au-delà des 30 gardées), dans l'ordre de `files`.
 inline std::vector<std::string> orphans(const std::vector<std::string>& kept_conversations, const std::vector<std::string>& files)
 {

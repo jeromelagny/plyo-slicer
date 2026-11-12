@@ -160,16 +160,19 @@ nlohmann::json restore(const nlohmann::json& project, bool discard_unsaved)
 
     const nlohmann::json now      = state();
     const bool           changing = Json::str(now, "printer_preset") != printer || (has_filament && !ProjectLogic::same_filament(filament, Json::str(now, "filament_preset")));
-    // Plateau d'une conversation : ses réglages d'impression modifiés sont dans son 3MF (écrit ici), pas « non enregistrés ».
-    const bool           prints_kept = bundle().prints.current_is_dirty() && ProjectFiles::flush();
-    const bool           dirty    = bundle().printers.current_is_dirty() || (bundle().prints.current_is_dirty() && !prints_kept) || bundle().filaments.current_is_dirty();
+    // Réglages d'impression d'un plateau de conversation : ce sont ceux de la pièce. Un changement de filament ne les touche
+    // pas ; un changement de machine les vide, et cela se demande comme pour tout réglage non enregistré.
+    const bool           printer_changing = Json::str(now, "printer_preset") != printer;
+    const bool           keep_prints      = ProjectFiles::owns_print_edits() && !printer_changing;
+    const bool           dirty    = bundle().printers.current_is_dirty() || (bundle().prints.current_is_dirty() && !keep_prints) || bundle().filaments.current_is_dirty();
     if (changing && dirty && !discard_unsaved)
         return {{"ok", false}, {"needs_confirmation", true}, {"text", "Tu as des réglages non enregistrés dans Orca."}};
 
     if (changing) {
         // Sans modifications non enregistrées, Orca ne pose aucune question en changeant de profil.
         bundle().printers.discard_current_changes();
-        bundle().prints.discard_current_changes();
+        if (!keep_prints)
+            bundle().prints.discard_current_changes();
         bundle().filaments.discard_current_changes();
         SettingsBridge::clear_undo(); // ses entrées viseraient les anciens profils
         // L'imprimante d'abord : même si le filament a disparu, Orca revient sur la machine du projet.

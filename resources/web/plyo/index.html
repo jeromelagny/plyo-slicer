@@ -867,6 +867,17 @@
   function onProjectFile(msg) {
     if (msg.kept === false) noteLine(PlyoProject.tooHeavyText(!(conv && msg.conv === conv.id)), 'warn', 'alert', 'guide');
   }
+  // Le plateau de la conversation d'avant n'est pas encore rangé (Orca découpe ou envoie) : on le dit une fois, et on
+  // redemande toutes les 3 s tant que la même conversation est affichée (une minute au plus).
+  var attachRetry = { conv: null, tries: 0, timer: null };
+  function onAttachRefused(msg) {
+    if (!conv || msg.conv !== conv.id) return;
+    if (attachRetry.conv !== conv.id) { attachRetry.conv = conv.id; attachRetry.tries = 0; noteLine(msg.text, 'warn', 'alert', 'guide'); }
+    if (++attachRetry.tries > 20) return;
+    clearTimeout(attachRetry.timer);
+    var id = conv.id;
+    attachRetry.timer = setTimeout(function () { if (conv && conv.id === id) attachPlate(); }, 3000);
+  }
   // Orca a vidé les réglages de la pièce sans changer de projet (assistant de configuration, mise à jour des profils…) :
   // sur la même machine, la conversation rouvre son 3MF (ses réglages reviennent) ; sinon le plateau lui est rattaché.
   function onProjectDetached(msg) {
@@ -2959,6 +2970,7 @@
   // ---------- Modèle 3D joint : posé sur le plateau, conseils sur clic seulement ----------
   function onModelAdded(msg) {
     dropPlacing();
+    if (!msg.ok && msg.busy) { projectUI.reposing = false; noteLine(msg.text, 'warn', 'alert', 'guide'); return; } // le projet d'avant n'est pas encore rangé
     if (!msg.ok) { projectUI.reposing = false; noteLine((msg.text || 'Je n’ai pas pu poser cette pièce sur le plateau.') + ' Je prends les fichiers STL, 3MF, OBJ, STEP et AMF.', 'error', 'alert', 'guide'); return; }
     if (msg.adaptation) { syncProjectNames(msg.adaptation.saved); if (msg.name) conv.project.adapted = msg.name; } // adapté dès l'import : pas une deuxième fois
     if (tourSignals) tourSignals.objects = Math.max(tourSignals.objects || 0, 1); // sans attendre le prochain signal
@@ -4609,6 +4621,8 @@
       onProjectOpened(msg);
     } else if (msg.type === 'project_file') {
       onProjectFile(msg);
+    } else if (msg.type === 'project_attach_refused') {
+      onAttachRefused(msg);
     } else if (msg.type === 'project_detached') {
       onProjectDetached(msg);
     } else if (msg.type === 'model_adapted') {

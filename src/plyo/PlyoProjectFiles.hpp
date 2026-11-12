@@ -19,7 +19,9 @@ boost::filesystem::path path_of(const std::string& conv);
 // Le plateau appartient désormais à cette conversation (nouvelle pièce posée, pièce précédente reprise) : la minuterie
 // d'1 s compare l'empreinte et écrit le 3MF au repos. Un plateau attaché à une autre conversation est d'abord écrit.
 // Refusé pour un fichier de l'utilisateur (attachable()).
-void attach(const std::string& conv);
+// Renvoie "" (attaché), "fichier" (fichier de l'utilisateur), "occupe" (le plateau d'une autre conversation n'est pas
+// encore rangé dans son 3MF et Orca est occupé : rien ne change) ou "invalide".
+std::string attach(const std::string& conv);
 
 // Le plateau n'appartient plus à la conversation (changement de conversation dans le panneau) : ses changements en
 // attente sont écrits, puis, si `forget_print_edits`, les réglages d'impression modifiés sont oubliés (ils sont dans le
@@ -45,9 +47,12 @@ bool owns_print_edits();
 // chargé par lui jusqu'au prochain nouveau projet).
 bool attachable();
 
-// Écrit le 3MF de la conversation attachée s'il a changé (jamais quand Orca est occupé). Vrai si un plateau est attaché
-// et que son 3MF est à jour.
-bool flush();
+// Un départ de conversation attend qu'Orca laisse écrire son 3MF : le plateau est encore le sien (rien ne doit s'y
+// appliquer pour une autre conversation).
+bool detach_pending();
+
+// Texte honnête du refus quand le projet d'avant n'est pas encore rangé.
+const char* busy_text();
 
 // Rouvre le projet de la conversation, sans fenêtre : {ok, reason} (reason : "" | "absent" | "abime" | "trop_gros" |
 // "occupe" pendant une calibration | "annule" si l'utilisateur a gardé son propre projet non enregistré).

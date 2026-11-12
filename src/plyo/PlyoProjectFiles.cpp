@@ -139,12 +139,13 @@ bool readable_3mf(const fs::path& path)
 
 // Écrit le 3MF de la conversation attachée (export d'Orca, sur le fil de l'interface), d'abord sous un nom provisoire :
 // un fichier coupé en route ne remplace jamais le précédent. Trop lourd : on ne garde que la fiche, et le panneau le dit.
-// Vrai si le fichier est écrit. L'appelant a vérifié que rien n'occupe Orca (busy).
-bool write_now()
+// L'appelant a vérifié que rien n'occupe Orca (busy).
+enum class Write { Ok, Failed, TooBig };
+Write write_now()
 {
     Slic3r::GUI::Plater* p = plater();
     if (s_conv.empty() || p == nullptr || s_writing)
-        return false;
+        return Write::Failed;
     const std::string conv  = s_conv;
     const Fingerprint print = current();
     const fs::path    final_path = path_of(conv);
@@ -160,7 +161,7 @@ bool write_now()
         s_has_failed = true;
         s_failed     = print;
         BOOST_LOG_TRIVIAL(error) << "Plyo: projet de la conversation non écrit (export 3MF refusé par Orca)";
-        return false;
+        return Write::Failed;
     }
     const unsigned long long size = fs::file_size(tmp_path, ec);
     if (ec || size > ProjectFilesLogic::MAX_PROJECT_BYTES) {
@@ -171,7 +172,7 @@ bool write_now()
         // partagé, oubliés au départ de la conversation.
         clear_attachment(false);
         notify({{"type", "project_file"}, {"conv", conv}, {"kept", false}});
-        return false;
+        return Write::TooBig;
     }
     fs::permissions(tmp_path, fs::owner_read | fs::owner_write, ec);
     fs::rename(tmp_path, final_path, ec);
@@ -180,25 +181,29 @@ bool write_now()
         s_has_failed = true;
         s_failed     = print;
         BOOST_LOG_TRIVIAL(error) << "Plyo: projet de la conversation non écrit (renommage refusé)";
-        return false;
+        return Write::Failed;
     }
     s_saved      = print;
     s_has_saved  = true;
     s_has_failed = false;
     BOOST_LOG_TRIVIAL(info) << "Plyo: projet de la conversation écrit (" << size << " octets)";
-    return true;
+    return Write::Ok;
 }
 
-// Vrai si le 3MF du plateau attaché est à jour (écrit maintenant, ou rien de changé). Jamais d'écriture quand Orca est
-// occupé : faux, et l'appelant garde les réglages.
-bool write_if_changed()
+// Ok si le 3MF du plateau attaché est à jour (écrit maintenant, ou rien de changé). Jamais d'écriture quand Orca est
+// occupé : Failed, et l'appelant garde les réglages. TooBig : le plateau n'est plus attaché (seule la fiche est gardée).
+Write write_state()
 {
     if (s_conv.empty())
-        return false;
+        return Write::Failed;
     if (!changed())
-        return true;
-    return !busy() && write_now();
+        return Write::Ok;
+    return busy() ? Write::Failed : write_now();
 }
+bool write_if_changed() { return write_state() == Write::Ok; }
+
+// Un autre plateau attaché, modifié depuis sa dernière écriture, qu'Orca occupé ne laisserait pas écrire.
+bool other_plate_unsaved(const std::string& conv) { return !s_conv.empty() && s_conv != conv && changed(); }
 
 // Oublie les modifications de ces préréglages, comme le bouton « Ignorer » d'Orca (GUI_App, reset_modifications).
 void discard(bool print, bool filament)
@@ -267,8 +272,11 @@ void tick()
     // Parcours du plateau (calibration) et fenêtres : consultés seulement une fois tout le reste prêt.
     if (busy())
         return;
-    if (write_now() && s_pending_detach)
+    const Write written = write_now();
+    if (written == Write::Ok && s_pending_detach)
         finish_detach(s_pending_forget);
+    else if (written == Write::TooBig && s_pending_forget)
+        forget_print_edits(); // conversation quittée, plateau trop lourd : ses réglages ne suivent pas
 }
 
 void ensure_timer()
@@ -306,28 +314,43 @@ bool attachable() { return attachable_now(); }
 
 bool opening() { return s_opening; }
 
-bool flush() { return write_if_changed(); }
+bool detach_pending() { return s_pending_detach; }
 
-void attach(const std::string& conv)
+const char* busy_text() { return ProjectFilesLogic::BUSY_TEXT; }
+
+std::string attach(const std::string& conv)
 {
     if (!Conversations::valid_id(conv))
-        return;
+        return "invalide";
     if (conv == s_conv) {
         s_pending_detach = false; // la conversation revient avant son départ : elle garde son plateau
-        return;
+        return "";
     }
     if (!attachable_now()) {
         BOOST_LOG_TRIVIAL(info) << "Plyo: plateau non attaché à la conversation : c'est un fichier de l'utilisateur";
-        return;
+        return "fichier";
     }
-    // Plateau d'une autre conversation : écrit d'abord. S'il ne peut pas l'être (Orca occupé), la nouvelle conversation le
-    // reprend tel quel (c'est sa pièce désormais).
-    if (!s_conv.empty())
-        clear_attachment(write_if_changed());
+    // Le plateau d'une autre conversation n'est jamais repris tant qu'il n'est pas rangé dans son 3MF.
+    if (!ProjectFilesLogic::attach_allowed(s_pending_detach, other_plate_unsaved(conv), busy())) {
+        BOOST_LOG_TRIVIAL(info) << "Plyo: plateau pas encore rangé dans le projet d'avant (Orca occupé) : attache refusée";
+        return "occupe";
+    }
+    if (!s_conv.empty()) {
+        const Write written = write_state();
+        if (written == Write::Failed)
+            return "occupe"; // écriture refusée : on ne mélange pas les deux conversations
+        if (written == Write::TooBig)
+            forget_print_edits(); // l'ancien plateau n'a pas pu être gardé : ses réglages ne passent pas à celle-ci
+        else
+            clear_attachment(true);
+    } else if (s_owns_edits) {
+        forget_print_edits(); // réglages d'un plateau trop lourd d'avant : ils ne passent pas à celle-ci
+    }
     s_conv        = conv;
     s_owns_edits  = true;
     s_last_change = Clock::now();
     ensure_timer();
+    return "";
 }
 
 void detach(bool forget_print_edits_now)
@@ -337,8 +360,15 @@ void detach(bool forget_print_edits_now)
             forget_print_edits(); // plateau trop lourd, ou panneau rouvert : ses réglages ne suivent pas
         return;
     }
-    if (write_if_changed()) {
+    const Write written = write_state();
+    if (written == Write::Ok) {
         finish_detach(forget_print_edits_now);
+        return;
+    }
+    if (written == Write::TooBig) {
+        // Plus attaché, seule la fiche est gardée (le panneau l'a dit) : rien à attendre.
+        if (forget_print_edits_now)
+            forget_print_edits();
         return;
     }
     // Orca occupé (ou écriture refusée) : on ne perd rien, le départ se fera à la première écriture réussie.
@@ -367,8 +397,9 @@ nlohmann::json open(const std::string& conv)
 {
     if (!Conversations::valid_id(conv) || plater() == nullptr)
         return {{"ok", false}, {"reason", "absent"}};
-    if (AutoSave::calibrating())
-        return {{"ok", false}, {"reason", "occupe"}}; // le plateau de test doit rester jusqu'à « Remettre ma pièce »
+    // Calibration (le plateau de test doit rester jusqu'à « Remettre ma pièce »), découpe, envoi, fenêtre : on ne touche à rien.
+    if (busy() || s_pending_detach)
+        return {{"ok", false}, {"reason", "occupe"}};
 
     const fs::path            path = path_of(conv);
     boost::system::error_code ec;
@@ -376,16 +407,21 @@ nlohmann::json open(const std::string& conv)
     const unsigned long long  size   = exists ? fs::file_size(path, ec) : 0;
     const bool                small  = exists && size <= ProjectFilesLogic::MAX_PROJECT_BYTES;
     const std::string         reason = ProjectFilesLogic::open_reason(exists, size, small && readable_3mf(path));
-    // Le filament en attente va dans sa bobine, et le projet en cours dans son 3MF, avant tout changement.
+    // Le filament en attente va dans sa bobine, et le projet en cours dans son 3MF, avant tout changement (Orca est libre).
     AutoSave::save_spool_now();
     if (!reason.empty()) {
         detach(true);
         BOOST_LOG_TRIVIAL(info) << "Plyo: projet de la conversation non rouvert (" << reason << ")";
         return {{"ok", false}, {"reason", reason}};
     }
-    const bool was_attached = !s_conv.empty();
-    if (was_attached && !write_if_changed())
-        return {{"ok", false}, {"reason", "occupe"}}; // le plateau en cours n'a pas pu être écrit : on n'y touche pas
+    bool was_attached = !s_conv.empty();
+    if (was_attached) {
+        const Write written = write_state();
+        if (written == Write::Failed)
+            return {{"ok", false}, {"reason", "occupe"}}; // le plateau en cours n'a pas pu être écrit : on n'y touche pas
+        // Trop lourd : plus attaché, le panneau l'a dit ; Orca demande s'il faut l'enregistrer ailleurs (plateau non gardé).
+        was_attached = written == Write::Ok;
+    }
     // Plateau d'une conversation, écrit dans son 3MF et pas modifié depuis : le remplacer ne perd rien.
     const bool plyo_plate = was_attached || (s_kept_plate && ProjectFilesLogic::plate_unchanged(s_kept_fp, current(), presets_dirty()));
     clear_attachment(plyo_plate);
