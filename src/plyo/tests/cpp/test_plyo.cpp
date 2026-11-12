@@ -18,6 +18,7 @@
 #include "../../PlyoProfilesLogic.hpp"
 #include "../../PlyoCalibrationLogic.hpp"
 #include "../../PlyoCommandsLogic.hpp"
+#include "../../PlyoSpoolsLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -2115,4 +2116,96 @@ TEST_CASE("Discovery : modèles appris (code d'une imprimante → modèle du cat
     Printer withCode{"192.168.1.200", "Imprimante Creality", "Creality", "crealityprint", "192.168.1.200", 3};
     withCode.code = "F003";
     CHECK(to_json({withCode})[0]["code"] == "F003");
+}
+
+TEST_CASE("Bobines : nettoyage du nom et clé de comparaison")
+{
+    using namespace Plyo::SpoolsLogic;
+    CHECK(clean_name("  Sunlu  PLA+/noir ") == "Sunlu PLA+ noir");
+    CHECK(clean_name("ab") == "");
+    CHECK(clean_name("a:b") == "a b");
+    CHECK(clean_name("///") == "");
+    const std::string long80(80, 'x');
+    CHECK(clean_name(long80).size() == 60);
+    std::string accents; // « é » fait 2 octets : 40 caractères = 80 octets, coupés à 60 octets = 30 caractères
+    for (int i = 0; i < 40; ++i)
+        accents += "\xC3\xA9";
+    CHECK(clean_name(accents).size() == 60);
+    CHECK(key_of("  Sunlu  PLA+ Noir ") == "sunlu pla+ noir");
+    CHECK(key_of("sunlu pla+ noir") == key_of("Sunlu  PLA+ Noir"));
+}
+
+TEST_CASE("Bobines : nom du préréglage")
+{
+    using namespace Plyo::SpoolsLogic;
+    const std::string base = "Sunlu PLA+ noir \xE2\x80\x94 CR-10 SE";
+    CHECK(preset_name("Sunlu PLA+ noir", "CR-10 SE", {}, {}) == base);
+    CHECK(preset_name("Sunlu PLA+ noir", "CR-10 SE", {base}, {}) == base + " 2");
+    CHECK(preset_name("Sunlu PLA+ noir", "CR-10 SE", {base, base + " 2"}, {}) == base + " 3");
+    CHECK(preset_name("Sunlu PLA+ noir", "CR-10 SE", {base}, {base}) == base);
+    CHECK(preset_name(std::string(60, 'a'), std::string(80, 'b'), {}, {}).size() <= Plyo::Profiles::MAX_NAME_BYTES);
+}
+
+TEST_CASE("Bobines : sanitize")
+{
+    using namespace Plyo::SpoolsLogic;
+    const json raw = {{"spools", {
+        {{"id", "a"}, {"name", "Sunlu PLA+ noir"}, {"material", "PLA"},
+         {"machines", {{"CR-10 SE", {{"preset", "P1"}, {"last_outcome", "ok"}, {"last_ok_at", "2026-11-01"}}},
+                       {"Autre", {{"preset", "P2"}, {"last_outcome", "n'importe"}, {"last_ok_at", "01/11/2026"}}}}}},
+        {{"id", "b"}, {"name", "Inconnue"}, {"material", "NYLON"}},
+        {{"id", "c"}, {"name", "ab"}, {"material", "PLA"}},
+        {{"id", "a"}, {"name", "Doublon d'id"}, {"material", "PETG"}},
+        "pas un objet"}}};
+    const json out = sanitize(raw);
+    REQUIRE(out["spools"].size() == 1);
+    const json& s = out["spools"][0];
+    CHECK(s["id"] == "a");
+    CHECK(s["machines"]["CR-10 SE"]["last_ok_at"] == "2026-11-01");
+    CHECK(s["machines"]["Autre"]["last_ok_at"] == "");
+    CHECK(s["machines"]["Autre"]["last_outcome"] == "");
+    CHECK(sanitize("n'importe quoi") == json({{"spools", json::array()}}));
+
+    json many = {{"spools", json::array()}};
+    for (int i = 0; i < 250; ++i)
+        many["spools"].push_back({{"id", "i" + std::to_string(i)}, {"name", "Bobine " + std::to_string(i)}, {"material", "ABS"}});
+    CHECK(sanitize(many)["spools"].size() == 200);
+}
+
+TEST_CASE("Bobines : ajout, filtre par machine, retrouver la bobine d'un préréglage")
+{
+    using namespace Plyo::SpoolsLogic;
+    json reg = sanitize(json::object());
+    json r1  = add(reg, "sunlu pla+ noir", "PLA");
+    CHECK(r1["created"] == true);
+    const std::string id = r1["id"];
+    CHECK(!id.empty());
+    json r2 = add(r1["reg"], "Sunlu  PLA+ Noir", "PLA");
+    CHECK(r2["created"] == false);
+    CHECK(r2["id"] == id);
+    CHECK(r2["reg"]["spools"].size() == 1);
+    CHECK(add(r2["reg"], "x", "PLA")["created"] == false);
+    CHECK(add(r2["reg"], "Bobine rouge", "NYLON")["created"] == false);
+
+    json r3 = add(r2["reg"], "Bobine rouge", "PETG");
+    CHECK(r3["created"] == true);
+    const std::string id2 = r3["id"];
+    CHECK(id2 != id);
+
+    json reg2 = r3["reg"];
+    reg2["spools"][0]["machines"]["CR-10 SE"] = {{"preset", "P1"}, {"last_outcome", "ok"}, {"last_ok_at", "2026-10-01"}};
+    reg2["spools"][1]["machines"]["CR-10 SE"] = {{"preset", ""}, {"last_outcome", "ok"}, {"last_ok_at", "2026-11-05"}};
+    reg2 = sanitize(reg2);
+    json list = for_machine(reg2, "CR-10 SE");
+    REQUIRE(list.size() == 2);
+    CHECK(list[0]["id"] == id2);
+    CHECK(list[0]["has_preset"] == false);
+    CHECK(list[1]["id"] == id);
+    CHECK(list[1]["has_preset"] == true);
+    CHECK(list[1]["material"] == "PLA");
+    CHECK(for_machine(reg2, "Inconnue").size() == 2);
+    CHECK(for_machine(reg2, "Inconnue")[0]["last_ok_at"] == "");
+    CHECK(spool_of_preset(reg2, "P1") == id);
+    CHECK(spool_of_preset(reg2, "P9") == "");
+    CHECK(spool_of_preset(reg2, "") == "");
 }
