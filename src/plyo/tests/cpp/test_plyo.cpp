@@ -2690,3 +2690,26 @@ TEST_CASE("Projets : une conversation ne prend jamais le plateau d'une autre qui
     CHECK_FALSE(attach_allowed(true, false, false));
     CHECK_FALSE(attach_allowed(true, true, true));
 }
+
+TEST_CASE("Projets : départ d'une conversation selon l'écriture de son 3MF")
+{
+    using namespace Plyo::ProjectFilesLogic;
+    // Écrit : départ fait, réglages d'impression oubliés si demandé.
+    Leave l = leave_after(WriteResult::Ok, true);
+    CHECK(l.detached);
+    CHECK(l.forget);
+    CHECK_FALSE(l.pending);
+    CHECK_FALSE(leave_after(WriteResult::Ok, false).forget);
+    // Perdu (trop lourd, disque plein, droits) : le plateau n'est plus gardé, rien n'attend, réglages oubliés si demandé.
+    l = leave_after(WriteResult::Lost, true);
+    CHECK(l.detached);
+    CHECK(l.forget);
+    CHECK_FALSE(l.pending);
+    // Orca occupé : le départ attend, rien n'est oublié.
+    l = leave_after(WriteResult::Busy, true);
+    CHECK_FALSE(l.detached);
+    CHECK_FALSE(l.forget);
+    CHECK(l.pending);
+    // Seul un vrai état occupé mérite « occupe ».
+    CHECK(BUSY_TEXT == std::string("J’attends qu’Orca ait fini ce qu’il fait (découpe, envoi, test ou fenêtre ouverte) pour ranger le projet d’avant ; réessaie dans un instant."));
+}

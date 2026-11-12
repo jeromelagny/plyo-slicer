@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstring>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -79,7 +80,27 @@ inline bool attach_allowed(bool pending_detach, bool other_plate_unsaved, bool b
 }
 
 // Texte du refus quand Orca n'a pas fini (découpe, envoi) et que le projet d'avant n'est pas encore rangé.
-constexpr const char* BUSY_TEXT = "J’attends qu’Orca ait fini (découpe ou envoi) pour ranger le projet d’avant ; réessaie dans un instant.";
+constexpr const char* BUSY_TEXT = "J’attends qu’Orca ait fini ce qu’il fait (découpe, envoi, test ou fenêtre ouverte) pour ranger le projet d’avant ; réessaie dans un instant.";
+
+// Résultat d'une écriture du 3MF : écrit, Orca occupé (rien n'est tenté), ou perdu (trop lourd, disque plein, droits :
+// le plateau n'est plus gardé avec la conversation, seule sa fiche reste, et le panneau le dit).
+enum class WriteResult { Ok, Busy, Lost };
+
+// Départ d'une conversation selon l'écriture de son 3MF : fait (`detached`), réglages d'impression oubliés (`forget`,
+// si demandé), ou en attente (`pending`, seulement quand Orca est occupé). Une écriture perdue ne laisse jamais rien
+// en attente : sinon tout serait refusé avec « occupe » alors que rien n'occupe Orca.
+struct Leave
+{
+    bool detached = false;
+    bool forget   = false;
+    bool pending  = false;
+};
+inline Leave leave_after(WriteResult r, bool forget_print_edits)
+{
+    if (r == WriteResult::Busy)
+        return {false, false, true};
+    return {true, forget_print_edits, false};
+}
 
 // Projets dont la conversation n'existe plus (effacée, ou au-delà des 30 gardées), dans l'ordre de `files`.
 inline std::vector<std::string> orphans(const std::vector<std::string>& kept_conversations, const std::vector<std::string>& files)

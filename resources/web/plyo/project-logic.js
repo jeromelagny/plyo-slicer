@@ -102,6 +102,12 @@
     return previous ? 'Le plateau de ta conversation précédente était trop lourd pour que je le garde (50 Mo au plus) : je garde seulement sa fiche.'
       : 'Ton plateau est trop lourd pour que je le garde avec cette conversation (50 Mo au plus) : je garde seulement sa fiche.';
   }
+  // Plateau qui n'a pas pu être gardé (`reason` "echec" : écriture impossible ; sinon trop lourd).
+  function projectFileText(reason, previous) {
+    if (reason !== 'echec') return tooHeavyText(previous);
+    return (previous ? 'Je n’ai pas pu enregistrer le projet de ta conversation précédente' : 'Je n’arrive pas à enregistrer le projet de cette conversation')
+      + ' : vérifie qu’il reste de la place sur ton disque. Je garde seulement sa fiche.';
+  }
   // Un fichier de l'utilisateur (ouvert dans Orca) n'est jamais attaché à une conversation (signal `user_file` du slicer).
   function mayAttach(signals) { return !(signals && signals.user_file); }
   // Orca a vidé les réglages de la pièce sans changer de projet (assistant de configuration, mise à jour des profils…) :
@@ -112,7 +118,7 @@
     return msg.same_printer ? 'open' : 'attach';
   }
 
-  var api = { opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  var api = { opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, projectFileText: projectFileText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

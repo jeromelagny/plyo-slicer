@@ -79,7 +79,8 @@ void on_project_changed(bool paused);
 // Un réglage a changé (Plyo::on_config_changed) : l'empreinte change.
 void note_change();
 
-// Messages au panneau : {type: "project_file", conv, kept: false} quand le plateau est trop lourd pour être gardé ;
+// Messages au panneau : {type: "project_file", conv, kept: false, reason: "trop_gros" | "echec"} quand le plateau ne peut
+// pas être gardé (trop lourd, ou écriture impossible : disque plein, droits) ;
 // {type: "project_detached", conv, same_printer} quand Orca a vidé les réglages de la pièce sans changer de projet.
 void set_listener(std::function<void(const nlohmann::json&)> listener);
 

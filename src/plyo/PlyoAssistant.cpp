@@ -417,8 +417,11 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "project_attach") {
             // Pièce précédente reprise, ou pièce posée autrement que par le panneau : le plateau est celui de la conversation.
             const std::string conv = Json::str(data, "conv");
-            if (ProjectFiles::attach(conv) == "occupe")
+            const std::string refused = ProjectFiles::attach(conv);
+            if (refused == "occupe")
                 send({{"type", "project_attach_refused"}, {"conv", conv}, {"text", ProjectFiles::busy_text()}});
+            else if (refused.empty())
+                send({{"type", "project_attached"}, {"conv", conv}});
         } else if (type == "project_detach") {
             // Autre conversation : le plateau quitté est écrit, ses réglages d'impression ne suivent pas.
             ProjectFiles::detach(true);

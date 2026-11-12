@@ -151,3 +151,10 @@ test('projet de la conversation : plateau détaché par Orca, rouvert seulement 
   assert.deepEqual(P.afterDetached({ conv: 'a', same_printer: false }, 'a'), 'attach');
   assert.deepEqual(P.afterDetached({ conv: 'a', same_printer: true }, 'b'), '');
 });
+
+test('projet de la conversation : 3MF impossible à écrire (disque plein, droits)', () => {
+  assert.match(P.projectFileText('echec', false), /place sur ton disque/);
+  assert.match(P.projectFileText('echec', true), /conversation précédente/);
+  assert.equal(P.projectFileText('', false), P.tooHeavyText(false));
+  assert.equal(P.projectFileText('trop_gros', true), P.tooHeavyText(true));
+});
