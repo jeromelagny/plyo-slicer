@@ -41,12 +41,17 @@ nlohmann::json reliable_info(); // {"available": bool, "date": "2026-10-28"}
 nlohmann::json restore_reliable();
 
 // Bobines : la version qui a réussi est celle qui est partie à l'imprimante. À chaque envoi ou export réussi, les valeurs
-// filament du catalogue de la bobine en cours sont notées à l'essai (plyo/essai, {spool, printer, date, values}).
+// filament du catalogue de la bobine en cours sont notées à l'essai (plyo/essai, {spool, printer, date, at, values}), et
+// cet envoi devient le « dernier envoi » (plyo/essai/dernier-envoi.json, {spool, printer, date, at}).
 // Faux si le filament en cours n'est pas une bobine, ou si l'écriture échoue.
 bool note_sent();
 // « Ça a marché » : la dernière version envoyée de la bobine en cours sur cette imprimante devient sa version réussie
 // (plyo/fiable), et le registre note last_outcome "ok" et last_ok_at (date de l'envoi). Faux sans bobine ni envoi noté.
 bool mark_spool_success();
+// Réussite dite hors de la carte (phrase dans la discussion) : elle vise le DERNIER envoi (bobine et imprimante notées par
+// note_sent), même si une autre bobine a été choisie depuis. Refusée si l'essai de cette bobine a été réécrit ou manque.
+// {ok, name} : `name` est la bobine réellement marquée ("" si refus).
+nlohmann::json mark_sent_success();
 // « Ça n'a pas marché » : le registre note last_outcome "bad" pour la bobine en cours sur cette imprimante.
 bool mark_spool_failure();
 

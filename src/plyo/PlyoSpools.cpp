@@ -157,7 +157,8 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
     if (!recorded.empty() && !pending && filaments.find_preset(recorded, false) != nullptr) {
         if (!FirstSteps::select_filament(recorded))
             return {{"ok", false}, {"cancelled", true}, {"id", id}, {"name", spool}, {"created", created}};
-        out["preset"] = recorded;
+        out["preset"]  = recorded;
+        out["printer"] = printer;
         return out;
     }
 
@@ -194,7 +195,8 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
         return {{"ok", false}, {"id", id}, {"name", spool}, {"preset", preset}, {"created", created},
                 {"text", "Le préréglage « " + preset + " » est enregistré, mais je n'ai pas pu le noter dans la liste de tes bobines. Choisis à nouveau ta bobine."}};
     }
-    out["preset"] = preset;
+    out["preset"]  = preset;
+    out["printer"] = printer;
     return out;
 }
 
@@ -268,6 +270,16 @@ bool write_version(bool ok, const nlohmann::json& version)
     return Store::write(Store::dir(ok ? "fiable" : "essai") / (SpoolsLogic::version_stem(v["spool"], v["printer"]) + ".json"), v);
 }
 
+nlohmann::json read_last_sent() { return SpoolsLogic::last_sent(Store::read(Store::dir("essai") / "dernier-envoi.json")); }
+
+bool write_last_sent(const nlohmann::json& pointer)
+{
+    const nlohmann::json p = SpoolsLogic::last_sent(pointer);
+    return !p.empty() && Store::write(Store::dir("essai") / "dernier-envoi.json", p);
+}
+
+std::string name_of(const std::string& id) { return SpoolsLogic::spool_name(load(), id); }
+
 bool note_outcome(const std::string& id, const std::string& printer, const std::string& outcome, const std::string& date)
 {
     const nlohmann::json reg  = load();
@@ -282,10 +294,12 @@ nlohmann::json success_for(const std::string& id, const std::string& printer)
     if (ok.empty())
         return none;
     const nlohmann::json               before = preset_values(SpoolsLogic::preset_for(load(), id, printer));
-    std::map<std::string, std::string> titles;
-    for (const auto& [key, value] : ok["values"].items())
+    std::map<std::string, std::string> titles, kinds;
+    for (const auto& [key, value] : ok["values"].items()) {
         titles[key] = Catalog::policy().title(key);
-    const nlohmann::json diff = SpoolsLogic::success_summary(before, ok["values"], titles);
+        kinds[key]  = Catalog::policy().kind("filament", key);
+    }
+    const nlohmann::json diff = SpoolsLogic::success_summary(before, ok["values"], titles, kinds);
     return {{"available", true}, {"date", ok["date"]}, {"differs", diff["differs"]}, {"summary", diff["summary"]}};
 }
 

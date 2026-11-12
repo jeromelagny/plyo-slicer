@@ -279,7 +279,25 @@ nlohmann::json sanitize_version(const nlohmann::json& raw)
     for (const auto& [key, value] : src.items())
         if (!key.empty() && key.size() <= 80 && value.is_string())
             values[key] = value;
-    return {{"spool", spool}, {"printer", printer}, {"date", date}, {"values", values}};
+    return {{"spool", spool}, {"printer", printer}, {"date", date}, {"at", Json::str(raw, "at", 40)}, {"values", values}};
+}
+
+nlohmann::json last_sent(const nlohmann::json& raw)
+{
+    const std::string spool   = Json::str(raw, "spool", MAX_ID_BYTES);
+    const std::string printer = Json::str(raw, "printer", 200);
+    const std::string date    = Json::str(raw, "date");
+    const std::string at      = Json::str(raw, "at", 40);
+    if (spool.empty() || printer.empty() || !valid_date(date) || at.empty())
+        return nlohmann::json::object();
+    return {{"spool", spool}, {"printer", printer}, {"date", date}, {"at", at}};
+}
+
+bool sent_trial_matches(const nlohmann::json& pointer, const nlohmann::json& trial)
+{
+    const std::string at = Json::str(pointer, "at");
+    return !at.empty() && !Json::str(pointer, "spool").empty() && Json::str(trial, "at") == at &&
+           Json::str(trial, "spool") == Json::str(pointer, "spool") && Json::str(trial, "printer") == Json::str(pointer, "printer");
 }
 
 namespace {
@@ -323,6 +341,10 @@ std::string spoken_value(const std::string& key, const std::string& serialized)
         percent = true;
         v.pop_back();
     }
+    // Un nombre seulement : un texte (« PLA », « "a" ») ne se lit pas dans une phrase « débit 0,88 ».
+    static const std::regex number("^-?[0-9]+(\\.[0-9]+)?$");
+    if (!std::regex_match(v, number))
+        return "";
     for (char& c : v)
         if (c == '.')
             c = ',';
@@ -368,7 +390,8 @@ std::string short_title(const std::string& key, const std::string& catalog_title
 }
 
 nlohmann::json success_summary(const nlohmann::json& values_before, const nlohmann::json& values_ok,
-                               const std::map<std::string, std::string>& catalog_titles)
+                               const std::map<std::string, std::string>& catalog_titles,
+                               const std::map<std::string, std::string>& kinds)
 {
     if (!values_before.is_object() || !values_ok.is_object())
         return {{"differs", false}, {"summary", ""}};
@@ -391,6 +414,9 @@ nlohmann::json success_summary(const nlohmann::json& values_before, const nlohma
     for (const std::string& key : ordered) {
         if (titles_said.size() >= 3)
             break;
+        const auto        kind  = kinds.find(key);
+        if (kind != kinds.end() && (kind->second == "bool" || kind->second == "enum"))
+            continue; // « 1 » serait lu comme un nombre
         const std::string value = spoken_value(key, values_ok[key].get<std::string>());
         if (value.empty())
             continue;

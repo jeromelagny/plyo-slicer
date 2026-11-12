@@ -2459,3 +2459,51 @@ TEST_CASE("Bobines : résultat d'impression noté par machine")
     const json pending = set_preset(r["reg"], r["id"], "P", "Sunlu PLA+ noir — P", true);
     CHECK(set_outcome(pending, r["id"], "P", "ok", "2026-11-12") == sanitize(pending));
 }
+
+TEST_CASE("Bobines : la réussite déclarée vise le dernier envoi, pas la bobine choisie depuis")
+{
+    using namespace Plyo::SpoolsLogic;
+    const json pointer = last_sent({{"spool", "b1"}, {"printer", "P"}, {"date", "2026-11-12"}, {"at", "2026-11-12T10:00:00"}, {"x", 1}});
+    CHECK(pointer == json({{"spool", "b1"}, {"printer", "P"}, {"date", "2026-11-12"}, {"at", "2026-11-12T10:00:00"}}));
+    CHECK(last_sent({{"spool", "b1"}, {"printer", "P"}, {"date", "2026-11-12"}}).empty()); // sans instant
+    CHECK(last_sent(json::array()).empty());
+
+    // L'essai de cette bobine sur cette imprimante, écrit par le même envoi : il correspond.
+    const json trial = sanitize_version({{"spool", "b1"}, {"printer", "P"}, {"date", "2026-11-12"}, {"at", "2026-11-12T10:00:00"},
+                                         {"values", {{"filament_flow_ratio", "0.88"}}}});
+    CHECK(trial["at"] == "2026-11-12T10:00:00");
+    CHECK(sent_trial_matches(pointer, trial));
+    // Essai d'un autre envoi (réécrit depuis, ou plus ancien), d'une autre bobine ou d'une autre imprimante : refusé.
+    json other = trial;
+    other["at"] = "2026-11-12T11:00:00";
+    CHECK_FALSE(sent_trial_matches(pointer, other));
+    other       = trial;
+    other["spool"] = "b2";
+    CHECK_FALSE(sent_trial_matches(pointer, other));
+    other         = trial;
+    other["printer"] = "K2";
+    CHECK_FALSE(sent_trial_matches(pointer, other));
+    CHECK_FALSE(sent_trial_matches(json::object(), trial));
+    CHECK_FALSE(sent_trial_matches(pointer, json::object()));
+}
+
+TEST_CASE("Bobines : le résumé ne cite que des nombres")
+{
+    using namespace Plyo::SpoolsLogic;
+    const std::map<std::string, std::string> titles = {{"filament_flow_ratio", "Rapport de débit"}, {"filament_type", "Type"},
+                                                       {"filament_soluble", "Soluble"}, {"filament_notes", "Notes"},
+                                                       {"activate_air_filtration", "Filtration"}};
+    const std::map<std::string, std::string> kinds  = {{"filament_soluble", "bool"}, {"activate_air_filtration", "bool"},
+                                                       {"filament_flow_ratio", "float"}};
+    // Texte, texte entre guillemets, booléen d'Orca (« 1 ») : écartés du résumé, mais comptés comme écarts.
+    json r = success_summary({{"filament_type", "PETG"}, {"filament_notes", "\"a\""}, {"filament_soluble", "0"}, {"filament_flow_ratio", "0.95"}},
+                             {{"filament_type", "PLA"}, {"filament_notes", "\"b\""}, {"filament_soluble", "1"}, {"filament_flow_ratio", "0.88"}},
+                             titles, kinds);
+    CHECK(r["differs"] == true);
+    CHECK(r["summary"] == "débit 0,88");
+    r = success_summary({{"activate_air_filtration", "0"}}, {{"activate_air_filtration", "1"}}, titles, kinds);
+    CHECK(r["summary"] == "");
+    // Nombres négatifs ou entiers : cités.
+    r = success_summary({{"filament_flow_ratio", "1"}}, {{"filament_flow_ratio", "-0.5"}}, titles, kinds);
+    CHECK(r["summary"] == "débit -0,5");
+}

@@ -86,9 +86,18 @@ nlohmann::json set_outcome(const nlohmann::json& reg, const std::string& id, con
 // Profiles::file_stem(id + "|" + imprimante).
 std::string version_stem(const std::string& id, const std::string& printer);
 
-// Fichier de version relu : {spool, printer, date: "AAAA-MM-JJ", values: {clé filament: texte d'Orca}}, ou {} s'il manque
-// la bobine, l'imprimante ou une date valable. Les valeurs qui ne sont pas du texte sont écartées.
+// Fichier de version relu : {spool, printer, date: "AAAA-MM-JJ", at: instant de l'envoi ("" s'il manque), values: {clé
+// filament: texte d'Orca}}, ou {} s'il manque la bobine, l'imprimante ou une date valable. Les valeurs qui ne sont pas du
+// texte sont écartées.
 nlohmann::json sanitize_version(const nlohmann::json& raw);
+
+// Dernier envoi (plyo/essai/dernier-envoi.json) relu : {spool, printer, date, at}, ou {} s'il manque l'un d'eux.
+// Une réussite dite dans la discussion vise cet envoi, même si une autre bobine a été choisie depuis.
+nlohmann::json last_sent(const nlohmann::json& raw);
+
+// L'essai relu est-il bien celui de ce dernier envoi (même bobine, même imprimante, même instant) ? Sinon il a été
+// réécrit depuis, ou n'a jamais été écrit : la réussite est refusée.
+bool sent_trial_matches(const nlohmann::json& pointer, const nlohmann::json& trial);
 
 // Nom court d'un réglage dans une phrase : un nom simple pour les plus courants (« débit »), sinon la dernière partie du
 // titre du catalogue (après « · »), mots en minuscule sauf les sigles (« PEI »). Titre vide : la clé.
@@ -98,8 +107,11 @@ std::string short_title(const std::string& key, const std::string& catalog_title
 // {clé: texte d'Orca} : {differs, summary}. `summary` cite au plus 3 réglages réussis, « débit 0,88, température de buse
 // 210 °C » : débit, températures de buse, pressure advance et rétraction d'abord, puis par clé ; première valeur d'un
 // tableau, virgule décimale ; un titre déjà cité ne l'est pas deux fois. Clés absentes d'aujourd'hui : ignorées.
+// Seuls les nombres sont cités : un texte, un booléen ou un choix (`kinds` du catalogue : "bool", "enum") compte comme un
+// écart sans être cité.
 nlohmann::json success_summary(const nlohmann::json& values_before, const nlohmann::json& values_ok,
-                               const std::map<std::string, std::string>& catalog_titles);
+                               const std::map<std::string, std::string>& catalog_titles,
+                               const std::map<std::string, std::string>& kinds = {});
 
 // Couple de températures « première couche / couches suivantes » et l'écart permis (buse 30 °C, plateau 15 °C).
 struct TempPair

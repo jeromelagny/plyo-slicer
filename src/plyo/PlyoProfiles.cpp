@@ -7,6 +7,7 @@
 #include "PlyoStore.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoSpools.hpp"
+#include "PlyoSpoolsLogic.hpp"
 
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
@@ -34,7 +35,8 @@ Slic3r::PresetCollection& collection(Preset::Type type)
 boost::filesystem::path reliable_file() { return Store::dir("fiable") / (file_stem(Limits::machine_key()) + ".json"); }
 boost::filesystem::path trial_file() { return Store::dir("essai") / (file_stem(Limits::machine_key()) + ".json"); }
 
-std::string today() { return boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time()).substr(0, 10); }
+std::string now_iso() { return boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time()); }
+std::string today() { return now_iso().substr(0, 10); }
 
 const char* scope_of(Preset::Type type) { return type == Preset::TYPE_PRINT ? "print" : "filament"; }
 
@@ -197,7 +199,12 @@ bool note_sent()
     const nlohmann::json values = Spools::preset_values(spool["preset"]);
     if (values.empty())
         return false;
-    const bool written = Spools::write_version(false, {{"spool", spool["id"]}, {"printer", spool["printer"]}, {"date", today()}, {"values", values}});
+    const std::string    at      = now_iso();
+    const nlohmann::json pointer = {{"spool", spool["id"]}, {"printer", spool["printer"]}, {"date", at.substr(0, 10)}, {"at", at}};
+    nlohmann::json       trial   = pointer;
+    trial["values"]              = values;
+    // L'essai d'abord : le pointeur ne doit jamais viser un essai qui n'a pas été écrit.
+    const bool written = Spools::write_version(false, trial) && Spools::write_last_sent(pointer);
     if (!written)
         BOOST_LOG_TRIVIAL(error) << "Plyo: version envoyée de la bobine « " << spool["name"].get<std::string>() << " » non écrite";
     return written;
@@ -216,6 +223,21 @@ bool mark_spool_success()
     BOOST_LOG_TRIVIAL(info) << "Plyo: version réussie retenue pour la bobine « " << spool["name"].get<std::string>() << " » (envoi du "
                             << sent["date"].get<std::string>() << ")";
     return true;
+}
+
+nlohmann::json mark_sent_success()
+{
+    const nlohmann::json pointer = Spools::read_last_sent();
+    if (pointer.empty())
+        return {{"ok", false}, {"name", ""}};
+    const nlohmann::json sent = Spools::read_version(false, pointer["spool"], pointer["printer"]);
+    // Essai réécrit par un envoi plus récent de la même bobine… sans pointeur à jour, ou disparu : on ne marque rien.
+    if (!SpoolsLogic::sent_trial_matches(pointer, sent) || !Spools::write_version(true, sent))
+        return {{"ok", false}, {"name", ""}};
+    Spools::note_outcome(pointer["spool"], pointer["printer"], "ok", sent["date"]);
+    const std::string name = Spools::name_of(pointer["spool"]);
+    BOOST_LOG_TRIVIAL(info) << "Plyo: version réussie retenue pour la bobine « " << name << " » (dernier envoi, " << sent["date"].get<std::string>() << ")";
+    return {{"ok", true}, {"name", name}};
 }
 
 bool mark_spool_failure()

@@ -267,9 +267,10 @@ void handle_page_message(const nlohmann::json& data)
             send({{"type", "outcome_saved"}, {"ok", saved_outcome}});
         } else if (type == "spool_success") {
             // Réussite déclarée hors de la carte « Ça a marché ? » (phrase dans la discussion).
-            const bool     ok    = Profiles::mark_spool_success();
-            nlohmann::json spool = Spools::current();
-            send({{"type", "spool_success_done"}, {"ok", ok}, {"name", Json::str(spool, "name")}});
+            // Elle vise le dernier envoi, même si une autre bobine a été choisie depuis.
+            nlohmann::json done = Profiles::mark_sent_success();
+            done["type"]        = "spool_success_done";
+            send(done);
         } else if (type == "journal_add")
             Journal::record(data);
         else if (type == "journal_list")
@@ -527,7 +528,7 @@ void handle_page_message(const nlohmann::json& data)
             r["type"]        = "spool_chosen";
             // Dernière version réussie de cette bobine sur cette machine, et ce qui en diffère aujourd'hui (phrase de reprise).
             if (Json::boolean(r, "ok", false))
-                r["success"] = Spools::success_for(Json::str(r, "id"), Spools::current_full().value("printer", std::string()));
+                r["success"] = Spools::success_for(Json::str(r, "id"), Json::str(r, "printer"));
             send(r);
             send_values();
         } else if (type == "print_start") {
