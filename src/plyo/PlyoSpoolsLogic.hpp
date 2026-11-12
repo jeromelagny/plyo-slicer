@@ -65,12 +65,14 @@ struct AutoSaveState
     bool      slicing        = false; // Orca découpe
     bool      sending        = false; // Orca exporte ou envoie un fichier à l'imprimante
     long long quiet_ms       = 0;     // temps écoulé depuis le dernier changement de réglage
+    bool      calibrating    = false; // une calibration (de Plyo ou d'Orca) a changé le filament pour son test
 };
 
 constexpr long long AUTOSAVE_QUIET_MS = 2000;
 
-// Vrai seulement si le préréglage est modifié, est une bobine, que rien ne découpe ni n'envoie, et après
-// AUTOSAVE_QUIET_MS sans changement (l'utilisateur a fini de taper).
+// Vrai seulement si le préréglage est modifié, est une bobine, que rien ne découpe ni n'envoie, qu'aucune calibration
+// n'est en cours (ses valeurs de test ne doivent jamais entrer dans la bobine), et après AUTOSAVE_QUIET_MS sans
+// changement (l'utilisateur a fini de taper).
 bool should_save_spool(const AutoSaveState& state);
 
 // Couple de températures « première couche / couches suivantes » et l'écart permis (buse 30 °C, plateau 15 °C).

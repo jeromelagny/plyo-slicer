@@ -1,4 +1,5 @@
 #include "PlyoAutoSave.hpp"
+#include "PlyoCalibration.hpp"
 #include "PlyoGuard.hpp"
 #include "PlyoProfiles.hpp"
 #include "PlyoSpools.hpp"
@@ -6,7 +7,12 @@
 
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/Model.hpp"
+#include "libslic3r/Print.hpp"
 #include "libslic3r/PrintConfig.hpp"
+#include "libslic3r/Utils.hpp"
+#include "libslic3r/calib.hpp"
+#include "slic3r/GUI/BackgroundSlicingProcess.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/Plater.hpp"
@@ -70,6 +76,32 @@ bool sending(Slic3r::GUI::Plater* plater)
     return !jobs.empty();
 }
 
+// Une calibration change le filament pour son test sans l'enregistrer : ces valeurs ne doivent pas entrer dans la bobine.
+// Plyo : son test en cours (Calibration::active). Orca (menu Calibration, aussi appelé par les tests de Plyo) : le mode
+// de calibration du Print (calib_pa, calib_retraction…, remis à Calib_None au prochain chargement de fichier), le motif
+// de pressure advance, ou une pièce du plateau chargée depuis resources/calib (calib_flowrate et calib_temp ne
+// donnent pas de mode : seules leurs pièces les trahissent).
+bool calibrating(Slic3r::GUI::Plater* plater)
+{
+    if (Calibration::active())
+        return true;
+    const Slic3r::Print* print = plater->background_process().fff_print();
+    if (print != nullptr && print->calib_mode() != Slic3r::CalibMode::Calib_None)
+        return true;
+    const Slic3r::Model& model = plater->model();
+    if (model.calib_pa_pattern)
+        return true;
+    const std::string calib_dir = (boost::filesystem::path(Slic3r::resources_dir()) / "calib").lexically_normal().generic_string() + "/";
+    for (const Slic3r::ModelObject* object : model.objects) {
+        if (object->input_file.empty())
+            continue;
+        const std::string file = boost::filesystem::path(object->input_file).lexically_normal().generic_string();
+        if (file.compare(0, calib_dir.size(), calib_dir) == 0)
+            return true;
+    }
+    return false;
+}
+
 // Mêmes couples que Tab::validate_filament_temperature_pairs (un test de source vérifie qu'ils n'ont pas changé).
 std::vector<SpoolsLogic::TempPair> temperature_pairs(const Slic3r::DynamicPrintConfig& config)
 {
@@ -127,8 +159,12 @@ void tick()
     state.sending        = sending(plater);
     // Le calme compte depuis le dernier changement, et au moins depuis que le préréglage est vu modifié.
     state.quiet_ms = std::min(ms_since(s_last_change), ms_since(s_dirty_since));
+    // Calibration (parcours du plateau) puis registre (en mémoire après sa première lecture) : consultés seulement une
+    // fois le calme atteint, hors découpe et envoi.
+    const bool ready  = state.quiet_ms >= SpoolsLogic::AUTOSAVE_QUIET_MS && !state.slicing && !state.sending;
+    state.calibrating = ready && calibrating(plater);
     // Le registre (en mémoire après sa première lecture) n'est consulté qu'une fois tout le reste prêt.
-    state.is_spool = state.quiet_ms >= SpoolsLogic::AUTOSAVE_QUIET_MS && !state.slicing && !state.sending &&
+    state.is_spool = ready && !state.calibrating &&
                      filaments.get_selected_preset().can_overwrite() && Spools::is_spool_preset(name);
     if (!SpoolsLogic::should_save_spool(state) || modal_open())
         return;

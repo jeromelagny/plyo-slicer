@@ -242,7 +242,8 @@ std::string machine_label(const std::string& printer_preset)
 
 bool should_save_spool(const AutoSaveState& state)
 {
-    return state.filament_dirty && state.is_spool && !state.slicing && !state.sending && state.quiet_ms >= AUTOSAVE_QUIET_MS;
+    return state.filament_dirty && state.is_spool && !state.slicing && !state.sending && !state.calibrating &&
+           state.quiet_ms >= AUTOSAVE_QUIET_MS;
 }
 
 bool temperature_pairs_ok(const std::vector<TempPair>& pairs)

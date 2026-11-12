@@ -108,7 +108,7 @@ nlohmann::json save_applied()
             continue;
         const std::string from = col.get_selected_preset().name;
         // Une bobine n'a qu'un préréglage par machine : on l'écrase, jamais de copie « (Plyo) ».
-        const bool spool   = type == Preset::TYPE_FILAMENT && Spools::is_spool_preset(from);
+        const bool spool   = type == Preset::TYPE_FILAMENT && col.get_selected_preset().can_overwrite() && Spools::is_spool_preset(from);
         const bool created = !spool && !col.get_selected_preset().can_overwrite();
         std::vector<std::string> existing;
         for (const Slic3r::Preset& p : col)

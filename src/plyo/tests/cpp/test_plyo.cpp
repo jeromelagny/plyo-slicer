@@ -2290,6 +2290,7 @@ TEST_CASE("Bobines : enregistrement automatique seulement au calme, pour une bob
     s.slicing        = false;
     s.sending        = false;
     s.quiet_ms       = 2000;
+    s.calibrating    = false;
     // Modifié, bobine, 2 s de calme : on enregistre.
     CHECK(should_save_spool(s));
 
@@ -2314,6 +2315,11 @@ TEST_CASE("Bobines : enregistrement automatique seulement au calme, pour une bob
     AutoSaveState typing = s;
     typing.quiet_ms      = 1500;
     CHECK_FALSE(should_save_spool(typing));
+
+    // Calibration en cours (Plyo ou Orca) : les valeurs du test ne doivent jamais entrer dans la bobine.
+    AutoSaveState calibrating = s;
+    calibrating.calibrating   = true;
+    CHECK_FALSE(should_save_spool(calibrating));
 
     // Rien de modifié : rien à écrire.
     AutoSaveState clean = s;

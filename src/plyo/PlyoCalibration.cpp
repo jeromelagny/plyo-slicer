@@ -546,6 +546,8 @@ nlohmann::json restore()
     return {{"ok", true}, {"text", (snap.has_project ? "Ta pièce et tes réglages sont de retour." : "Tes réglages sont de retour.") + kept}};
 }
 
+bool active() { return s_before.has_value(); }
+
 nlohmann::json history_for_current()
 {
     const nlohmann::json history = load_history();

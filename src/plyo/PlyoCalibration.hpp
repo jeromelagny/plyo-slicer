@@ -20,6 +20,10 @@ nlohmann::json save_result(const std::string& test, double value);
 // Remet le projet et les réglages d'avant le test (avec le préréglage calibré s'il vient d'être enregistré).
 nlohmann::json restore();
 
+// Un test de Plyo est en cours : ses réglages d'avant sont gardés (du lancement du test jusqu'à restore()). Le filament
+// porte alors les valeurs du test : l'enregistrement automatique de la bobine ne doit pas les retenir.
+bool active();
+
 // Calibrations déjà faites pour le filament et l'imprimante en cours : [{test, value, date}].
 nlohmann::json history_for_current();
 
