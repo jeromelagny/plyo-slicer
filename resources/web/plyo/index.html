@@ -2949,7 +2949,7 @@
   // Boutons d'action proposés par l'IA. Dans une conversation rouverte, seules les actions sans effet restent.
   var PLATE_KINDS = ['orient', 'arrange', 'scale_to_fit', 'slice'];
   function renderActions(actions, archived) {
-    var list = (actions || []).filter(function (a) { return !(archived && PLATE_KINDS.indexOf(a.kind) >= 0); });
+    var list = (actions || []).filter(function (a) { return !(archived && (PLATE_KINDS.indexOf(a.kind) >= 0 || a.kind === 'remember_success')); });
     if (!list.length) return null;
     var row = el('div', 'row-acts');
     list.forEach(function (a) {
@@ -2958,7 +2958,12 @@
         if (a.kind === 'show') showMe(a.target);
         else if (a.kind === 'open_tool') window.orca.postMessage({ type: 'open_tool', tool: a.target });
         else if (a.kind === 'show_setting') showSetting(a.target);
-        else {
+        else if (a.kind === 'remember_success') {
+          // Le slicer marque la dernière bobine envoyée (pointeur gardé) : marche aussi après un redémarrage d'Orca ; sa réponse dit si c'est noté.
+          b.disabled = true;
+          if (projectUI.spoolSent && projectUI.spoolSent.conv === conv) projectUI.spoolSent = null;
+          window.orca.postMessage({ type: 'spool_success' });
+        } else {
           b.disabled = true;
           if (a.kind === 'slice') assistSlice = { conv: conv, row: row };
           plateAction(a.kind, function (ok) { if (!ok) { b.disabled = false; if (a.kind === 'slice') assistSlice = null; } });
@@ -4042,6 +4047,9 @@
         context: lastValues.context,
         history: conv.history.slice(-MAX_HISTORY)
       };
+      // La bobine du projet : sans elle le serveur ne propose jamais « Retenir ces réglages ».
+      var spoolName = conv.project && conv.project.filament && conv.project.filament.spool && conv.project.filament.spool.name;
+      if (spoolName && typeof spoolName === 'string') body.context = Object.assign({}, body.context, { spool: spoolName.slice(0, 60) });
       if (photos.length) body.images = photos.map(function (p) { return { media_type: p.media_type, data: p.data }; });
       if (note) body.note = note;
       if (calibHistory.length) body.calibrations = calibHistory;

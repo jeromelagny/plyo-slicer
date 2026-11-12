@@ -582,3 +582,18 @@ test('reprise de revue : échec noté, fraîcheur venue du slicer, sortie de « 
   const done = page.slice(page.indexOf('function onSpoolSuccessDone'), page.indexOf('function onSpoolSuccessDone') + 600);
   assert.match(done, /Je n’ai pas pu retenir ces réglages/);
 });
+
+test('la demande à l’assistant porte la bobine du projet dans le contexte (≤ 60 caractères)', () => {
+  const html = read('index.html');
+  assert.match(html, /conv\.project\.filament\.spool\.name/);
+  assert.match(html, /body\.context = Object\.assign\(\{\}, body\.context, \{ spool: spoolName\.slice\(0, 60\) \}\)/);
+});
+
+test('l’action remember_success poste spool_success, se grise au clic et disparaît des réponses archivées', () => {
+  const html = read('index.html');
+  const start = html.indexOf('function renderActions');
+  const fn = html.slice(start, html.indexOf('// ---------- Modèle 3D joint', start));
+  assert.match(fn, /a\.kind === 'remember_success'\) \{[\s\S]*?b\.disabled = true;[\s\S]*?postMessage\(\{ type: 'spool_success' \}\)/);
+  assert.match(fn, /archived && \(PLATE_KINDS\.indexOf\(a\.kind\) >= 0 \|\| a\.kind === 'remember_success'\)/);
+  assert.match(html, /msg\.type === 'spool_success_done'[\s\S]{0,80}onSpoolSuccessDone\(msg\)/);
+});
