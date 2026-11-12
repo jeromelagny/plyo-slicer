@@ -6,8 +6,9 @@
 
   // ui : { el, button, icon, rich } (les aides du panneau).
   // ctx : { project, printers (liste ou null), reachable {preset: bool}, error {printer?, filament?}, editing, compact, handlers }.
-  // handlers : { pickPrinter(preset, name), keepProposed(), setupPrinter(), pickFilament(type), setTemps(nozzle, bed),
-  //              importPart(), change(line), expand() }
+  // handlers : { pickPrinter(preset, name), keepProposed(), setupPrinter(), pickSpool(row), toggleNewSpool(), pickMaterial(type),
+  //              typeSpoolName(text), createSpool(), setTemps(nozzle, bed), importPart(), change(line), expand() }
+  // ctx.spools : lignes de PlyoSpools.choiceRows (null tant que le slicer ne les a pas données) ; ctx.newSpool : voir renderNewSpool.
   // Aucun bouton plein ici : le seul bouton plein d'une étape est celui de la ligne d'action (journey-view.js).
   function projectOf(ctx) { return ctx.project || root.PlyoProject.emptyProject(); }
 
@@ -120,17 +121,59 @@
       body.appendChild(ui.el('p', 'muted small', 'Ta machine a été reliée sans son numéro de série ni son code d’accès : je ne lis pas ses emplacements. Allume-la, et je la cherche sur le réseau pour la relier.'));
       body.appendChild(ui.button('Relier à nouveau', ctx.handlers.setupPrinter, 'link'));
     }
-    if (ctx.noSlots) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas les emplacements de ta machine pour l’instant : choisis la matière ici. À l’envoi, regarde la fenêtre d’Orca et l’écran de l’imprimante.'));
+    if (ctx.noSlots) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas les emplacements de ta machine pour l’instant : choisis ta bobine ici. À l’envoi, regarde la fenêtre d’Orca et l’écran de l’imprimante.'));
     if (ctx.slotRemark) body.appendChild(ui.el('p', 'muted small', ctx.slotRemark));
   }
-  // Pas de question par défaut : le profil ne permet pas de reconnaître une machine à une bobine. Un lien discret, après les matières.
+  // Pas de question par défaut : le profil ne permet pas de reconnaître une machine à une bobine. Un lien discret, après les bobines.
   function renderManualLink(body, ui, ctx) {
     if (ctx.manualLink) body.appendChild(ui.button('Ma machine a plusieurs bobines (AMS, CFS…)', ctx.handlers.openManual, 'link'));
+  }
+
+  // Une nouvelle bobine : sa matière (puces), puis son nom, obligatoire et toujours avec l'aide (où regarder, un exemple).
+  // ctx.newSpool : { open, material, name, error ('vide'|'court'|texte du slicer), focus }.
+  function renderNewSpool(body, ui, ctx, closable) {
+    var h = ctx.handlers, ns = ctx.newSpool || {}, S = root.PlyoSpools;
+    var box = ui.el('div', 'new-spool');
+    box.appendChild(ui.el('p', 'intent-q', 'Une nouvelle bobine'));
+    box.appendChild(ui.el('p', 'muted small', 'Sa matière est écrite sur l’étiquette. Pas sûr ? C’est presque toujours du PLA.'));
+    var kinds = ui.el('div', 'printer-actions');
+    MATERIALS.forEach(function (k) {
+      kinds.appendChild(ui.button(k, function () { h.pickMaterial(k); }, 'btn ghost sm' + (ns.material === k ? ' on' : '')));
+    });
+    box.appendChild(kinds);
+    if (ns.material) {
+      var lab = ui.el('label', 'temp-field spool-name');
+      lab.appendChild(ui.el('span', 'muted small', 'Nom de ta bobine'));
+      var input = ui.el('input', 'field');
+      input.type = 'text';
+      input.maxLength = 60;
+      input.value = ns.name || '';
+      input.setAttribute('aria-label', 'Nom de ta bobine');
+      input.dataset.spoolName = '1';
+      input.addEventListener('input', function () { h.typeSpoolName(input.value); });
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); h.createSpool(); } });
+      lab.appendChild(input);
+      box.appendChild(lab);
+      box.appendChild(ui.el('p', 'muted small', root.PlyoSpools.NAME_HELP));
+      if (ns.error) box.appendChild(ui.el('p', 'project-error', S.nameErrorText(ns.error) || ns.error));
+      var acts = ui.el('div', 'printer-actions');
+      acts.appendChild(ui.button('C’est ma bobine', h.createSpool, 'btn ghost sm', 'check'));
+      if (closable) acts.appendChild(ui.button('Annuler', h.toggleNewSpool, 'link'));
+      box.appendChild(acts);
+      if (ns.focus) { ns.focus = false; setTimeout(function () { input.focus(); }, 0); }
+    } else if (closable) box.appendChild(ui.button('Annuler', h.toggleNewSpool, 'link'));
+    body.appendChild(box);
   }
 
   // Le contenu des étapes 1 à 3 (imprimante, filament, pièce) : des choix qui s'appliquent tout de suite.
   function renderChoices(slot, ui, ctx) {
     var P = root.PlyoProject, project = projectOf(ctx), step = P.nextStep(project), h = ctx.handlers;
+    // Le panneau se redessine souvent (signaux, redimensionnement) : le nom de bobine en cours de saisie garde le curseur
+    // tant que rien de ce qui est montré ne change.
+    var ns0 = ctx.newSpool || {}, key = JSON.stringify([step, project.filament, ctx.editing, ctx.spools, ns0.open, ns0.material, ns0.error, ctx.error, ctx.showKinds, ctx.noCanvas, ctx.noSlots, ctx.manualLink, ctx.slotRemark, ctx.relink]);
+    var active = typeof document !== 'undefined' ? document.activeElement : null;
+    if (active && active.dataset && active.dataset.spoolName && slot.contains(active) && slot.choicesKey === key) return;
+    slot.choicesKey = key;
     slot.textContent = '';
     var fi = project.filament && !project.filament.proposed ? project.filament : null;
     var proposedFilament = project.filament && project.filament.proposed ? project.filament : null;
@@ -161,24 +204,34 @@
       }
       body.appendChild(ui.button('Mes machines…', h.openMachines, 'link'));
     } else if (wantsFilament && proposedFilament && !ctx.showKinds) {
-      // « PLA, comme la dernière fois ? » : le bouton « Oui » est dans la ligne d'action.
+      // « Sunlu PLA+ noir, comme la dernière fois ? » : le bouton « Oui » est dans la ligne d'action.
       renderSlotNotes(body, ui, ctx);
-      body.appendChild(ui.button('Autre matière', h.toggleKinds, 'link'));
+      body.appendChild(ui.button('Une autre bobine', h.toggleKinds, 'link'));
       renderManualLink(body, ui, ctx);
     } else if (wantsFilament) {
+      // « Quelle bobine ? » : les bobines de cette machine (la dernière réussie d'abord), puis « Une nouvelle bobine ».
       if (ctx.error && ctx.error.filament) body.appendChild(ui.el('p', 'project-error', ctx.error.filament));
-      if (ctx.noCanvas) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas ton Canvas pour l’instant : choisis la matière ici, l’imprimante choisira l’emplacement.'));
+      if (ctx.noCanvas) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas ton Canvas pour l’instant : choisis ta bobine ici, l’imprimante choisira l’emplacement.'));
       renderSlotNotes(body, ui, ctx);
-      body.appendChild(ui.el('p', 'muted small', 'Regarde ta bobine : la matière est écrite dessus. Pas sûr ? C’est presque toujours du PLA.'));
-      var kinds = ui.el('div', 'printer-actions');
-      MATERIALS.forEach(function (k) {
-        kinds.appendChild(ui.button(k, function () { h.pickFilament(k); }, 'btn ghost sm' + (fi && fi.type === k ? ' on' : '')));
-      });
-      body.appendChild(kinds);
+      var rows = ctx.spools, ns = ctx.newSpool || {};
+      if (!Array.isArray(rows)) body.appendChild(ui.el('p', 'muted small', 'Je cherche tes bobines…'));
+      else {
+        if (rows.length) {
+          var list = ui.el('div', 'printer-actions spool-list');
+          rows.forEach(function (r) {
+            var on = fi && fi.spool && fi.spool.id === r.id;
+            list.appendChild(ui.button(r.label + ' · ' + r.detail, function () { h.pickSpool(r); }, 'btn ghost sm' + (on ? ' on' : '')));
+          });
+          body.appendChild(list);
+        }
+        // Aucune bobine encore : la nouvelle bobine est déjà ouverte.
+        if (ns.open || !rows.length) renderNewSpool(body, ui, ctx, rows.length > 0);
+        else body.appendChild(ui.button('Une nouvelle bobine', h.toggleNewSpool, 'btn ghost sm', 'plus'));
+      }
       if (fi) {
-        body.appendChild(ui.el('p', 'muted small', 'J’ai mis les températures conseillées pour ce filament. Si l’étiquette de ta bobine indique autre chose, entre-les :'));
+        body.appendChild(ui.el('p', 'muted small', 'Si l’étiquette de ta bobine indique d’autres températures que celles en place, entre-les :'));
         body.appendChild(ui.button('Ma bobine indique d’autres températures', h.toggleSpool, 'link'));
-        if (ctx.editing === 'filament') body.appendChild(ui.button('Garder ce filament', h.cancelEdit, 'link'));
+        if (ctx.editing === 'filament') body.appendChild(ui.button('Garder cette bobine', h.cancelEdit, 'link'));
       }
       renderManualLink(body, ui, ctx);
     } else {

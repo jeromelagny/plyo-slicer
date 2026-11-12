@@ -200,6 +200,54 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
     return out;
 }
 
+namespace {
+
+std::string first_filament()
+{
+    if (bundle() == nullptr)
+        return "";
+    return bundle()->filament_presets.empty() ? bundle()->filaments.get_selected_preset_name() : bundle()->filament_presets.front();
+}
+
+// Matière d'un préréglage de l'utilisateur (« filament_type », première valeur), si Plyo la connaît ; sinon "".
+std::string adoptable_material(const std::string& filament_preset)
+{
+    if (bundle() == nullptr || filament_preset.empty() || filament_preset != first_filament())
+        return "";
+    const Preset* p = bundle()->filaments.find_preset(filament_preset, false);
+    if (p == nullptr || p->is_system || p->is_default || is_spool_preset(filament_preset))
+        return "";
+    const auto* type = p->config.option<Slic3r::ConfigOptionStrings>("filament_type");
+    const std::string material = type != nullptr && !type->values.empty() ? type->values.front() : std::string();
+    for (const char* known : {"PLA", "PETG", "ABS", "ASA", "TPU"})
+        if (material == known)
+            return material;
+    return "";
+}
+
+} // namespace
+
+nlohmann::json adopt_offer(const std::string& filament_preset)
+{
+    const std::string material = adoptable_material(filament_preset);
+    return {{"preset", filament_preset}, {"offer", !material.empty()}, {"material", material}};
+}
+
+nlohmann::json adopt(const std::string& filament_preset, const std::string& name)
+{
+    const std::string material = adoptable_material(filament_preset);
+    if (material.empty())
+        return {{"ok", false}, {"preset", filament_preset}, {"text", "Je ne peux pas retenir « " + filament_preset + " » comme bobine : choisis-le d'abord comme filament 1 dans Orca."}};
+    const nlohmann::json r  = SpoolsLogic::adopt(load(), filament_preset, name, material, current_printer());
+    const std::string    id = Json::str(r, "id");
+    if (id.empty())
+        return {{"ok", false}, {"preset", filament_preset}, {"text", "Tu as déjà une bobine de ce nom sur cette imprimante : choisis-la à l'étape Filament."}};
+    if (r["reg"] != load() && !save(r["reg"]))
+        return {{"ok", false}, {"preset", filament_preset}, {"text", "Je n'ai pas pu enregistrer la liste de tes bobines."}};
+    BOOST_LOG_TRIVIAL(info) << "Plyo: préréglage « " << filament_preset << " » retenu comme bobine";
+    return {{"ok", true}, {"id", id}, {"name", SpoolsLogic::spool_name(r["reg"], id)}, {"preset", filament_preset}};
+}
+
 bool is_spool_preset(const std::string& filament_preset)
 {
     if (filament_preset.empty())

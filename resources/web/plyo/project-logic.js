@@ -1,6 +1,7 @@
 // Logique pure de la fiche « Mon projet » (sans DOM) : étapes à compléter, projet proposé à partir du précédent.
 // Chargée par index.html (window.PlyoProject) et testée par node (tests/project-logic.test.mjs).
-// Un projet : { printer: {preset, name}, filament: {type, preset, nozzle_temp, bed_temp}, part: {name} }.
+// Un projet : { printer: {preset, name}, filament: {type, preset, nozzle_temp, bed_temp, spool: {id, name}}, part: {name} }.
+// `filament.spool` : la bobine choisie à l'étape « Quelle bobine ? » (filament 1), retenue par le slicer (bobines.json).
 // Jamais de secret dedans (code d'accès d'imprimante…). `proposed: true` : valeur reprise du projet précédent,
 // pas encore confirmée par l'utilisateur.
 (function (root) {

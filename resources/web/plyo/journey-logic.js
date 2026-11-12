@@ -63,7 +63,7 @@
       if (cv.mode === 'multi') return { label: cv.system === 'u1' ? 'Utiliser ces têtes' : 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
       return { label: '', kind: 'none', enabled: false };
     }
-    // « changer » le filament en cours : on répond avec les choix, ou « Garder ce filament ».
+    // « changer » le filament en cours : on répond avec les choix, ou « Garder cette bobine ».
     if (c.editing) return { label: '', kind: 'none', enabled: false };
     // Températures de la bobine : garder celles conseillées, ou entrer celles de l'étiquette (formulaire de l'étape).
     if (step === 'filament' && c.temps) return { label: 'Garder ' + tempText(c.temps), kind: 'keepTemps', enabled: true };
@@ -83,9 +83,9 @@
       return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: !c.sending } : { label: 'Exporter le fichier', kind: 'export', enabled: !c.sending };
     }
     if (step === 'resultat') return c.success ? { label: 'Nouvelle pièce', kind: 'newPart', enabled: true } : { label: 'Envoyer une photo', kind: 'photo', enabled: true };
-    // Machine et filament proposés (dernière machine, dernier filament) : confirmer d'un toucher.
+    // Machine et bobine proposées (dernière machine, bobine du projet précédent) : confirmer d'un toucher.
     if (step === 'machine' && c.proposal) return { label: 'Oui, sur ' + c.proposal.name, kind: 'confirmMachine', enabled: true };
-    if (step === 'filament' && c.proposal) return { label: 'Oui, du ' + c.proposal.name, kind: 'confirmFilament', enabled: true };
+    if (step === 'filament' && c.proposal) return { label: 'Oui, ' + c.proposal.name, kind: 'confirmFilament', enabled: true };
     return { label: '', kind: 'none', enabled: false };
   }
 
@@ -111,11 +111,11 @@
     var c = ctx || {};
     if (c.canvas) return canvasPrompt(c);
     if (step === 'filament' && c.temps) return 'Quelles températures indique ta bobine ?';
-    if (c.editing) return 'Dis-moi quel filament est sur la bobine';
+    if (c.editing) return 'Quelle bobine ?';
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return 'Ta pièce n’est plus sur le plateau';
     switch (step) {
       case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : 'Choisis ton imprimante';
-      case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : 'Dis-moi quel filament est sur la bobine';
+      case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : 'Quelle bobine ?';
       case 'piece': return 'Ajoute la pièce à imprimer';
       case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
         if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';
@@ -183,6 +183,7 @@
     if (p.printer && (p.printer.name || p.printer.preset)) parts.push(String(p.printer.name || p.printer.preset).replace(/\s+\d+(\.\d+)?\s*nozzle$/i, ''));
     if (p.part && p.part.name) parts.push(shortName(p.part.name));
     if (p.filament && p.filament.type && Array.isArray(p.canvas) && p.canvas.length) parts.push(filamentRow(p).text.replace(/ · emplacement /, ' · n° ').replace(/ · (\d+) emplacements$/, ' · $1 bobines'));
+    else if (p.filament && p.filament.spool && p.filament.spool.name) parts.push(shortName(p.filament.spool.name));
     else if (p.filament && p.filament.type) parts.push(p.filament.type);
     return parts.join(' · ');
   }
@@ -217,7 +218,7 @@
       var slot = cv[0].label !== undefined && cv[0].label !== '' ? cv[0].label : cv[0].tray_id + 1; // numéro du traducteur (« 1A ») ; projet ancien : tray_id + 1
       return { line: 'filament', text: p.filament.type + (name ? ' ' + name : '') + (cv[0].system === 'u1' ? ' · tête ' : ' · emplacement ') + slot, swatch: cv[0].color };
     }
-    return { line: 'filament', text: p.filament.type };
+    return { line: 'filament', text: p.filament.spool && p.filament.spool.name ? p.filament.spool.name : p.filament.type };
   }
 
   // Verdict de la vérification du démarrage (PlyoPrinterStatus.cpp) → une ligne du guide ; null si rien à dire.

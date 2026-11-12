@@ -466,6 +466,7 @@
       <div class="hello">
         <h2>Bonjour !</h2>
         <p id="hello-text">Pose-moi ta question ici : un réglage, un problème d’impression, une photo de défaut à analyser.</p>
+        <div id="hello-spool"></div>
       </div>
       <div class="home-more hidden" id="goals-wrap">
         <p class="label">Ou choisis un objectif</p>
@@ -518,6 +519,7 @@
 <!--plyo-include:canvas-view.js-->
 <!--plyo-include:journey-view.js-->
 <!--plyo-include:journey-steps.js-->
+<!--plyo-include:spools-logic.js-->
 <!--plyo-include:project-card.js-->
 <script>
 (function () {
@@ -869,7 +871,10 @@
   // ---------- Fiche « Mon projet » : imprimante, filament (buse et plateau), pièce ----------
   // Le projet est gardé avec la conversation (conv.project) ; PlyoProject (project-logic.js) dit quelle étape manque.
   var projectUI = { showList: false, showKinds: false, showOthers: false, keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false,
-    spool: { open: false, limits: null, error: '' } }; // plage de températures de l'étiquette de la bobine (fiche)
+    spool: { open: false, limits: null, error: '' }, // plage de températures de l'étiquette de la bobine (fiche)
+    // « Quelle bobine ? » : bobines de la machine `printer` (items null tant que le slicer ne les a pas données), saisie d'une
+    // nouvelle bobine, envoi ou export fait avec une bobine (question de l'étape Résultat), préréglages déjà proposés.
+    spools: { printer: null, items: null }, newSpool: { open: false, material: '', name: '', error: '', focus: false }, spoolSent: null, spoolNo: null, adoptAsked: {} };
   // Emplacements (Canvas, CFS, IFS, U1) à l'étape Filament : lecture, proposition, application, plan d'envoi.
   // readId : numéro de la dernière lecture (une réponse plus ancienne est ignorée) ; planKey null : le premier affichage
   // envoie le plan ou l'efface (rien ne reste d'un panneau rechargé) ; refusedConv : conversation du départ refusé.
@@ -983,7 +988,7 @@
       full.push(entry);
     });
     if (!entries.length || entries.length !== mapping.length) { canvasUI.error = 'Choisis un emplacement pour chaque couleur.'; renderProject(); return; }
-    if (unknown) { var w = PlyoCanvas.words(st.system); canvasUI.error = 'Je ne connais pas la matière de ' + w.the + ' ' + unknown.slot + ' : choisis-en un autre, ou choisis ton filament dans la liste.'; renderProject(); return; }
+    if (unknown) { var w = PlyoCanvas.words(st.system); canvasUI.error = 'Je ne connais pas la matière de ' + w.the + ' ' + unknown.slot + ' : choisis-en un autre, ou choisis ta bobine dans la liste.'; renderProject(); return; }
     canvasUI.error = '';
     canvasUI.applying = full;
     canvasUI.applyingConv = conv;
@@ -1177,7 +1182,6 @@
   function projectChanged() {
     // Machine ou filament changé après la découpe : la découpe est périmée, on repasse à « Préparer ».
     conv.project = PlyoJourney.resetStepOnChange(conv.seenProject || null, conv.project);
-    proposeFilamentFromHabit();
     var seenBefore = conv.seenProject;
     conv.seenProject = JSON.parse(JSON.stringify(conv.project));
     maybeReapplyIntent(seenBefore);
@@ -1206,7 +1210,7 @@
     var p = conv && conv.project || {}, ctx = { sliced: plateSliced(), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, editing: projectUI.editing === 'filament', checked: plateChecked, success: !!p.success, slicing: slicing.conv === conv && !!conv,
       plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
-    else if (p.filament && p.filament.proposed && p.filament.type) ctx.proposal = { name: p.filament.type };
+    else if (p.filament && p.filament.proposed && p.filament.spool && p.filament.spool.name) ctx.proposal = { name: p.filament.spool.name }; // la bobine du projet précédent
     var cctx = conv ? canvasCtx(PlyoJourney.currentStep(conv.project)) : null;
     if (cctx) ctx.canvas = cctx;
     else if (conv && PlyoJourney.tempsPending(p) && !ctx.editing) ctx.temps = { nozzle: p.filament.nozzle_temp, bed: p.filament.bed_temp };
@@ -1237,7 +1241,7 @@
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
     if (step !== 'imprimer') { projectUI.sentConv = null; projectUI.exported = null; } // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
-    if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; } }
+    if (step !== journeyUI.lastStep) { $('guide-notes').textContent = ''; journeyUI.lastStep = step; if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; } }
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, handlers: projectHandlers });
@@ -1248,6 +1252,7 @@
       extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'plus', onClick: projectHandlers.setupPrinter } : null });
     ensureCanvasRead(step);
     ensureManualRead(step);
+    ensureSpoolsRead(step);
     syncCanvasPlan(false);
     var cmode = canvasMode(step), cst = slotState() || {};
     if (cmode === 'manual')
@@ -1260,12 +1265,15 @@
     else if (step === 'filament' && PlyoJourney.tempsPending(conv.project) && projectUI.editing !== 'filament') renderTempsStep();
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
-        error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds, handlers: projectHandlers });
+        error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds,
+        spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
-      intent: intentState(step, plateSliced()),
+      intent: intentState(step, plateSliced()), spoolAsk: spoolAsk(), spoolNo: projectUI.spoolNo === conv,
       machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
+    $('hello-spool').textContent = '';
+    if (spoolMissing()) $('hello-spool').appendChild(chooseSpoolButton());
     ensureRecheck(step);
     updateIntentMenu();
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
@@ -1303,7 +1311,8 @@
     exportFile: function () { runAction('export'); },
     started: function () { rememberHabit(); journalPart(''); delete conv.project.success; setTourStep('after'); },
     photo: function () { pickFiles(); },
-    success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
+    success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; spoolSuccess(); projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
+    failed: function () { projectUI.spoolNo = conv; renderProject(); },
     newPart: function () { newConversation(); },
     reprint: function () { delete conv.project.success; setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
     changeMachine: function () { projectHandlers.change('printer'); },
@@ -1365,6 +1374,7 @@
       return;
     }
     projectUI.sentConv = conv;
+    noteSpoolSent();
     noteLine(PlyoCanvas.orcaConfirm(conv && conv.project.canvas) || 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
     unlockSendSoon();
     renderProject();
@@ -1380,6 +1390,7 @@
     rememberHabit();
     journalPart('');
     projectUI.sentConv = conv;
+    noteSpoolSent();
     projectUI.exported = { conv: conv, text: Logic.exportedText(msg, PlyoCanvas.exportNote(conv && conv.project.canvas)) };
     renderProject();
     if (viewUI.tab === 'guide') $('project-card').scrollIntoView({ block: 'nearest' }); // le message entier, en haut de l'étape
@@ -1582,12 +1593,6 @@
     }
     else if (q.mode === 'confirm' && !p.printer) { p.printer = { preset: q.machine.preset, name: q.machine.label, proposed: true }; renderProject(); }
   }
-  function proposeFilamentFromHabit() {
-    var p = conv && conv.project;
-    if (!p || !p.printer || p.printer.proposed || p.filament) return;
-    var h = PlyoMachines.habitFor(habits, p.printer.preset);
-    if (h) p.filament = { type: h.type, nozzle_temp: h.nozzle_temp, bed_temp: h.bed_temp, proposed: true };
-  }
   function askProjectPrinters() { window.orca.postMessage({ type: 'project_printers' }); }
   var projectHandlers = {
     pickPrinter: function (preset, name) {
@@ -1600,10 +1605,16 @@
     keepProposed: function () { var p = conv.project.printer; if (p) projectHandlers.pickPrinter(p.preset, p.name); },
     setupPrinter: function () { startSetup(); renderSetupFlow(); },
     openManual: function () { openManual(); },
-    pickFilament: function (type) {
-      projectUI.error = {};
-      projectUI.pending = { kind: 'filament', type: type, profileBefore: lastValues && lastValues.context ? lastValues.context.filament : '' };
-      window.orca.postMessage({ type: 'filament_choose', material: type });
+    // « Quelle bobine ? » : une bobine de la liste, ou une nouvelle (matière, puis nom obligatoire).
+    pickSpool: function (row) { chooseSpool(row.name, row.material, !hasSpoolPreset(row.id)); },
+    toggleNewSpool: function () { var ns = projectUI.newSpool; ns.open = !ns.open; ns.error = ''; renderProject(); },
+    pickMaterial: function (type) { var ns = projectUI.newSpool; ns.open = true; ns.material = type; ns.error = ''; ns.focus = true; renderProject(); },
+    typeSpoolName: function (text) { projectUI.newSpool.name = text; },
+    createSpool: function () {
+      var ns = projectUI.newSpool;
+      ns.error = PlyoSpools.nameError(ns.name);
+      if (ns.error || !ns.material) { ns.focus = true; renderProject(); return; } // l'aide reste sous le champ, avec la raison
+      chooseSpool(PlyoSpools.cleanName(ns.name), ns.material, true);
     },
     // `done(ok, texte)` : la réponse d'Orca ; sans `done`, seul un refus est dit.
     setTemps: function (nozzle, bed, done) {
@@ -1658,17 +1669,17 @@
     openMachines: function () { openMachinesDrawer(); },
     toggleList: function () { projectUI.showList = !projectUI.showList; renderProject(); },
     toggleKinds: function () { projectUI.showKinds = !projectUI.showKinds; renderProject(); },
+    // « Oui, <bobine> » : la bobine du projet précédent, avec ses réglages (son préréglage fait foi).
     confirmFilament: function () {
       var f = conv.project.filament;
-      if (!f || !f.type) return;
-      projectUI.keepTemps = { nozzle: f.nozzle_temp, bed: f.bed_temp }; // « comme avant » : mêmes températures qu'à la dernière impression
-      projectHandlers.pickFilament(f.type);
+      if (!f || !f.spool) return;
+      chooseSpool(f.spool.name, f.type, !hasSpoolPreset(f.spool.id));
     },
     change: function (line) {
       projectUI.error = {};
       var late = PlyoProject.nextStep(conv.project) === 'ready';
       if (line === 'printer') { conv.project.printer = null; conv.project.filament = null; projectUI.showList = true; }
-      if (line === 'filament') projectUI.editing = 'filament';
+      if (line === 'filament') { projectUI.editing = 'filament'; projectUI.spools.printer = null; } // liste relue : dernier résultat à jour
       projectChanged();
       if (late && line === 'printer') noteLine('Changer de machine refait la préparation : filament, vérification et découpe.', '', 'info', 'guide');
     }
@@ -1708,20 +1719,24 @@
       conv.project.printer = { preset: msg.printer_preset, name: msg.printer_preset };
       conv.project.filament = null;
       projectChanged();
-      // Le filament du projet est rechoisi par son type pour la nouvelle machine, avec les mêmes températures.
-      if (kept && kept.type) { projectUI.keepTemps = { nozzle: kept.nozzle_temp, bed: kept.bed_temp }; projectHandlers.pickFilament(kept.type); }
+      // La bobine du projet est rechoisie pour la nouvelle machine (son préréglage part de la matière de celle-ci), avec les
+      // mêmes températures. Sans bobine, l'étape Filament la demande.
+      if (kept && kept.spool && kept.type) { projectUI.keepTemps = { nozzle: kept.nozzle_temp, bed: kept.bed_temp }; chooseSpool(kept.spool.name, kept.type, true); }
       return;
     }
     if (!pend) return;
     if (pend.kind === 'filament') {
       conv.project.filament = { type: pend.type, preset: msg.filament_preset, nozzle_temp: msg.nozzle_temp, bed_temp: msg.bed_temp };
+      // Une bobine qui avait déjà son préréglage sur cette machine garde ses températures : rien à redemander.
+      if (pend.spool) { conv.project.filament.spool = pend.spool; if (!pend.fresh) conv.project.filament.temps_ok = true; }
       projectUI.editing = null;
       var wanted = projectUI.keepTemps;
       projectUI.keepTemps = null;
       var profileNote = PlyoJourney.profileChangeNote(pend.profileBefore, msg.filament_preset);
       if (wanted && (wanted.nozzle !== msg.nozzle_temp || wanted.bed !== msg.bed_temp)) { projectChanged(); if (profileNote) noteLine(profileNote, '', 'info', 'guide'); projectHandlers.setTemps(wanted.nozzle, wanted.bed); return; }
       projectChanged(); // d'abord : le changement d'étape efface les messages de l'étape
-      if (profileNote) noteLine(profileNote, '', 'info', 'guide');
+      if (pend.spool) announceSpool(pend); // le nom de la bobine vaut mieux que celui du préréglage
+      else if (profileNote) noteLine(profileNote, '', 'info', 'guide');
       return;
     } else if (pend.kind === 'temps' && conv.project.filament) {
       conv.project.filament.nozzle_temp = msg.nozzle_temp;
@@ -1745,15 +1760,115 @@
       tip.appendChild(button('Choisir une autre machine', function () { tip.remove(); projectHandlers.change('printer'); }, 'link'));
     }
   }
-  function onProjectFilamentChosen(msg) {
+  // ---------- « Quelle bobine ? » ----------
+  // Les bobines retenues par le slicer (bobines.json), vues depuis la machine du projet : relues à chaque arrivée à l'étape.
+  function ensureSpoolsRead(step) {
+    var pr = conv.project.printer;
+    if (!pr || pr.proposed || !(step === 'filament' || projectUI.editing === 'filament') || projectUI.spools.printer === pr.preset) return;
+    projectUI.spools = { printer: pr.preset, items: null };
+    window.orca.postMessage({ type: 'spools_get', printer: pr.preset });
+  }
+  function onSpools(msg) {
+    if (!Array.isArray(msg.items)) msg.items = [];
+    projectUI.spools.items = msg.items;
+    if (conv) renderProject();
+  }
+  function hasSpoolPreset(id) { return (projectUI.spools.items || []).some(function (s) { return s.id === id && s.has_preset; }); }
+  // `fresh` : la bobine n'a pas encore de préréglage sur cette machine (il part du profil de la matière) : on demandera
+  // les températures de son étiquette, comme pour un filament neuf.
+  function chooseSpool(name, material, fresh) {
+    if (!conv || !conv.project.printer) return;
+    projectUI.error = {};
+    projectUI.pending = { kind: 'spool', type: material, fresh: !!fresh, profileBefore: lastValues && lastValues.context ? lastValues.context.filament : '' };
+    window.orca.postMessage({ type: 'spool_choose', name: name, material: material, printer: conv.project.printer.preset });
+  }
+  function onSpoolChosen(msg) {
     var pend = projectUI.pending;
+    if (!pend || pend.kind !== 'spool') return;
     if (!msg.ok) {
       projectUI.pending = null;
-      projectUI.error = { filament: PlyoProject.filamentChoiceError(msg, pend.type) };
+      projectUI.error = { filament: msg.cancelled ? PlyoProject.filamentChoiceError(msg, pend.type) : msg.text || 'Je n’ai pas pu choisir cette bobine. Réessaie.' };
+      projectUI.keepTemps = null;
       renderProject();
       return;
     }
-    window.orca.postMessage({ type: 'project_state' }); // lit le profil choisi et ses températures (projectUI.pending reste « filament »)
+    projectUI.newSpool = { open: false, material: '', name: '', error: '', focus: false };
+    projectUI.spools.printer = null; // relue la prochaine fois (une bobine de plus, un préréglage de plus)
+    projectUI.pending = { kind: 'filament', type: pend.type, spool: { id: msg.id, name: msg.name }, fresh: pend.fresh || !!msg.created, success: msg.success || null, profileBefore: pend.profileBefore };
+    window.orca.postMessage({ type: 'project_state' }); // lit le préréglage choisi et ses températures
+  }
+  // Après le choix : la phrase de reprise (dernière impression réussie), et le retour aux réglages réussis s'ils ont changé.
+  function announceSpool(pend) {
+    var text = PlyoSpools.resumeText(pend.spool.name, pend.success);
+    if (!text) return;
+    var tip = noteLine(text, pend.success.differs ? '' : 'ok', pend.success.differs ? 'info' : 'check', 'guide');
+    if (!pend.success.differs) return;
+    var back = button(PlyoSpools.restoreLabel(pend.success.date), function () {
+      back.disabled = true;
+      reliableResult = function (res) {
+        if (!res.ok) { back.disabled = false; noteLine(res.text || 'Je n’ai pas pu remettre ces réglages.', 'error', 'alert', 'guide'); return; }
+        back.remove();
+        noteLine('Réglages réussis remis pour ' + pend.spool.name + '.' + (Logic.savedText(res) ? ' ' + Logic.savedText(res) : ''), 'ok', 'undo', 'guide');
+      };
+      window.orca.postMessage({ type: 'restore_reliable' });
+    }, 'link');
+    tip.appendChild(back);
+  }
+  // Envoi ou export accepté depuis le panneau : le slicer a noté les réglages de la bobine (print_start). L'étape Résultat
+  // demande alors si ça a marché. Pas pour les emplacements (Canvas, CFS…) : la v1 ne suit que la bobine du filament 1.
+  function noteSpoolSent() {
+    var p = conv && conv.project, f = p && p.filament;
+    projectUI.spoolSent = f && f.spool && !(Array.isArray(p.canvas) && p.canvas.length) ? { conv: conv, name: f.spool.name } : null;
+    projectUI.spoolNo = null;
+  }
+  // La question de l'étape Résultat ; elle se tait quand la carte « Ça a marché ? » est déjà là (elle note aussi la bobine).
+  function spoolAsk() {
+    var s = projectUI.spoolSent;
+    return s && s.conv === conv && !conv.project.success && !$('outcome-slot').childNodes.length ? s.name : '';
+  }
+  // « Oui, c'est réussi » après un envoi ou un export avec une bobine : le slicer retient les réglages de cet envoi.
+  function spoolSuccess() {
+    if (!projectUI.spoolSent || projectUI.spoolSent.conv !== conv) return;
+    projectUI.spoolSent = null;
+    window.orca.postMessage({ type: 'spool_success' });
+  }
+  function onSpoolSuccessDone(msg) {
+    projectUI.spools.printer = null; // « ✓ réussie le … » à jour la prochaine fois
+    if (msg.ok && msg.name) noteLine(PlyoSpools.doneText(msg.name), 'ok', 'check', 'guide');
+  }
+  // Mode écrit : sans bobine, l'accueil et une question de l'assistant sur le filament mènent au même choix.
+  function spoolMissing() { return !!conv && PlyoSpools.needsSpool(conv.project); }
+  function chooseSpoolButton() {
+    return button('Choisir ma bobine', function () {
+      applyTab('show-guide');
+      if (PlyoProject.nextStep(conv.project) !== 'filament') projectHandlers.change('filament');
+      $('project-card').scrollIntoView({ block: 'nearest' });
+    }, 'btn ghost sm', 'palette');
+  }
+  // Préréglage de l'utilisateur choisi dans Orca, hors registre : proposé une fois par session ; « Non » ne le repropose jamais.
+  function checkAdoptOffer() {
+    var p = conv && conv.project, ctx = lastValues && lastValues.context, f = ctx && ctx.filament;
+    if (!p || !p.printer || p.printer.proposed || !ctx || ctx.printer !== p.printer.preset || !f || projectUI.pending || setup.phase) return;
+    if (projectUI.adoptAsked[f] || !PlyoSpools.offersAdopt(habits, f)) return;
+    projectUI.adoptAsked[f] = true;
+    window.orca.postMessage({ type: 'spool_adopt_check', preset: f });
+  }
+  function onAdoptOffer(msg) {
+    var ctx = lastValues && lastValues.context;
+    if (!msg.offer || !ctx || ctx.filament !== msg.preset) return;
+    var tip = noteLine(PlyoSpools.adoptQuestion(msg.preset), '', 'help', 'guide');
+    var acts = el('div', 'printer-actions');
+    acts.appendChild(button('Oui, retiens-la', function () { tip.remove(); window.orca.postMessage({ type: 'spool_adopt', preset: msg.preset, name: msg.preset }); }, 'btn ghost sm', 'check'));
+    acts.appendChild(button('Non merci', function () { tip.remove(); habits = PlyoSpools.declineAdopt(habits, msg.preset); saveHabits(); }, 'link'));
+    tip.appendChild(el('span', 'muted small', ' Je garderai ses réglages qui marchent et je te la proposerai à l’étape Filament.'));
+    tip.appendChild(acts);
+  }
+  function onSpoolAdopted(msg) {
+    if (!msg.ok) { noteLine(msg.text || 'Je n’ai pas pu retenir cette bobine.', 'error', 'alert', 'guide'); return; }
+    projectUI.spools.printer = null;
+    var f = conv && conv.project.filament;
+    if (f && f.preset === msg.preset) { f.spool = { id: msg.id, name: msg.name }; projectChanged(); }
+    noteLine('C’est noté : « ' + msg.name + ' » fait partie de tes bobines.', 'ok', 'check', 'guide');
   }
   function openConversation(id) {
     if (blockedWhileBusy()) return;
@@ -3420,7 +3535,8 @@
     acts.appendChild(reliableSlot);
     askReliable(function (info) {
       if (!info.available) return;
-      var back = button('Revenir à ma dernière version fiable', function () {
+      var sp = conv && conv.project.filament && conv.project.filament.spool; // bobine : « réglages réussis », plus de « version fiable »
+      var back = button(sp ? PlyoSpools.restoreLabel(info.date) : 'Revenir à ma dernière version fiable', function () {
         back.disabled = true;
         status.classList.add('hidden');
         reliableResult = function (res) {
@@ -4207,6 +4323,7 @@
         row.appendChild(chip);
       });
       wrap.appendChild(row);
+      if (!archived && PlyoSpools.isFilamentQuestion(q) && spoolMissing()) wrap.appendChild(chooseSpoolButton()); // même choix que l'accueil
     });
     if (!archived && !entry.answered) {
       sendBtn.disabled = !Logic.allAnswered(qs, picks);
@@ -4331,6 +4448,7 @@
       var firstValues = !lastValues;
       renderValues(msg);
       checkDivergence();
+      checkAdoptOffer();
       if (firstValues) { askOutcome(); applyMachineQuestion(); } // au démarrage, une fois les libellés des réglages et la machine d'Orca connus
       window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
       drainPhoneQueue();
@@ -4390,8 +4508,16 @@
     } else if (msg.type === 'project_changed') {
       // Nouveau projet ou projet ouvert : retour à l'accueil (la conversation précédente reste dans « Mes conversations »).
       if (!busy) { closeDrawer(); newConversation(); }
-    } else if (msg.type === 'filament_chosen') {
-      if (projectUI.pending && projectUI.pending.kind === 'filament') onProjectFilamentChosen(msg);
+    } else if (msg.type === 'spools') {
+      onSpools(msg);
+    } else if (msg.type === 'spool_chosen') {
+      onSpoolChosen(msg);
+    } else if (msg.type === 'spool_success_done') {
+      onSpoolSuccessDone(msg);
+    } else if (msg.type === 'spool_adopt_offer') {
+      onAdoptOffer(msg);
+    } else if (msg.type === 'spool_adopted') {
+      onSpoolAdopted(msg);
     } else if (msg.type === 'print_started') {
       onPrintStarted(msg);
     } else if (msg.type === 'setup_catalog') {

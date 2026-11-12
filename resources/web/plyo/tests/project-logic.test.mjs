@@ -92,3 +92,11 @@ test('filamentChoiceError : un choix annulé dans la fenêtre d’Orca n’est p
   assert.ok(cancelled.includes('Choix annulé'));
   assert.ok(cancelled.includes('ton filament n’a pas changé'));
 });
+
+test('proposeFrom reprend la bobine du projet précédent, à confirmer (« Sunlu PLA+ noir, comme la dernière fois ? »)', () => {
+  const prev = { printer: printer, filament: Object.assign({ spool: { id: 'b1', name: 'Sunlu PLA+ noir' } }, filament), part: { name: 'a.stl' } };
+  const next = P.proposeFrom(prev);
+  assert.deepEqual(next.filament.spool, { id: 'b1', name: 'Sunlu PLA+ noir' });
+  assert.equal(next.filament.proposed, true);
+  assert.equal(P.nextStep(Object.assign({}, next, { printer: printer, part: { name: 'b.stl' } })), 'filament', 'une bobine proposée n’est pas choisie');
+});

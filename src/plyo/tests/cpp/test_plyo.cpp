@@ -2262,6 +2262,53 @@ TEST_CASE("Bobines : nom noté avant l'enregistrement, repris tel quel après un
     CHECK_FALSE(is_pending(done, id, "Autre"));
 }
 
+TEST_CASE("Bobines : un préréglage de l'utilisateur devient une bobine sans changer de nom")
+{
+    using namespace Plyo::SpoolsLogic;
+    const std::string printer = "Ma Creality CR-10 SE 0.4 nozzle";
+    const json        r       = adopt(sanitize(json::object()), "Mon PLA à moi", "Mon PLA à moi", "PLA", printer);
+    CHECK(r["created"] == true);
+    const std::string id = r["id"];
+    REQUIRE(!id.empty());
+    // Inscrit tel quel : pas de nouveau nom « <bobine> — <machine> », et c'est bien une bobine pour l'enregistrement automatique.
+    CHECK(preset_for(r["reg"], id, printer) == "Mon PLA à moi");
+    CHECK(spool_of_preset(r["reg"], "Mon PLA à moi") == id);
+    CHECK_FALSE(is_pending(r["reg"], id, printer));
+    CHECK(for_machine(r["reg"], printer)[0]["has_preset"] == true);
+    CHECK(spool_name(r["reg"], id) == "Mon PLA à moi");
+    // Déjà une bobine : rien ne change.
+    const json again = adopt(r["reg"], "Mon PLA à moi", "Autre nom", "PLA", printer);
+    CHECK(again["id"] == id);
+    CHECK(again["created"] == false);
+    CHECK(again["reg"] == sanitize(r["reg"]));
+    // Une bobine du même nom a déjà son préréglage sur cette machine : refus, jamais deux préréglages pour une bobine.
+    const json clash = adopt(r["reg"], "Copie de mon PLA", "mon pla à moi", "PLA", printer);
+    CHECK(clash["id"] == "");
+    CHECK(spool_of_preset(clash["reg"], "Copie de mon PLA") == "");
+    // Refus : préréglage, machine, nom ou matière manquants.
+    CHECK(adopt(sanitize(json::object()), "", "Mon PLA", "PLA", printer)["id"] == "");
+    CHECK(adopt(sanitize(json::object()), "Mon PLA", "Mon PLA", "PLA", "")["id"] == "");
+    CHECK(adopt(sanitize(json::object()), "Mon PLA", "x", "PLA", printer)["id"] == "");
+    CHECK(adopt(sanitize(json::object()), "Mon nylon", "Mon nylon", "PA", printer)["id"] == "");
+}
+
+TEST_CASE("Project: sanitize garde la bobine du filament 1 (id et nom seulement)")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json ok = sanitize({{"filament", {{"type", "PLA"}, {"preset", "Sunlu PLA+ noir \xE2\x80\x94 CR-10 SE"}, {"spool", {{"id", "b1"}, {"name", "Sunlu PLA+ noir"}, {"secret", "x"}}}}}});
+    CHECK(ok["filament"]["spool"] == nlohmann::json({{"id", "b1"}, {"name", "Sunlu PLA+ noir"}}));
+    CHECK_FALSE(sanitize({{"filament", {{"preset", "P"}, {"spool", {{"id", "b1"}}}}}})["filament"].contains("spool"));
+    CHECK_FALSE(sanitize({{"filament", {{"preset", "P"}, {"spool", "b1"}}}})["filament"].contains("spool"));
+}
+
+TEST_CASE("Habits: préréglages refusés comme bobines, gardés pour ne plus jamais redemander")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json h = sanitize_habits({{"spool_declined", {"Mon PLA à moi", "", 3, std::string(300, 'x')}}});
+    CHECK(h["spool_declined"] == nlohmann::json({"Mon PLA à moi"}));
+    CHECK_FALSE(sanitize_habits(nlohmann::json::object()).contains("spool_declined"));
+}
+
 TEST_CASE("Bobines : nom court de la machine (comme le panneau)")
 {
     using namespace Plyo::SpoolsLogic;

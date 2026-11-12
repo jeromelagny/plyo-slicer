@@ -115,7 +115,7 @@ std::string load_page()
     const std::string config_marker = "<!--plyo-config-->";
     if (const size_t at = page.find(config_marker); at != std::string::npos)
         page.replace(at, config_marker.size(), "<script>" + Config::api_url_script() + "</script>");
-    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js", "project-logic.js", "journey-logic.js", "machines-logic.js", "machines-view.js", "intent-logic.js", "canvas-logic.js", "canvas-view.js", "journey-view.js", "journey-steps.js", "project-card.js"}) {
+    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js", "project-logic.js", "journey-logic.js", "machines-logic.js", "machines-view.js", "intent-logic.js", "canvas-logic.js", "canvas-view.js", "journey-view.js", "journey-steps.js", "spools-logic.js", "project-card.js"}) {
         const std::string marker = std::string("<!--plyo-include:") + name + "-->";
         if (const size_t at = page.find(marker); at != std::string::npos)
             page.replace(at, marker.size(), "<script>\n" + read_resource(name) + "\n</script>");
@@ -531,6 +531,15 @@ void handle_page_message(const nlohmann::json& data)
                 r["success"] = Spools::success_for(Json::str(r, "id"), Json::str(r, "printer"));
             send(r);
             send_values();
+        } else if (type == "spool_adopt_check") {
+            // Préréglage de l'utilisateur choisi dans Orca : le panneau propose une fois d'en faire une bobine.
+            nlohmann::json r = Spools::adopt_offer(Json::str(data, "preset"));
+            r["type"]        = "spool_adopt_offer";
+            send(r);
+        } else if (type == "spool_adopt") {
+            nlohmann::json r = Spools::adopt(Json::str(data, "preset"), Json::str(data, "name"));
+            r["type"]        = "spool_adopted";
+            send(r);
         } else if (type == "print_start") {
             if (Json::boolean(data, "export", false))
                 // La réponse ne part qu'à la fin réelle de l'export ; la fenêtre d'enregistrement s'ouvre dans cet appel, comme celle de connexion.

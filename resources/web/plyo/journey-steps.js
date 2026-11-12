@@ -3,7 +3,7 @@
 // celui de la ligne d'action (journey-view.js). Chargé par index.html (window.PlyoJourneySteps).
 (function (root) {
   // ui : { el, button, icon }. opts : { step, ctx {sliced, linked, risks}, summary (texte durée et poids), handlers }.
-  // handlers : { skip(), exportFile(), started(), photo(), changeMachine(), recheck() }. opts.machine : { name, reachable (true|false|null) }.
+  // handlers : { skip(), exportFile(), started(), photo(), success(), failed(), changeMachine(), recheck() }. opts.machine : { name, reachable (true|false|null) }.
   function line(ui, iconName, text, tone) {
     var row = ui.el('div', 'printer-step' + (tone ? ' ' + tone : ''));
     row.appendChild(ui.icon(iconName, 14));
@@ -110,8 +110,13 @@
     } else if (opts.step === 'resultat') {
       var after = ui.el('div', 'printer-actions');
       if (!c.success) {
-        body.appendChild(ui.el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer.'));
+        // opts.spoolAsk : nom de la bobine de l'envoi (ou de l'export) fait depuis le panneau. « Oui » retient ses réglages,
+        // « Non » mène à la photo du défaut. opts.spoolNo : « Non » vient d'être répondu.
+        if (opts.spoolNo) body.appendChild(ui.el('p', '', 'Dommage. Envoie-moi une photo de ta pièce : je te dis ce qui cloche et comment corriger.'));
+        else if (opts.spoolAsk) body.appendChild(ui.el('p', '', 'Ça a marché avec ' + opts.spoolAsk + ' ? Si oui, je retiens ces réglages pour la prochaine fois.'));
+        else body.appendChild(ui.el('p', '', 'Quand c’est fini, envoie-moi une photo : je te dis si c’est réussi et comment l’améliorer.'));
         after.appendChild(ui.button('Oui, c’est réussi', h.success, 'btn ghost sm', 'check'));
+        if (opts.spoolAsk && !opts.spoolNo) after.appendChild(ui.button('Non, c’est raté', h.failed, 'btn ghost sm', 'x'));
         after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
         after.appendChild(ui.button('Ajouter une photo depuis l’ordinateur', h.photo, 'btn ghost sm', 'camera'));
       }

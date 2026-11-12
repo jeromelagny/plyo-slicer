@@ -48,6 +48,13 @@ std::string preset_for(const nlohmann::json& reg, const std::string& id, const s
 nlohmann::json set_preset(const nlohmann::json& reg, const std::string& id, const std::string& printer, const std::string& preset,
                           bool pending = false);
 
+// Préréglage de l'utilisateur (choisi dans Orca, hors registre) inscrit comme bobine `name` pour cette imprimante, sans
+// le renommer : {reg, id, created}. Déjà une bobine : registre inchangé, son id. Refus (id "") : préréglage ou imprimante
+// vides, nom ou matière invalides (comme add), ou bobine du même nom ayant déjà un autre préréglage sur cette machine
+// (jamais deux préréglages pour une bobine et une machine).
+nlohmann::json adopt(const nlohmann::json& reg, const std::string& preset, const std::string& name, const std::string& material,
+                     const std::string& printer);
+
 // Le préréglage noté pour la bobine `id` sur cette imprimante attend-il encore son enregistrement ?
 bool is_pending(const nlohmann::json& reg, const std::string& id, const std::string& printer);
 

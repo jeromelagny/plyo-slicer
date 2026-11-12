@@ -204,6 +204,24 @@ nlohmann::json set_preset(const nlohmann::json& reg, const std::string& id, cons
     return sanitize(clean); // le nom du préréglage est borné comme à la lecture
 }
 
+nlohmann::json adopt(const nlohmann::json& reg, const std::string& preset, const std::string& name, const std::string& material,
+                     const std::string& printer)
+{
+    const nlohmann::json clean = sanitize(reg);
+    if (preset.empty() || printer.empty())
+        return {{"reg", clean}, {"id", ""}, {"created", false}};
+    if (const std::string known = spool_of_preset(clean, preset); !known.empty())
+        return {{"reg", clean}, {"id", known}, {"created", false}};
+    const nlohmann::json added = add(clean, name, material);
+    const std::string    id    = Json::str(added, "id");
+    if (id.empty())
+        return {{"reg", clean}, {"id", ""}, {"created", false}};
+    const std::string recorded = preset_for(added["reg"], id, printer);
+    if (!recorded.empty() && recorded != preset && !is_pending(added["reg"], id, printer))
+        return {{"reg", clean}, {"id", ""}, {"created", false}};
+    return {{"reg", set_preset(added["reg"], id, printer, preset)}, {"id", id}, {"created", added["created"]}};
+}
+
 bool is_pending(const nlohmann::json& reg, const std::string& id, const std::string& printer)
 {
     const nlohmann::json clean = sanitize(reg);

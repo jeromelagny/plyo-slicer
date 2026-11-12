@@ -17,6 +17,15 @@ nlohmann::json list(const std::string& printer_preset);
 // { ok, id, name, preset, printer, created, cancelled?, text? } (`created` : la bobine est nouvelle ; `printer` si ok).
 nlohmann::json create_or_choose(const std::string& name, const std::string& material, const std::string& printer_preset);
 
+// Préréglage de l'utilisateur choisi dans Orca (filament 1), hors registre : peut-on proposer d'en faire une bobine ?
+// { preset, offer, material } ; `offer` faux pour un profil système, une bobine, un autre préréglage que le filament 1 en
+// cours ou une matière que Plyo ne connaît pas.
+nlohmann::json adopt_offer(const std::string& filament_preset);
+
+// L'utilisateur a dit oui : ce préréglage est inscrit au registre pour l'imprimante en cours, sans être renommé ni
+// enregistré. { ok, id, name, preset, text? }.
+nlohmann::json adopt(const std::string& filament_preset, const std::string& name);
+
 // Ce préréglage filament est-il celui d'une bobine du registre (hors nom encore « en attente ») ? Le registre est gardé
 // en mémoire après sa première lecture (relu seulement après une écriture par Plyo) : appelable souvent, sans disque.
 bool is_spool_preset(const std::string& filament_preset);

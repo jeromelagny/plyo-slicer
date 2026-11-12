@@ -142,6 +142,14 @@ nlohmann::json sanitize(const nlohmann::json& project)
         // Températures de la bobine vérifiées à l'étape Filament (panneau) : sinon la question est reposée.
         if (const nlohmann::json* v = Json::field(*f, "temps_ok"); v != nullptr && v->is_boolean() && v->get<bool>())
             o["temps_ok"] = true;
+        // Bobine du filament 1 (étape Filament) : son id et son nom, rien d'autre.
+        if (const nlohmann::json* s = Json::field(*f, "spool"); s != nullptr && s->is_object()) {
+            nlohmann::json spool = nlohmann::json::object();
+            text(*s, spool, "id");
+            text(*s, spool, "name");
+            if (spool.contains("id") && spool.contains("name"))
+                o["spool"] = spool;
+        }
         out["filament"] = o;
     }
     if (const nlohmann::json* a = Json::field(project, "part"); a != nullptr && a->is_object()) {
@@ -258,6 +266,15 @@ nlohmann::json sanitize_habits(const nlohmann::json& habits)
         out["intent_skips"] = std::max<long long>(0, std::min<long long>(100, n->get<long long>()));
     if (const nlohmann::json* a = Json::field(habits, "ask_intent"); a != nullptr && a->is_boolean())
         out["ask_intent"] = a->get<bool>();
+    // Préréglages d'Orca que l'utilisateur ne veut pas comme bobines : la question n'est plus jamais posée pour eux.
+    if (const nlohmann::json* d = Json::field(habits, "spool_declined"); d != nullptr && d->is_array()) {
+        nlohmann::json list = nlohmann::json::array();
+        for (const nlohmann::json& p : *d)
+            if (p.is_string() && !p.get_ref<const std::string&>().empty() && p.get_ref<const std::string&>().size() <= 200 && list.size() < 100)
+                list.push_back(p);
+        if (!list.empty())
+            out["spool_declined"] = list;
+    }
     return out;
 }
 

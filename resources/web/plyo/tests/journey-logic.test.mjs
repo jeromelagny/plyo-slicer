@@ -128,12 +128,14 @@ test('chatHello : l’accueil de « Poser une question » invite à poser une qu
 
 test('confirmation en un toucher : la machine et le filament proposés deviennent le bouton de la ligne d’action', () => {
   assert.deepEqual(J.primaryAction('machine', { proposal: { name: 'Centauri Carbon 2' } }), { label: 'Oui, sur Centauri Carbon 2', kind: 'confirmMachine', enabled: true });
-  assert.deepEqual(J.primaryAction('filament', { proposal: { name: 'PLA' } }), { label: 'Oui, du PLA', kind: 'confirmFilament', enabled: true });
+  assert.deepEqual(J.primaryAction('filament', { proposal: { name: 'Sunlu PLA+ noir' } }), { label: 'Oui, Sunlu PLA+ noir', kind: 'confirmFilament', enabled: true });
   assert.equal(J.primaryAction('machine', {}).kind, 'none');
   assert.equal(J.primaryAction('piece', { proposal: { name: 'x' } }).kind, 'none');
   assert.match(J.prompt('machine', { proposal: { name: 'Centauri Carbon 2' } }), /Imprimer sur Centauri Carbon 2 \?/);
-  assert.match(J.prompt('filament', { proposal: { name: 'PLA' } }), /PLA, comme la dernière fois \?/);
-  assert.match(J.prompt('filament', {}), /filament/i);
+  assert.match(J.prompt('filament', { proposal: { name: 'Sunlu PLA+ noir' } }), /Sunlu PLA\+ noir, comme la dernière fois \?/);
+  // « Quelle bobine ? » : la question de l'étape Filament, aussi quand on change de filament.
+  assert.equal(J.prompt('filament', {}), 'Quelle bobine ?');
+  assert.equal(J.prompt('preparer', { editing: true }), 'Quelle bobine ?');
 });
 
 test('resetStepOnChange : changer de machine oublie l’adaptation du 3MF, changer de filament la garde', () => {
@@ -365,4 +367,12 @@ test('afterSliceFollow : après une découpe demandée à l’assistant, imprime
   assert.equal(J.afterSliceFollow({ sliced: false, linked: true }), null);
   assert.deepEqual(J.afterSliceFollow({ sliced: true, linked: true }), { label: 'Envoyer et imprimer', kind: 'send' });
   assert.deepEqual(J.afterSliceFollow({ sliced: true, linked: false }), { label: 'Exporter le fichier', kind: 'export' });
+});
+
+test('fiche : la ligne filament montre le nom de la bobine quand il y en a une', () => {
+  const p = { printer: { preset: 'CR-10 SE', name: 'CR-10 SE' }, part: { name: 'clip.stl' }, filament: { type: 'PLA', preset: 'P', spool: { id: 'b1', name: 'Sunlu PLA+ noir' } } };
+  assert.equal(J.filledRows(p).filter(r => r.line === 'filament')[0].text, 'Sunlu PLA+ noir');
+  assert.match(J.ficheSummary(p), /Sunlu PLA\+ noir$/);
+  delete p.filament.spool;
+  assert.equal(J.filledRows(p).filter(r => r.line === 'filament')[0].text, 'PLA');
 });

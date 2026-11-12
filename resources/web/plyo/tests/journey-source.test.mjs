@@ -370,7 +370,7 @@ test('comportements : brouillon gardé, demande remise si la jauge est pleine, m
   assert.ok(/code === 'insufficient_credits' && !noteInput\.value/.test(page));
   assert.ok(page.indexOf("setTourStep('print'); // d'abord") < page.indexOf('PlyoJourney.advanceNote(risks.length)'), 'message après le changement d’étape');
   assert.ok(/skip: function \(\) \{ \$\('preflight-slot'\)\.textContent = ''/.test(page));
-  assert.ok(read('project-card.js').includes('Garder ce filament'));
+  assert.ok(read('project-card.js').includes('Garder cette bobine'));
 });
 
 test('réglages lus : pas de nom technique pour un débutant ; ligne décochée lisible', () => {
@@ -385,7 +385,8 @@ test('emplacements : canvasWanted lit le traducteur (known.slots), et la CC2 gar
   assert.ok(!/known\.cc2/.test(page), 'plus de lecture de known.cc2');
   // Textes CC2 fixés (consigne : la CC2 ne change ni de comportement ni de texte).
   assert.ok(page.includes('Je n’arrive pas à relire les emplacements de ta CC2 : rien n’est envoyé. Vérifie qu’elle est allumée, puis réessaie.'));
-  assert.ok(read('project-card.js').includes('Je ne lis pas ton Canvas pour l’instant : choisis la matière ici, l’imprimante choisira l’emplacement.'));
+  // Lot 5 : la liste de repli est celle des bobines (« Quelle bobine ? ») ; la consigne suit (plyo-verifier-renvois-ui).
+  assert.ok(read('project-card.js').includes('Je ne lis pas ton Canvas pour l’instant : choisis ta bobine ici, l’imprimante choisira l’emplacement.'));
   // Le plan de la CC2 ne reçoit rien de nouveau : label, imposable, source et system ne sont posés que hors CC2.
   assert.ok(/st\.system && st\.system !== 'canvas'\) \{ entry\.label/.test(page));
 });
@@ -479,4 +480,89 @@ test('une découpe lancée depuis une réponse propose ensuite d’imprimer ou d
   assert.match(html, /if \(a\.kind === 'slice'\) assistSlice = \{ conv: conv, row: row \}/);
   assert.match(html, /followAssistSlice\(signals\);/);
   assert.match(html, /runAction\(a\.kind\)/);
+});
+
+// ---------- « Quelle bobine ? » (lot 5) ----------
+test('Quelle bobine ? : fichier inclus par la page et par PlyoAssistant.cpp', () => {
+  assert.ok(read('index.html').includes('<!--plyo-include:spools-logic.js-->'));
+  assert.ok(readCpp('src/plyo/PlyoAssistant.cpp').includes('"spools-logic.js"'), 'chargé par PlyoAssistant.cpp');
+  assert.ok(read('index.html').indexOf('<!--plyo-include:spools-logic.js-->') < read('index.html').indexOf('<!--plyo-include:project-card.js-->'), 'avant la fiche qui s’en sert');
+});
+
+test('Quelle bobine ? : plus de filament_choose sans nom de bobine, le nom passe par spool_choose', () => {
+  const page = read('index.html'), card = read('project-card.js');
+  assert.ok(!page.includes("type: 'filament_choose'"), 'le chemin « matière seule → profil générique » a disparu');
+  assert.ok(!/h\.pickFilament\(/.test(card), 'les puces de matière ne choisissent plus un profil générique');
+  assert.match(page, /type: 'spool_choose', name: [^,]+, material: [^,]+, printer: /);
+  assert.ok(page.includes("msg.type === 'spool_chosen'") && page.includes("msg.type === 'spools'"));
+  // Le nom est vérifié avant l'envoi : un nom vide ou trop court ne part jamais au slicer.
+  assert.match(page, /PlyoSpools\.nameError\(/);
+});
+
+test('Quelle bobine ? : l’aide NAME_HELP est affichée sous le champ du nom, avec le bouton « C’est ma bobine »', () => {
+  const card = read('project-card.js');
+  const form = card.slice(card.indexOf('function renderNewSpool'), card.indexOf('function renderNewSpool') + 2500);
+  assert.ok(form.length > 100, 'renderNewSpool existe');
+  assert.ok(form.indexOf("ui.el('input'") >= 0 && form.indexOf('PlyoSpools.NAME_HELP') > form.indexOf("ui.el('input'"), 'aide après le champ');
+  assert.ok(form.includes('C’est ma bobine'));
+  assert.ok(form.includes('Une nouvelle bobine') || card.includes('Une nouvelle bobine'));
+  assert.ok(form.includes('MATERIALS.forEach'), 'les puces de matière d’abord');
+});
+
+test('Quelle bobine ? : les textes qui renvoyaient à l’ancienne étape suivent (plyo-verifier-renvois-ui)', () => {
+  const all = ['index.html', 'project-card.js', 'journey-logic.js', 'journey-steps.js', 'canvas-view.js'].map(read).join('\n');
+  assert.ok(!all.includes('Dis-moi quel filament'), 'ancienne question');
+  assert.ok(!all.includes('choisis la matière ici'), 'consigne de l’ancienne liste de matières');
+  assert.ok(!all.includes('Autre matière'), 'ancien lien de la proposition');
+  assert.ok(!all.includes('Garder ce filament'), 'ancien lien de « changer »');
+  assert.ok(!all.includes('choisis ton filament dans la liste'), 'la liste est celle des bobines');
+  // « Ma machine a plusieurs bobines » reste atteignable depuis la liste des bobines.
+  const card = read('project-card.js');
+  const filamentBranch = card.slice(card.indexOf('} else if (wantsFilament) {'), card.indexOf('} else {', card.indexOf('} else if (wantsFilament) {')));
+  assert.ok(filamentBranch.includes('renderManualLink('), 'lien des emplacements gardé');
+  assert.ok(filamentBranch.includes('Une nouvelle bobine'), 'la nouvelle bobine est dans la liste');
+});
+
+test('Résultat : après un envoi ou un export avec une bobine, « Oui » retient les réglages, la phrase vient du C++', () => {
+  const page = read('index.html');
+  assert.match(page, /type: 'spool_success'/);
+  assert.match(page, /msg\.type === 'spool_success_done'/);
+  assert.match(page, /PlyoSpools\.doneText\(msg\.name\)/);
+  // Seulement après un envoi ou un export depuis le panneau (le C++ note les réglages à print_start).
+  const started = page.slice(page.indexOf('function onPrintStarted'), page.indexOf('function repaintPanel'));
+  assert.equal((started.match(/noteSpoolSent\(\)/g) || []).length, 2, 'envoi et export');
+  // Pas une deuxième carte : la question est dans l'étape Résultat, et se tait quand la carte « Ça a marché ? » est là.
+  const steps = read('journey-steps.js');
+  assert.match(steps, /opts\.spoolAsk/);
+  assert.match(page, /spoolAsk: /);
+  assert.match(page, /outcome-slot'\)\.childNodes\.length/);
+});
+
+test('bobine : plus de « version fiable » à l’écran, mais « Revenir aux réglages réussis du … »', () => {
+  const page = read('index.html');
+  assert.match(page, /PlyoSpools\.restoreLabel\(/);
+  assert.match(page, /PlyoSpools\.resumeText\(/);
+  const bad = page.slice(page.indexOf('function renderOutcomeBad'), page.indexOf('// ---------- Vérification avant impression'));
+  assert.match(bad, /PlyoSpools\.restoreLabel\(/, 'la carte « Ça n’a pas marché » parle de réglages réussis pour une bobine');
+});
+
+test('mode écrit : sans bobine, l’accueil et la question de filament renvoient au même choix', () => {
+  const page = read('index.html');
+  assert.equal((page.match(/'Choisir ma bobine'/g) || []).length, 1, 'un seul bouton, partagé');
+  assert.match(page, /function chooseSpoolButton\(/);
+  assert.match(page, /PlyoSpools\.needsSpool\(/);
+  assert.match(page, /PlyoSpools\.isFilamentQuestion\(/);
+  const fn = page.slice(page.indexOf('function chooseSpoolButton'), page.indexOf('function chooseSpoolButton') + 600);
+  assert.match(fn, /applyTab\('show-guide'\)/, 'ouvre l’onglet Étapes');
+});
+
+test('préréglage de l’utilisateur : proposé une fois, oui → spool_adopt, non → habitudes', () => {
+  const page = read('index.html');
+  assert.match(page, /type: 'spool_adopt_check'/);
+  assert.match(page, /type: 'spool_adopt', preset: /);
+  assert.match(page, /PlyoSpools\.adoptQuestion\(/);
+  assert.match(page, /PlyoSpools\.declineAdopt\(habits/);
+  assert.match(page, /PlyoSpools\.offersAdopt\(habits/);
+  const cpp = readCpp('src/plyo/PlyoAssistant.cpp');
+  assert.ok(cpp.includes('"spool_adopt_check"') && cpp.includes('"spool_adopt"'));
 });
