@@ -139,8 +139,9 @@ test('nouveaux codes du service : trop de demandes, demande en cours, photo illi
   assert.equal(L.errorView('rate_limited', {}).text, 'Trop de demandes d’un coup : réessaie dans un instant.');
   assert.equal(L.errorView('rate_limited', {}).wait, 0);
   assert.equal(L.errorView('rate_limited', { retry_after: '7' }).wait, 7);
-  assert.equal(L.errorView('request_in_progress').text, 'Une autre demande est déjà en cours : attends sa réponse.');
-  assert.equal(L.errorView('request_in_progress').action, 'none');
+  // Lot 7 : 409 définitif (après les nouveaux essais espacés) : « Réessayer » avec le même identifiant, jamais payé deux fois.
+  assert.equal(L.errorView('request_in_progress').text, 'Une demande est encore en cours chez moi : la tienne n’a pas pu partir. Réessaie dans une minute : tu ne paieras pas deux fois.');
+  assert.equal(L.errorView('request_in_progress').action, 'retry');
   assert.equal(L.errorView('invalid_image').text, 'Cette photo n’est pas lisible (JPEG, PNG ou WebP) : reprends-la.');
   // Les anciens codes ne changent pas.
   assert.equal(L.errorView('insufficient_credits').action, 'credits');

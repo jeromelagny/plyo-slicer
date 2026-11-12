@@ -368,7 +368,8 @@ test('textes : pas d’accents graves bruts à l’installation, pas de numéro 
 test('comportements : brouillon gardé, demande remise si la jauge est pleine, message de passage visible, carte refermée', () => {
   const page = read('index.html');
   assert.ok(/function clearNoteIfSent\(note\) \{ if \(noteInput\.value\.trim\(\) === note\)/.test(page));
-  assert.ok(/code === 'insufficient_credits' && !noteInput\.value/.test(page));
+  // ROB-12 : toute demande sans nouvel essai automatique revient dans le champ (texte et photos), jamais par-dessus un brouillon.
+  assert.ok(/function restoreDraft\(note, photos\) \{\s*if \(noteInput\.value\.trim\(\) \|\| attachments\.length\) return false;/.test(page));
   assert.ok(page.indexOf("setTourStep('print'); // d'abord") < page.indexOf('PlyoJourney.advanceNote(risks.length)'), 'message après le changement d’étape');
   assert.ok(/skip: function \(\) \{ \$\('preflight-slot'\)\.textContent = ''/.test(page));
   assert.ok(read('project-card.js').includes('Garder cette bobine'));

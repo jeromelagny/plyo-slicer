@@ -83,20 +83,27 @@
     return lastShown === noticeKey(v.state, g) ? null : v.state;
   }
 
-  // Ce que voit l'utilisateur pour chaque erreur, et l'action proposée (retry, credits, login).
+  // Ce que voit l'utilisateur pour chaque erreur, et l'action proposée : retry (renvoie la même demande, même
+  // identifiant), edit (« Modifier ma demande » : texte et photos remis dans le champ, rien n'est renvoyé), credits,
+  // login, photo. Une demande qui échouerait de la même façon (à reformuler, trop lourde) n'a jamais « Réessayer ».
   var ERRORS = {
-    insufficient_credits: { text: 'Ta jauge du mois est pleine : je ne peux pas lancer de nouvelle demande pour l’instant.', action: 'credits' },
+    // `more` : dit après la date de recharge (index.html, showError) ; ce qui reste gratuit sans jauge (aide du panneau).
+    insufficient_credits: { text: 'Ta jauge du mois est pleine : je ne peux pas lancer de nouvelle demande pour l’instant.', more: 'En attendant, les étapes, les explications des réglages (le « ? ») et « Montre-moi où il est » restent gratuits.', action: 'credits' },
     unauthorized: { text: 'Ta session a expiré : reconnecte-toi, ta demande est gardée.', action: 'login' },
     network: { text: 'Le service Plyo ne répond pas. Vérifie ta connexion ou réessaie plus tard.', action: 'retry' },
+    // Coupure pendant la réponse : le service a pu la finir (gardée 10 minutes par son identifiant) ou s'arrêter en route.
+    stream_cut: { text: 'La connexion a été coupée pendant ma réponse. Réessaie : si elle était déjà prête, tu la récupères sans la payer une seconde fois. Sinon, ce que l’IA avait déjà fait peut compter sur ta jauge.', action: 'retry' },
     timeout: { text: 'La réponse prend trop de temps. Réessaie : ta demande est gardée. Ce que l’IA a déjà fait peut compter sur ta jauge.', action: 'retry' },
     upstream_error: { text: 'L’IA est momentanément indisponible. Réessaie dans un instant.', action: 'retry' },
-    assistant_unavailable: { text: 'Je n’ai pas pu répondre à cette demande. Essaie de la formuler autrement.', action: 'retry' },
+    assistant_unavailable: { text: 'Je n’ai pas pu répondre à cette demande. Essaie de la formuler autrement.', action: 'edit' },
     incomplete_answer: { text: 'Ma réponse a été coupée en route. Réessaie, ça passe en général du premier coup.', action: 'retry' },
-    invalid_request: { text: 'La demande n’a pas pu partir : une photo est peut-être trop lourde ou dans un format inconnu (prends du JPEG ou du PNG).', action: 'retry' },
+    invalid_request: { text: 'La demande n’a pas pu partir : une photo est peut-être trop lourde ou dans un format inconnu (prends du JPEG ou du PNG). Change-la, puis renvoie.', action: 'edit' },
+    payload_too_large: { text: 'Tes photos sont trop lourdes ensemble : enlève-en une, puis renvoie.', action: 'edit' },
     auth_unavailable: { text: 'La connexion à ton compte est momentanément indisponible. Réessaie dans un instant.', action: 'retry' },
     config_missing: { text: 'Le service Plyo n’est pas prêt pour le moment. Réessaie un peu plus tard.', action: 'retry' },
     internal: { text: 'Un souci technique m’a empêché de répondre. Réessaie dans un instant.', action: 'retry' },
-    request_in_progress: { text: 'Une autre demande est déjà en cours : attends sa réponse.', action: 'none' },
+    // Après plusieurs essais espacés (inProgressDelay) : la même demande, ou une autre de ce compte, tourne encore.
+    request_in_progress: { text: 'Une demande est encore en cours chez moi : la tienne n’a pas pu partir. Réessaie dans une minute : tu ne paieras pas deux fois.', action: 'retry' },
     invalid_image: { text: 'Cette photo n’est pas lisible (JPEG, PNG ou WebP) : reprends-la.', action: 'photo' }
   };
   // Annuler ferme le flux : le service facture l'usage déjà publié par l'IA, sans ligne « final » (plyo-api, diagnose/route.ts).
@@ -125,6 +132,111 @@
     return n > 1 ? n + ' photos n’ont pas pu être récupérées : renvoie-les depuis ton téléphone.'
       : '1 photo n’a pas pu être récupérée : renvoie-la depuis ton téléphone.';
   }
+
+  // ---------- Une question, un identifiant de demande (plyo-api : request_id, réponses gardées 10 minutes) ----------
+  // UUID v4 (forme 8-4-4-4-12 en hexadécimal) : crypto.randomUUID s'il existe, sinon 16 octets de getRandomValues,
+  // sinon Math.random (repli : l'identifiant sert à ne pas payer deux fois la même question, pas à la sécurité).
+  function formatUuid(bytes) {
+    var b = [];
+    for (var i = 0; i < 16; i++) b.push((bytes[i] | 0) & 255);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    var hex = b.map(function (x) { return (x < 16 ? '0' : '') + x.toString(16); }).join('');
+    return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
+  }
+  var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function newRequestId(cryptoObj, random) {
+    try {
+      if (cryptoObj && typeof cryptoObj.randomUUID === 'function') { var u = cryptoObj.randomUUID(); if (UUID_RE.test(u)) return u.toLowerCase(); }
+    } catch (e) { /* repli ci-dessous */ }
+    var bytes = new Array(16);
+    try {
+      if (cryptoObj && typeof cryptoObj.getRandomValues === 'function') { var a = cryptoObj.getRandomValues(new Uint8Array(16)); for (var i = 0; i < 16; i++) bytes[i] = a[i]; return formatUuid(bytes); }
+    } catch (e2) { /* repli ci-dessous */ }
+    var rnd = random || Math.random;
+    for (var j = 0; j < 16; j++) bytes[j] = Math.floor(rnd() * 256);
+    return formatUuid(bytes);
+  }
+  // Le service garde une réponse réglée 10 minutes : au-delà, renvoyer la question est une nouvelle demande.
+  var REPLY_KEEP_MS = 10 * 60 * 1000;
+  // Question restée sans réponse (application fermée pendant la réponse) : même identifiant si l'envoi date de moins de
+  // 10 minutes (la réponse est peut-être gardée par le service), sinon un nouveau.
+  function resendRequestId(pending, now, fresh) {
+    var at = pending && pending.at ? new Date(pending.at).getTime() : NaN;
+    var age = now.getTime() - at;
+    return pending && UUID_RE.test(pending.id || '') && !isNaN(at) && age >= 0 && age < REPLY_KEEP_MS ? pending.id : fresh;
+  }
+  // La même question renvoyée telle quelle depuis le champ (« Modifier ma demande » sans rien changer) garde son
+  // identifiant ; un mot ou une photo de différence en fait une nouvelle. `a.photos === null` : question rouverte dont
+  // les photos d'origine sont perdues (seules les vignettes sont gardées) : le même texte avec des photos rejointes compte.
+  function sameQuestion(a, b) {
+    if (!a || !b || String(a.note || '').trim() !== String(b.note || '').trim()) return false;
+    if (a.photos === null) return !!(b.photos && b.photos.length);
+    var pa = a.photos || [], pb = b.photos || [];
+    return pa.length === pb.length && pa.every(function (p, i) { return p && pb[i] && p.data === pb[i].data; });
+  }
+  // Même demande en cours (409 request_in_progress) : nouveaux essais espacés avec le MÊME identifiant ; 0 = abandon.
+  // ≈ 2 minutes en tout : assez pour qu'une réponse lancée juste avant finisse, sans laisser attendre sans fin.
+  var IN_PROGRESS_DELAYS_S = [3, 5, 10, 15, 20, 30, 30];
+  function inProgressDelay(attempt) { return (IN_PROGRESS_DELAYS_S[attempt] || 0) * 1000; }
+
+  // Texte d'attente selon le temps passé : la réponse peut prendre plusieurs minutes (recherches dans le catalogue),
+  // l'utilisateur doit voir que ça avance. `phase` : 'retry' quand on récupère une demande déjà en cours.
+  function waitingText(elapsedMs, hasPhotos, phase) {
+    if (phase === 'retry') return 'Ta demande est déjà en route : j’attends sa réponse…';
+    if (elapsedMs < 20000) return hasPhotos ? 'Je regarde ta photo…' : 'Je réfléchis…';
+    if (elapsedMs < 60000) return 'Je cherche encore…';
+    if (elapsedMs < 150000) return 'Je cherche encore : ça prend un peu plus de temps que d’habitude.';
+    return 'Je cherche toujours, c’est une question qui demande du travail. Tu peux annuler si tu préfères.';
+  }
+
+  // ---------- Taille de la demande (plyo-api : 4 000 000 octets au plus, 413 payload_too_large) ----------
+  // Au-delà de 4,5 Mo, l'hébergeur refuse sans en-têtes CORS : le panneau y verrait une coupure. On mesure donc avant
+  // d'envoyer, avec une marge, et on réduit les photos par paliers.
+  var MAX_SEND_BYTES = 3800000;
+  var SHRINK_STEPS = [{ side: 1280, quality: 0.75 }, { side: 1024, quality: 0.7 }, { side: 800, quality: 0.65 }];
+  // Octets UTF-8 d'un texte (le corps JSON, photos en base64 comprises).
+  function utf8Bytes(s) {
+    s = String(s);
+    var n = 0;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c < 0x80) n += 1;
+      else if (c < 0x800) n += 2;
+      else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xfc00) === 0xdc00) { n += 4; i++; }
+      else n += 3;
+    }
+    return n;
+  }
+  // Que faire d'un corps de `bytes` octets, `tried` paliers de réduction déjà faits ? `limit` : plafond (413 : celui du
+  // service, avec la même marge). { send } | { shrink: palier } | { tooBig } — sans photo, rien à réduire.
+  function sizePlan(bytes, tried, hasPhotos, limit) {
+    var max = limit > 0 ? limit : MAX_SEND_BYTES;
+    if (bytes <= max) return { send: true };
+    if (hasPhotos && tried < SHRINK_STEPS.length) return { shrink: SHRINK_STEPS[tried], step: tried + 1 };
+    return { tooBig: true };
+  }
+  // Plafond de 413 : max_bytes du service moins 5 % (le corps renvoyé doit passer franchement), sinon le nôtre.
+  function limitFrom413(data) {
+    var max = Number(data && data.max_bytes);
+    return max > 0 ? Math.min(MAX_SEND_BYTES, Math.floor(max * 0.95)) : MAX_SEND_BYTES;
+  }
+
+  // ---------- Question restée sans réponse (application fermée pendant la réponse) ----------
+  function unansweredView(pending) {
+    var n = pending && pending.photos > 0 ? pending.photos : 0;
+    var text = 'Je n’ai pas pu te répondre : l’application a été fermée pendant que je cherchais.';
+    if (n) text += n > 1 ? ' Ta question avait ' + n + ' photos : je n’en garde que les vignettes, rejoins-les avant de la renvoyer.'
+      : ' Ta question avait une photo : je n’en garde que la vignette, rejoins-la avant de la renvoyer.';
+    return { text: text, photos: n };
+  }
+  // Projet changé dans Orca pendant une réponse (project_changed) : rien n'est fait sur le nouveau projet.
+  function projectSwitchText(hadCommands, answered) {
+    if (!answered) return 'Tu as ouvert un autre projet pendant que je cherchais : ta question est restée sans réponse. Je l’ai remise dans le champ : renvoie-la si elle vaut aussi pour ce projet.';
+    return 'Tu as ouvert un autre projet pendant que je répondais' + (hadCommands ? ' : je n’ai pas exécuté les ordres prévus pour l’ancien.' : '.') +
+      ' Ma réponse est gardée avec l’ancien projet, dans « Mes conversations ».';
+  }
+  var STALE_PROJECT_TEXT = 'Tu as ouvert un autre projet dans Orca : je ne change rien tant que ma réponse n’est pas terminée. Ensuite, je repars sur ce projet.';
 
   // Flux NDJSON reçu par morceaux : une ligne JSON par événement ; une ligne illisible est ignorée.
   function ndjsonReader() {
@@ -799,6 +911,8 @@
 
   var api = { diagnoseParams: diagnoseParams, aiContext: aiContext, historyForAI: historyForAI, CAPABILITIES: CAPABILITIES, actionSupported: actionSupported, rawTestText: rawTestText, rawTestResult: rawTestResult, previewText: previewText,
     changeLine: changeLine, sameSetting: sameSetting, revertPlan: revertPlan, revertText: revertText, batchesOf: batchesOf, mergeCorrections: mergeCorrections, outcomeCard: outcomeCard, reliablePreview: reliablePreview, valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, manualEditsNote: manualEditsNote, splitManualEdits: splitManualEdits, noteWritten: noteWritten, forgetBatch: forgetBatch, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+    newRequestId: newRequestId, formatUuid: formatUuid, resendRequestId: resendRequestId, sameQuestion: sameQuestion, inProgressDelay: inProgressDelay, waitingText: waitingText,
+    utf8Bytes: utf8Bytes, sizePlan: sizePlan, limitFrom413: limitFrom413, MAX_SEND_BYTES: MAX_SEND_BYTES, SHRINK_STEPS: SHRINK_STEPS, unansweredView: unansweredView, projectSwitchText: projectSwitchText, STALE_PROJECT_TEXT: STALE_PROJECT_TEXT,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

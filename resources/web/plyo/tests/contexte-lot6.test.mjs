@@ -94,7 +94,7 @@ test('IA-16 : chaque test d’Orca est annoncé avant, puis expliqué (lecture, 
 
 test('le corps de /api/diagnose : contexte, réglages complets, historique et capacités ; la confirmation précède le test', () => {
   const page = read('index.html');
-  const ask = page.slice(page.indexOf('function ask(note, photos)'), page.indexOf('// Une réponse sur une pièce du plateau'));
+  const ask = page.slice(page.indexOf('function ask(note, photos, req)'), page.indexOf('// Une réponse sur une pièce du plateau'));
   assert.match(ask, /settings: \{ params: Logic\.diagnoseParams\(lastValues\.params\) \}/);
   assert.match(ask, /context: Logic\.aiContext\(lastValues\.context, ctx && ctx\.context\)/);
   assert.match(ask, /history: Logic\.historyForAI\(conv\.history\.slice\(-MAX_HISTORY\)\)/);

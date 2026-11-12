@@ -533,8 +533,9 @@
   var THUMB_SIDE = 160;
   var MAX_PHOTOS = 6;
   var MAX_HISTORY = 10;
-  var IDLE_TIMEOUT_MS = 60000;    // rien reçu depuis une minute : la demande est abandonnée
-  var ANSWER_MAX_MS = 240000;     // plafond d'une réponse, même si elle arrive encore
+  var IDLE_TIMEOUT_MS = 60000;    // rien reçu depuis une minute : la demande est abandonnée (le service écrit « wait » toutes les 15 s)
+  // Plafond d'une réponse : au-delà de l'échéance du service (270 s), pour qu'une réponse payée ne soit jamais jetée ici.
+  var ANSWER_MAX_MS = 285000;
   // « Mon utilisation » : le paiement n'est pas branché. On montre la formule en cours et un seul encart
   // « les formules arrivent », sans boutons factices.
   var PLAN_TEXT = { gratuit: 'Pour découvrir l’assistant : une jauge qui se recharge chaque mois.',
@@ -550,10 +551,22 @@
     var host = window.orca, raw = host && host.postMessage ? host.postMessage.bind(host) : null;
     if (!raw) return;
     host.postMessage = function (m) {
+      // Autre projet ouvert pendant une réponse : la conversation affichée décrit encore l'ancien. Le slicer ne compare que
+      // l'imprimante et le filament : avec les mêmes, une fiche ou un ordre partirait sur le nouveau projet. Refusé ici.
+      if (m && (m.type === 'apply' || m.type === 'commands') && busy && projectSwitched) { refuseStale(m); return; }
       if (m && (m.type === 'apply' || m.type === 'commands') && !m.project) m.project = conv ? conv.project : null;
       raw(m);
     };
   })();
+  function refuseStale(m) {
+    setTimeout(function () {
+      var w = m.request && pendingResults[m.request];
+      if (m.type === 'apply' && w) { delete pendingResults[m.request]; w.onResult(false, Logic.STALE_PROJECT_TEXT, {}); return; }
+      var c = m.type === 'commands' && commandWaiters[m.request];
+      if (c) { delete commandWaiters[m.request]; c({ done: [], text: Logic.STALE_PROJECT_TEXT, skipped: [] }); return; }
+      noteLine(Logic.STALE_PROJECT_TEXT, 'warn', 'alert');
+    }, 0);
+  }
   var bodyEl = $('body'), thread = $('thread'), home = $('home');
   var noteInput = $('note'), sendButton = $('btn-send'), fileInput = $('file-input'), attachedEl = $('attached');
   var menu = $('menu');
@@ -563,6 +576,8 @@
   var lastGauge = null;      // dernière jauge reçue du service ({ plan, used_pct, resets_at, extra_pct, state })
   var attachments = [];      // [{ media_type, data, preview }]
   var busy = false;
+  var projectSwitched = false; // Orca a ouvert un autre projet pendant la réponse en cours : appliqué à la fin (ask, finish)
+  var lastAsked = null;      // dernière question restée sans réponse ({ note, photos, id }) : renvoyée telle quelle, même identifiant
   var pendingSheet = null;   // gestionnaire de la prochaine demande envoyée par postRequest (application, annulation, calibration)
   var pendingResults = {};   // identifiant de demande → gestionnaire : chaque « result » va à la demande qui le porte, et à elle seule
   var nextRequest = 1;
@@ -2249,7 +2264,13 @@
   }
   // `reopened` : conversation rouverte, redevenue active (fiches de réglages applicables, questions sur un réglage permises).
   function renderEntry(entry, archived, reopened) {
-    if (entry.kind === 'me') return renderMe(entry);
+    if (entry.kind === 'me') {
+      var me = renderMe(entry);
+      // Marque « en attente » restée : l'application a été fermée pendant la réponse (une conversation ne se rouvre
+      // jamais pendant une réponse en cours).
+      if (entry.pending && reopened && !busy) unansweredCard(entry);
+      return me;
+    }
     if (entry.kind === 'answer') return renderAnswer(entry, archived, reopened);
     if (entry.kind === 'fiche') return renderFiche(entry.msg, archived, reopened);
     if (entry.kind === 'model') return renderModel(entry, archived);
@@ -3682,11 +3703,13 @@
     refreshAccount().then(function (valid) {
       // Session expirée : logout l'a dit et demande la connexion. Service coupé : l'erreur, là où tu viens de cliquer.
       if (!valid) { if (session) showError('network', openPhone, null, true); return; }
+      var purpose = phonePurpose();
       if (!phoneLink && !phoneCreating) {
-        phoneCreating = apiFetch('/api/phone-sessions', { method: 'POST' })
+        // Le but du lien choisit la consigne de la page du téléphone ; un service qui l'ignore crée un lien « défaut ».
+        phoneCreating = apiFetch('/api/phone-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: purpose }) })
           .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
           .then(function (created) {
-            phoneLink = { id: created.id, qr_svg: created.qr_svg };
+            phoneLink = { id: created.id, qr_svg: created.qr_svg, purpose: purpose };
             $('phone-linked').classList.remove('hidden');
             clearInterval(phoneTimer);
             phoneTimer = setInterval(pollPhone, PHONE_POLL_MS);
@@ -3696,9 +3719,20 @@
       }
       var ready = phoneLink ? Promise.resolve(phoneLink) : phoneCreating;
       ready
-        .then(function (link) { window.orca.postMessage({ type: 'phone', link: link }); })
+        .then(function (link) { syncPhonePurpose(); window.orca.postMessage({ type: 'phone', link: { id: link.id, qr_svg: link.qr_svg } }); })
         .catch(function () { showError('network', openPhone, null, true); });
     });
+  }
+  // Ce que le téléphone doit photographier : une carte de calibration qui attend sa photo la reçoit (drainPhoneQueue),
+  // sinon l'envoi part à l'assistant comme un défaut.
+  function phonePurpose() { return calibCard && calibCard.awaiting ? 'calibration' : 'defect'; }
+  // Le lien vaut pour toute la conversation : sa consigne suit l'usage du moment. Un service qui ne connaît pas cette
+  // route (404) ou une panne ne change rien : la page du téléphone garde sa consigne.
+  function syncPhonePurpose() {
+    var want = phonePurpose();
+    if (!phoneLink || !session || phoneLink.purpose === want) return;
+    phoneLink.purpose = want;
+    apiFetch('/api/phone-sessions/' + encodeURIComponent(phoneLink.id) + '/purpose', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: want }) }).catch(function () {});
   }
 
   // Coupe le lien (nouvelle conversation, déconnexion, lien expiré). `close` : prévenir le serveur.
@@ -3901,6 +3935,7 @@
 
     var card = { box: box, awaiting: true, test: msg.test, pass: msg.pass };
     calibCard = card;
+    syncPhonePurpose(); // lien téléphone déjà ouvert : sa page demande maintenant la photo du test
 
     function updateActions() {
       if (!choice) return;
@@ -3954,6 +3989,7 @@
             card.awaiting = true;
             return;
           }
+          syncPhonePurpose(); // photo lue : le téléphone sert de nouveau aux défauts
           var win = rows.find(function (x) { return x.s.index === r.data.winner_index; });
           win.radio.checked = true;
           win.row.classList.add('best');
@@ -4027,6 +4063,7 @@
       if (!ok) { btn.disabled = false; noteLine(t, 'error', 'alert'); if (after) after(false); return; }
       if (calibCard) { calibCard.awaiting = false; calibCard.box.querySelectorAll('button:not([data-keep])').forEach(function (b) { b.disabled = true; }); }
       calibCard = null;
+      syncPhonePurpose();
       noteLine(t, 'ok', 'check');
       if (after) after(true);
     } };
@@ -4729,11 +4766,58 @@
       return;
     }
     if (!opts.photos) { attachments = []; renderAttachments(); clearNoteIfSent(note); }
-    if (!opts.shown) addMe(note, photos, opts.fromPhone);
+    var me = opts.me || null;
+    if (!opts.shown) me = addMe(note, photos, opts.fromPhone);
     levelNotice(levelMove);
-    var again = { photos: photos, fromPhone: opts.fromPhone, shown: true };
+    // Un identifiant par question : la même question renvoyée telle quelle (après une erreur) garde le sien.
+    var requestId = opts.requestId || (lastAsked && Logic.sameQuestion(lastAsked, { note: note, photos: photos }) ? lastAsked.id : Logic.newRequestId(window.crypto));
+    lastAsked = null;
+    var again = { photos: photos, fromPhone: opts.fromPhone, shown: true, me: me, requestId: requestId };
     if (requireLogin('Pour te répondre, j’envoie ta demande à l’IA.', function () { send(note, again); })) return;
-    ask(note, photos);
+    ask(note, photos, { id: requestId, me: me });
+  }
+  // ROB-12 : la demande revient dans le champ (texte et photos) sans repartir, jamais par-dessus ce que tu as commencé.
+  function restoreDraft(note, photos) {
+    if (noteInput.value.trim() || attachments.length) return false;
+    noteInput.value = note || '';
+    growNote();
+    attachments = (photos || []).filter(function (p) { return p && p.preview; }).slice(0, MAX_PHOTOS);
+    renderAttachments();
+    return true;
+  }
+  // « Réessayer » renvoie la demande : le brouillon remis dans le champ, s'il n'a pas bougé, n'a plus lieu d'y être.
+  function clearDraftIf(note, photos) {
+    if (!noteInput.value.trim() && !attachments.length) return;
+    if (!Logic.sameQuestion({ note: note, photos: photos }, { note: noteInput.value, photos: attachments })) return;
+    noteInput.value = '';
+    growNote();
+    attachments = [];
+    renderAttachments();
+  }
+  // Question restée « en attente » dans une conversation rouverte : l'application a été fermée pendant la réponse.
+  function unansweredCard(entry) {
+    var view = Logic.unansweredView(entry.pending);
+    var box = alertBox('warn', view.text, 'alert');
+    var acts = el('div', 'row-acts');
+    function settle() { box.remove(); delete entry.pending; scheduleSave(); }
+    var id = function () { return Logic.resendRequestId(entry.pending, new Date(), Logic.newRequestId(window.crypto)); };
+    acts.appendChild(button('Renvoyer ma question', function () {
+      var rid = id();
+      if (!view.photos) { settle(); send(entry.text || '', { photos: [], shown: true, me: entry, requestId: rid }); return; }
+      // Photos d'origine perdues : le texte revient dans le champ, tu rejoins tes photos, puis tu envoies (même identifiant).
+      settle();
+      if (!noteInput.value.trim()) { noteInput.value = entry.text || ''; growNote(); lastAsked = { note: entry.text || '', photos: null, id: rid }; }
+      noteLine(view.photos > 1 ? 'Rejoins tes photos, puis envoie.' : 'Rejoins ta photo, puis envoie.', '', 'camera', 'chat');
+      pickFiles();
+    }, 'btn sm', view.photos ? 'camera' : ''));
+    if (view.photos && entry.text) acts.appendChild(button('Renvoyer sans les photos', function () {
+      var rid = id();
+      settle();
+      send(entry.text, { photos: [], shown: true, me: entry, requestId: rid });
+    }, 'btn ghost sm'));
+    box.body.appendChild(acts);
+    thread.appendChild(box);
+    return box;
   }
 
   // Le niveau d'explication deviné vient de changer : on le dit, avec de quoi revenir aux explications détaillées.
@@ -4761,84 +4845,137 @@
     });
   }
 
-  function ask(note, photos) {
+  // `req` : { id (request_id, un par question, réutilisé par chaque nouvel essai de la même question), me (entrée de la
+  // question dans la conversation, marquée « en attente » jusqu'à la réponse ou l'erreur) }.
+  function ask(note, photos, req) {
     if (busy) return;          // une seule demande à la fois (un ancien « Réessayer » ne relance rien en parallèle)
+    req = req || { id: Logic.newRequestId(window.crypto), me: null };
     busy = true;
+    projectSwitched = false;
     sendButton.disabled = true;
     var target = conv;         // la réponse va dans la conversation de la question, quoi qu'il arrive
+    var original = photos;     // photos telles que jointes : remises dans le champ après une erreur (jamais réduites)
     var controller = new AbortController();
     var idle = null;
     function touch() { clearTimeout(idle); idle = setTimeout(function () { controller.abort('timeout'); }, IDLE_TIMEOUT_MS); }
     touch();
     var cap = setTimeout(function () { controller.abort('timeout'); }, ANSWER_MAX_MS);
+    var started = Date.now(), phase = '';
     var thinking = el('div', 'thinking');
     thinking.appendChild(el('i'));
-    thinking.appendChild(txt(photos.length ? 'Je regarde ta photo…' : 'Je réfléchis…'));
+    var thinkingText = txt(Logic.waitingText(0, photos.length > 0, phase));
+    thinking.appendChild(thinkingText);
     thinking.appendChild(button('Annuler', function () { controller.abort('cancel'); }, 'link'));
     thread.appendChild(thinking);
+    // Une longue attente (recherches dans le catalogue, demande déjà en route) se voit : le texte change avec le temps.
+    function sayWaiting() { thinkingText.textContent = fr(Logic.waitingText(Date.now() - started, photos.length > 0, phase)); }
+    var ticker = setInterval(sayWaiting, 5000);
     answerBox = null;
     updateMoreBadge();
     scrollDown();
+    // ROB-13 : la question est « en attente » dans la conversation enregistrée tant que rien n'est revenu.
+    if (req.me) { req.me.pending = { id: req.id, at: new Date().toISOString(), photos: photos.length }; scheduleSave(target); }
     var live = null;           // réponse en cours d'écriture
     var out = {};              // événements du flux : final ou error
+    var streaming = false;     // le flux a commencé : une coupure arrive pendant la réponse
+    // Fin de la demande ; vrai si Orca a ouvert un autre projet entre-temps : le panneau repart alors sur ce projet.
     function finish() {
       clearTimeout(idle);
       clearTimeout(cap);
+      clearInterval(ticker);
       thinking.remove();
       if (live) live.box.remove();
       busy = false;
       sendButton.disabled = false;
+      if (req.me && req.me.pending) { delete req.me.pending; scheduleSave(target); }
+      var switched = projectSwitched;
+      projectSwitched = false;
+      if (switched) { closeDrawer(); newConversation(); }
       drainPhoneQueue();
+      return switched;
     }
     function fail(code, data) {
-      finish();
-      if (code === 'cancel') { noteLine(Logic.CANCEL_TEXT, '', 'info'); refreshGaugeSoon(); return; }
-      if (code === 'timeout') refreshGaugeSoon(); // le flux est fermé comme par « Annuler » : même facturation
-      if (code === 'insufficient_credits' && !noteInput.value && !photos.length) { noteInput.value = note; growNote(); } // la demande reste à portée pour plus tard
-      if (code === 'unauthorized') { logout(); requireLogin('Ta session a expiré : reconnecte-toi, ta demande repartira. Pas de mot de passe, tu reçois un code par e-mail.', function () { send(note, { photos: photos, shown: true }); }, true); return; }
-      showError(code, function () { ask(note, photos); }, data);
+      var switched = finish();
+      // La même question renvoyée telle quelle depuis le champ garde son identifiant (sameQuestion).
+      lastAsked = { note: note, photos: original, id: req.id };
+      if (code === 'cancel') { restoreDraft(note, original); noteLine(Logic.CANCEL_TEXT, '', 'info'); refreshGaugeSoon(); return; }
+      if (code === 'timeout' || code === 'stream_cut') refreshGaugeSoon(); // le flux est fermé comme par « Annuler » : même facturation
+      if (switched) { restoreDraft(note, original); switchedNote(Logic.projectSwitchText(false, false)); return; }
+      if (code === 'unauthorized') {
+        // Nouvel essai automatique après la connexion, avec le même identifiant.
+        logout();
+        requireLogin('Ta session a expiré : reconnecte-toi, ta demande repartira. Pas de mot de passe, tu reçois un code par e-mail.', function () { send(note, { photos: original, shown: true, me: req.me, requestId: req.id }); }, true);
+        return;
+      }
+      // ROB-12 : rien à retaper, la demande revient dans le champ (sans repartir).
+      restoreDraft(note, original);
+      showError(code, function () { clearDraftIf(note, original); ask(note, original, req); }, data, false, function () { restoreDraft(note, original); noteInput.focus(); });
+    }
+    // Tu attendais la réponse dans la Discussion : le message y reste (les notes des Étapes s'effacent au changement d'étape).
+    function switchedNote(text) { noteLine(text, 'warn', 'alert', 'chat'); applyTab('show-chat'); }
+    function delay(ms) {
+      return new Promise(function (resolve, reject) {
+        if (controller.signal.aborted) { reject(new Error('aborted')); return; }
+        var t = setTimeout(resolve, ms);
+        controller.signal.addEventListener('abort', function () { clearTimeout(t); reject(new Error('aborted')); });
+      });
     }
 
     // Profils au moment de la question : les réglages proposés ne s'appliquent qu'à eux (le slicer refuse sinon).
     var sentNames = lastValues && lastValues.context ? Logic.namesForApply(null, lastValues.context) : null;
     var pendingIntent = intentPending(); // questions d'intention affichées : l'IA peut y répondre d'après la phrase
     var plateParts = [];       // pièces sur le plateau au moment de la question (journal des pièces)
-    aiContext().then(function (ctx) {
-      if (ctx && ctx.plate && ctx.plate.objects) plateParts = ctx.plate.objects.map(function (o) { return o.name; });
-      // Contexte (lot 6) : clé de plateau résolue, plafond de la machine et choix permis de chaque réglage ; plateau en cours,
-      // matière et faits de l'imprimante lus par le slicer juste avant (lecture seule, filtrés par le C++).
-      var body = {
-        locale: lastValues.locale || 'fr',
-        settings: { params: Logic.diagnoseParams(lastValues.params) },
-        context: Logic.aiContext(lastValues.context, ctx && ctx.context),
-        history: Logic.historyForAI(conv.history.slice(-MAX_HISTORY))
-      };
-      // La bobine du projet : sans elle le serveur ne propose jamais « Retenir ces réglages ».
-      var spoolName = conv.project && conv.project.filament && conv.project.filament.spool && conv.project.filament.spool.name;
-      if (spoolName && typeof spoolName === 'string') body.context = Object.assign({}, body.context, { spool: spoolName.slice(0, 60) });
+    var body = null;
+    var limit = Logic.MAX_SEND_BYTES, shrunk = 0, lastBytes = 0, inProgressTries = 0;
+    // Photos réduites d'un palier (ROB-03) : toujours depuis l'image jointe, jamais depuis une copie déjà réduite.
+    function shrink(step) {
+      return Promise.all(original.map(function (p) {
+        var src = p.preview || 'data:' + p.media_type + ';base64,' + p.data;
+        return scaled(src, step.side, step.quality).then(function (dataUrl) {
+          return { media_type: 'image/jpeg', data: dataUrl.split(',')[1], preview: p.preview };
+        }, function () { return p; });
+      })).then(function (list) { photos = list; });
+    }
+    // Un envoi : taille vérifiée d'abord (au-delà, l'hébergeur refuserait sans que le panneau sache pourquoi), puis
+    // nouvel essai espacé si la même demande tourne encore (409), ou réduction des photos si le service la dit trop lourde (413).
+    function attempt() {
+      if (controller.signal.aborted) return Promise.reject(new Error('aborted'));
+      touch();
       if (photos.length) body.images = photos.map(function (p) { return { media_type: p.media_type, data: p.data }; });
-      if (note) body.note = note;
-      if (calibHistory.length) body.calibrations = calibHistory;
-      if (ctx && ctx.plate) body.plate = ctx.plate;
-      if (ctx && ctx.memory && ctx.memory.length) body.memory = ctx.memory;
-      if (ctx && ctx.limits && Object.keys(ctx.limits).length) body.filament_limits = ctx.limits;
-      // Mode catalogue : toutes les valeurs Filament + Impression, pour que l'assistant puisse proposer n'importe quel réglage.
-      if (ctx && ctx.snapshot && Object.keys(ctx.snapshot).length) body.snapshot = ctx.snapshot;
-      body.explanation_level = PlyoMachines.levelOf(habits);
-      if (pendingIntent) body.intent_questions = pendingIntent;
-      body.capabilities = Logic.CAPABILITIES.slice(); // actions que ce panneau sait exécuter (aperçu, tests bruts d'Orca)
-      return apiFetch('/api/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify(body), signal: controller.signal });
-    }).then(function (response) {
+      var json = JSON.stringify(body);
+      var bytes = Logic.utf8Bytes(json);
+      var plan = Logic.sizePlan(bytes, shrunk, photos.length > 0, limit);
+      if (plan.tooBig) return Promise.resolve({ error: 'payload_too_large' });
+      if (plan.shrink) { shrunk = plan.step; return shrink(plan.shrink).then(attempt); }
+      lastBytes = bytes;
+      return apiFetch('/api/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: json, signal: controller.signal }).then(function (response) {
+        if (response.status === 409) return response.json().catch(function () { return {}; }).then(function (data) {
+          var wait = Logic.inProgressDelay(inProgressTries++);
+          if (!wait || (data.error && data.error !== 'request_in_progress')) return { error: data.error || 'request_in_progress', data: data };
+          phase = 'retry';
+          sayWaiting();
+          return delay(wait).then(attempt);
+        });
+        if (response.status === 413 && photos.length) return response.json().catch(function () { return {}; }).then(function (data) {
+          limit = Math.min(Logic.limitFrom413(data), lastBytes - 1); // le prochain envoi passe sous la limite du service
+          return attempt();
+        });
+        return receive(response);
+      });
+    }
+    function receive(response) {
       if (response.status === 401) return { error: 'unauthorized' };
       var type = response.headers.get('Content-Type') || '';
       if (type.indexOf('ndjson') < 0 || !response.body)
         return response.json().catch(function () { return {}; }).then(function (data) {
           if (response.ok) return { final: data };
           // Corps sans code (proxy, limite de débit) : le statut HTTP suffit à choisir le message.
-          var code = data.error || (response.status === 429 ? 'rate_limited' : response.status === 409 ? 'request_in_progress' : 'internal');
+          var code = data.error || (response.status === 429 ? 'rate_limited' : response.status === 409 ? 'request_in_progress' : response.status === 413 ? 'payload_too_large' : 'internal');
           return { error: code, gauge: data.gauge, data: Object.assign({}, data, { retry_after: Logic.retryAfter(data, response.headers.get('Retry-After')) }) };
         });
       // Réponse en flux : les textes s'affichent au fur et à mesure, puis la réponse complète remplace le brouillon.
+      // Les lignes « wait » (signal de vie du service) ne s'affichent pas : elles relancent seulement le délai d'inactivité.
+      streaming = true;
       var reader = response.body.getReader(), decoder = new TextDecoder(), nd = Logic.ndjsonReader();
       function handle(events) {
         events.forEach(function (ev) {
@@ -4856,6 +4993,34 @@
         });
       }
       return pump();
+    }
+
+    aiContext().then(function (ctx) {
+      if (ctx && ctx.plate && ctx.plate.objects) plateParts = ctx.plate.objects.map(function (o) { return o.name; });
+      // Contexte (lot 6) : clé de plateau résolue, plafond de la machine et choix permis de chaque réglage ; plateau en cours,
+      // matière et faits de l'imprimante lus par le slicer juste avant (lecture seule, filtrés par le C++).
+      body = {
+        locale: lastValues.locale || 'fr',
+        settings: { params: Logic.diagnoseParams(lastValues.params) },
+        context: Logic.aiContext(lastValues.context, ctx && ctx.context),
+        history: Logic.historyForAI(conv.history.slice(-MAX_HISTORY))
+      };
+      // La bobine du projet : sans elle le serveur ne propose jamais « Retenir ces réglages ».
+      var spoolName = conv.project && conv.project.filament && conv.project.filament.spool && conv.project.filament.spool.name;
+      if (spoolName && typeof spoolName === 'string') body.context = Object.assign({}, body.context, { spool: spoolName.slice(0, 60) });
+      if (note) body.note = note;
+      if (calibHistory.length) body.calibrations = calibHistory;
+      if (ctx && ctx.plate) body.plate = ctx.plate;
+      if (ctx && ctx.memory && ctx.memory.length) body.memory = ctx.memory;
+      if (ctx && ctx.limits && Object.keys(ctx.limits).length) body.filament_limits = ctx.limits;
+      // Mode catalogue : toutes les valeurs Filament + Impression, pour que l'assistant puisse proposer n'importe quel réglage.
+      if (ctx && ctx.snapshot && Object.keys(ctx.snapshot).length) body.snapshot = ctx.snapshot;
+      body.explanation_level = PlyoMachines.levelOf(habits);
+      if (pendingIntent) body.intent_questions = pendingIntent;
+      body.capabilities = Logic.CAPABILITIES.slice(); // actions que ce panneau sait exécuter (aperçu, tests bruts d'Orca)
+      // Le service rend la réponse déjà réglée de ce même identifiant (« replayed ») sans la refaire ni la débiter.
+      body.request_id = req.id;
+      return attempt();
     }).then(function (r) {
       if (r.error) {
         if (r.error === 'insufficient_credits') setGauge(r.gauge, true);
@@ -4866,11 +5031,13 @@
     }).catch(function () {
       // Réponse complète déjà reçue (coupure juste après) : on la garde, elle est payée.
       if (out.final) { done(out.final); return; }
-      fail(controller.signal.aborted ? (controller.signal.reason === 'cancel' ? 'cancel' : 'timeout') : 'network');
+      fail(controller.signal.aborted ? (controller.signal.reason === 'cancel' ? 'cancel' : 'timeout') : streaming ? 'stream_cut' : 'network');
     });
 
     function done(a) {
-      finish();
+      var switched = finish();
+      lastAsked = null;
+      // Réponse rejouée (« replayed ») : la même que la première fois, jauge comprise ; elle s'affiche comme une autre.
       if (a.credits) setGauge(a.credits.gauge);
       // Mode catalogue : les réglages de n'importe quel onglet arrivent dans « changes » ; la fiche les montre comme les autres.
       a.suggestions = (a.suggestions || []).concat(Logic.catalogToSuggestions(a.changes));
@@ -4886,6 +5053,9 @@
       Object.defineProperty(entry, 'hist', { value: hist, enumerable: false, writable: true });
       journalAnswer(a, target, plateParts, photos);
       if (pendingIntent && Array.isArray(a.intent_answers) && a.intent_answers.length && target === conv) applyIntentAnswers(a.intent_answers);
+      // Autre projet ouvert pendant la réponse : elle reste lisible dans l'ancienne conversation, aucun de ses ordres ne part
+      // sur le nouveau projet (ils ne s'exécutent qu'à l'affichage de la réponse).
+      if (switched) { switchedNote(Logic.projectSwitchText(!!(a.commands && a.commands.length), true)); return; }
       // Un souci d'affichage n'est pas une erreur réseau : la réponse est gardée, rien n'est redemandé.
       if (target !== conv) return;
       try { renderAnswer(entry, false); }
@@ -4918,19 +5088,20 @@
 
   // Erreur : ce qui s'est passé et l'action suivante. La demande est gardée pour « Réessayer ».
   // `here` : l'erreur d'un clic s'affiche dans l'onglet ouvert ; sinon elle suit la conversation (avec la pastille).
+  // `edit` : « Modifier ma demande » (texte et photos remis dans le champ, rien n'est renvoyé).
   var hereError = null;
-  function showError(code, retry, data, here) {
+  function showError(code, retry, data, here, edit) {
     if (hereError) { hereError.remove(); hereError = null; }
     if (!here) showConversation();
     var view = Logic.errorView(code, data);
     var g = code === 'insufficient_credits' ? Logic.gaugeView(lastGauge) : null;
-    // « Une autre demande est en cours » n'est pas une panne : simple information, sans bouton.
     var box = view.action === 'none' ? alertBox('info', view.text, 'info')
-      : alertBox('error', view.text + (g && g.resets ? ' Elle se recharge ' + g.resets + '.' : ''), 'alert');
+      : alertBox('error', view.text + (g && g.resets ? ' Elle se recharge ' + g.resets + '.' : '') + (view.more ? ' ' + view.more : ''), 'alert');
     var acts = el('div', 'row-acts');
     if (view.action === 'credits') acts.appendChild(button('Voir mon utilisation', openUsage, 'btn sm'));
     else if (view.action === 'login') acts.appendChild(button('Me reconnecter', openLogin, 'btn sm'));
     else if (view.action === 'photo') acts.appendChild(button('Choisir une autre photo', function () { box.remove(); pickFiles(); }, 'btn sm', 'camera'));
+    else if (view.action === 'edit' && edit) acts.appendChild(button('Modifier ma demande', function () { box.remove(); edit(); }, 'btn sm'));
     else if (view.action === 'retry' && retry) {
       var again = button('Réessayer', function () { box.remove(); retry(); }, 'btn sm');
       acts.appendChild(again);
@@ -5424,7 +5595,9 @@
       if (rw) rw(msg);
     } else if (msg.type === 'project_changed') {
       // Nouveau projet ou projet ouvert : retour à l'accueil (la conversation précédente reste dans « Mes conversations »).
+      // Pendant une réponse : retenu, appliqué à sa fin (ask, finish) ; d'ici là, rien ne s'applique (refuseStale).
       if (!busy) { closeDrawer(); newConversation(); }
+      else projectSwitched = true;
     } else if (msg.type === 'spools') {
       onSpools(msg);
     } else if (msg.type === 'spool_chosen') {
