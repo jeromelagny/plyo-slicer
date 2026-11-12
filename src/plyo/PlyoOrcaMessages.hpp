@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PlyoHooks.hpp" // on_slicing_done : appelée par Orca
+
 #include <nlohmann/json.hpp>
 
 #include <cstddef>
@@ -21,10 +23,9 @@ namespace Plyo { namespace OrcaMessages {
 // Qui prévient le panneau : message {type: "slice_result", status: "error" | "finished" | "cancelled", issues, …}.
 void set_listener(std::function<void(const nlohmann::json&)> listener);
 
-// Appelé par Orca (Plater::priv::on_process_completed, fil de l'interface) à chaque fin de traitement de fond, avant le
-// crochet d'export. Classe l'erreur par type d'exception, retient ce type pour l'export, et prévient le panneau d'une
-// découpe finie ou en erreur. Une annulation n'est jamais une erreur : elle n'est dite que si aucune découpe ne reprend.
-void on_slicing_done(const Slic3r::SlicingProcessCompletedEvent& evt);
+// on_slicing_done (PlyoHooks.hpp, fil de l'interface, à chaque fin de traitement de fond) classe l'erreur par type
+// d'exception, retient ce type pour l'export, et prévient le panneau d'une découpe finie ou en erreur. Une annulation
+// n'est jamais une erreur : elle n'est dite que si aucune découpe ne reprend.
 
 // Refus et avertissements de validation de la plaque en cours. `busy` : Orca découpe, rien n'est lu. `pending` : un
 // changement attend d'être pris en compte par Orca (la lecture peut dater d'avant ce changement).

@@ -4,6 +4,8 @@
 // - état d'impression (Creality : messages du WebSocket 9999 ; Moonraker : print_stats) ;
 // - verdict après un envoi, en comparant avec l'état d'avant ;
 // - fin d'une impression démarrée (terminée, arrêtée, en erreur, ou sans savoir comment).
+#include "PlyoHooks.hpp" // creality_file_dir : appelée par Orca (CrealityPrint::start_print)
+
 #include <nlohmann/json.hpp>
 #include <map>
 #include <string>
@@ -26,9 +28,7 @@ constexpr int LOST_AFTER_SECONDS = 600;
 // Seul « 1 » (impression) a été constaté sur la CR-10 SE ; un code lu dans le journal (« Plyo: état Creality ») s'ajoute ici.
 const std::map<std::string, std::string>& creality_states();
 
-// Dossier du fichier `filename` dans la réponse `retGcodeFileInfo` d'une Creality (« dossier:nom:taille:…;… »).
-// Vide si le fichier n'y est pas ou si le dossier n'est pas un chemin absolu propre.
-std::string creality_file_dir(const std::string& reply, const std::string& filename);
+// creality_file_dir (dossier d'un fichier dans la réponse `retGcodeFileInfo` d'une Creality) : déclarée dans PlyoHooks.hpp.
 
 // État d'après les champs fusionnés des messages Creality, lus avec la table `states` (creality_states() par défaut).
 Status creality_status(const nlohmann::json& fields);

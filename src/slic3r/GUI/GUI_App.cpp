@@ -6,7 +6,7 @@
 #include "libslic3r/Technologies.hpp"
 #include "libslic3r/Platform.hpp"
 #include "GUI_App.hpp"
-#include "plyo/PlyoProjectFiles.hpp" // PLYO: projet de la conversation, voir check_and_save/keep_current_preset_changes
+#include "plyo/PlyoHooks.hpp" // PLYO: appels du panneau Assistant Plyo, liste dans docs/plyo/FICHIERS-MODIFIES.md
 #include "Shortcuts.hpp"
 #include "DeviceCore/DevConfigUtil.h"
 #include "BindDialog.hpp"
@@ -2689,10 +2689,7 @@ void GUI_App::init_webview_runtime()
 void GUI_App::init_app_config()
 {
 	// Profiles for the alpha are stored into the PrusaSlicer-alpha directory to not mix with the current release.
-    // PLYO: dossier de réglages propre à Plyo Slicer (« PlyoSlicer » dans Application Support, %APPDATA% ou ~/.config),
-    // pour ne pas partager les préréglages d'un OrcaSlicer installé à côté. SLIC3R_APP_KEY reste « OrcaSlicer »
-    // (nom du fichier de configuration, traductions, métadonnées 3MF/G-code).
-    SetAppName("PlyoSlicer");
+    SetAppName("PlyoSlicer"); // PLYO: dossier de réglages à part d'un OrcaSlicer installé à côté ; SLIC3R_APP_KEY reste « OrcaSlicer »
 //	SetAppName(SLIC3R_APP_KEY "-alpha");
 //  SetAppName(SLIC3R_APP_KEY "-beta");
 //	SetAppDisplayName(SLIC3R_APP_NAME);

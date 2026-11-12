@@ -15,6 +15,7 @@
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Utils.hpp"
+#include "slic3r/GUI/BackgroundSlicingProcess.hpp"
 #include "slic3r/GUI/Field.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/GLToolbar.hpp"
@@ -350,21 +351,24 @@ nlohmann::json choose_filament(const std::string& type)
     return {{"ok", true}, {"name", name}};
 }
 
-bool select_filament(const std::string& name)
+bool select_filament(const std::string& name, size_t idx)
 {
     Slic3r::PresetBundle& bundle = *wxGetApp().preset_bundle;
-    // L'onglet d'abord : Orca peut demander d'enregistrer un filament modifié, et l'utilisateur peut annuler. La liste du
-    // plateau ne change qu'ensuite, sinon elle et l'onglet ne diraient plus la même chose.
-    Slic3r::GUI::Tab* tab = wxGetApp().get_tab(Slic3r::Preset::TYPE_FILAMENT);
-    if (tab == nullptr || !tab->select_preset(name))
-        return false;
-    // Puis comme un choix dans la liste du plateau (Plater::priv::on_select_preset), pour le premier filament.
-    bundle.set_filament_preset(0, name);
+    if (idx == 0) {
+        // Premier filament : l'onglet d'abord. Orca peut demander d'enregistrer un filament modifié, et l'utilisateur peut
+        // annuler. La liste du plateau ne change qu'ensuite, sinon elle et l'onglet ne diraient plus la même chose.
+        Slic3r::GUI::Tab* tab = wxGetApp().get_tab(Slic3r::Preset::TYPE_FILAMENT);
+        if (tab == nullptr || !tab->select_preset(name))
+            return false;
+    }
+    // Puis comme un choix dans la liste du plateau (Plater::priv::on_select_preset).
+    bundle.set_filament_preset(idx, name);
     if (Slic3r::GUI::Plater* plater = wxGetApp().plater()) {
-        plater->sidebar().update_presets(Slic3r::Preset::TYPE_FILAMENT); // l'onglet l'a rafraîchie avec l'ancien nom
+        if (idx == 0)
+            plater->sidebar().update_presets(Slic3r::Preset::TYPE_FILAMENT); // l'onglet l'a rafraîchie avec l'ancien nom
         plater->update_project_dirty_from_presets();
         plater->sidebar().update_dynamic_filament_list();
-        plater->on_filament_change(0);
+        plater->on_filament_change(idx);
     }
     bundle.export_selections(*wxGetApp().app_config);
     return true;
@@ -416,6 +420,13 @@ void export_file(std::function<void(nlohmann::json)> done)
         s_export_done = nullptr;
         waiting({{"ok", false}, {"cancelled", true}});
     }
+}
+
+void on_process_completed(const Slic3r::SlicingProcessCompletedEvent& evt, bool export_scheduled, const std::string& output_path)
+{
+    // Les deux lignes d'avant dans Plater::priv::on_process_completed : les arguments ne sont lus que pendant un export.
+    if (export_scheduled)
+        on_export_done(evt.success(), evt.error() ? evt.format_error_message().first : std::string(), output_path);
 }
 
 void on_export_done(bool finished, const std::string& error, const std::string& path)

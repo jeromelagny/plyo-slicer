@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PlyoHooks.hpp" // keeps_project, take_preset_changes : appelées par Orca
+
 #include <boost/filesystem/path.hpp>
 #include <nlohmann/json.hpp>
 #include <wx/string.h>
@@ -68,17 +70,8 @@ nlohmann::json open(const std::string& conv);
 // Un projet de conversation est en cours d'ouverture (l'enregistrement automatique de la bobine attend).
 bool opening();
 
-// Retouche Orca (PLYO:, Plater::close_with_confirm) : vrai si le plateau est celui d'une conversation et que son 3MF
-// vient d'être écrit (ou n'a pas changé). Faux pendant une découpe, un envoi, une calibration, une fenêtre, pour un
-// fichier de l'utilisateur, ou si l'écriture échoue : Orca pose alors sa question comme avant.
-bool keeps_project();
-
-// Retouche Orca (PLYO:, GUI_App::check_and_save/keep_current_preset_changes, `caption` : le titre de la question d'Orca) :
-// seulement pour la fermeture, un nouveau projet ou l'ouverture d'un projet (ProjectFilesLogic::project_question), si
-// keeps_project() et que l'imprimante n'est pas modifiée : écrit le filament en attente dans sa bobine, écrit le 3MF s'il
-// a changé, oublie les modifications d'impression et de filament, et renvoie vrai : Orca n'a rien à demander. Sinon faux,
-// et Orca demande comme avant (mise à jour des profils, assistants, déconnexion, export, instantanés : jamais rien de jeté).
-bool take_preset_changes(const wxString& caption);
+// keeps_project() (Plater::close_with_confirm) et take_preset_changes() (GUI_App::check_and_save/keep_current_preset_changes,
+// reconnues par le titre de la question d'Orca) : déclarées et décrites dans PlyoHooks.hpp.
 
 // Appelé par Plyo::on_project_changed() (nouveau projet, projet chargé). `paused` : c'est Plyo qui recharge (calibration,
 // réouverture d'une conversation) ; sinon c'est l'utilisateur, et le plateau n'est plus celui de la conversation.

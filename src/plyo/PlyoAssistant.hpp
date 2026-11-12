@@ -1,5 +1,9 @@
 #pragma once
 
+// Fonctions appelées par Orca (barre du haut, menu Affichage, changements de configuration et de projet) : PlyoHooks.hpp.
+#include "PlyoHooks.hpp"
+
+class wxMenuItem;
 class wxWindow;
 
 namespace Slic3r { namespace GUI {
@@ -16,15 +20,12 @@ void toggle_assistant(Slic3r::GUI::Plater* plater);
 bool is_assistant_shown();
 
 // Bouton « Assistant » de la barre du haut d'Orca (à gauche de « Découper ») : ouvre ou ferme le panneau,
-// et reste en surbrillance tant que le panneau est ouvert. `parent` : la fenêtre principale.
+// et reste en surbrillance tant que le panneau est ouvert. `parent` : la fenêtre principale. Posé par add_topbar_button().
 wxWindow* create_topbar_button(wxWindow* parent);
 
-// Appelé par MainFrame::on_config_changed() à chaque changement de configuration
-// (saisie manuelle, changement de préréglage, modification par Plyo).
-void on_config_changed();
-
-// Appelé par Plater::new_project() et Plater::load_project() : le panneau revient à son accueil.
-void on_project_changed();
+// Banc d'essai (PlyoSelfTest) : entrée « Assistant Plyo » du menu Affichage, nullptr tant qu'append_view_menu_item() ne
+// l'a pas créée.
+wxMenuItem* view_menu_item();
 
 // Nombre d'appels à on_project_changed() depuis le lancement : un test d'Orca (PlyoRawTests) sait ainsi si sa fenêtre a
 // ouvert un nouveau projet.

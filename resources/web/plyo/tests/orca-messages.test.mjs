@@ -145,9 +145,10 @@ test('panneau : fin de découpe, refus, relecture après un lot et contexte de l
 
 test('slicer : une seule ligne dans Orca, à côté du crochet d’export, et aucun texte traduit comparé', () => {
   const orca = read('../../../../src/slic3r/GUI/Plater.cpp');
-  assert.match(orca, /set_slicing_progress_export_possible\(\);\n\s+Plyo::OrcaMessages::on_slicing_done\(evt\); \/\/ PLYO: [^\n]+\n\n\s+\/\/ PLYO: le panneau Assistant attend la fin réelle de l'export/);
+  assert.match(orca, /set_slicing_progress_export_possible\(\);\n\s+Plyo::OrcaMessages::on_slicing_done\(evt\); \/\/ PLYO: [^\n]+\n\n\s+Plyo::FirstSteps::on_process_completed\(evt, this->background_process\.is_export_scheduled\(\), last_output_path\); \/\/ PLYO: /);
   assert.equal(orca.split('Plyo::OrcaMessages::').length - 1, 1);
-  assert.match(orca, /#include "plyo\/PlyoOrcaMessages\.hpp" \/\/ PLYO:/);
+  assert.match(orca, /#include "plyo\/PlyoHooks\.hpp" \/\/ PLYO:/, 'Orca n’inclut que PlyoHooks.hpp (lot 9)');
+  assert.match(read('../../../../src/plyo/PlyoHooks.hpp'), /void on_slicing_done\(const Slic3r::SlicingProcessCompletedEvent& evt\);/);
   const cpp = read('../../../../src/plyo/PlyoOrcaMessages.cpp');
   assert.match(cpp, /catch \(const Slic3r::SlicingError&\)/, 'classé par type d’exception');
   assert.ok(!/\.find\("[A-Z][a-z]+ /.test(cpp) && !/string\.find|message\.find|text\.find/.test(cpp), 'aucune recherche dans un texte d’Orca');

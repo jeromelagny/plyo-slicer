@@ -25,6 +25,7 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoWelcomeDialog.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoHighlight.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoHighlight.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoHooks.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoModelImport.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoModelImport.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoFiles.cpp

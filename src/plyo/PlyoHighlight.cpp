@@ -6,7 +6,6 @@
 #include "slic3r/GUI/Field.hpp"
 #include "slic3r/GUI/GLCanvas3D.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
-#include "slic3r/GUI/I18N.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/ParamsPanel.hpp"
 #include "slic3r/GUI/ParamsDialog.hpp"
@@ -41,9 +40,11 @@ wxWindow* find_window(wxWindow* root, const std::function<bool(wxWindow*)>& matc
     return nullptr;
 }
 
+} // namespace
+
 wxWindow* find_target(const std::string& target)
 {
-    wxWindow* frame = wxGetApp().mainframe;
+    Slic3r::GUI::MainFrame* frame = wxGetApp().mainframe;
     Slic3r::GUI::Plater* plater = wxGetApp().plater();
     if (frame == nullptr || plater == nullptr)
         return nullptr;
@@ -56,22 +57,20 @@ wxWindow* find_target(const std::string& target)
         auto& combos = plater->sidebar().combos_filament();
         return !combos.empty() && combos.front()->IsShownOnScreen() ? combos.front() : nullptr;
     }
-    // Boutons « Trancher » / « Imprimer » : les deux seuls SideButton à libellé de la barre du haut.
-    const wxString slice_plate = _L("Slice plate"), slice_all = _L("Slice all");
-    if (target == "slice")
-        return find_window(frame, [&](wxWindow* w) {
-            return dynamic_cast<SideButton*>(w) != nullptr && (w->GetLabel() == slice_plate || w->GetLabel() == slice_all);
-        });
-    if (target == "print")
-        return find_window(frame, [&](wxWindow* w) {
-            return dynamic_cast<SideButton*>(w) != nullptr && !w->GetLabel().empty() && w->GetLabel() != slice_plate &&
-                   w->GetLabel() != slice_all;
-        });
+    // Boutons « Découper » / « Imprimer » de la barre du haut : membres publics de MainFrame, quel que soit leur libellé
+    // (« Découper la plaque » ou « tout », « Imprimer », « Exporter », « Envoyer »… selon le choix du menu déroulant voisin,
+    // m_slice_option_btn / m_print_option_btn, qui n'est jamais la cible). Caché (onglet Appareil…) : pas de cible.
+    if (target == "slice" || target == "print") {
+        wxWindow* button = target == "slice" ? frame->m_slice_btn : frame->m_print_btn;
+        return button != nullptr && button->IsShownOnScreen() ? button : nullptr;
+    }
     if (target == "plate")
         if (Slic3r::GUI::GLCanvas3D* canvas = plater->get_current_canvas3D())
             return canvas->get_wxglcanvas() != nullptr && canvas->get_wxglcanvas()->IsShownOnScreen() ? canvas->get_wxglcanvas() : nullptr;
     return nullptr;
 }
+
+namespace {
 
 // Quatre bandes de couleur autour du rectangle (fenêtres popup : elles ne prennent pas le focus).
 class Frame : public wxTimer

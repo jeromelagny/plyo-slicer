@@ -116,7 +116,8 @@ test('G1 : l’export ne répond qu’à sa fin réelle ; annulé, rien ne bouge
   assert.ok(!/EVT_GLTOOLBAR_EXPORT_GCODE/.test(c), 'plus de réponse immédiate après un événement posté');
   assert.match(c, /plater->export_gcode\(false\)[\s\S]{0,260}is_export_gcode_scheduled\(\)[\s\S]{0,160}"cancelled", true/);
   const orca = fs.readFileSync(path.join(here, '..', '..', '..', '..', 'src', 'slic3r', 'GUI', 'Plater.cpp'), 'utf8');
-  assert.match(orca, /\/\/ PLYO:[^\n]*\n[^\n]*is_export_scheduled\(\)\)\n\s+Plyo::FirstSteps::on_export_done/);
+  assert.match(orca, /Plyo::FirstSteps::on_process_completed\(evt, this->background_process\.is_export_scheduled\(\), last_output_path\); \/\/ PLYO:/);
+  assert.match(cpp('PlyoFirstSteps.cpp'), /if \(export_scheduled\)\n\s+on_export_done\(evt\.success\(\), evt\.error\(\) \? evt\.format_error_message\(\)\.first : std::string\(\), output_path\);/);
   const page = read('index.html');
   const done = page.slice(page.indexOf('function onExportDone'), page.indexOf('function repaintPanel'));
   assert.ok(done.indexOf('msg.cancelled) return') < done.indexOf('projectUI.sentConv = conv'), 'annulé : pas de « L’impression a démarré »');

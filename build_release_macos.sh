@@ -351,8 +351,7 @@ function build_slicer() {
         (
             cd "$PROJECT_DIR"
             ./scripts/run_gettext.sh
-            # PLYO: traductions renommées « Plyo Slicer », par-dessus celles qu'Orca vient de compiler
-            python3 src/plyo/rebrand_translations.py localization/i18n resources/i18n "$PROJECT_BUILD_DIR/plyo-i18n"
+            python3 src/plyo/rebrand_translations.py localization/i18n resources/i18n "$PROJECT_BUILD_DIR/plyo-i18n" # PLYO: traductions « Plyo Slicer » par-dessus celles d'Orca
         )
 
         echo "Fix macOS app package..."

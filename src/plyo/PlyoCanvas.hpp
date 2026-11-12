@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PlyoHooks.hpp" // fill_armed_upload : appelée par Orca (Plater::send_gcode_legacy)
+
 #include <nlohmann/json.hpp>
 
 #include <functional>
@@ -38,8 +40,8 @@ void clear_plan();
 // `done` (fil principal) reçoit {ok, text}. `ok` veut dire « Orca a pris l'envoi », jamais « l'impression a démarré » :
 // CrealityPrint::start_print n'attend aucune réponse. NON VALIDÉ sur machine (T13, T14, T15).
 void send_planned(const std::string& printer_preset, std::function<void(nlohmann::json)> done);
-// Pour Plater::send_gcode_legacy (fil principal) : la répartition armée par send_planned, une seule fois. Vide en dehors de cet
-// appel : le bouton d'Orca garde toujours sa fenêtre.
+// Pour fill_armed_upload (PlyoHooks.hpp, appelée par Plater::send_gcode_legacy, fil principal) : la répartition armée par
+// send_planned, une seule fois. Vide en dehors de cet appel : le bouton d'Orca garde toujours sa fenêtre.
 std::optional<std::map<std::string, std::string>> take_armed_send();
 // Couleurs découpées de la plaque et profils de filament (voir CC2::OrcaState) ; depuis n'importe quel fil.
 bool orca_state(std::vector<int>& sliced_t, std::vector<std::string>& presets);

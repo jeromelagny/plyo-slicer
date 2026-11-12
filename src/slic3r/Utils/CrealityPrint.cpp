@@ -30,7 +30,7 @@
 #include <curl/curl.h>
 #include <utility>
 #include <vector>
-#include <thread>
+#include <thread> // PLYO: std::this_thread::sleep_for du bloc Plyo de start_print
 #include <wx/progdlg.h>
 
 #include "PrintHost.hpp"
@@ -39,7 +39,7 @@
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/format.hpp"
 #include "Http.hpp"
-#include "plyo/PlyoPrinterStatusLogic.hpp" // PLYO: dossier de démarrage lu sur l'imprimante
+#include "plyo/PlyoHooks.hpp" // PLYO: dossier de démarrage lu sur l'imprimante (Plyo::PrinterStatus::creality_file_dir)
 #include "libslic3r/AppConfig.hpp"
 #include "slic3r/GUI/BonjourDialog.hpp"
 
@@ -362,8 +362,8 @@ bool CrealityPrint::start_print(wxString &msg, const std::string &filename, cons
 {
     try {
         const std::string data_root = is_k1_family(m_model) ? "/usr/data" : "/mnt/UDISK";
-        std::string gcode_path = data_root + "/printer_data/gcodes/" + filename;
-        // PLYO: le dossier vient de la liste de fichiers de l'imprimante elle-même (lecture seule) ; la liste de modèles
+        std::string gcode_path = data_root + "/printer_data/gcodes/" + filename; // PLYO: plus `const`, remplacé ci-dessous
+        // PLYO: begin le dossier vient de la liste de fichiers de l'imprimante elle-même (lecture seule) ; la liste de modèles
         // ci-dessus ne sert plus que si elle ne répond pas. Une CR-10 SE inconnue d'Orca recevait le fichier sans démarrer.
         // Trois essais : juste après l'envoi, la liste peut ne pas encore contenir le fichier.
         std::string dir;
@@ -386,6 +386,7 @@ bool CrealityPrint::start_print(wxString &msg, const std::string &filename, cons
         if (!dir.empty())
             gcode_path = dir + "/" + filename;
         BOOST_LOG_TRIVIAL(info) << "CrealityPrint: start path " << (dir.empty() ? "from model table" : "from printer file list") << ": " << gcode_path;
+        // PLYO: end
 
         net::io_context ioc;
         websocket::stream<beast::tcp_stream> ws{ioc};

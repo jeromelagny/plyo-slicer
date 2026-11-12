@@ -158,16 +158,19 @@ test('envoi armé : la retouche de send_gcode_legacy est en place et marquée', 
   assert.ok(start >= 0);
   const end = plater.indexOf('int Plater::send_gcode(', start);
   const body = plater.slice(start, end);
-  const armed = body.indexOf('Plyo::Canvas::take_armed_send()');
-  assert.ok(armed >= 0, 'take_armed_send dans send_gcode_legacy');
-  assert.ok(body.lastIndexOf('// PLYO:', armed) >= 0, 'marque PLYO: avant le bloc');
-  // Le bloc passe avant la création de la fenêtre, et la fenêtre reste dans la branche « else ».
+  // Lot 9 : une seule ligne côté Orca, le remplissage vit dans PlyoCanvas.cpp (fill_armed_upload).
+  const armed = body.indexOf('if (!Plyo::Canvas::fill_armed_upload(upload_job.upload_data, default_output_file.filename().string(), use_3mf, resolved_plate_idx)) // PLYO:');
+  assert.ok(armed >= 0, 'fill_armed_upload dans send_gcode_legacy, marqué PLYO: sur la même ligne');
+  assert.equal(body.split('Plyo::').length - 1, 1, 'un seul appel à Plyo dans send_gcode_legacy');
+  // L'appel passe avant la création de la fenêtre, et la fenêtre reste dans le bloc d'Orca qui le suit.
   const dialog = body.indexOf('pDlg->ShowModal()');
   assert.ok(armed < dialog, 'avant la fenêtre');
-  assert.ok(/\}\s*else\s*\{\s*auto\s+preset_bundle\s*=/.test(body.slice(armed, dialog)), 'la fenêtre reste dans le else');
-  assert.ok(/plateindex/.test(body.slice(armed, dialog)), 'plateindex sur le chemin armé (use_3mf)');
+  assert.ok(/\/\/ PLYO:[^\n]*\n\s*\{\s*auto\s+preset_bundle\s*=/.test(body.slice(armed, dialog)), 'la fenêtre reste dans le bloc d’Orca');
+  const canvas = readRoot('src/plyo/PlyoCanvas.cpp');
+  const fill = canvas.slice(canvas.indexOf('bool fill_armed_upload('), canvas.indexOf('namespace {', canvas.indexOf('bool fill_armed_upload(')));
+  assert.ok(/take_armed_send\(\)/.test(fill) && /plateindex/.test(fill), 'plateindex sur le chemin armé (use_3mf)');
   const list = readRoot('docs/plyo/FICHIERS-MODIFIES.md');
-  assert.ok(list.includes('take_armed_send'), 'listée dans FICHIERS-MODIFIES.md');
+  assert.ok(list.includes('fill_armed_upload'), 'listée dans FICHIERS-MODIFIES.md');
 });
 
 test("envoi armé : les clés et paramètres repris d'Orca existent encore", () => {

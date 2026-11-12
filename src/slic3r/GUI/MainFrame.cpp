@@ -124,8 +124,7 @@
 #include "Widgets/WebView.hpp"
 #include "DailyTips.hpp"
 #include "FilamentMapDialog.hpp"
-#include "plyo/PlyoAssistant.hpp" // PLYO: panneau Assistant Plyo
-#include "plyo/PlyoFirstSteps.hpp" // PLYO: premiers pas (accueil, ouverture du panneau)
+#include "plyo/PlyoHooks.hpp" // PLYO: appels du panneau Assistant Plyo, liste dans docs/plyo/FICHIERS-MODIFIES.md
 
 #include "DeviceCore/DevManager.h"
 
@@ -2292,8 +2291,7 @@ wxBoxSizer* MainFrame::create_side_tools()
     m_slice_option_btn->Enable();
     m_print_option_btn->Enable();
     //sizer->Add(FromDIP(15), 0, 0, 0, 0);
-    sizer->Add(Plyo::create_topbar_button(this), 0, wxALIGN_CENTER_VERTICAL); // PLYO: bouton « Assistant » (src/plyo/)
-    sizer->Add(FromDIP(15), 0, 0, 0, 0);                                        // PLYO: espace avant « Découper »
+    Plyo::add_topbar_button(sizer, this); // PLYO: bouton « Assistant » et son espace, avant « Découper »
     sizer->Add(slice_panel);
     sizer->Add(FromDIP(15), 0, 0, 0, 0);
     sizer->Add(print_panel);
@@ -2907,7 +2905,7 @@ wxMenu* MainFrame::generate_help_menu()
 
     // About
 #ifndef __APPLE__
-    wxString about_title = wxString::Format(_L("&About %s"), "Plyo Slicer"); // PLYO: nom de l'application
+    wxString about_title = wxString::Format(_L("&About %s"), SLIC3R_APP_FULL_NAME);
     append_menu_item(helpMenu, wxID_ANY, about_title, about_title,
             [](wxCommandEvent&) { Slic3r::GUI::about(); });
 #endif
@@ -3477,12 +3475,7 @@ void MainFrame::init_menubar_as_editor()
             },
             this);
 
-        // PLYO: affiche ou masque le panneau Assistant Plyo (code dans src/plyo/).
-        append_menu_check_item(
-            viewMenu, wxID_ANY, "Assistant Plyo", "Afficher ou masquer le panneau Assistant Plyo",
-            [this](wxCommandEvent&) { Plyo::toggle_assistant(m_plater); }, this,
-            [this]() { return is_prepare_or_preview_tab(); }, []() { return Plyo::is_assistant_shown(); }, this);
-
+        Plyo::append_view_menu_item(viewMenu, this); // PLYO: entrée cochable « Assistant Plyo » (panneau)
         viewMenu->AppendSeparator();
         wxMenuItem* show_labels = append_menu_check_item(viewMenu, wxID_ANY, shortcut_label(_L("Show &Labels"), Shortcut::ShowLabels, true), _L("Show object labels in 3D scene."),
             [this](wxCommandEvent&) { m_plater->show_view3D_labels(!m_plater->are_view3D_labels_shown()); m_plater->get_current_canvas3D()->post_event(SimpleEvent(wxEVT_PAINT)); }, this,
@@ -3543,7 +3536,7 @@ void MainFrame::init_menubar_as_editor()
 #endif
 
 #ifdef __APPLE__
-    wxString about_title = wxString::Format(_L("&About %s"), "Plyo Slicer"); // PLYO: nom de l'application
+    wxString about_title = wxString::Format(_L("&About %s"), SLIC3R_APP_FULL_NAME);
     append_menu_item(
         parent_menu, wxID_ANY, _L(about_title), "",
         [](wxCommandEvent &) { Slic3r::GUI::about();},
@@ -3882,7 +3875,7 @@ void MainFrame::init_menubar_as_gcodeviewer()
             [](wxCommandEvent&) { start_new_slicer(); }, "", nullptr,
             []() {return true; }, this);
         fileMenu->AppendSeparator();
-        append_menu_item(fileMenu, wxID_EXIT, _L("&Quit"), wxString::Format(_L("Quit %s"), "Plyo Slicer") /* PLYO: nom de l'application */,
+        append_menu_item(fileMenu, wxID_EXIT, _L("&Quit"), wxString::Format(_L("Quit %s"), SLIC3R_APP_FULL_NAME), // PLYO: « Quitter Plyo Slicer » (SLIC3R_APP_NAME reste OrcaSlicer)
             [this](wxCommandEvent&) { Close(false); });
     }
 
@@ -4397,7 +4390,7 @@ void MainFrame::on_config_changed(DynamicPrintConfig* config) const
 {
     if (m_plater)
         m_plater->on_config_change(*config); // propagate config change events to the plater
-    Plyo::on_config_changed(); // PLYO: rafraîchit les valeurs affichées dans le panneau Assistant Plyo
+    Plyo::on_config_changed(); // PLYO: changement compté (projet, bobine) et valeurs du panneau Assistant Plyo rafraîchies
 }
 
 void MainFrame::set_print_button_to_default(PrintSelectType select_type)

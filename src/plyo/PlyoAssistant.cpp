@@ -46,6 +46,7 @@
 #include "slic3r/GUI/Plater.hpp"
 #include "slic3r/GUI/Widgets/SideButton.hpp"
 #include "slic3r/GUI/Widgets/StateColor.hpp"
+#include "slic3r/GUI/wxExtensions.hpp"
 
 #include <boost/filesystem/path.hpp>
 #include <boost/log/trivial.hpp>
@@ -54,6 +55,7 @@
 
 #include <wx/aui/framemanager.h>
 #include <wx/gdicmn.h>
+#include <wx/menu.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
 #include <wx/weakref.h>
@@ -68,6 +70,7 @@
 namespace Plyo {
 
 using Slic3r::GUI::DockPanel;
+using Slic3r::GUI::MainFrame;
 using Slic3r::GUI::Plater;
 
 namespace {
@@ -80,6 +83,7 @@ bool                 s_refresh_pending = false;
 int                  s_project_pauses  = 0; // gardes ProjectNotificationsPause en vie (fil principal seulement)
 int                  s_project_changes = 0; // appels à on_project_changed() (fil principal seulement)
 wxWeakRef<SideButton> s_topbar_button;
+wxMenuItem*          s_view_menu_item = nullptr; // entrée du menu Affichage, lue seulement par le banc d'essai
 
 // Bouton de la barre du haut : plein quand le panneau est ouvert, cerné quand il est fermé.
 void refresh_topbar_button()
@@ -883,6 +887,24 @@ wxWindow* create_topbar_button(wxWindow* parent)
     return holder;
 }
 
+void add_topbar_button(wxSizer* sizer, MainFrame* frame)
+{
+    // Les deux lignes d'avant dans MainFrame::create_side_tools : le bouton, puis 15 px avant « Découper ».
+    sizer->Add(create_topbar_button(frame), 0, wxALIGN_CENTER_VERTICAL);
+    sizer->Add(frame->FromDIP(15), 0, 0, 0, 0);
+}
+
+void append_view_menu_item(wxMenu* view_menu, MainFrame* frame)
+{
+    // Même entrée qu'avant dans MainFrame : texte, aide, coche et activation inchangés.
+    s_view_menu_item = append_menu_check_item(
+        view_menu, wxID_ANY, "Assistant Plyo", "Afficher ou masquer le panneau Assistant Plyo",
+        [frame](wxCommandEvent&) { toggle_assistant(frame->plater()); }, frame,
+        [frame]() { return frame->is_prepare_or_preview_tab(); }, []() { return is_assistant_shown(); }, frame);
+}
+
+wxMenuItem* view_menu_item() { return s_view_menu_item; }
+
 int project_change_count() { return s_project_changes; }
 
 void on_project_changed()
@@ -903,7 +925,13 @@ void on_config_changed()
 {
     AutoSave::note_change(); // le délai de calme de l'enregistrement automatique repart de zéro
     ProjectFiles::note_change(); // le projet de la conversation a changé
-    // Orca peut appeler ceci plusieurs fois de suite : on regroupe en un seul envoi.
+    refresh_values();
+}
+
+void refresh_values()
+{
+    // Orca peut appeler ceci plusieurs fois de suite (MainFrame::on_config_changed passe aussi par
+    // Plater::on_config_change) : on regroupe en un seul envoi.
     if (!s_panel || s_refresh_pending)
         return;
     s_refresh_pending = true;

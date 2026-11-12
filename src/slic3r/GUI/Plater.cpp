@@ -1,9 +1,5 @@
 #include "Plater.hpp"
-#include "plyo/PlyoAssistant.hpp" // PLYO: prévenir le panneau Assistant d'un nouveau projet
-#include "plyo/PlyoFirstSteps.hpp" // PLYO: fin réelle d'un export demandé par le panneau, voir on_process_completed()
-#include "plyo/PlyoCanvas.hpp" // PLYO: envoi armé par le panneau, voir send_gcode_legacy
-#include "plyo/PlyoProjectFiles.hpp" // PLYO: projet de la conversation gardé par Plyo, voir close_with_confirm
-#include "plyo/PlyoOrcaMessages.hpp" // PLYO: fin de chaque découpe vue par le panneau Assistant, voir on_process_completed()
+#include "plyo/PlyoHooks.hpp" // PLYO: appels du panneau Assistant Plyo, liste dans docs/plyo/FICHIERS-MODIFIES.md
 #include "../Utils/NetworkAgent.hpp"
 #include "IPrinterAgent.hpp"
 #include "CalibUtils.hpp"
@@ -13371,9 +13367,7 @@ void Plater::priv::on_process_completed(SlicingProcessCompletedEvent &evt)
     notification_manager->set_slicing_progress_export_possible();
     Plyo::OrcaMessages::on_slicing_done(evt); // PLYO: le panneau Assistant voit tout de suite une découpe en erreur ou finie (lu avant le crochet d'export)
 
-    // PLYO: le panneau Assistant attend la fin réelle de l'export (fichier écrit, ou erreur) pour le dire.
-    if (this->background_process.is_export_scheduled())
-        Plyo::FirstSteps::on_export_done(evt.success(), evt.error() ? evt.format_error_message().first : std::string(), last_output_path);
+    Plyo::FirstSteps::on_process_completed(evt, this->background_process.is_export_scheduled(), last_output_path); // PLYO: fin réelle d'un export demandé par le panneau Assistant
     // Reset the "export G-code path" name, so that the automatic background processing will be enabled again.
     this->background_process.reset_export();
     // This bool stops showing export finished notification even when process_completed_with_error is false
@@ -21023,14 +21017,7 @@ void Plater::send_gcode_legacy(int plate_idx, Export3mfProgressFn proFn)
         }
     }
 
-    // PLYO: envoi lancé par le panneau avec une répartition vérifiée, pas de fenêtre d'envoi (voir src/plyo/PlyoCanvas.hpp)
-    if (const auto plyo_info = Plyo::Canvas::take_armed_send(); plyo_info) {
-        upload_job.upload_data.upload_path   = default_output_file.filename();
-        upload_job.upload_data.post_action   = PrintHostPostUploadAction::StartPrint;
-        upload_job.upload_data.extended_info = *plyo_info;
-        if (use_3mf) // comme la branche d'Orca ci-dessous : le profil AD5X a use_3mf à 1
-            upload_job.upload_data.extended_info["plateindex"] = std::to_string(resolved_plate_idx + 1);
-    } else
+    if (!Plyo::Canvas::fill_armed_upload(upload_job.upload_data, default_output_file.filename().string(), use_3mf, resolved_plate_idx)) // PLYO: envoi armé par le panneau, sans cette fenêtre
     {
         auto        preset_bundle = wxGetApp().preset_bundle;
         auto        config        = get_app_config();
@@ -21526,6 +21513,7 @@ void Plater::config_change_notification(const DynamicPrintConfig &config, const 
 
 void Plater::on_config_change(const DynamicPrintConfig &config)
 {
+    Plyo::refresh_values(); // PLYO: valeurs du panneau Assistant à jour, même hors des onglets (type de plateau, barre latérale)
     bool update_scheduled = false;
     bool bed_shape_changed = false;
     bool exclusion_preview_changed = false;

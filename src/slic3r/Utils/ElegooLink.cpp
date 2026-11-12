@@ -39,7 +39,7 @@
 
 #include "OctoPrint.hpp"
 #include "PrintHost.hpp"
-#include "plyo/PlyoCC2.hpp" // PLYO: démarrage d'impression du CC2 (Orca ne sait qu'envoyer le fichier)
+#include "plyo/PlyoHooks.hpp" // PLYO: démarrage d'impression du CC2 (Plyo::CC2::start_print ; Orca ne sait qu'envoyer le fichier)
 #include "WebSocketClient.hpp"
 #include "slic3r/GUI/GUI.hpp"
 #include "slic3r/GUI/I18N.hpp"
@@ -412,8 +412,9 @@ namespace Slic3r {
     const char* ElegooLink::get_name() const { return "ElegooLink"; }
     PrintHostPostUploadActions ElegooLink::get_post_upload_actions() const
     {
-        // PLYO: le CC2 aussi propose « envoyer et imprimer » (démarrage par Plyo::CC2::start_print, après l'envoi)
+        // PLYO: begin le CC2 aussi propose « envoyer et imprimer » (démarrage par Plyo::CC2::start_print, après l'envoi)
         return PrintHostPostUploadAction::StartPrint;
+        // PLYO: end
     }
 
     std::string ElegooLink::get_sn() const
@@ -1020,7 +1021,7 @@ namespace Slic3r {
                 break;
         }
 
-        // PLYO: démarre l'impression du fichier qui vient d'être envoyé (canal MQTT local du CC2, voir src/plyo/PlyoCC2.hpp)
+        // PLYO: begin démarre l'impression du fichier qui vient d'être envoyé (canal MQTT local du CC2, voir src/plyo/PlyoCC2.hpp)
         if (res && upload_data.post_action == PrintHostPostUploadAction::StartPrint) {
             std::string start_error;
             std::string host = Http::get_host_header_value(m_host);
@@ -1031,6 +1032,7 @@ namespace Slic3r {
                 return false;
             }
         }
+        // PLYO: end
 
         (void) info_fn;
         return res;

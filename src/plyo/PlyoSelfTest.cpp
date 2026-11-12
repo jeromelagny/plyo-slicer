@@ -1,5 +1,6 @@
 #include "PlyoSelfTest.hpp"
 #include "PlyoAssistant.hpp"
+#include "PlyoHighlight.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoOrcaMessages.hpp"
 #include "PlyoPlateActions.hpp"
@@ -10,11 +11,14 @@
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/GUI/Widgets/SideButton.hpp"
 
 #include <boost/log/trivial.hpp>
 #include <boost/nowide/cstdlib.hpp>
 #include <boost/nowide/fstream.hpp>
 
+#include <wx/menu.h>
+#include <wx/menuitem.h>
 #include <wx/timer.h>
 #include <wx/toplevel.h>
 
@@ -91,6 +95,56 @@ nlohmann::json shown_windows()
     return out;
 }
 
+// Entrée « Assistant Plyo » actionnée par le banc (selftest_menu_toggle) : nombre d'actions, et panneau vu fermé entre deux.
+int  s_menu_toggles     = 0;
+bool s_menu_closed_seen = false;
+
+// Le banc actionne l'entrée de menu comme un clic (wxMenu::SendEvent, même chemin que le menu natif).
+bool send_menu_item()
+{
+    wxMenuItem* item = view_menu_item();
+    if (item == nullptr || item->GetMenu() == nullptr)
+        return false;
+    ++s_menu_toggles;
+    return item->GetMenu()->SendEvent(item->GetId(), item->IsCheckable() ? !item->IsChecked() : -1);
+}
+
+// Cible de « Montre-moi » pour Découper / Imprimer, comparée aux membres de MainFrame.
+nlohmann::json highlight_target(const std::string& target, wxWindow* member)
+{
+    wxWindow* found = Highlight::find_target(target);
+    return {{"found", found != nullptr}, {"is_member", found != nullptr && found == member},
+            {"label", found != nullptr ? found->GetLabel().utf8_string() : std::string()}};
+}
+
+// Accroches d'Orca déplacées dans Plyo (lot 9) : entrée du menu Affichage et cibles de « Montre-moi ».
+nlohmann::json hooks()
+{
+    Slic3r::GUI::MainFrame* frame = Slic3r::GUI::wxGetApp().mainframe;
+    wxMenuItem*             item  = view_menu_item();
+    nlohmann::json          menu  = {{"exists", item != nullptr}};
+    if (item != nullptr && frame != nullptr) {
+        // Comme à l'ouverture du menu : Orca met à jour la coche et l'activation par wxEVT_UPDATE_UI.
+        if (item->GetMenu() != nullptr)
+            item->GetMenu()->UpdateUI(frame);
+        menu["label"]     = item->GetItemLabelText().utf8_string();
+        menu["help"]      = item->GetHelp().utf8_string();
+        menu["checkable"] = item->IsCheckable();
+        menu["checked"]   = item->IsChecked();
+        menu["enabled"]   = item->IsEnabled();
+    }
+    nlohmann::json out = {{"menu", menu},
+                          {"menu_toggles", s_menu_toggles},
+                          {"menu_closed_seen", s_menu_closed_seen},
+                          {"panel_shown", is_assistant_shown()},
+                          {"prepare_or_preview", frame != nullptr && frame->is_prepare_or_preview_tab()}};
+    if (frame != nullptr) {
+        out["slice"] = highlight_target("slice", frame->m_slice_btn);
+        out["print"] = highlight_target("print", frame->m_print_btn);
+    }
+    return out;
+}
+
 // Lectures seules d'un état déjà exposé par Plyo : aucune n'écrit dans Orca ni sur le disque.
 nlohmann::json call(const std::string& fn)
 {
@@ -115,6 +169,8 @@ nlohmann::json call(const std::string& fn)
     }
     if (fn == "ai_context")
         return SettingsBridge::ai_context();
+    if (fn == "hooks")
+        return hooks();
     return {{"error", "fonction inconnue : " + Json::utf8_prefix(fn, 40)}};
 }
 
@@ -166,6 +222,26 @@ bool handle(const std::string& type, const nlohmann::json& data, const std::func
             if (is_assistant_shown())
                 toggle_assistant(Slic3r::GUI::wxGetApp().plater());
             s_reopen->Start(500);
+        });
+    } else if (type == "selftest_menu_toggle") {
+        // Comme deux clics sur « Affichage > Assistant Plyo » : le panneau se ferme (après ce message), puis l'entrée le rouvre
+        // dès qu'il est détruit. Le pilote est réinséré dans la nouvelle page et reprend du début (hooks.menu_toggles).
+        static wxTimer* s_toggle = nullptr;
+        if (s_toggle == nullptr) {
+            s_toggle = new wxTimer();
+            s_toggle->Bind(wxEVT_TIMER, [](wxTimerEvent&) {
+                if (is_assistant_shown())
+                    return;
+                s_toggle->Stop();
+                s_menu_closed_seen = true;
+                if (!send_menu_item())
+                    BOOST_LOG_TRIVIAL(error) << "Plyo: banc d'essai : entrée de menu « Assistant Plyo » introuvable";
+            });
+        }
+        Slic3r::GUI::wxGetApp().CallAfter([] {
+            if (!send_menu_item())
+                BOOST_LOG_TRIVIAL(error) << "Plyo: banc d'essai : entrée de menu « Assistant Plyo » introuvable";
+            s_toggle->Start(500);
         });
     } else if (type == "selftest_call") {
         const std::string fn = Json::str(data, "fn", 40);

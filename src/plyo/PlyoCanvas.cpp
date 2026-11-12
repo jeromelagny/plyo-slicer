@@ -23,7 +23,9 @@
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/PartPlate.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/Utils/PrintHost.hpp"
 
+#include <boost/filesystem/path.hpp>
 #include <boost/log/trivial.hpp>
 
 #include <chrono>
@@ -152,20 +154,8 @@ void set_colour(size_t idx, const std::string& color)
     }
 }
 
-// Faux seulement pour le premier filament, si l'utilisateur a annulé dans la fenêtre d'Orca.
-bool set_preset(size_t idx, const std::string& name)
-{
-    if (idx == 0)
-        return FirstSteps::select_filament(name); // le premier filament suit aussi l'onglet Filament
-    bundle().set_filament_preset(idx, name);
-    if (Slic3r::GUI::Plater* plater = wxGetApp().plater()) {
-        plater->update_project_dirty_from_presets();
-        plater->sidebar().update_dynamic_filament_list();
-        plater->on_filament_change(idx);
-    }
-    bundle().export_selections(*wxGetApp().app_config);
-    return true;
-}
+// Faux seulement pour le premier filament, si l'utilisateur a annulé dans la fenêtre d'Orca (l'onglet Filament le suit).
+bool set_preset(size_t idx, const std::string& name) { return FirstSteps::select_filament(name, idx); }
 
 } // namespace
 
@@ -365,6 +355,21 @@ std::optional<std::map<std::string, std::string>> take_armed_send()
     g_armed.reset();
     g_armed_taken = true;
     return info;
+}
+
+bool fill_armed_upload(Slic3r::PrintHostUpload& upload, const std::string& file_name, bool use_3mf, int plate_idx)
+{
+    // Déplacé tel quel de Plater::send_gcode_legacy (mêmes champs, mêmes valeurs, même ordre). Un test de source
+    // (test_plyo.cpp, « envoi armé ») vérifie que la branche voisine d'Orca, celle de la fenêtre, n'a pas changé.
+    const auto plyo_info = take_armed_send();
+    if (!plyo_info)
+        return false;
+    upload.upload_path   = boost::filesystem::path(file_name);
+    upload.post_action   = Slic3r::PrintHostPostUploadAction::StartPrint;
+    upload.extended_info = *plyo_info;
+    if (use_3mf) // comme la branche d'Orca : le profil AD5X a use_3mf à 1
+        upload.extended_info["plateindex"] = std::to_string(plate_idx + 1);
+    return true;
 }
 
 namespace {

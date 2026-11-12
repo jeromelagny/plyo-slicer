@@ -3810,3 +3810,421 @@ TEST_CASE("Lot 6 · Limits::source_of : provenance des limites dite à l'IA")
     CHECK(source_of(false, false, true) == "user");
     CHECK(source_of(false, false, false).empty());
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Lot 9 · sentinelles d'Orca : chaque test lit une source d'Orca dont Plyo dépend sans la modifier (titre comparé, séquence
+// recopiée, branche voisine d'une accroche). Après une fusion d'Orca, un échec ici dit exactement ce qu'Orca a changé :
+// reprendre alors le code Plyo nommé dans le message, puis mettre la sentinelle à jour (docs/plyo/FICHIERS-MODIFIES.md).
+// ---------------------------------------------------------------------------------------------------------------------
+
+#include "../../PlyoHooks.hpp"
+
+#include <map>
+#include <set>
+#include <vector>
+
+namespace {
+
+// Texte de `from` (inclus) jusqu'à `to` (exclu), cherché après `from` ; vide si l'un manque.
+std::string between(const std::string& src, const std::string& from, const std::string& to)
+{
+    const size_t a = src.find(from);
+    if (a == std::string::npos)
+        return std::string();
+    const size_t b = src.find(to, a + from.size());
+    return b == std::string::npos ? std::string() : src.substr(a, b - a);
+}
+
+size_t count_of(const std::string& text, const std::string& needle)
+{
+    size_t n = 0;
+    for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + needle.size()))
+        ++n;
+    return n;
+}
+
+// Chaque morceau est présent, dans cet ordre.
+void check_in_order(const std::string& where, const std::string& body, const std::vector<std::string>& needles)
+{
+    INFO(where);
+    REQUIRE_FALSE(body.empty());
+    size_t at = 0;
+    for (const std::string& needle : needles) {
+        INFO(needle);
+        const size_t found = body.find(needle, at);
+        CHECK(found != std::string::npos);
+        if (found != std::string::npos)
+            at = found + needle.size();
+    }
+}
+
+std::string trimmed(const std::string& line)
+{
+    const size_t a = line.find_first_not_of(" \t\r");
+    if (a == std::string::npos)
+        return std::string();
+    return line.substr(a, line.find_last_not_of(" \t\r") - a + 1);
+}
+
+// Lignes de code d'un bloc : sans lignes vides, commentaires ni journal.
+std::vector<std::string> code_lines(const std::string& body)
+{
+    std::vector<std::string> out;
+    size_t                   start = 0;
+    while (start <= body.size()) {
+        const size_t      end  = body.find('\n', start);
+        const std::string line = trimmed(body.substr(start, end == std::string::npos ? std::string::npos : end - start));
+        if (!line.empty() && line.rfind("//", 0) != 0 && line.rfind("BOOST_LOG", 0) != 0)
+            out.push_back(line);
+        if (end == std::string::npos)
+            break;
+        start = end + 1;
+    }
+    return out;
+}
+
+// La position est dans un commentaire (// sur la même ligne, ou /* … */ ouvert).
+bool in_comment(const std::string& src, size_t pos)
+{
+    const size_t line_start = src.rfind('\n', pos);
+    const size_t from       = line_start == std::string::npos ? 0 : line_start + 1;
+    if (src.substr(from, pos - from).find("//") != std::string::npos)
+        return true;
+    const size_t open  = src.rfind("/*", pos);
+    const size_t close = src.rfind("*/", pos);
+    return open != std::string::npos && (close == std::string::npos || close < open);
+}
+
+std::string read_file(const fs::path& path)
+{
+    boost::nowide::ifstream in(path.string(), std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+fs::path repo_root() { return fs::path(__FILE__).parent_path() / ".." / ".." / ".." / ".."; }
+
+// Texte d'un msgid (une seule ligne, sans contexte) dans un catalogue .po ; le msgid lui-même s'il n'est pas traduit.
+std::string translated(const std::string& po, const std::string& msgid)
+{
+    const std::string key = "\nmsgid \"" + msgid + "\"\nmsgstr \"";
+    const size_t      at  = po.find(key);
+    if (at == std::string::npos)
+        return msgid;
+    const size_t from = at + key.size();
+    const size_t to   = po.find("\"\n", from);
+    const std::string text = to == std::string::npos ? std::string() : po.substr(from, to - from);
+    return text.empty() ? msgid : text;
+}
+
+} // namespace
+
+TEST_CASE("Lot 9 · PlyoHooks.hpp, seul en-tête inclus par Orca, ne tire ni nlohmann, ni boost, ni wx")
+{
+    const std::string hooks = read_source("../../PlyoHooks.hpp");
+    for (const char* banned : {"#include <nlohmann", "#include <boost", "#include <wx", "#include \"slic3r", "#include \"libslic3r"}) {
+        INFO(banned);
+        CHECK(hooks.find(banned) == std::string::npos);
+    }
+    // Chaque fichier d'Orca qui appelle Plyo n'inclut que cet en-tête, sur une ligne marquée.
+    for (const char* file : {"src/slic3r/GUI/Plater.cpp", "src/slic3r/GUI/MainFrame.cpp", "src/slic3r/GUI/GUI_App.cpp",
+                             "src/slic3r/Utils/ElegooLink.cpp", "src/slic3r/Utils/CrealityPrint.cpp"}) {
+        INFO(file);
+        const std::string src = read_file(repo_root() / file);
+        REQUIRE_FALSE(src.empty());
+        CHECK(count_of(src, "#include \"plyo/") == 1);
+        CHECK(src.find("#include \"plyo/PlyoHooks.hpp\" // PLYO: ") != std::string::npos);
+    }
+}
+
+TEST_CASE("Lot 9 · sentinelle ARCH-01 : titres de la question « Enregistrer ? » reconnus par Plyo, seulement aux appels attendus")
+{
+    // Si ce test échoue, Orca a changé, retiré ou réutilisé le titre d'une de ces questions : reprendre la liste de
+    // PlyoProjectFiles.cpp (take_preset_changes), sinon Plyo jetterait en silence des réglages d'une autre question.
+    const std::vector<std::string> titles = {"Closing application", "Creating a new project", "Load project"};
+    CHECK(read_source("../../PlyoProjectFiles.cpp")
+              .find("{_u8L(\"Closing application\"), _u8L(\"Creating a new project\"), _u8L(\"Load project\")}") != std::string::npos);
+
+    struct Call
+    {
+        std::string file, function, caption;
+    };
+    std::vector<Call>                  calls;
+    std::map<std::string, std::string> literal_files; // titre → fichiers où il apparaît (hors src/plyo)
+    const fs::path                     src_dir = repo_root() / "src";
+    for (fs::recursive_directory_iterator it(src_dir), end; it != end; ++it) {
+        const std::string rel = fs::relative(it->path(), src_dir).generic_string();
+        if (rel == "plyo") {
+            it.disable_recursion_pending();
+            continue;
+        }
+        const std::string ext = it->path().extension().string();
+        if (!fs::is_regular_file(it->path()) || (ext != ".cpp" && ext != ".hpp" && ext != ".h" && ext != ".mm"))
+            continue;
+        const std::string text = read_file(it->path());
+        for (const std::string& title : titles)
+            for (size_t n = count_of(text, "\"" + title + "\""); n > 0; --n)
+                literal_files[title] += rel + ";";
+        for (const std::string fn : {"check_and_save_current_preset_changes(", "check_and_keep_current_preset_changes("}) {
+            for (size_t at = text.find(fn); at != std::string::npos; at = text.find(fn, at + fn.size())) {
+                if (in_comment(text, at))
+                    continue;
+                const std::string arg = trimmed(text.substr(at + fn.size(), 200));
+                if (arg.rfind("const ", 0) == 0)
+                    continue; // déclaration ou définition (GUI_App)
+                std::string caption;
+                if (arg.rfind("_L(\"", 0) == 0)
+                    caption = arg.substr(4, arg.find("\")") - 4);
+                else {
+                    // Variable : sa valeur dans le même fichier (« caption = _L("…") »).
+                    const std::string ident = arg.substr(0, arg.find_first_of(",) "));
+                    const size_t      def   = text.find(ident + " = _L(\"");
+                    caption = def == std::string::npos ? "?" + ident
+                                                       : text.substr(def + ident.size() + 7, text.find("\")", def) - def - ident.size() - 7);
+                }
+                calls.push_back({rel, fn.substr(0, fn.size() - 1), caption});
+            }
+        }
+    }
+
+    // 1. Chaque titre n'apparaît que dans le fichier de son appel, autant de fois que d'appels.
+    CHECK(literal_files["Closing application"] == "slic3r/GUI/MainFrame.cpp;");
+    CHECK(literal_files["Creating a new project"] == "slic3r/GUI/Plater.cpp;");
+    CHECK(literal_files["Load project"] == "slic3r/GUI/Plater.cpp;slic3r/GUI/Plater.cpp;");
+
+    // 2. Les appels qui portent ces titres sont exactement ceux attendus ; les autres ont un titre connu et différent.
+    std::multiset<std::string> project_calls;
+    std::set<std::string>      other_captions;
+    for (const Call& c : calls) {
+        INFO(c.file + " " + c.function + " « " + c.caption + " »");
+        CHECK(c.caption.rfind('?', 0) != 0); // titre retrouvé (sinon : nouvel appelant à examiner)
+        if (std::find(titles.begin(), titles.end(), c.caption) != titles.end())
+            project_calls.insert(c.file + " " + c.function + " " + c.caption);
+        else
+            other_captions.insert(c.caption);
+    }
+    CHECK(project_calls == std::multiset<std::string>{
+                               "slic3r/GUI/MainFrame.cpp check_and_save_current_preset_changes Closing application",
+                               "slic3r/GUI/Plater.cpp check_and_keep_current_preset_changes Creating a new project",
+                               "slic3r/GUI/Plater.cpp check_and_save_current_preset_changes Load project",
+                               "slic3r/GUI/Plater.cpp check_and_save_current_preset_changes Load project"});
+    CHECK(other_captions.count("Configuration package changed") == 1); // assistant d'Orca, et PlyoPrinterSetup.cpp
+
+    // 3. Dans aucune langue, le titre d'une autre question ne se traduit comme l'un des trois (comparaison de textes traduits).
+    size_t catalogs = 0;
+    for (fs::directory_iterator it(repo_root() / "localization" / "i18n"), end; it != end; ++it) {
+        if (!fs::is_directory(it->path()))
+            continue;
+        const fs::path po = it->path() / ("OrcaSlicer_" + it->path().filename().string() + ".po");
+        if (!fs::exists(po))
+            continue;
+        ++catalogs;
+        const std::string text = read_file(po);
+        std::set<std::string> project_texts;
+        for (const std::string& title : titles)
+            project_texts.insert(translated(text, title));
+        CHECK(project_texts.size() == titles.size());
+        for (const std::string& other : other_captions) {
+            INFO(po.filename().string() + " : « " + other + " »");
+            CHECK(project_texts.count(translated(text, other)) == 0);
+        }
+    }
+    CHECK(catalogs >= 10);
+
+    // 4. L'accroche est la première ligne des deux fonctions d'Orca.
+    const std::string app = read_file(repo_root() / "src/slic3r/GUI/GUI_App.cpp");
+    for (const char* fn : {"bool GUI_App::check_and_save_current_preset_changes(", "bool GUI_App::check_and_keep_current_preset_changes("}) {
+        INFO(fn);
+        const size_t at = app.find(fn);
+        REQUIRE(at != std::string::npos);
+        const size_t open = app.find("{\n", at);
+        CHECK(app.substr(open, 90).find("{\n    if (Plyo::ProjectFiles::take_preset_changes(caption)) return true; // PLYO:") == 0);
+    }
+}
+
+TEST_CASE("Lot 9 · sentinelle ARCH-06 : branche d'Orca voisine de l'envoi armé (send_gcode_legacy)")
+{
+    // Si ce test échoue, Orca a changé la façon de remplir l'envoi après la fenêtre : reprendre Canvas::fill_armed_upload
+    // (PlyoCanvas.cpp), qui remplit les mêmes champs sans la fenêtre.
+    const std::string plater = read_file(repo_root() / "src/slic3r/GUI/Plater.cpp");
+    const std::string body   = between(plater, "void Plater::send_gcode_legacy(", "int Plater::send_gcode(");
+    REQUIRE_FALSE(body.empty());
+    // L'accroche : une ligne, juste avant le bloc d'Orca qui ouvre la fenêtre ; c'est le seul appel à Plyo de la fonction.
+    CHECK(count_of(body, "Plyo::") == 1);
+    CHECK(body.find("    if (!Plyo::Canvas::fill_armed_upload(upload_job.upload_data, default_output_file.filename().string(), use_3mf, "
+                    "resolved_plate_idx)) // PLYO: ") != std::string::npos);
+    CHECK(between(body, "Plyo::Canvas::fill_armed_upload(", "auto        preset_bundle = wxGetApp().preset_bundle;").find(" // PLYO: ") !=
+          std::string::npos);
+    check_in_order("send_gcode_legacy : avant l'accroche", body,
+                   {"const bool  use_3mf     = use_3mf_opt != nullptr && use_3mf_opt->value;", "upload_job.upload_data.use_3mf = use_3mf;",
+                    "const int resolved_plate_idx = plate_idx == PLATE_CURRENT_IDX ? get_partplate_list().get_curr_plate_index() : plate_idx;",
+                    "default_output_file = fs::path(Slic3r::fold_utf8_to_ascii(default_output_file.string()));",
+                    "default_output_file.replace_extension(\".gcode.3mf\");", "Plyo::Canvas::fill_armed_upload("});
+    // Ce que la fenêtre remplit, champ par champ : un champ de plus ou de moins fait échouer le test.
+    const std::string filled = between(body, "if (pDlg->ShowModal() != wxID_OK) {", "// Show \"Is printer clean\" dialog");
+    CHECK(code_lines(filled) == std::vector<std::string>{
+                                    "if (pDlg->ShowModal() != wxID_OK) {",
+                                    "return;",
+                                    "}",
+                                    "config->set_bool(\"open_device_tab_post_upload\", pDlg->switch_to_device_tab());",
+                                    "upload_job.switch_to_device_tab    = pDlg->switch_to_device_tab();",
+                                    "upload_job.upload_data.upload_path = pDlg->filename();",
+                                    "upload_job.upload_data.post_action = pDlg->post_action();",
+                                    "upload_job.upload_data.group       = pDlg->group();",
+                                    "upload_job.upload_data.storage     = pDlg->storage();",
+                                    "upload_job.upload_data.extended_info = pDlg->extendedInfo();",
+                                    "if (use_3mf) {",
+                                    "const int plateindex = (plate_idx == PLATE_ALL_IDX ? get_partplate_list().get_curr_plate_index() : "
+                                    "resolved_plate_idx) + 1;",
+                                    "upload_job.upload_data.extended_info[\"plateindex\"] = std::to_string(plateindex);",
+                                    "}",
+                                    "}"});
+    // Le remplissage de Plyo : les mêmes champs, dans le même ordre.
+    const std::string canvas = read_source("../../PlyoCanvas.cpp");
+    check_in_order("Canvas::fill_armed_upload", between(canvas, "bool fill_armed_upload(", "\n}\n"),
+                   {"take_armed_send()", "upload.upload_path   = boost::filesystem::path(file_name);",
+                    "upload.post_action   = Slic3r::PrintHostPostUploadAction::StartPrint;", "upload.extended_info = *plyo_info;",
+                    "if (use_3mf)", "upload.extended_info[\"plateindex\"] = std::to_string(plate_idx + 1);", "return true;"});
+}
+
+TEST_CASE("Lot 9 · sentinelles ARCH-03 : séquences d'Orca recopiées dans Plyo")
+{
+    // Si un de ces tests échoue, Orca a changé une séquence que Plyo rejoue à l'identique : reprendre la fonction Plyo nommée.
+    const fs::path    gui    = repo_root() / "src/slic3r/GUI";
+    const std::string plater = read_file(gui / "Plater.cpp");
+
+    SECTION("choix d'un filament : Plater::priv::on_select_preset → FirstSteps::select_filament")
+    {
+        const std::string fn    = between(plater, "void Plater::priv::on_select_preset(wxCommandEvent &evt)", "\n}\n");
+        const std::string block = between(fn, "if (preset_type == Preset::TYPE_FILAMENT) {", "bool select_preset =");
+        // Recopié : set_filament_preset, update_project_dirty_from_presets, update_dynamic_filament_list, on_filament_change,
+        // export_selections. Non recopié (propre à la liste déroulante) : purge recalculée si le filament de support change,
+        // badge de synchronisation AMS.
+        CHECK(code_lines(block) == std::vector<std::string>{
+                                       "if (preset_type == Preset::TYPE_FILAMENT) {",
+                                       "wxGetApp().preset_bundle->set_filament_preset(idx, preset_name);",
+                                       "wxGetApp().plater()->update_project_dirty_from_presets();",
+                                       "wxGetApp().preset_bundle->export_selections(*wxGetApp().app_config);",
+                                       "sidebar->update_dynamic_filament_list();",
+                                       "bool flag_is_change = is_support_filament(idx);",
+                                       "if (flag != flag_is_change && wxGetApp().app_config->get(\"auto_calculate_flush\") == \"all\") {",
+                                       "sidebar->auto_calc_flushing_volumes(idx);",
+                                       "}",
+                                       "auto select_flag = combo->GetFlag(selection);",
+                                       "combo->set_sync_badge(select_flag == (int)PresetComboBox::FilamentAMSType::FROM_AMS);",
+                                       "q->on_filament_change(idx);",
+                                       "}"});
+        const std::string mine = between(read_source("../../PlyoFirstSteps.cpp"), "bool select_filament(const std::string& name, size_t idx)", "\n}\n");
+        check_in_order("FirstSteps::select_filament", mine,
+                       {"tab->select_preset(name)", "bundle.set_filament_preset(idx, name);", "plater->update_project_dirty_from_presets();",
+                        "plater->sidebar().update_dynamic_filament_list();", "plater->on_filament_change(idx);",
+                        "bundle.export_selections(*wxGetApp().app_config);"});
+        // Une seule copie de la séquence dans Plyo (la calibration remet en bloc les filaments d'avant le test, autre geste).
+        size_t copies = 0;
+        for (fs::directory_iterator it(repo_root() / "src/plyo"), end; it != end; ++it)
+            if (it->path().extension() == ".cpp")
+                copies += count_of(read_file(it->path()), "on_filament_change(");
+        CHECK(copies == 1);
+    }
+
+    SECTION("couleur d'un filament : PresetComboBox::update_ams_color → Canvas::set_colour")
+    {
+        const std::string combo = read_file(gui / "PresetComboBoxes.cpp");
+        const std::string fn    = between(combo, "int PresetComboBox::update_ams_color()", "\n}\n");
+        check_in_order("PresetComboBox::update_ams_color", fn,
+                       {"new_cfg.set_key_value(\"filament_colour\", color_head);", "new_cfg.set_key_value(\"filament_colour_type\", color_type);",
+                        "new_cfg.set_key_value(\"filament_multi_colour\", color_pack);", "cfg->apply(new_cfg);",
+                        "wxGetApp().plater()->on_config_change(new_cfg);", "wxCommandEvent *evt = new wxCommandEvent(EVT_FILAMENT_COLOR_CHANGED);",
+                        "evt->SetInt(m_filament_idx);", "wxQueueEvent(wxGetApp().plater(), evt);"});
+        // Trois clés écrites (filament_colour_type n'est pas recopié par Plyo, qui garde le type de couleur) : une de plus, à reprendre.
+        CHECK(count_of(fn, "set_key_value(") == 3);
+        const std::string mine = between(read_source("../../PlyoCanvas.cpp"), "void set_colour(size_t idx, const std::string& color)", "\n}\n");
+        check_in_order("Canvas::set_colour", mine,
+                       {"change.set_key_value(\"filament_colour\"", "change.set_key_value(\"filament_multi_colour\"", "cfg.apply(change);",
+                        "plater->on_config_change(change);", "new wxCommandEvent(Slic3r::GUI::EVT_FILAMENT_COLOR_CHANGED);",
+                        "evt->SetInt(static_cast<int>(idx));", "wxQueueEvent(plater, evt);"});
+    }
+
+    SECTION("fin de l'installation d'une imprimante : GuideFrame::run et GUI_App::run_wizard → PrinterSetup::install")
+    {
+        const std::string guide = read_file(gui / "WebGuideDialog.cpp");
+        const std::string apply = between(guide, "bool GuideFrame::apply_config(", "\n}\n");
+        check_in_order("GuideFrame::apply_config", apply,
+                       {"wxString header = _L(\"The configuration package is changed in previous Config Guide\");",
+                        "wxString caption = _L(\"Configuration package changed\");", "int act_btns = ActionButtons::KEEP|ActionButtons::SAVE;",
+                        "wxGetApp().check_and_keep_current_preset_changes(caption, header, act_btns, &apply_keeped_changes)",
+                        "preset_bundle->apply_vendor_config("});
+        const std::string ok = between(guide, "if (result == wxID_OK) {", "} else if (result == wxID_CANCEL) {");
+        CHECK(code_lines(ok) == std::vector<std::string>{"if (result == wxID_OK) {",
+                                                         "bool apply_keeped_changes = false;",
+                                                         "if (! this->apply_config(app.app_config, app.preset_bundle, app.preset_updater, apply_keeped_changes))",
+                                                         "return false;",
+                                                         "if (apply_keeped_changes)",
+                                                         "app.apply_keeped_preset_modifications();",
+                                                         "app.app_config->set_legacy_datadir(false);",
+                                                         "app.update_mode();",
+                                                         "if (Plater *plater = app.plater())",
+                                                         "plater->normalize_bed_types(false);",
+                                                         "this->Close();",
+                                                         "return true;"});
+        const std::string wizard = between(read_file(gui / "GUI_App.cpp"), "bool GUI_App::run_wizard(", "\n}\n");
+        check_in_order("GUI_App::run_wizard", wizard,
+                       {"bool       res = wizard.run();", "if (res) {", "load_current_presets();", "update_publish_status();",
+                        "mainframe->refresh_plugin_tips();"});
+        CHECK(code_lines(between(wizard, "if (res) {", "return res;")).size() == 5); // if, trois appels, }
+        check_in_order("PrinterSetup::install", read_source("../../PlyoPrinterSetup.cpp"),
+                       {"check_and_keep_current_preset_changes(_L(\"Configuration package changed\"), _L(\"The configuration package is changed in previous Config Guide\"),",
+                        "Slic3r::GUI::ActionButtons::KEEP | Slic3r::GUI::ActionButtons::SAVE, &keep_changes)", "apply_vendor_config(vendors, filaments, config, true, name, nozzle)",
+                        "app.apply_keeped_preset_modifications();", "config->set_legacy_datadir(false);", "app.update_mode();",
+                        "plater->normalize_bed_types(false);", "app.load_current_presets();", "app.update_publish_status();",
+                        "app.mainframe->refresh_plugin_tips();"});
+    }
+
+    SECTION("remise à plat : GizmoObjectManipulation::reset_rotation_value → Commands reset_rotation")
+    {
+        const std::string manip = read_file(gui / "Gizmos/GizmoObjectManipulation.cpp");
+        const std::string fn    = between(manip, "void GizmoObjectManipulation::reset_rotation_value(bool reset_relative)", "\n}\n");
+        check_in_order("GizmoObjectManipulation::reset_rotation_value", fn,
+                       {"selection.setup_cache();", "} else if (selection.is_single_full_instance()) {",
+                        "Geometry::Transformation trafo  = selection.get_first_volume()->get_instance_transformation();", "trafo.reset_rotation();",
+                        "const_cast<GLVolume *>(selection.get_volume(idx))->set_instance_transformation(trafo);",
+                        "selection.synchronize_unselected_instances(Selection::SyncRotationType::RESET);",
+                        "selection.synchronize_unselected_volumes();", "m_glcanvas.do_rotate(L(\"Reset rotation\"));"});
+        check_in_order("Commands reset_rotation", between(read_source("../../PlyoCommands.cpp"), "void reset_rotation(int idx)", "\n}\n"),
+                       {"sel.is_single_full_instance()", "sel.setup_cache();", "sel.get_first_volume()->get_instance_transformation();",
+                        "trafo.reset_rotation();", "->set_instance_transformation(trafo);",
+                        "sel.synchronize_unselected_instances(Slic3r::GUI::Selection::SyncRotationType::RESET);",
+                        "sel.synchronize_unselected_volumes();", "canvas().do_rotate(\"Reset rotation\");"});
+    }
+
+    SECTION("poser sur une face : « Gizmo-Place on Face », reconnu par son texte dans GLCanvas3D::do_rotate")
+    {
+        // L(s) n'est qu'un repère pour la traduction (s inchangé) : Plyo passe le même texte, non traduit.
+        CHECK(read_file(gui / "I18N.hpp").find("#define L(s) s") != std::string::npos);
+        check_in_order("GLGizmoFlatten::on_mouse", read_file(gui / "Gizmos/GLGizmoFlatten.cpp"),
+                       {"selection.flattening_rotate(m_planes[m_hover_id].normal);", "m_parent.do_rotate(L(\"Gizmo-Place on Face\"));"});
+        const std::string rotate = between(read_file(gui / "GLCanvas3D.cpp"), "void GLCanvas3D::do_rotate(const std::string& snapshot_type)", "\n}\n");
+        check_in_order("GLCanvas3D::do_rotate", rotate,
+                       {"if (snapshot_type == L(\"Gizmo-Place on Face\") && m_selection.get_object_idx() == i) {",
+                        "min_zs[{ i, j }] = SINKING_Z_THRESHOLD;"});
+        check_in_order("Commands place_on_face", read_source("../../PlyoCommands.cpp"),
+                       {"selection().flattening_rotate(planes[plane].normal);", "canvas().do_rotate(\"Gizmo-Place on Face\");"});
+    }
+}
+
+TEST_CASE("Lot 9 · sentinelle ARCH-04 : « Montre-moi » vise les membres publics m_slice_btn et m_print_btn de MainFrame")
+{
+    // Si ce test échoue, Orca a déplacé ou rendu privés ces boutons : reprendre Highlight::find_target (PlyoHighlight.cpp).
+    const std::string hpp     = read_file(repo_root() / "src/slic3r/GUI/MainFrame.hpp");
+    const size_t      members = hpp.find("SideButton* m_slice_btn{ nullptr };");
+    REQUIRE(members != std::string::npos);
+    CHECK(hpp.find("SideButton* m_print_btn{ nullptr };") != std::string::npos);
+    // Section publique ouverte avant ces membres, sans autre section entre les deux.
+    const std::string before = hpp.substr(0, members);
+    const size_t      pub    = before.rfind("public:");
+    REQUIRE(pub != std::string::npos);
+    CHECK(before.find("private:", pub) == std::string::npos);
+    CHECK(before.find("protected:", pub) == std::string::npos);
+    const std::string mine = read_source("../../PlyoHighlight.cpp");
+    CHECK(mine.find("frame->m_slice_btn : frame->m_print_btn") != std::string::npos);
+    CHECK(mine.find("GetLabel() ==") == std::string::npos); // plus aucun bouton reconnu par son libellé
+}
