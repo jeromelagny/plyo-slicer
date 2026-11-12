@@ -663,7 +663,7 @@ test('barre : chaque étape rouverte reprend le geste existant de la fiche', () 
   assert.match(fn, /key === 'filament'\) projectHandlers\.change\('filament'\)/);
   assert.match(fn, /key === 'piece'\) projectHandlers\.importPart\(\)/);
   assert.match(fn, /key === 'preparer'\) \{ delete conv\.project\.success; setTourStep\('slice'\); \}/);
-  assert.match(page, /renderBar\(\$\('journey-bar'\), ui, \{[^}]*onRevisit: revisitStep/);
+  assert.match(page, /renderBar\(\$\('journey-bar'\), ui, \{[^}]*onRevisit: barBusy\(\) \? null : revisitStep/);
   assert.match(page, /\.journey-go \{[^}]*cursor: pointer/);
 });
 
@@ -706,7 +706,11 @@ test('fin d’impression : le panneau la relie au suivi, aux gestes du Résultat
   assert.match(page, /failed: function \(\) \{[^\n]*spoolFailure\(\); markSendAnswered\(\);/);
   assert.equal((page.match(/noteSendWatched\(\)/g) || []).length, 3, 'définie, et notée aux deux envois suivis');
   assert.match(cppSrc('PlyoPrinterStatus.cpp'), /ended\["phase"\]\s*= "end"/);
-  assert.match(cppSrc('PlyoAssistant.cpp'), /PrinterStatus::stop\(\)/, 'le suivi s’arrête avec Orca');
+  const status = cppSrc('PlyoPrinterStatus.cpp');
+  assert.match(status, /Bind\(wxEVT_DESTROY[\s\S]*g_closing = true;\s*stop\(\);/, 'le suivi s’arrête avec la fenêtre principale, panneau ouvert ou non');
+  assert.doesNotMatch(status.slice(status.indexOf('void watch(')), /is_closing\(\)/, 'le fil ne lit jamais l’application');
+  assert.match(status, /read\(kind, \*config, true, logged\);\s*if \(!alive\(\)\)\s*return;/, 'rien n’est posté après une fermeture');
+  assert.equal((cppSrc('PlyoAssistant.cpp').match(/w\["id"\]\s*= id;/g) || []).length, 2, 'les deux suivis renvoient l’id de l’envoi');
 });
 
 test('suivi Creality : le journal porte un préfixe fixe et jamais de code d’accès', () => {
@@ -714,4 +718,45 @@ test('suivi Creality : le journal porte un préfixe fixe et jamais de code d’a
   assert.match(src, /BOOST_LOG_TRIVIAL\(info\) << "Plyo: état Creality : " << line/);
   assert.match(src, /pause\(END_POLL_SECONDS\)/);
   assert.doesNotMatch(src, /access_code|accessCode|printhost_apikey"\)\s*<</);
+});
+
+test('reprise 1 : la barre est inerte pendant un envoi ou une découpe', () => {
+  const page = read('index.html');
+  assert.match(page, /function barBusy\(\) \{ return sendLock\.on \|\| \(!!conv && slicing\.conv === conv\); \}/);
+  assert.match(page, /onRevisit: barBusy\(\) \? null : revisitStep/);
+  assert.match(page, /function revisitStep\(key\) \{\s*if \(!conv \|\| barBusy\(\)\) return;/);
+  const answer = page.slice(page.indexOf('function answerEnd'), page.indexOf('function openChatAbout'));
+  assert.match(answer, /if \(a\.mark && currentTourStep\(\) !== 'after'\) stepHandlers\.started\(\);/, 'une réponse qui juge mène au Résultat de n’importe quelle étape');
+});
+
+test('reprise 1 : une fin répondue sans jugement laisse un Résultat neutre', () => {
+  const req = createRequire(import.meta.url);
+  const S = req('../journey-steps.js'), h = new Proxy({}, { get: () => () => {} });
+  for (const done of ['cancelled', 'error']) {
+    const slot = fakeUi().el('div');
+    S.render(slot, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', endAsk: null, endDone: done, handlers: h });
+    const labels = all(slot).filter((n) => n.tag === 'button').map((b) => b.textContent);
+    assert.doesNotMatch(textOf(slot), /Ça a marché/, done);
+    assert.ok(!labels.includes('Oui, c’est réussi'), done + ' : jamais la question de réussite');
+    assert.equal(labels.includes('Non, c’est raté'), done === 'error', 'après une erreur, « Non, c’est raté » reste');
+    assert.ok(labels.includes('Nouvelle pièce') && labels.includes('Réimprimer cette pièce'));
+  }
+  const page = read('index.html');
+  assert.match(page, /markSendAnswered\(\);\s*s\.outcome = s\.end\.verdict;/);
+  assert.match(page, /endDone: step === 'resultat' \? endOutcome\(\) : ''/);
+});
+
+test('reprise 1 : ids d’envoi, bobine des envois avec emplacements, réussite dite dans la discussion, question unique', () => {
+  const page = read('index.html');
+  assert.match(page, /if \(!projectUI\.lastSend \|\| msg\.id !== projectUI\.lastSend\.id\) return;/);
+  assert.equal((page.match(/type: 'print_start', export: false,[^}]*watch_id: newWatchId\(\)/g) || []).length, 2);
+  assert.match(page, /type: 'print_watch_start', preset: conv\.project\.printer\.preset, id: projectUI\.watchId/);
+  const sent = page.slice(page.indexOf('function onCanvasSent'), page.indexOf('function onCanvasState'));
+  assert.match(sent, /noteSpoolSent\(\);/, 'M6');
+  const remember = page.slice(page.indexOf("a.kind === 'remember_success') {"), page.indexOf("a.kind === 'remember_success') {") + 600);
+  assert.match(remember, /markSendAnswered\(\)/, 'M7');
+  const end = page.slice(page.indexOf('function onPrintEnd'), page.indexOf('function answerEnd'));
+  assert.match(end, /currentStep\(conv\.project\) === 'resultat'\) \{ renderProject\(\);/, 'M8 : au Résultat, seulement l’étape');
+  assert.match(page, /Cette question concerne une autre conversation\./);
+  assert.match(page, /lastSend\.conv !== conv\)\) staleEndNote\(\);/);
 });

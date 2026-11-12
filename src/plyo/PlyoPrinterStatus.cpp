@@ -5,6 +5,7 @@
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/Utils/Http.hpp"
 
 #include <boost/asio/connect.hpp>
@@ -12,6 +13,7 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
 #include <boost/log/trivial.hpp>
+#include <wx/event.h>
 
 #include <atomic>
 #include <chrono>
@@ -26,7 +28,27 @@ namespace beast     = boost::beast;
 namespace websocket = beast::websocket;
 using tcp           = boost::asio::ip::tcp;
 
-std::atomic<int> g_generation{0};
+std::atomic<int>  g_generation{0};
+std::atomic<bool> g_closing{false}; // fenêtre principale détruite : Orca se ferme, aucun fil ne touche plus à l'application
+
+// Le fil de suivi ne lit jamais l'application : ce drapeau à Plyo est levé sur le fil principal quand la fenêtre principale
+// est détruite (panneau ouvert ou non). wxEVT_DESTROY plutôt que wxEVT_CLOSE_WINDOW : une fermeture peut encore être
+// annulée (projet non enregistré), pas une destruction.
+void watch_closing()
+{
+    static bool bound = false;
+    Slic3r::GUI::MainFrame* frame = Slic3r::GUI::wxGetApp().mainframe;
+    if (bound || frame == nullptr)
+        return;
+    bound = true;
+    frame->Bind(wxEVT_DESTROY, [frame](wxWindowDestroyEvent& e) {
+        if (e.GetEventObject() == frame) {
+            g_closing = true;
+            stop();
+        }
+        e.Skip();
+    });
+}
 
 std::string host_type_of(const Slic3r::DynamicPrintConfig& c)
 {
@@ -128,10 +150,13 @@ nlohmann::json to_json(const std::string& verdict_text, const Status& s)
 
 void watch(const std::string& preset, std::function<void(nlohmann::json)> notify)
 {
+    watch_closing();
     const Slic3r::Preset* p = Slic3r::GUI::wxGetApp().preset_bundle->printers.find_preset(preset, false);
     const int             gen = ++g_generation;
     auto post = [notify, gen](nlohmann::json r) {
-        Slic3r::GUI::wxGetApp().CallAfter([notify, gen, r]() { if (gen == g_generation.load()) notify(r); });
+        if (g_closing.load() || gen != g_generation.load())
+            return; // Orca se ferme ou un autre suivi a pris la place : on ne touche plus à l'application
+        Slic3r::GUI::wxGetApp().CallAfter([notify, gen, r]() { if (gen == g_generation.load() && !g_closing.load()) notify(r); });
     };
     if (p == nullptr || !p->config.has("print_host") || p->config.opt_string("print_host").empty()) {
         post(to_json("unknown", Status{"unknown", "", -1}));
@@ -141,7 +166,7 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
     const std::string kind   = host_type_of(*config);
     std::thread([config, kind, post, gen]() {
         // Un nouvel envoi (ou stop()) remplace ce suivi ; Orca qui se ferme l'arrête aussi.
-        const auto alive = [gen]() { return gen == g_generation.load() && !Slic3r::GUI::wxGetApp().is_closing(); };
+        const auto alive = [gen]() { return gen == g_generation.load() && !g_closing.load(); };
         const auto pause = [&alive](int seconds) {
             for (int i = 0; i < seconds && alive(); ++i)
                 std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -158,7 +183,9 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
         for (int i = 0; i < 48 && !started; ++i) { // 48 × 5 s = 4 min
             if (!pause(5))
                 return;
-            last                = read(kind, *config, false, logged);
+            last = read(kind, *config, false, logged);
+            if (!alive())
+                return;
             const std::string v = verdict(before, last);
             if (v == "busy" || v == "error") {
                 post(to_json(v, last));
@@ -177,12 +204,17 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
         // L'impression a démarré : relue toutes les 30 s jusqu'à sa fin, sans limite de durée.
         const Status printing = last;
         auto         answered = std::chrono::steady_clock::now();
+        std::string  previous; // verdict brut de la lecture d'avant (Creality : une sortie d'impression confirmée deux fois)
         while (pause(END_POLL_SECONDS)) {
             Status now = read(kind, *config, true, logged);
+            if (!alive())
+                return;
             if (now.state != "unknown")
                 answered = std::chrono::steady_clock::now();
             const int silent = int(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - answered).count());
-            const std::string v = end_verdict(printing, now, silent);
+            const std::string raw = end_verdict(printing, now, silent);
+            const std::string v   = settle_end(raw, previous, kind == "crealityprint");
+            previous              = raw;
             if (v.empty())
                 continue;
             now.file             = printing.file; // la question de fin parle du fichier envoyé

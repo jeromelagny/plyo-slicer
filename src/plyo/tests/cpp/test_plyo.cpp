@@ -2140,6 +2140,18 @@ TEST_CASE("PrinterStatus : fin d'une impression démarrée")
     CHECK(end_verdict(started, silent, 601) == "lost");
 }
 
+TEST_CASE("PrinterStatus : une Creality qui sort de l'impression une seule fois ne finit pas le suivi")
+{
+    using namespace Plyo::PrinterStatus;
+    // Deux lectures de suite (30 s d'écart) hors impression avant « unknown_end » : une courte pause ne termine rien.
+    CHECK(settle_end("unknown_end", "", true).empty());
+    CHECK(settle_end("unknown_end", "unknown_end", true) == "unknown_end");
+    CHECK(settle_end("", "unknown_end", true).empty()); // elle a repris
+    CHECK(settle_end("finished", "", true) == "finished"); // un code connu est certain
+    CHECK(settle_end("lost", "", true) == "lost");
+    CHECK(settle_end("unknown_end", "", false) == "unknown_end"); // Moonraker dit lui-même son état
+}
+
 TEST_CASE("PrinterStatus : champs d'état Creality écrits dans le journal, sans secret")
 {
     using namespace Plyo::PrinterStatus;

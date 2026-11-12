@@ -48,4 +48,8 @@ std::string verdict(const Status& before, const Status& now);
 // "cancelled", "error", "unknown_end" (finie sans savoir comment) ou "lost" (muette depuis plus de LOST_AFTER_SECONDS).
 std::string end_verdict(const Status& started, const Status& now, int silent_seconds);
 
+// Creality : « unknown_end » n'est retenu qu'à la deuxième lecture de suite (`previous`, la précédente) ; une courte pause
+// au code inconnu ne termine pas le suivi. "" tant que ce n'est pas confirmé ; les autres verdicts passent tels quels.
+std::string settle_end(const std::string& verdict, const std::string& previous, bool creality);
+
 } // namespace Plyo::PrinterStatus

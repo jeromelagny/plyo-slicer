@@ -2,7 +2,7 @@
 // Pas d'état propre : index.html donne le contexte et les gestes. Aucun bouton plein ici : le bouton plein de l'étape est
 // celui de la ligne d'action (journey-view.js). Chargé par index.html (window.PlyoJourneySteps).
 (function (root) {
-  // ui : { el, button, icon }. opts : { step, ctx {sliced, linked, risks}, summary (texte durée et poids), endAsk (question de fin), handlers }.
+  // ui : { el, button, icon }. opts : { step, ctx {sliced, linked, risks}, summary (texte durée et poids), endAsk (question de fin), endDone (fin répondue sans jugement : 'cancelled' | 'error'), handlers }.
   // handlers : { skip(), exportFile(), started(), photo(), success(), failed(), endChoice(id), changeMachine(), recheck() }. opts.machine : { name, reachable (true|false|null) }.
   function line(ui, iconName, text, tone) {
     var row = ui.el('div', 'printer-step' + (tone ? ' ' + tone : ''));
@@ -127,6 +127,12 @@
         // c'est raté » reste là : la bobine n'est marquée que si tu le dis.
         body.appendChild(endCard(ui, opts.endAsk, h.endChoice));
         if (opts.endAsk.verdict === 'error' && opts.spoolAsk && !opts.spoolNo) after.appendChild(ui.button('Non, c’est raté', h.failed, 'btn ghost sm', 'x'));
+        after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
+        after.appendChild(ui.button('Ajouter une photo depuis l’ordinateur', h.photo, 'btn ghost sm', 'camera'));
+      } else if (!c.success && opts.endDone && !opts.spoolNo) {
+        // Fin déjà répondue sans la juger (arrêt voulu, erreur) : pas de « Ça a marché ? » pour cet envoi. Après une erreur,
+        // « Non, c'est raté » reste là pour le dire.
+        if (opts.endDone === 'error' && opts.spoolAsk) after.appendChild(ui.button('Non, c’est raté', h.failed, 'btn ghost sm', 'x'));
         after.appendChild(ui.button('Nouvelle pièce', h.newPart, 'btn ghost sm', 'plus'));
         after.appendChild(ui.button('Ajouter une photo depuis l’ordinateur', h.photo, 'btn ghost sm', 'camera'));
       } else if (!c.success) {

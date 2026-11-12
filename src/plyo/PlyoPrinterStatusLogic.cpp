@@ -159,4 +159,9 @@ std::string end_verdict(const Status& started, const Status& now, int silent_sec
     return now.end.empty() ? "unknown_end" : now.end;
 }
 
+std::string settle_end(const std::string& verdict, const std::string& previous, bool creality)
+{
+    return creality && verdict == "unknown_end" && previous != "unknown_end" ? std::string() : verdict;
+}
+
 } // namespace Plyo::PrinterStatus

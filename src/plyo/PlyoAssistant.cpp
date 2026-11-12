@@ -532,8 +532,9 @@ void handle_page_message(const nlohmann::json& data)
                 store["local"][brand][code] = model;
             Store::write(file, store);
         } else if (type == "print_watch_start") {
-            PrinterStatus::watch(Json::str(data, "preset"), [](nlohmann::json w) {
+            PrinterStatus::watch(Json::str(data, "preset"), [id = Json::str(data, "id")](nlohmann::json w) {
                 w["type"] = "print_watch";
+                w["id"]   = id; // l'envoi suivi : le panneau ignore un message d'un envoi remplacé
                 send(w);
             });
         } else if (type == "canvas_start_plain") {
@@ -611,8 +612,9 @@ void handle_page_message(const nlohmann::json& data)
                 send(r);
                 // Le démarrage est vérifié sur l'imprimante elle-même (état avant l'envoi, puis relu jusqu'au verdict).
                 if (Json::boolean(r, "ok", false) && !Json::str(data, "preset").empty())
-                    PrinterStatus::watch(Json::str(data, "preset"), [](nlohmann::json w) {
+                    PrinterStatus::watch(Json::str(data, "preset"), [id = Json::str(data, "watch_id")](nlohmann::json w) {
                         w["type"] = "print_watch";
+                        w["id"]   = id; // l'envoi suivi : le panneau ignore un message d'un envoi remplacé
                         send(w);
                     });
             }
@@ -671,10 +673,9 @@ void toggle_assistant(Plater* plater)
         AutoSave::stop();
         // Fermeture d'Orca : la minuterie part avec lui. Sinon le plateau reste attaché (derniers changements écrits) ;
         // le panneau rouvert, qui commence une conversation neuve, le détache.
-        if (Slic3r::GUI::wxGetApp().is_closing()) {
+        if (Slic3r::GUI::wxGetApp().is_closing())
             ProjectFiles::stop();
-            PrinterStatus::stop(); // le suivi d'une impression s'arrête avec Orca
-        } else
+        else
             ProjectFiles::panel_closed();
         if (s_topbar_button)
             s_topbar_button->CallAfter([] { refresh_topbar_button(); });
