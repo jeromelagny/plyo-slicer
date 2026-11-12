@@ -417,6 +417,8 @@
   // Ce que l'assistant dit après avoir enregistré (ou tenté d'enregistrer) le profil.
   function savedText(result) {
     var r = result || {};
+    // Écart de températures qu'Orca refuserait : Plyo n'enregistre pas plutôt que d'ouvrir sa fenêtre.
+    if (r.save_error === 'temperatures') return 'Appliqué. Je n’ai pas enregistré le filament : sa première couche et les couches suivantes auraient un écart de température qu’Orca refuse. Rapproche ces deux températures et je l’enregistrerai.';
     if (r.save_error) return 'Appliqué, mais je n’ai pas pu enregistrer le profil (' + r.save_error + '). Enregistre-le toi-même si tu veux le garder.';
     var saved = Array.isArray(r.saved) ? r.saved : [];
     // Réglages d'impression du plateau d'une conversation : gardés dans son projet 3MF, pas dans un profil partagé.
@@ -427,6 +429,63 @@
     return saved.map(function (s) {
       return s.created ? 'Enregistré dans une copie à toi, « ' + s.name + ' » : « ' + s.from + ' » est un profil d’Orca, qui ne se modifie pas.' : 'Enregistré dans le profil « ' + s.name + ' ».';
     }).concat(kept ? [kept] : []).join(' ');
+  }
+
+  // ---------- Réglages appliqués : état vrai et annulation (lot 3 de l'audit) ----------
+  // Valeur d'un réglage telle qu'on la montre : oui/non, virgule décimale, « 15 % », « °C » pour une température.
+  function valueText(v, key) {
+    if (typeof v === 'boolean') return v ? 'oui' : 'non';
+    if (v === null || v === undefined || v === '') return '—';
+    if (typeof v === 'number') return String(Math.round(v * 1000) / 1000).replace('.', ',') + (/temp/.test(String(key || '')) ? ' °C' : '');
+    return String(v).replace(/^(-?\d+(?:\.\d+)?)%$/, '$1 %').replace(/^(-?\d+)\.(\d+)/, '$1,$2');
+  }
+  function listOf(items) {
+    return items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' et ' + items[items.length - 1];
+  }
+  // Réglages qu'Orca a changés en plus du lot (relus après l'écriture) : ils sont annulés avec lui.
+  function alsoChangedText(list) {
+    var items = (Array.isArray(list) ? list : []).filter(function (a) { return a && a.key; });
+    if (!items.length) return '';
+    return 'Orca a aussi réglé : ' + listOf(items.map(function (a) { return (a.label || a.key) + ' (' + valueText(a.before, a.key) + ' → ' + valueText(a.after, a.key) + ')'; })) + '. « Annuler » les remet aussi.';
+  }
+  // Réglages ajoutés par Plyo pour qu'Orca n'ait rien à changer (mode vase, première couche…).
+  function addedText(applied) {
+    var items = (Array.isArray(applied) ? applied : []).filter(function (a) { return a && a.added; });
+    if (!items.length) return '';
+    return 'J’ai aussi réglé, pour que ça tienne : ' + listOf(items.map(function (a) { return (a.label || a.id) + ' → ' + valueText(a.after, a.id) + ' (' + a.added + ')'; })) + '.';
+  }
+  // Réglages retouchés à la main depuis le lot : l'annulation les a laissés tels quels.
+  function keptText(kept) {
+    var items = (Array.isArray(kept) ? kept : []).filter(function (k) { return k && k.key; });
+    if (!items.length) return '';
+    return 'J’ai laissé tels quels les réglages que tu as retouchés depuis : ' + listOf(items.map(function (k) { return (k.label || k.key) + ' (' + valueText(k.value, k.key) + ')'; })) + '.';
+  }
+  // Annulation refusée : un bouton par valeur d'avant (« Remettre … à … »).
+  function restoreLabel(r) { return 'Remettre ' + (r.label || r.key) + ' à ' + valueText(r.value, r.key); }
+  // Le lot qui remet ces valeurs : un lot du catalogue comme un autre, confirmé par le clic sur le bouton qui les annonce.
+  function restoreChanges(list) {
+    return (Array.isArray(list) ? list : []).filter(function (r) { return r && r.key; }).map(function (r) { return { key: r.key, value: r.value, label: r.label || r.key, confirmed: true }; });
+  }
+  // Lot dont les valeurs ont été annoncées par le bouton cliqué (questions d'intention, carte d'Orca) : chaque changement du
+  // catalogue porte la confirmation que le slicer exige pour un grand écart ou un réglage sensible.
+  function confirmedChanges(changes) {
+    return (Array.isArray(changes) ? changes : []).map(function (c) { var o = {}; Object.keys(c || {}).forEach(function (k) { o[k] = c[k]; }); if (o.key) o.confirmed = true; return o; });
+  }
+  // Changement d'une ligne de la fiche de l'IA. Confirmé seulement si l'utilisateur l'a cochée lui-même (une ligne décochée
+  // d'office : réglage sensible, hors plage ou grand écart) ou s'il a confirmé ce réglage après un refus (`confirmedKeys`).
+  function sheetChange(s, confirmedKeys) {
+    if (!s || !s.catalog) return s && s.delta !== null && s.delta !== undefined ? { id: s.id, delta: s.delta } : { id: s && s.id, value: s && s.value };
+    var byHand = !defaultChecked(s) || (Array.isArray(confirmedKeys) && confirmedKeys.indexOf(s.id) >= 0);
+    return { key: s.id, value: s.value, label: s.label, confirmed_outside_range: !!s.beyond && byHand, confirmed: byHand };
+  }
+  // Issue d'un lot refusé : réessayer (fenêtre d'Orca ouverte, valeur remise par Orca), confirmer (grand écart ou réglage
+  // sensible pas coché à la main), et montrer le réglage en cause.
+  function refusalActions(result) {
+    var r = result || {}, out = [];
+    if (r.code === 'needs_confirmation' && r.key) out.push({ kind: 'confirm', key: r.key, label: 'Je confirme, applique quand même' });
+    if (r.code === 'orca_dialog' || r.code === 'orca_refused') out.push({ kind: 'retry', label: 'Réessayer' });
+    if (r.key) out.push({ kind: 'show', key: r.key, label: 'Montre-moi ce réglage' });
+    return out;
   }
 
   // Fiche de réglages d'une réponse : archivée (relevé figé) ou applicable. Une conversation rouverte redevient active :
@@ -467,7 +526,7 @@
     return box.bottom - port.bottom > 24;
   }
 
-  var api = { noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
+  var api = { valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, allAnswered: allAnswered, combineAnswers: combineAnswers,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

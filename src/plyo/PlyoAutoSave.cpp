@@ -103,29 +103,6 @@ bool calibrating_impl(Slic3r::GUI::Plater* plater)
     return false;
 }
 
-// Mêmes couples que Tab::validate_filament_temperature_pairs (un test de source vérifie qu'ils n'ont pas changé).
-std::vector<SpoolsLogic::TempPair> temperature_pairs(const Slic3r::DynamicPrintConfig& config)
-{
-    std::vector<std::pair<std::string, std::string>> keys = {{"nozzle_temperature_initial_layer", "nozzle_temperature"}};
-    std::vector<int>                                 caps = {30};
-    for (int bt = static_cast<int>(Slic3r::btPC); bt < static_cast<int>(Slic3r::btCount); ++bt) {
-        const Slic3r::BedType bed = static_cast<Slic3r::BedType>(bt);
-        keys.emplace_back(Slic3r::get_bed_temp_1st_layer_key(bed), Slic3r::get_bed_temp_key(bed));
-        caps.push_back(15);
-    }
-    std::vector<SpoolsLogic::TempPair> pairs;
-    for (size_t i = 0; i < keys.size(); ++i) {
-        if (keys[i].first.empty() || keys[i].second.empty())
-            continue;
-        const auto* first = config.option<Slic3r::ConfigOptionInts>(keys[i].first);
-        const auto* other = config.option<Slic3r::ConfigOptionInts>(keys[i].second);
-        if (first == nullptr || other == nullptr || first->values.empty() || other->values.empty())
-            continue;
-        pairs.push_back({first->get_at(0), other->get_at(0), caps[i]});
-    }
-    return pairs;
-}
-
 void skip(const std::string& name)
 {
     s_has_skip  = true;
@@ -173,7 +150,7 @@ void tick()
 
     // Orca ouvrirait sa fenêtre « Temperature Safety Check » : on laisse le préréglage modifié (Orca demandera à la
     // fermeture, comme pour tout préréglage), sans fenêtre de notre part.
-    if (!SpoolsLogic::temperature_pairs_ok(temperature_pairs(filaments.get_edited_preset().config))) {
+    if (!temperatures_ok(filaments.get_edited_preset().config)) {
         BOOST_LOG_TRIVIAL(warning) << "Plyo: préréglage de bobine « " << name
                                    << " » non enregistré automatiquement : écart de températures refusé par Orca";
         skip(name);
@@ -193,6 +170,33 @@ void tick()
 }
 
 } // namespace
+
+std::vector<ConfigRules::PairKeys> temperature_pair_keys()
+{
+    // Mêmes couples que Tab::validate_filament_temperature_pairs (un test de source vérifie qu'ils n'ont pas changé).
+    std::vector<ConfigRules::PairKeys> keys = {{"nozzle_temperature_initial_layer", "nozzle_temperature", 30}};
+    for (int bt = static_cast<int>(Slic3r::btPC); bt < static_cast<int>(Slic3r::btCount); ++bt) {
+        const Slic3r::BedType bed = static_cast<Slic3r::BedType>(bt);
+        keys.push_back({Slic3r::get_bed_temp_1st_layer_key(bed), Slic3r::get_bed_temp_key(bed), 15});
+    }
+    keys.erase(std::remove_if(keys.begin(), keys.end(), [](const ConfigRules::PairKeys& k) { return k.first.empty() || k.other.empty(); }), keys.end());
+    return keys;
+}
+
+std::vector<SpoolsLogic::TempPair> temperature_pairs(const Slic3r::DynamicPrintConfig& config)
+{
+    std::vector<SpoolsLogic::TempPair> pairs;
+    for (const ConfigRules::PairKeys& k : temperature_pair_keys()) {
+        const auto* first = config.option<Slic3r::ConfigOptionInts>(k.first);
+        const auto* other = config.option<Slic3r::ConfigOptionInts>(k.other);
+        if (first == nullptr || other == nullptr || first->values.empty() || other->values.empty())
+            continue;
+        pairs.push_back({first->get_at(0), other->get_at(0), k.max_delta});
+    }
+    return pairs;
+}
+
+bool temperatures_ok(const Slic3r::DynamicPrintConfig& config) { return SpoolsLogic::temperature_pairs_ok(temperature_pairs(config)); }
 
 bool modal_open() { return modal_open_impl(); }
 
@@ -220,7 +224,7 @@ SpoolsLogic::Flush flush_spool()
     const bool        spool = dirty && filaments.get_selected_preset().can_overwrite() && Spools::is_spool_preset(name);
     // Calibration et températures : consultées seulement pour une bobine modifiée.
     const bool        calib = spool && calibrating();
-    const bool        temps = spool && !calib && SpoolsLogic::temperature_pairs_ok(temperature_pairs(filaments.get_edited_preset().config));
+    const bool        temps = spool && !calib && temperatures_ok(filaments.get_edited_preset().config);
     const Flush       step  = SpoolsLogic::flush_before_switch(dirty, spool, calib, temps);
     if (step != Flush::Save)
         return step;

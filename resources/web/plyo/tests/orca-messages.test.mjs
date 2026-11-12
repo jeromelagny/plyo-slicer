@@ -138,7 +138,8 @@ test('panneau : fin de découpe, refus, relecture après un lot et contexte de l
   assert.match(page, /if \(ctx && ctx\.plate\) body\.plate = ctx\.plate;/, 'plate.issues part tel quel vers le service');
   // Une correction passe par le chemin d'application habituel (validation du slicer, « Annuler »).
   const fix = page.slice(page.indexOf('function applyOrcaFix'), page.indexOf('function orcaNote'));
-  assert.match(fix, /type: 'apply', changes: a\.changes, print_name: names\.process/);
+  // Le clic sur le bouton qui annonce la valeur confirme la correction (dernière barrière du slicer, lot 3).
+  assert.match(fix, /type: 'apply', changes: Logic\.confirmedChanges\(a\.changes\), print_name: names\.process/);
   assert.match(fix, /undoButton\('Annuler'/);
 });
 

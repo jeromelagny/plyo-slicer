@@ -61,7 +61,10 @@
     "bridge_speed",
     "small_perimeter_speed",
     "gap_infill_speed",
-    "enable_overhang_speed"
+    "enable_overhang_speed",
+    "spiral_mode",
+    "print_sequence",
+    "activate_chamber_temp_control"
   ],
   "delta_exceptions": {},
   "pending_keys": [

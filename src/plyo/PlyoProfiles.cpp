@@ -113,6 +113,12 @@ nlohmann::json save_applied()
     const bool print_dirty = collection(Preset::TYPE_PRINT).current_is_dirty();
     const bool in_project  = print_dirty && ProjectFiles::owns_print_edits();
     Slic3r::PresetCollection& col = collection(Preset::TYPE_FILAMENT);
+    // Orca ouvrirait sa fenêtre « Temperature Safety Check » au milieu de l'enregistrement : on n'enregistre pas, on le dit
+    // (le lot a été vérifié avant l'écriture ; ceci couvre un écart déjà là avant le lot).
+    if (col.current_is_dirty() && !AutoSave::temperatures_ok(col.get_edited_preset().config)) {
+        BOOST_LOG_TRIVIAL(warning) << "Plyo: filament « " << col.get_selected_preset().name << " » non enregistré : écart de températures refusé par Orca";
+        return {{"saved", saved}, {"save_error", "temperatures"}, {"in_project", in_project}, {"print_edited", print_dirty && !in_project}};
+    }
     if (col.current_is_dirty() && Slic3r::GUI::wxGetApp().get_tab(Preset::TYPE_FILAMENT) != nullptr) {
         const std::string from = col.get_selected_preset().name;
         // Une bobine n'a qu'un préréglage par machine : on l'écrase, jamais de copie « (Plyo) ».

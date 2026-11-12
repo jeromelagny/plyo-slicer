@@ -1,6 +1,11 @@
 #pragma once
 
+#include "PlyoConfigRulesLogic.hpp"
 #include "PlyoSpoolsLogic.hpp"
+
+#include <vector>
+
+namespace Slic3r { class DynamicPrintConfig; }
 
 // Enregistrement automatique du préréglage de la bobine : un réglage du filament changé (par l'assistant ou à la main)
 // est écrit dans le préréglage de la bobine sous son propre nom, environ 2 s après le dernier changement, quand Orca ne
@@ -20,6 +25,14 @@ void note_change();
 // Signaux d'occupation, partagés avec le projet 3MF de la conversation (PlyoProjectFiles) :
 // une fenêtre modale est ouverte ; Orca exporte ou envoie un G-code ; une calibration (de Plyo ou d'Orca) est en cours.
 bool modal_open();
+
+// Couples de températures « première couche / couches suivantes » que vérifie Orca en enregistrant un filament
+// (Tab::validate_filament_temperature_pairs) : la buse, puis chaque type de plateau. Règle commune à l'enregistrement
+// automatique, à l'application d'un lot (ConfigRules::temperature_pairs) et à son enregistrement (Profiles::save_applied).
+std::vector<ConfigRules::PairKeys> temperature_pair_keys();
+std::vector<SpoolsLogic::TempPair> temperature_pairs(const Slic3r::DynamicPrintConfig& config);
+// Vrai si Orca enregistrerait ce filament sans ouvrir sa fenêtre « Temperature Safety Check ».
+bool temperatures_ok(const Slic3r::DynamicPrintConfig& config);
 bool sending();
 bool calibrating();
 

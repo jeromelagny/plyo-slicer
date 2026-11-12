@@ -188,8 +188,8 @@ std::string to_serialized(const OptionInfo& info, const nlohmann::json& value)
 
 std::optional<double> temperature_cap(const std::string& key)
 {
-    constexpr double NOZZLE_MAX = 320; // PA-CF, PC, PPS peuvent monter haut
-    constexpr double BED_MAX    = 130; // plateau et enceinte
+    constexpr double NOZZLE_MAX = 300; // PA, PC, PET-CF montent jusque-là (MATERIAL_RANGES du service)
+    constexpr double BED_MAX    = 110; // plateau et caisson
     static const std::map<std::string, double> CAPS = {
         {"nozzle_temperature", NOZZLE_MAX},
         {"nozzle_temperature_initial_layer", NOZZLE_MAX},
@@ -231,6 +231,128 @@ std::string limit_id_of(const std::string& key)
     if (ends_with("_plate_temp_initial_layer"))
         return "bed_temp_initial";
     return std::string();
+}
+
+namespace {
+
+constexpr const char* TOWER_INTERFACE_TEMP = "filament_tower_interface_print_temp"; // -1 : automatique
+constexpr double      REL_DELTA            = 0.3;
+constexpr double      MAX_LAYER_OF_NOZZLE  = 0.75;
+
+bool is_numeric_kind(const std::string& kind) { return kind == "int" || kind == "float" || kind == "percent" || kind == "float_or_percent"; }
+bool is_layer_key(const std::string& key) { return key == "layer_height" || key == "initial_layer_print_height"; }
+bool is_bed_id(const std::string& id) { return id == "bed_temp" || id == "bed_temp_initial"; }
+
+// Écart minimal toujours permis, proportionné à la plage d'Orca (floorOf du service).
+double floor_of(const std::string& kind, std::optional<double> span, double current)
+{
+    if (kind == "int")
+        return std::max(3.0, std::min(span ? *span * 0.1 : 3.0, 10.0));
+    if (kind == "percent")
+        return span ? std::max(5.0, std::min(*span * 0.15, 15.0)) : 5.0;
+    double floor = span ? std::min(*span * 0.1, 10.0) : 1.0;
+    if (current > 0)
+        floor = std::min(floor, 0.5 * current);
+    return floor;
+}
+
+std::string fr(double value)
+{
+    std::string s = plain(value);
+    std::replace(s.begin(), s.end(), '.', ',');
+    return s;
+}
+
+} // namespace
+
+CheckResult check_hard(const std::string& label, const std::string& key, const OptionInfo& info, const nlohmann::json& value,
+                       const nlohmann::json& current, double nozzle_mm)
+{
+    if (!is_numeric_kind(info.kind))
+        return {};
+    const std::optional<double> number = number_of(value);
+    if (!number)
+        return {};
+    // « mm ou % » : on reste dans l'unité actuelle.
+    if (info.kind == "float_or_percent" && !current.is_null() && is_percent_text(value) != is_percent_text(current))
+        return refuse(label, "garde la même unité qu'aujourd'hui (" + std::string(is_percent_text(current) ? "en %" : "en mm") + ").");
+    if (key == "filament_diameter" && (*number < 1.5 || *number > 3.1))
+        return refuse(label, "à " + fr(*number) + " mm sort de la plage permise (1,5 à 3,1 mm).");
+    if (is_layer_key(key) && nozzle_mm > 0) {
+        const double max = std::floor(nozzle_mm * MAX_LAYER_OF_NOZZLE * 100 + 1e-6) / 100;
+        if (*number > max + 1e-9)
+            return refuse(label, "à " + fr(*number) + " mm est trop haute pour ta buse (" + fr(max) + " mm au plus).");
+    }
+    const std::string id    = limit_id_of(key);
+    const bool        tower = key == TOWER_INTERFACE_TEMP;
+    if (tower && *number == -1)
+        return {};
+    if (id == "nozzle_temp" || id == "nozzle_temp_initial" || tower) {
+        if (*number < 170 || *number > 300)
+            return refuse(label, "à " + fr(*number) + " °C sort de la plage permise (170 à 300 °C).");
+    } else if (is_bed_id(id) && (*number < 0 || *number > 110))
+        return refuse(label, "à " + fr(*number) + " °C sort de la plage permise (0 à 110 °C).");
+    return {};
+}
+
+double max_delta(const std::string& key, const OptionInfo& info, double current)
+{
+    if (key == "filament_diameter")
+        return 0.1;
+    const std::optional<double> span = info.min && info.max ? std::optional<double>(*info.max - *info.min) : std::nullopt;
+    double delta = std::max(REL_DELTA * std::abs(current), floor_of(info.kind, span, current));
+    // Températures : le même écart que la buse et le plateau de la liste d'origine, quelle que soit la clé.
+    if (key.find("temp") != std::string::npos)
+        delta = std::min(delta, is_bed_id(limit_id_of(key)) ? 10.0 : 15.0);
+    return delta;
+}
+
+CheckResult check_delta(const std::string& label, const std::string& key, const OptionInfo& info, const nlohmann::json& value,
+                        const nlohmann::json& current)
+{
+    if (!is_numeric_kind(info.kind))
+        return {};
+    const std::optional<double> target = number_of(value);
+    const std::optional<double> now    = number_of(current);
+    if (!target)
+        return {};
+    if (!now) {
+        // Ni valeur actuelle ni bornes d'Orca : rien ne borne le changement.
+        if (!info.min || !info.max)
+            return refuse(label, "a une valeur actuelle que je ne connais pas : je ne peux pas vérifier l'écart.");
+        return {};
+    }
+    if (key == TOWER_INTERFACE_TEMP && (*target == -1 || *now == -1))
+        return {};
+    const double delta = max_delta(key, info, *now);
+    if (std::abs(*target - *now) > delta + 1e-9)
+        return refuse(label, "passerait de " + fr(*now) + " à " + fr(*target) + " d'un coup : c'est plus que l'écart permis sans ta confirmation (" +
+                                 fr(delta) + " au plus).");
+    return {};
+}
+
+bool requires_confirmation(const Policy& policy, const std::string& key)
+{
+    return policy.needs_confirmation(key) || key == "filament_diameter" || key == "filament_flow_ratio" || key == TOWER_INTERFACE_TEMP;
+}
+
+Verdict check_barrier(const Policy& policy, const std::string& label, const std::string& key, const OptionInfo& info,
+                      const nlohmann::json& value, const nlohmann::json& current, double nozzle_mm, const Limits::Range& limits,
+                      bool confirmed_outside, bool confirmed)
+{
+    if (const CheckResult capped = check_temperature_cap(label, key, value); !capped.ok)
+        return {capped, ""};
+    if (const CheckResult checked = check_change(label, info, value, limits, limit_id_of(key), confirmed_outside); !checked.ok)
+        return {checked, ""};
+    if (const CheckResult hard = check_hard(label, key, info, value, current, nozzle_mm); !hard.ok)
+        return {hard, ""};
+    if (confirmed)
+        return {};
+    if (requires_confirmation(policy, key))
+        return {refuse(label, "est un réglage sensible : il ne s'applique qu'avec ta confirmation."), "needs_confirmation"};
+    if (const CheckResult delta = check_delta(label, key, info, value, current); !delta.ok)
+        return {delta, "needs_confirmation"};
+    return {};
 }
 
 }} // namespace Plyo::Catalog

@@ -65,8 +65,10 @@ constexpr double BOUND_MARGIN = 1e-6;
 CheckResult check_change(const std::string& label, const OptionInfo& info, const nlohmann::json& value, const Limits::Range& limits,
                          const std::string& limit_id, bool confirmed_outside);
 
-// Plafond Plyo (°C) d'une clé de température, absent pour les autres clés. Dernière barrière, large : les bornes d'Orca vont
+// Plafond Plyo (°C) d'une clé de température, absent pour les autres clés. Dernière barrière : les bornes d'Orca vont
 // jusqu'à 1500 °C (buse) et 300 °C (plateau), et les limites du fabricant peuvent manquer ou être passées par une confirmation.
+// Mêmes plafonds que le service (plyo-api, whitelist.ts et catalog-changes.ts) : 300 °C pour la buse, 110 °C pour le plateau
+// et le caisson.
 std::optional<double> temperature_cap(const std::string& key);
 // Refus si la valeur dépasse ce plafond, confirmation ou non. Une valeur non numérique est laissée à check_change.
 CheckResult check_temperature_cap(const std::string& label, const std::string& key, const nlohmann::json& value);
@@ -76,5 +78,39 @@ std::string to_serialized(const OptionInfo& info, const nlohmann::json& value);
 
 // Identifiant des limites du fabricant pour une clé de température (nozzle_temp, bed_temp…), vide pour les autres.
 std::string limit_id_of(const std::string& key);
+
+// --- Dernière barrière : ce que le service vérifie déjà (plyo-api/src/lib/catalog-changes.ts), revérifié ici ---
+
+// Valeur demandée comparée à la valeur actuelle (`current` : valeur typée du relevé, null si inconnue). `nozzle_mm` : diamètre
+// de la buse (0 si inconnu).
+// Bornes strictes, jamais levées, même confirmées : diamètre du filament (1,5 à 3,1 mm), hauteurs de couche (75 % de la
+// buse au plus), températures de buse (170 à 300 °C, sauf -1 « automatique » de la tour) et de plateau (0 à 110 °C),
+// unité d'un réglage « mm ou % » (la même qu'aujourd'hui : 40 n'est pas 40 %).
+CheckResult check_hard(const std::string& label, const std::string& key, const OptionInfo& info, const nlohmann::json& value,
+                       const nlohmann::json& current, double nozzle_mm);
+
+// Écart permis sans confirmation : 30 % de la valeur actuelle, ou un plancher proportionné à la plage d'Orca (`floorOf` du
+// service) ; 0,1 mm pour le diamètre du filament. Les températures : 15 °C (buse et autres), 10 °C (plateau).
+double max_delta(const std::string& key, const OptionInfo& info, double current);
+// Refus si l'écart dépasse max_delta, ou si la valeur actuelle est inconnue sans bornes d'Orca pour la remplacer. Levé par
+// une confirmation explicite de l'utilisateur.
+CheckResult check_delta(const std::string& label, const std::string& key, const OptionInfo& info, const nlohmann::json& value,
+                        const nlohmann::json& current);
+
+// Réglage qui ne s'applique qu'avec une confirmation explicite : risque « confirmation » de la politique, et les réglages
+// physiques du filament que le service traite pareil (diamètre, rapport de débit, température d'interface de la tour).
+bool requires_confirmation(const Policy& policy, const std::string& key);
+
+// Tout le contrôle d'un changement du catalogue avant l'écriture, dans l'ordre : plafond de température, type et bornes
+// d'Orca, bornes strictes, limites du fabricant (`confirmed_outside`), puis, sans `confirmed`, le réglage sensible et
+// l'écart. `code` du refus : « needs_confirmation » quand une confirmation suffirait, vide sinon.
+struct Verdict
+{
+    CheckResult check;
+    std::string code;
+};
+Verdict check_barrier(const Policy& policy, const std::string& label, const std::string& key, const OptionInfo& info,
+                      const nlohmann::json& value, const nlohmann::json& current, double nozzle_mm, const Limits::Range& limits,
+                      bool confirmed_outside, bool confirmed);
 
 }} // namespace Plyo::Catalog

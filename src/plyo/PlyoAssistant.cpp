@@ -3,6 +3,7 @@
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoCalibration.hpp"
+#include "PlyoCatalog.hpp"
 #include "PlyoCanvas.hpp"
 #include "PlyoSlots.hpp"
 #include "PlyoCC2.hpp"
@@ -157,10 +158,13 @@ void send_watch(nlohmann::json w, const std::string& id)
     send(w);
 }
 
-void send_result(const nlohmann::json& result)
+// Réponse à une demande du panneau (apply, undo, calib_*…) : `request`, l'identifiant de la demande, est renvoyé tel quel
+// (le panneau retrouve ainsi la fiche ou le bouton qui attend ; 0 si la demande n'en portait pas).
+void send_result(const nlohmann::json& result, const nlohmann::json& data)
 {
     nlohmann::json message = result;
     message["type"]        = "result";
+    message["request"]     = Json::integer(data, "request", 0);
     send(message);
 }
 
@@ -200,11 +204,11 @@ void handle_page_message(const nlohmann::json& data)
             // Le plateau est encore celui d'une autre conversation (départ ou ouverture en attente qu'Orca ait fini) : rien
             // ne s'y applique.
             if (ProjectFiles::edits_blocked()) {
-                send_result({{"ok", false}, {"text", ProjectFiles::busy_text()}});
+                send_result({{"ok", false}, {"text", ProjectFiles::busy_text()}}, data);
                 return;
             }
             if (const nlohmann::json refused = project_refusal(data); !refused.is_null()) {
-                send_result(refused);
+                send_result(refused, data);
                 return;
             }
             // Chaque application réussie est notée dans la mémoire de la machine (imprimante + filament).
@@ -213,7 +217,7 @@ void handle_page_message(const nlohmann::json& data)
             // Le lot a été proposé pour des profils précis : s'ils ont changé depuis, rien n'est écrit.
             if (const nlohmann::json stale = SettingsBridge::check_profiles(Json::str(data, "printer_name"), Json::str(data, "print_name"), Json::str(data, "filament_name"));
                 !stale.is_null()) {
-                send_result(stale);
+                send_result(stale, data);
                 return;
             }
             const nlohmann::json changes = data.contains("changes") ? data["changes"] : nlohmann::json();
@@ -222,46 +226,68 @@ void handle_page_message(const nlohmann::json& data)
             nlohmann::json result = catalog ? SettingsBridge::apply_catalog_changes(changes, Json::str(data, "print_name"), Json::str(data, "filament_name"))
                                             : SettingsBridge::apply_changes(changes);
             if (Json::boolean(result, "ok", false)) {
-                // Les profils sont enregistrés avant la mémoire : si Orca en crée une copie, le couple imprimante + filament change de nom.
-                const nlohmann::json saved = Profiles::save_applied();
-                result["saved"]            = saved["saved"];
-                result["save_error"]       = saved["save_error"];
-                result["in_project"]       = saved["in_project"];
-                result["print_edited"]     = saved["print_edited"];
-                result["manual_saved"]     = manual;
-                const nlohmann::json ask = data.contains("ask") ? data["ask"] : nlohmann::json();
-                nlohmann::json       after = SettingsBridge::read_values();
-                if (catalog) {
-                    after["params"] = nlohmann::json::array();
-                    for (const nlohmann::json& a : Json::arr(result, "applied"))
-                        after["params"].push_back({{"id", a["id"]}, {"value", a["after"]}});
-                    before["params"] = nlohmann::json::array();
-                    for (const nlohmann::json& a : Json::arr(result, "applied"))
-                        before["params"].push_back({{"id", a["id"]}, {"value", a["before"]}});
+                // L'écriture fait foi : le lot est en place et annulable. Les enregistrements annexes (profil, mémoire,
+                // journal) ne peuvent plus le faire passer pour un échec : une erreur y est notée, la réponse reste « appliqué ».
+                try {
+                    // Les profils sont enregistrés avant la mémoire : si Orca en crée une copie, le couple imprimante + filament change de nom.
+                    const nlohmann::json saved = Profiles::save_applied();
+                    result["saved"]            = saved["saved"];
+                    result["save_error"]       = saved["save_error"];
+                    result["in_project"]       = saved["in_project"];
+                    result["print_edited"]     = saved["print_edited"];
+                    result["manual_saved"]     = manual;
+                } catch (const std::exception& e) {
+                    BOOST_LOG_TRIVIAL(error) << "Plyo: lot appliqué, profil non enregistré : " << e.what();
+                    result["save_error"] = "erreur inattendue";
                 }
-                const std::string    key = Memory::note_applied(before, after, Json::str(data, "why"), ask);
-                SettingsBridge::set_memory_key(Json::integer(result, "undo_id", 0), key);
-                // Réglages venus d'une réponse de l'IA : notés aussi dans le journal de la pièce.
-                const nlohmann::json noted = Memory::for_current();
-                if (ask.is_object() && !key.empty() && !noted.empty()) {
-                    Journal::set_changes(Json::str(ask, "conv"), Json::arr(noted[0], "changes"));
-                    Profiles::note_trial(Json::str(noted[0], "at")); // devient la version fiable si l'impression réussit
+                try {
+                    const nlohmann::json ask = data.contains("ask") ? data["ask"] : nlohmann::json();
+                    nlohmann::json       after = SettingsBridge::read_values();
+                    if (catalog) {
+                        // Ce qui est réellement en place : le lot relu, et ce qu'Orca a changé en plus (clés du catalogue).
+                        after["params"]  = nlohmann::json::array();
+                        before["params"] = nlohmann::json::array();
+                        for (const nlohmann::json& a : Json::arr(result, "applied")) {
+                            after["params"].push_back({{"id", a["id"]}, {"value", a["after"]}});
+                            before["params"].push_back({{"id", a["id"]}, {"value", a["before"]}});
+                        }
+                        for (const nlohmann::json& a : Json::arr(result, "also_changed"))
+                            if (Catalog::policy().allows(Json::str(a, "scope"), Json::str(a, "key"))) {
+                                after["params"].push_back({{"id", a["key"]}, {"value", a["after"]}});
+                                before["params"].push_back({{"id", a["key"]}, {"value", a["before"]}});
+                            }
+                    }
+                    const std::string    key = Memory::note_applied(before, after, Json::str(data, "why"), ask);
+                    SettingsBridge::set_memory_key(Json::integer(result, "undo_id", 0), key);
+                    // Réglages venus d'une réponse de l'IA : notés aussi dans le journal de la pièce.
+                    const nlohmann::json noted = Memory::for_current();
+                    if (ask.is_object() && !key.empty() && !noted.empty()) {
+                        Journal::set_changes(Json::str(ask, "conv"), Json::arr(noted[0], "changes"));
+                        Profiles::note_trial(Json::str(noted[0], "at")); // devient la version fiable si l'impression réussit
+                    }
+                } catch (const std::exception& e) {
+                    BOOST_LOG_TRIVIAL(error) << "Plyo: lot appliqué, mémoire ou journal non mis à jour : " << e.what();
                 }
             }
-            send_result(result);
+            send_result(result, data);
         } else if (type == "undo") {
             // `undo_id` : l'annulation d'une fiche précise ; sans, le dernier lot (menu « ⋯ »).
             nlohmann::json result = SettingsBridge::undo_last(Json::integer(data, "undo_id", 0));
             if (Json::boolean(result, "ok", false)) {
-                Journal::clear_changes(Memory::forget(Json::str(result, "memory_key")));
-                // Les valeurs d'avant sont remises : le profil est réenregistré, comme après l'application.
-                const nlohmann::json saved = Profiles::save_applied();
-                result["saved"]            = saved["saved"];
-                result["save_error"]       = saved["save_error"];
-                result["in_project"]       = saved["in_project"];
-                result["print_edited"]     = saved["print_edited"];
+                try {
+                    Journal::clear_changes(Memory::forget(Json::str(result, "memory_key")));
+                    // Les valeurs d'avant sont remises : le profil est réenregistré, comme après l'application.
+                    const nlohmann::json saved = Profiles::save_applied();
+                    result["saved"]            = saved["saved"];
+                    result["save_error"]       = saved["save_error"];
+                    result["in_project"]       = saved["in_project"];
+                    result["print_edited"]     = saved["print_edited"];
+                } catch (const std::exception& e) {
+                    BOOST_LOG_TRIVIAL(error) << "Plyo: lot annulé, enregistrements annexes incomplets : " << e.what();
+                    result["save_error"] = "erreur inattendue";
+                }
             }
-            send_result(result);
+            send_result(result, data);
         } else if (type == "ai_context")
             // Juste avant une demande à l'IA : le plateau et ce qui a déjà été appliqué sur cette machine.
             send({{"type", "ai_context"}, {"plate", PlateActions::context()}, {"memory", Memory::for_current()},
@@ -404,15 +430,16 @@ void handle_page_message(const nlohmann::json& data)
             // Calibration guidée : lancé seulement par le bouton « Lancer le test » du panneau.
             nlohmann::json started = Calibration::start_test(Json::str(data, "test"), Json::integer(data, "pass", 1), Json::num(data, "base_value", 0.0));
             if (Json::boolean(started, "ok", false)) {
-                started["type"] = "calib_started";
+                started["type"]    = "calib_started";
+                started["request"] = Json::integer(data, "request", 0);
                 send(started);
             } else
-                send_result(started);
+                send_result(started, data);
         } else if (type == "calib_save") {
-            send_result(Calibration::save_result(Json::str(data, "test"), Json::num(data, "value", 0.0)));
+            send_result(Calibration::save_result(Json::str(data, "test"), Json::num(data, "value", 0.0)), data);
             send({{"type", "calib_history"}, {"items", Calibration::history_for_current()}});
         } else if (type == "calib_restore")
-            send_result(Calibration::restore());
+            send_result(Calibration::restore(), data);
         else if (type == "calib_history")
             send({{"type", "calib_history"}, {"items", Calibration::history_for_current()}});
         else if (type == "firststeps_state") {
@@ -429,7 +456,7 @@ void handle_page_message(const nlohmann::json& data)
             signals["user_file"]   = !ProjectFiles::attachable(); // un fichier de l'utilisateur n'est jamais attaché à la conversation
             send(signals);
         } else if (type == "tour_add_benchy")
-            send_result(FirstSteps::add_benchy());
+            send_result(FirstSteps::add_benchy(), data);
         else if (type == "model_add") {
             // Modèle 3D joint dans le panneau (trombone ou glisser-déposer). Une nouvelle pièce posée : le plateau devient celui
             // de la conversation, avant l'adaptation des réglages d'un 3MF (qui restent ainsi dans le projet, pas dans le
@@ -665,7 +692,9 @@ void handle_page_message(const nlohmann::json& data)
             BOOST_LOG_TRIVIAL(warning) << "Plyo: message inconnu reçu du panneau : " << data.dump();
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: erreur en traitant « " << type << " » : " << e.what();
-        send_result({{"ok", false}, {"text", std::string("Erreur interne : ") + e.what()}});
+        // Type distinct de « result » : seule la demande qui porte ce `request` peut s'en servir, jamais une fiche sans rapport.
+        send({{"type", "error"}, {"request", Json::integer(data, "request", 0)}, {"for", type}, {"ok", false},
+              {"text", "Quelque chose s'est mal passé de mon côté. Réessaie ; si ça recommence, redémarre Plyo."}});
     }
     // Les valeurs affichées sont rafraîchies par on_config_changed() après une modification.
 }

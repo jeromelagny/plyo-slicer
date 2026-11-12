@@ -212,21 +212,22 @@ bool write_if_changed() { return !s_conv.empty() && write_state() == WriteResult
 bool other_plate_unsaved(const std::string& conv) { return !s_conv.empty() && s_conv != conv && changed(); }
 
 // Oublie les modifications de ces préréglages, comme le bouton « Ignorer » d'Orca (GUI_App, reset_modifications).
-void discard(bool print, bool filament)
+// `reason` : dite si l'utilisateur veut ensuite annuler un lot qui touchait ces réglages.
+void discard(bool print, bool filament, SettingsBridge::DropReason reason)
 {
     if (print)
         bundle().prints.discard_current_changes();
     if (filament)
         bundle().filaments.discard_current_changes();
     wxGetApp().load_current_presets(false);
-    SettingsBridge::clear_undo(); // ses entrées viseraient les réglages oubliés
+    SettingsBridge::forget_scope(print, filament, reason); // seulement les entrées des réglages oubliés
 }
 
 // Réglages d'impression de la pièce quittée : ils sont dans son 3MF (ou n'y tenaient pas) et ne suivent pas la suite.
 void forget_print_edits()
 {
     if (s_owns_edits && bundle().prints.current_is_dirty())
-        discard(true, false);
+        discard(true, false, SettingsBridge::DropReason::Conversation);
     s_owns_edits = false;
 }
 
@@ -469,14 +470,15 @@ nlohmann::json open_now(const std::string& conv)
     // du fichier, remises en « modifiées » par Orca, sont oubliées avant que l'enregistrement de la bobine les voie.
     const std::string spool = spool_preset_of(conv);
     if (!spool.empty()) {
-        discard(false, true);
+        discard(false, true, SettingsBridge::DropReason::Conversation);
         if (bundle().filaments.get_selected_preset_name() != spool)
             FirstSteps::select_filament(spool);
     } else if (bundle().filaments.current_is_dirty() && Spools::is_spool_preset(bundle().filaments.get_selected_preset_name())) {
         // Fiche sans bobine utilisable, mais le 3MF a remis une bobine du registre : ses valeurs n'y entrent jamais.
-        discard(false, true);
+        discard(false, true, SettingsBridge::DropReason::Conversation);
     }
-    SettingsBridge::clear_undo();
+    // Les réglages d'impression sont ceux du 3MF rouvert ; un lot du filament enregistré dans la bobine reste annulable.
+    SettingsBridge::forget_scope(true, true, SettingsBridge::DropReason::Conversation);
     AutoSave::note_change();
 
     s_conv        = conv;
@@ -531,7 +533,7 @@ bool take_preset_changes(const wxString& caption)
     s_notice = {true, s_conv, s_project, bundle().printers.get_selected_preset_name()};
     clear_attachment(true);
     if (bundle().prints.current_is_dirty() || bundle().filaments.current_is_dirty())
-        discard(true, true);
+        discard(true, true, SettingsBridge::DropReason::Project);
     s_owns_edits = false;
     return true;
 }
@@ -557,7 +559,7 @@ void on_project_changed(bool paused)
                                                            Spools::is_spool_preset(bundle().filaments.get_selected_preset_name()))) {
             BOOST_LOG_TRIVIAL(info) << "Plyo: fichier ouvert : les valeurs de filament du fichier ne remplacent pas celles de la bobine « "
                                     << bundle().filaments.get_selected_preset_name() << " »";
-            discard(false, true);
+            discard(false, true, SettingsBridge::DropReason::Import);
         }
     }
 }

@@ -847,7 +847,8 @@ test('lot 1 · UX-15 : le lot des questions d’intention a son « Annuler », q
   const page = read('index.html');
   assert.match(page, /if \(result && result\.undo_id\) intentUI\.doneLine\.appendChild\(intentUndoButton\(result\.undo_id, conv\)\);/);
   const fn = page.slice(page.indexOf('function intentUndoButton'), page.indexOf('function maybeReapplyIntent'));
-  assert.match(fn, /postMessage\(\{ type: 'undo', undo_id: undoId \}\)/);
+  // Lot 3 · ROB-11 : la demande porte un identifiant (postRequest), renvoyé par le slicer avec sa réponse.
+  assert.match(fn, /postRequest\(\{ type: 'undo', undo_id: undoId \}\)/);
   assert.match(fn, /undoneListeners\[undoId\] = function \(\) \{[\s\S]*?conv\.project\.intent\.applied = false;[\s\S]*?noteLine\('Réglages d’avant remis\.'/);
 });
 

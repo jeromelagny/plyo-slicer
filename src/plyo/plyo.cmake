@@ -90,6 +90,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalog.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalogPolicy.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalogPolicy.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoConfigRulesLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoConfigRulesLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoLimits.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoLimits.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoLimitsLogic.hpp

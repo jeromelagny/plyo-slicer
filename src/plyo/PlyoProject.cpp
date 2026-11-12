@@ -179,7 +179,7 @@ nlohmann::json restore(const nlohmann::json& project, bool discard_unsaved)
         if (!keep_prints)
             bundle().prints.discard_current_changes();
         bundle().filaments.discard_current_changes();
-        SettingsBridge::clear_undo(); // ses entrées viseraient les anciens profils
+        SettingsBridge::clear_undo(SettingsBridge::DropReason::Profile); // ses entrées viseraient les anciens profils
         // L'imprimante d'abord : même si le filament a disparu, Orca revient sur la machine du projet.
         if (Json::str(now, "printer_preset") != printer && !select(Preset::TYPE_PRINTER, printer))
             return {{"ok", false}, {"text", "Je n'ai pas pu sélectionner l'imprimante de ce projet."}};
@@ -269,7 +269,9 @@ nlohmann::json adapt_file(const std::string& path_utf8, const nlohmann::json& pr
             continue; // les températures sont déjà celles de la fiche (filament)
         if (SettingsBridge::typed_value_of(config, key, policy.kind("print", key)) == c["value"])
             continue; // déjà la bonne valeur : rien à signaler
-        changes.push_back({{"key", key}, {"value", c["value"]}, {"label", policy.title(key)}});
+        // Valeurs du fichier que l'utilisateur a choisi lui-même : confirmées par ce choix (écart et réglage sensible) ; les
+        // bornes strictes et les règles d'Orca restent vérifiées par apply_catalog_changes.
+        changes.push_back({{"key", key}, {"value", c["value"]}, {"label", policy.title(key)}, {"confirmed", true}});
     }
     nlohmann::json out = {{"adapted", nlohmann::json::array()}, {"dropped", dropped}, {"undo_id", 0}};
     if (changes.empty())

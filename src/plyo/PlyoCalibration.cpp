@@ -446,7 +446,7 @@ nlohmann::json start_test(const std::string& test, int pass, double base_value)
     result["test"] = test;
     result["pass"] = test == "flow" ? (pass == 2 ? 2 : 1) : 1;
     s_active       = result;
-    SettingsBridge::clear_undo();
+    SettingsBridge::clear_undo(SettingsBridge::DropReason::Calibration);
     BOOST_LOG_TRIVIAL(info) << "Plyo: test de calibration lancé (" << test << ")";
     return result;
 }
@@ -558,7 +558,7 @@ nlohmann::json restore()
                                 std::pair{Preset::TYPE_FILAMENT, &snap.filament_config}})
         if (Slic3r::GUI::Tab* tab = Slic3r::GUI::wxGetApp().get_tab(type))
             tab->load_config(*config);
-    SettingsBridge::clear_undo();
+    SettingsBridge::clear_undo(SettingsBridge::DropReason::Calibration);
     return {{"ok", true}, {"text", (snap.has_project ? "Ta pièce et tes réglages sont de retour." : "Tes réglages sont de retour.") + kept}};
 }
 

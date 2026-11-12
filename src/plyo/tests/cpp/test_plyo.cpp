@@ -21,6 +21,7 @@
 #include "../../PlyoSpoolsLogic.hpp"
 #include "../../PlyoProjectFilesLogic.hpp"
 #include "../../PlyoOrcaMessagesLogic.hpp"
+#include "../../PlyoConfigRulesLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -1149,27 +1150,28 @@ TEST_CASE("Profiles: nom du profil de la connexion, sans jamais écraser un « M
 TEST_CASE("Catalog: plafonds Plyo des températures, absolus, cités dans le refus, même confirmés")
 {
     using namespace Plyo::Catalog;
+    // Mêmes plafonds que le service (whitelist.ts : buse 300 °C, plateau 110 °C ; IA-20) : les plus stricts des deux.
     REQUIRE(temperature_cap("nozzle_temperature").has_value());
-    CHECK(*temperature_cap("nozzle_temperature") == 320);
-    CHECK(*temperature_cap("nozzle_temperature_initial_layer") == 320);
-    CHECK(*temperature_cap("hot_plate_temp") == 130);
-    CHECK(*temperature_cap("textured_cool_plate_temp_initial_layer") == 130);
-    CHECK(*temperature_cap("chamber_temperature") == 130);
+    CHECK(*temperature_cap("nozzle_temperature") == 300);
+    CHECK(*temperature_cap("nozzle_temperature_initial_layer") == 300);
+    CHECK(*temperature_cap("hot_plate_temp") == 110);
+    CHECK(*temperature_cap("textured_cool_plate_temp_initial_layer") == 110);
+    CHECK(*temperature_cap("chamber_temperature") == 110);
     CHECK_FALSE(temperature_cap("layer_height").has_value());
     CHECK_FALSE(temperature_cap("activate_chamber_temp_control").has_value());
 
-    // Filaments techniques légitimes : jamais refusés.
-    CHECK(check_temperature_cap("Buse", "nozzle_temperature", 320).ok);
-    CHECK(check_temperature_cap("Plateau", "hot_plate_temp", 130).ok);
+    // Filaments techniques légitimes (PA, PC, PET-CF jusqu'à 300 °C ; ABS/ASA, PC jusqu'à 110 °C au plateau) : jamais refusés.
+    CHECK(check_temperature_cap("Buse", "nozzle_temperature", 300).ok);
+    CHECK(check_temperature_cap("Plateau", "hot_plate_temp", 110).ok);
     CHECK(check_temperature_cap("Plateau", "hot_plate_temp", 0).ok);
     CHECK(check_temperature_cap("Attente", "filament_tower_interface_print_temp", -1).ok);
 
-    const CheckResult nozzle = check_temperature_cap("Buse", "nozzle_temperature", 321);
+    const CheckResult nozzle = check_temperature_cap("Buse", "nozzle_temperature", 301);
     CHECK_FALSE(nozzle.ok);
-    CHECK(nozzle.text.find("320") != std::string::npos);
-    const CheckResult bed = check_temperature_cap("Plateau", "hot_plate_temp", 200);
+    CHECK(nozzle.text.find("300") != std::string::npos);
+    const CheckResult bed = check_temperature_cap("Plateau", "hot_plate_temp", 111);
     CHECK_FALSE(bed.ok);
-    CHECK(bed.text.find("130") != std::string::npos);
+    CHECK(bed.text.find("110") != std::string::npos);
     // Autre réglage : pas concerné, quelle que soit la valeur.
     CHECK(check_temperature_cap("Vitesse", "outer_wall_speed", 500).ok);
 }
@@ -3053,4 +3055,382 @@ TEST_CASE("Messages d'Orca : dix au plus, les erreurs d'abord, sans doublon ni c
     CHECK(!has_error(json()));
     CHECK(to_json({list[12], list[13]}).size() == 1);
     CHECK(to_json({issue("x", "", "error", "sans code")}).empty());
+}
+
+// --- Lot 3 de l'audit : règles d'Orca avant l'écriture, relecture, annulation, dernière barrière ---
+
+namespace {
+
+// État d'un profil d'impression ordinaire (valeurs comme Orca les écrit).
+Plyo::ConfigRules::Values plain_print()
+{
+    return {{"spiral_mode", "0"},           {"wall_loops", "3"},        {"top_shell_layers", "5"},     {"sparse_infill_density", "15%"},
+            {"enable_support", "0"},        {"enforce_support_layers", "0"}, {"detect_thin_wall", "0"}, {"overhang_reverse", "0"},
+            {"timelapse_type", "0"},        {"enable_wrapping_detection", "0"}, {"alternate_extra_wall", "0"},
+            {"ensure_vertical_shell_thickness", "ensure_all"}, {"seam_slope_type", "none"}, {"seam_slope_start_height", "0"},
+            {"layer_height", "0.2"},        {"initial_layer_print_height", "0.2"}, {"infill_lock_depth", "1"}, {"skin_infill_depth", "2"},
+            {"fuzzy_skin_mode", "displacement"}, {"wall_generator", "classic"}, {"ironing_spacing", "0.1"}, {"support_ironing_spacing", "0.1"},
+            {"xy_hole_compensation", "0"},  {"xy_contour_compensation", "0"}, {"elefant_foot_compensation", "0.15"},
+            {"raft_layers", "0"},           {"draft_shield", "disabled"}};
+}
+
+std::string title_of(const std::string& key) { return key == "spiral_mode" ? "Vase spirale" : key == "wall_loops" ? "Parois" : std::string(); }
+
+const Plyo::ConfigRules::Added* added(const Plyo::ConfigRules::Outcome& o, const std::string& key)
+{
+    for (const auto& a : o.added)
+        if (a.key == key)
+            return &a;
+    return nullptr;
+}
+
+std::string read_source(const std::string& relative)
+{
+    boost::nowide::ifstream in((fs::path(__FILE__).parent_path() / relative).string());
+    REQUIRE(in.good());
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+} // namespace
+
+TEST_CASE("Règles d'Orca : le mode vase demandé seul est complété avec tout ce qu'Orca exigerait")
+{
+    using namespace Plyo::ConfigRules;
+    Values state           = plain_print();
+    state["spiral_mode"]   = "1";
+    const Outcome o        = complete(state, {"spiral_mode"}, true, false, false, title_of);
+    REQUIRE(o.ok);
+    // Seuls les réglages qui diffèrent : parois, couches du dessus, remplissage (le reste est déjà comme il faut).
+    REQUIRE(o.added.size() == 3);
+    REQUIRE(added(o, "wall_loops"));
+    CHECK(added(o, "wall_loops")->value == 1);
+    CHECK(added(o, "wall_loops")->trigger == "spiral_mode");
+    CHECK(added(o, "top_shell_layers")->serialized == "0");
+    CHECK(added(o, "sparse_infill_density")->value == "0%");
+    CHECK(added(o, "enable_support") == nullptr);
+
+    // Supports actifs et timelapse fluide : complétés aussi (le timelapse n'est pas au catalogue : le pont refusera).
+    state["enable_support"] = "1";
+    state["timelapse_type"] = "1";
+    const Outcome more      = complete(state, {"spiral_mode"}, true, false, false, title_of);
+    REQUIRE(more.ok);
+    CHECK(added(more, "enable_support")->value == false);
+    CHECK(added(more, "timelapse_type")->serialized == "0");
+}
+
+TEST_CASE("Règles d'Orca : mode vase en conflit avec le lot, ou déjà actif, refusé avec une phrase claire")
+{
+    using namespace Plyo::ConfigRules;
+    Values state         = plain_print();
+    state["spiral_mode"] = "1";
+    // Le lot demande le mode vase ET 3 parois : Orca changerait l'une ou l'autre.
+    const Outcome both = complete(state, {"spiral_mode", "wall_loops"}, true, false, false, title_of);
+    CHECK_FALSE(both.ok);
+    CHECK(both.text.find("Refusé : le mode vase") == 0);
+    CHECK(both.text.find("« Parois »") != std::string::npos);
+    CHECK(both.text.find("Aucune modification appliquée.") != std::string::npos);
+    // Mode vase déjà actif (cohérent), le lot ajoute des parois.
+    state["wall_loops"] = "1"; state["top_shell_layers"] = "0"; state["sparse_infill_density"] = "0%";
+    CHECK(complete(state, {"layer_height"}, true, false, false, title_of).ok);
+    state["wall_loops"] = "2";
+    const Outcome on = complete(state, {"wall_loops"}, true, false, false, title_of);
+    CHECK_FALSE(on.ok);
+    CHECK(on.text.find("Désactive d'abord le mode vase") != std::string::npos);
+    // Onglet Impression non touché : Orca ne relance pas ses contrôles.
+    CHECK(complete(state, {"nozzle_temperature"}, false, true, false, title_of).ok);
+}
+
+TEST_CASE("Règles d'Orca : peau irrégulière, paroi alternée, biseau, verrouillage, compensations")
+{
+    using namespace Plyo::ConfigRules;
+    Values state             = plain_print();
+    state["fuzzy_skin_mode"] = "extrusion";
+    const Outcome fuzzy      = complete(state, {"fuzzy_skin_mode"}, true, false, false, title_of);
+    REQUIRE(fuzzy.ok);
+    CHECK(added(fuzzy, "wall_generator")->value == "arachne");
+    // Le lot demande lui-même le générateur classique : refus, rien n'est complété contre lui.
+    CHECK_FALSE(complete(state, {"fuzzy_skin_mode", "wall_generator"}, true, false, false, title_of).ok);
+    state["wall_generator"] = "arachne";
+    CHECK(complete(state, {"fuzzy_skin_mode"}, true, false, false, title_of).added.empty());
+
+    state                        = plain_print();
+    state["alternate_extra_wall"] = "1";
+    const Outcome alt            = complete(state, {"alternate_extra_wall"}, true, false, false, title_of);
+    REQUIRE(alt.ok);
+    CHECK(added(alt, "ensure_vertical_shell_thickness")->value == "ensure_moderate");
+    CHECK_FALSE(complete(state, {"ensure_vertical_shell_thickness"}, true, false, false, title_of).ok);
+
+    state                            = plain_print();
+    state["seam_slope_type"]         = "external";
+    state["seam_slope_start_height"] = "0.2";
+    CHECK_FALSE(complete(state, {"seam_slope_start_height"}, true, false, false, title_of).ok); // égale à la couche
+    state["seam_slope_start_height"] = "0.1";
+    CHECK(complete(state, {"seam_slope_start_height"}, true, false, false, title_of).ok);
+    state["seam_slope_start_height"] = "100%"; // en % de la couche
+    CHECK_FALSE(complete(state, {"seam_slope_start_height"}, true, false, false, title_of).ok);
+    state["seam_slope_start_height"] = "50%";
+    state["layer_height"]            = "0.08";
+    CHECK(complete(state, {"layer_height"}, true, false, false, title_of).ok);
+
+    state                      = plain_print();
+    state["infill_lock_depth"] = "3";
+    CHECK_FALSE(complete(state, {"infill_lock_depth"}, true, false, false, title_of).ok);
+    state                         = plain_print();
+    state["xy_hole_compensation"] = "-2.5";
+    CHECK(complete(state, {"xy_hole_compensation"}, true, false, false, title_of).text.find("l'échelle") != std::string::npos);
+    state                              = plain_print();
+    state["elefant_foot_compensation"] = "1.2";
+    CHECK_FALSE(complete(state, {"elefant_foot_compensation"}, true, false, false, title_of).ok);
+    state                    = plain_print();
+    state["ironing_spacing"] = "0.04";
+    CHECK_FALSE(complete(state, {"ironing_spacing"}, true, false, false, title_of).ok);
+    state                = plain_print();
+    state["raft_layers"] = "2";
+    CHECK(complete(state, {"raft_layers"}, true, false, false, title_of).ok);
+    CHECK_FALSE(complete(state, {"raft_layers"}, true, false, true, title_of).ok); // imprimante à tapis
+}
+
+TEST_CASE("Règles d'Orca : débit volumique et espacement du lissage du filament")
+{
+    using namespace Plyo::ConfigRules;
+    CHECK_FALSE(complete({{"filament_max_volumetric_speed", "0"}}, {"filament_max_volumetric_speed"}, false, true, false, title_of).ok);
+    CHECK_FALSE(complete({{"filament_max_volumetric_speed", "0.4,0.4"}}, {"filament_max_volumetric_speed"}, false, true, false, title_of).ok);
+    CHECK(complete({{"filament_max_volumetric_speed", "0.5"}}, {"filament_max_volumetric_speed"}, false, true, false, title_of).ok);
+    CHECK(complete({{"filament_ironing_spacing", "nil"}}, {"nozzle_temperature"}, false, true, false, title_of).ok);
+    CHECK_FALSE(complete({{"filament_ironing_spacing", "0.01"}}, {"filament_ironing_spacing"}, false, true, false, title_of).ok);
+    // Onglet Filament non touché : rien n'est vérifié.
+    CHECK(complete({{"filament_max_volumetric_speed", "0"}}, {"wall_loops"}, true, false, false, title_of).ok);
+}
+
+TEST_CASE("Couples de températures : la première couche suit le changement, sinon refus qui dit quoi ajouter")
+{
+    using namespace Plyo::ConfigRules;
+    const std::vector<PairKeys> pairs = {{"nozzle_temperature_initial_layer", "nozzle_temperature", 30}, {"hot_plate_temp_initial_layer", "hot_plate_temp", 15}};
+    const auto                  t     = [](const std::string&) { return std::string(); };
+    // Plateau 65 / 55 (10 d'écart) ; l'IA baisse les couches suivantes à 45 : écart 20, la première couche suit (55).
+    const std::map<std::string, int> before = {{"hot_plate_temp_initial_layer", 65}, {"hot_plate_temp", 55}, {"nozzle_temperature_initial_layer", 220}, {"nozzle_temperature", 215}};
+    std::map<std::string, int>       after  = before;
+    after["hot_plate_temp"]                 = 45;
+    const Outcome follow                    = temperature_pairs(pairs, before, after, {"hot_plate_temp"}, t);
+    REQUIRE(follow.ok);
+    REQUIRE(follow.added.size() == 1);
+    CHECK(follow.added[0].key == "hot_plate_temp_initial_layer");
+    CHECK(follow.added[0].value == 55);
+    CHECK(follow.added[0].trigger == "hot_plate_temp");
+    CHECK(follow.added[0].scope == "filament");
+    // Petit changement : écart toujours permis, rien n'est ajouté.
+    after["hot_plate_temp"] = 52;
+    CHECK(temperature_pairs(pairs, before, after, {"hot_plate_temp"}, t).added.empty());
+    // La première couche seule s'éloigne trop : refus qui dit d'ajouter les couches suivantes.
+    after                                 = before;
+    after["nozzle_temperature_initial_layer"] = 250;
+    const Outcome alone                   = temperature_pairs(pairs, before, after, {"nozzle_temperature_initial_layer"}, t);
+    CHECK_FALSE(alone.ok);
+    CHECK(alone.text.find("Change aussi « nozzle_temperature »") != std::string::npos);
+    // Les deux changés et trop loin : refus.
+    after["nozzle_temperature"] = 200;
+    CHECK_FALSE(temperature_pairs(pairs, before, after, {"nozzle_temperature_initial_layer", "nozzle_temperature"}, t).ok);
+    // Couple non touché par le lot : pas vérifié ici (save_applied le couvre).
+    after = before;
+    after["hot_plate_temp"] = 10;
+    CHECK(temperature_pairs(pairs, before, after, {"nozzle_temperature"}, t).ok);
+}
+
+TEST_CASE("Relecture après l'écriture : valeurs remises par Orca, réglages changés en plus")
+{
+    using namespace Plyo::ConfigRules;
+    const Verdict v = verify({{"print/spiral_mode", {"1", "0"}}, {"print/layer_height", {"0.2", "0.2"}}},
+                             {"print/layer_height", "print/wall_loops", "print/detect_overhang_wall"});
+    CHECK(v.refused == std::vector<std::string>{"print/spiral_mode"});
+    CHECK(v.also == std::vector<std::string>{"print/detect_overhang_wall", "print/wall_loops"});
+    CHECK(verify({{"filament/x", {"1", "1"}}}, {"filament/x"}).also.empty());
+}
+
+TEST_CASE("Annulation : un réglage retouché à la main depuis le lot n'est pas écrasé")
+{
+    using Plyo::ConfigRules::retouched;
+    CHECK(retouched({{"filament/nozzle_temperature", "205"}, {"print/wall_loops", "3"}},
+                    {{"filament/nozzle_temperature", "210"}, {"print/wall_loops", "3"}}) == std::vector<std::string>{"filament/nozzle_temperature"});
+    CHECK(retouched({{"filament/nozzle_temperature", ""}}, {{"filament/nozzle_temperature", "210"}}).empty()); // inconnu : jamais compté
+}
+
+TEST_CASE("Règles d'Orca : les conditions recopiées sont toujours celles d'Orca (test de source)")
+{
+    // Si ce test échoue, Orca a changé une règle qui ouvre une fenêtre pendant l'écriture : mettre PlyoConfigRulesLogic à jour.
+    const std::string src  = read_source("../../../../src/slic3r/GUI/ConfigManipulation.cpp");
+    const size_t      from = src.find("void ConfigManipulation::update_print_fff_config(");
+    const size_t      to   = src.find("void ConfigManipulation::apply_null_fff_config(");
+    REQUIRE(from != std::string::npos);
+    REQUIRE(to > from);
+    const std::string body = src.substr(from, to - from);
+    for (const char* needle : {
+             "belt_opt->value && (has_raft || has_shield)",
+             "if (layer_height < EPSILON)",
+             "config->opt_float(\"ironing_spacing\") < IRONING_SPACING_MIN",
+             "config->opt_float(\"support_ironing_spacing\") < IRONING_SPACING_MIN",
+             "config->option<ConfigOptionFloat>(\"initial_layer_print_height\")->value < EPSILON",
+             "abs(config->option<ConfigOptionFloat>(\"xy_hole_compensation\")->value) > 2",
+             "abs(config->option<ConfigOptionFloat>(\"xy_contour_compensation\")->value) > 2",
+             "config->option<ConfigOptionFloat>(\"elefant_foot_compensation\")->value > 1",
+             "config->opt_bool(\"spiral_mode\") &&",
+             "! (config->opt_int(\"wall_loops\") == 1 &&",
+             "config->opt_int(\"top_shell_layers\") == 0 &&",
+             "sparse_infill_density == 0 &&",
+             "! config->opt_bool(\"enable_support\") &&",
+             "config->opt_int(\"enforce_support_layers\") == 0 &&",
+             "! config->opt_bool(\"detect_thin_wall\") &&",
+             "! config->opt_bool(\"overhang_reverse\") &&",
+             "config->opt_enum<TimelapseType>(\"timelapse_type\") == TimelapseType::tlTraditional &&",
+             "!config->opt_bool(\"enable_wrapping_detection\")))",
+             "if (config->opt_bool(\"alternate_extra_wall\") &&",
+             "(config->opt_enum<EnsureVerticalShellThickness>(\"ensure_vertical_shell_thickness\") == evstAll))",
+             "new ConfigOptionEnum<EnsureVerticalShellThickness>(evstModerate)",
+             "config->opt_enum<SeamScarfType>(\"seam_slope_type\") != SeamScarfType::None &&",
+             "config->get_abs_value(\"seam_slope_start_height\") >= layer_height",
+             "if (config->opt_float(\"infill_lock_depth\") > skin_depth)",
+             "config->opt_enum<FuzzySkinMode>(\"fuzzy_skin_mode\") != FuzzySkinMode::Displacement && !have_arachne",
+             "new ConfigOptionEnum<PerimeterGeneratorType>(PerimeterGeneratorType::Arachne)",
+         }) {
+        INFO(needle);
+        CHECK(body.find(needle) != std::string::npos);
+    }
+    // Aucune nouvelle fenêtre dans la fonction (une de plus : une règle à reprendre). Le vase a sa propre fenêtre.
+    size_t dialogs = 0;
+    for (size_t at = body.find("MessageDialog "); at != std::string::npos; at = body.find("MessageDialog ", at + 1))
+        ++dialogs;
+    CHECK(dialogs == 14); // dont celle de la tour de purge, désactivée par #if 0, et celle du mélange de couleurs (sans changement)
+    CHECK(body.find("show_spiral_mode_settings_dialog(is_object_config)") != std::string::npos);
+
+    // Filament : seuls ces deux contrôles tournent dans TabFilament::update (appelé par Tab::load_config).
+    CHECK(src.find("if (max_volumetric_speed < 0.5)") != std::string::npos);
+    CHECK(src.find("if (!opt->is_nil(i) && values[i] < IRONING_SPACING_MIN)") != std::string::npos);
+    const std::string tab   = read_source("../../../../src/slic3r/GUI/Tab.cpp");
+    const size_t      fupd  = tab.find("void TabFilament::update()");
+    REQUIRE(fupd != std::string::npos);
+    const std::string fbody = tab.substr(fupd, 400);
+    CHECK(fbody.find("m_config_manipulation.check_filament_max_volumetric_speed(m_config);") != std::string::npos);
+    CHECK(fbody.find("m_config_manipulation.check_filament_ironing_spacing(m_config);") != std::string::npos);
+    const size_t lc = tab.find("void Tab::load_config(const DynamicPrintConfig& config)");
+    REQUIRE(lc != std::string::npos);
+    CHECK(tab.substr(lc, 500).find("update();") != std::string::npos);
+
+    // Constantes et noms des choix écrits par les compléments.
+    const std::string cfg = read_source("../../../../src/libslic3r/PrintConfig.hpp");
+    CHECK(cfg.find("constexpr double IRONING_SPACING_MIN = 0.05;") != std::string::npos);
+    const std::string cpp = read_source("../../../../src/libslic3r/PrintConfig.cpp");
+    for (const char* needle : {"{ \"ensure_all\",         int(EnsureVerticalShellThickness::evstAll) }",
+                               "{ \"ensure_moderate\",            int(EnsureVerticalShellThickness::evstModerate) }",
+                               "{ \"arachne\", int(PerimeterGeneratorType::Arachne) }", "{ \"displacement\",   int(FuzzySkinMode::Displacement) }",
+                               "{ \"none\",           int(SeamScarfType::None) }", "{\"0\",       tlTraditional}", "{ \"disabled\", dsDisabled }"}) {
+        INFO(needle);
+        CHECK(cpp.find(needle) != std::string::npos);
+    }
+}
+
+namespace {
+Plyo::Catalog::Policy real_policy()
+{
+    const std::string policy = read_source("../../../../resources/plyo/policy.json");
+    const std::string keys   = read_source("../../../../resources/plyo/catalog-keys.json");
+    return Plyo::Catalog::Policy::from_json(json::parse(policy), json::parse(keys));
+}
+} // namespace
+
+TEST_CASE("Dernière barrière : bornes strictes, jamais levées par une confirmation")
+{
+    using namespace Plyo::Catalog;
+    // Diamètre du filament : 1,5 à 3,1 mm.
+    CHECK_FALSE(check_hard("Diamètre", "filament_diameter", info("float", 0), 4.0, 1.75, 0.4).ok);
+    CHECK(check_hard("Diamètre", "filament_diameter", info("float", 0), 1.8, 1.75, 0.4).ok);
+    // Hauteurs de couche : 75 % de la buse au plus, première couche comprise.
+    CHECK_FALSE(check_hard("Couche", "layer_height", info("float", 0), 0.32, 0.2, 0.4).ok);
+    CHECK_FALSE(check_hard("Première couche", "initial_layer_print_height", info("float", 0), 0.35, 0.2, 0.4).ok);
+    CHECK(check_hard("Première couche", "initial_layer_print_height", info("float", 0), 0.3, 0.2, 0.4).ok);
+    CHECK(check_hard("Première couche", "initial_layer_print_height", info("float", 0), 0.5, 0.2, 0).ok); // buse inconnue
+    // Températures : buse 170 à 300 °C (sauf -1 de la tour), plateau 0 à 110 °C.
+    CHECK_FALSE(check_hard("Buse", "nozzle_temperature", info("int"), 160, 215, 0.4).ok);
+    CHECK_FALSE(check_hard("Buse", "nozzle_temperature_initial_layer", info("int"), 305, 215, 0.4).ok);
+    CHECK(check_hard("Tour", "filament_tower_interface_print_temp", info("int"), -1, 215, 0.4).ok);
+    CHECK_FALSE(check_hard("Plateau", "textured_plate_temp", info("int"), 115, 60, 0.4).ok);
+    // « mm ou % » : on reste dans l'unité d'aujourd'hui.
+    CHECK_FALSE(check_hard("Largeur", "line_width", info("float_or_percent"), 40, "100%", 0.4).ok);
+    CHECK_FALSE(check_hard("Largeur", "line_width", info("float_or_percent"), "40%", 0.42, 0.4).ok);
+    CHECK(check_hard("Largeur", "line_width", info("float_or_percent"), "110%", "100%", 0.4).ok);
+    CHECK(check_hard("Largeur", "line_width", info("float_or_percent"), 0.45, 0.42, 0.4).ok);
+}
+
+TEST_CASE("Dernière barrière : écart maximal comme le service (REL_DELTA, plancher, températures)")
+{
+    using namespace Plyo::Catalog;
+    // Vitesse 200 mm/s : 30 % soit 60.
+    CHECK(max_delta("outer_wall_speed", info("float", 1), 200) == Catch::Approx(60));
+    CHECK_FALSE(check_delta("Parois externes", "outer_wall_speed", info("float", 1), 3000, 200).ok);
+    CHECK(check_delta("Parois externes", "outer_wall_speed", info("float", 1), 250, 200).ok);
+    // Entier de plage 0–1000 : plancher de 10.
+    CHECK(max_delta("wall_loops", info("int", 0, 1000), 2) == Catch::Approx(10));
+    // Pourcentage 0–100 : plancher de 15 points.
+    CHECK(max_delta("sparse_infill_density", info("percent", 0, 100), 15) == Catch::Approx(15));
+    CHECK_FALSE(check_delta("Remplissage", "sparse_infill_density", info("percent", 0, 100), "50%", "15%").ok);
+    // Températures : 15 °C (buse), 10 °C (plateau).
+    CHECK(max_delta("nozzle_temperature", info("int", 0, 1500), 215) == Catch::Approx(15));
+    CHECK(max_delta("hot_plate_temp", info("int", 0, 300), 60) == Catch::Approx(10));
+    // Diamètre : 0,1 mm.
+    CHECK(max_delta("filament_diameter", info("float", 0), 1.75) == Catch::Approx(0.1));
+    // Débit volumique à 0 depuis 12 : trop loin d'un coup.
+    CHECK_FALSE(check_delta("Débit volumique", "filament_max_volumetric_speed", info("float", 0), 0, 12).ok);
+    // Valeur actuelle inconnue sans bornes : refus ; avec bornes : permis.
+    CHECK_FALSE(check_delta("X", "x", info("float", 0), 3, nullptr).ok);
+    CHECK(check_delta("X", "x", info("float", 0, 10), 3, nullptr).ok);
+}
+
+TEST_CASE("Dernière barrière : confirmation exigée pour les réglages sensibles et les grands écarts")
+{
+    using namespace Plyo::Catalog;
+    const Policy policy = real_policy();
+    // IA-20 : mode vase, impression pièce par pièce et contrôle du caisson passent en confirmation.
+    CHECK(requires_confirmation(policy, "spiral_mode"));
+    CHECK(requires_confirmation(policy, "print_sequence"));
+    CHECK(requires_confirmation(policy, "activate_chamber_temp_control"));
+    CHECK(requires_confirmation(policy, "nozzle_temperature"));
+    CHECK(requires_confirmation(policy, "filament_flow_ratio"));
+    CHECK_FALSE(requires_confirmation(policy, "wall_loops"));
+
+    // Scénario de l'audit : 3000 mm/s sans confirmation, refusé ; « needs_confirmation » dit qu'une confirmation suffirait.
+    const Verdict fast = check_barrier(policy, "Vitesse", "outer_wall_speed", info("float", 1), 3000, 200, 0.4, no_limits, false, false);
+    CHECK_FALSE(fast.check.ok);
+    CHECK(fast.code == "needs_confirmation");
+    // Ligne cochée à la main : l'écart est levé.
+    CHECK(check_barrier(policy, "Parois", "wall_loops", info("int", 0, 1000), 20, 2, 0.4, no_limits, false, true).check.ok);
+    // Réglage sensible : jamais sans confirmation, même un petit pas.
+    const Verdict spiral = check_barrier(policy, "Vase", "spiral_mode", info("bool"), true, false, 0.4, no_limits, false, false);
+    CHECK_FALSE(spiral.check.ok);
+    CHECK(spiral.code == "needs_confirmation");
+    CHECK(check_barrier(policy, "Vase", "spiral_mode", info("bool"), true, false, 0.4, no_limits, false, true).check.ok);
+    // Borne stricte : la confirmation n'y change rien, et ce n'est pas une affaire de confirmation.
+    const Verdict hot = check_barrier(policy, "Buse", "nozzle_temperature", info("int", 0, 1500), 320, 290, 0.4, no_limits, true, true);
+    CHECK_FALSE(hot.check.ok);
+    CHECK(hot.code.empty());
+}
+
+TEST_CASE("Dernière barrière : chaque parcours légitime passe, avec la confirmation qu'il porte")
+{
+    using namespace Plyo::Catalog;
+    const Policy policy = real_policy();
+    const auto   pass   = [&](const std::string& key, const OptionInfo& i, const json& value, const json& current, bool confirmed) {
+        return check_barrier(policy, key, key, i, value, current, 0.4, no_limits, false, confirmed).check.ok;
+    };
+    // Questions d'intention (table du panneau, bouton « Appliquer et préparer ») : de 15 % à 50 % de remplissage.
+    CHECK_FALSE(pass("sparse_infill_density", info("percent", 0, 100), "50%", "15%", false));
+    CHECK(pass("sparse_infill_density", info("percent", 0, 100), "50%", "15%", true));
+    CHECK(pass("layer_height", info("float", 0, 1), 0.12, 0.28, true));
+    // Carte d'Orca « Mettre la hauteur de couche à 0,2 mm » (de 0,4) et « Désactiver le mode vase » : le bouton annonce la valeur.
+    CHECK(pass("layer_height", info("float", 0, 1), 0.2, 0.4, true));
+    CHECK(pass("spiral_mode", info("bool"), false, true, true));
+    // « Remettre Température de la buse à 215 » après une annulation refusée.
+    CHECK(pass("nozzle_temperature", info("int", 0, 1500), 215, 240, true));
+    // Adaptation d'un 3MF de l'utilisateur : ses propres valeurs, confirmées par son fichier ; la borne stricte reste.
+    CHECK(pass("wall_loops", info("int", 0, 1000), 30, 2, true));
+    CHECK_FALSE(pass("layer_height", info("float", 0, 1), 0.36, 0.2, true));
+    // Réponse de l'IA, ligne cochée par défaut : petit écart, pas de confirmation nécessaire.
+    CHECK(pass("wall_loops", info("int", 0, 1000), 3, 2, false));
 }

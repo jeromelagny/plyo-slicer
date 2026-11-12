@@ -1,5 +1,7 @@
 #include "PlyoSettingsBridge.hpp"
+#include "PlyoAutoSave.hpp"
 #include "PlyoCatalog.hpp"
+#include "PlyoConfigRulesLogic.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoLimits.hpp"
 
@@ -15,10 +17,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <deque>
 #include <iomanip>
 #include <locale>
 #include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -91,24 +95,36 @@ std::vector<std::string> allowed_values(const std::string& id, const std::string
     return {};
 }
 
-// Une valeur d'avant modification, sous forme sérialisée Orca (restaure exactement, y compris « nil »).
+// Une valeur d'avant modification, sous forme sérialisée Orca (restaure exactement, y compris « nil »), et celle que le lot
+// a laissée (`after`) : l'annulation ne touche pas un réglage retouché depuis.
 struct SavedValue
 {
     Preset::Type preset;
     std::string  key;
     std::string  serialized;
     std::string  preset_name; // préréglage modifié : l'annulation n'écrit jamais dans un autre
+    std::string  after;
 };
-// Un lot appliqué : son identifiant (rendu au panneau), les valeurs d'avant, et l'entrée de la mémoire de la
-// machine qu'il a créée (vide sinon), retirée s'il est annulé.
+// Un lot appliqué : son identifiant (rendu au panneau), les valeurs d'avant (celles du lot et celles qu'Orca a changées en
+// plus), et l'entrée de la mémoire de la machine qu'il a créée (vide sinon), retirée s'il est annulé.
 struct UndoEntry
 {
     int                     id;
     std::vector<SavedValue> saved;
     std::string             memory_key;
+    bool                    print_dropped = false; // ses réglages d'impression sont restés avec un autre projet
 };
-std::vector<UndoEntry> s_undo_stack;
-int                    s_next_undo_id = 1;
+// Un lot qui ne peut plus être annulé, et pourquoi : le refus d'annulation le dit et propose ses valeurs d'avant.
+struct DroppedEntry
+{
+    int                     id;
+    DropReason              reason;
+    std::vector<SavedValue> saved;
+};
+std::vector<UndoEntry>   s_undo_stack;
+std::deque<DroppedEntry> s_dropped;
+constexpr size_t         MAX_DROPPED    = 20;
+int                      s_next_undo_id = 1;
 
 Slic3r::PresetBundle& bundle() { return *Slic3r::GUI::wxGetApp().preset_bundle; }
 
@@ -315,9 +331,262 @@ void load_into_tabs(const std::map<Preset::Type, DynamicPrintConfig>& configs)
             tab->load_config(config);
 }
 
+const char* scope_name(Preset::Type type) { return type == Preset::TYPE_PRINT ? "print" : "filament"; }
+
+std::string label_of(const std::string& key)
+{
+    return ConfigRules::label_of(key, [](const std::string& k) { return Catalog::policy().title(k); });
+}
+
+// Valeur à montrer pour un texte d'Orca : typée pour une clé du catalogue (première case d'un tableau), sinon le texte.
+nlohmann::json shown_value(Preset::Type type, const std::string& key, const std::string& serialized)
+{
+    DynamicPrintConfig tmp;
+    try {
+        tmp.set_deserialize_strict(key, serialized);
+    } catch (const std::exception&) {
+        return serialized;
+    }
+    const std::string kind = Catalog::policy().kind(scope_name(type), key);
+    if (!kind.empty())
+        return typed_value_of(tmp, key, kind);
+    const Slic3r::ConfigOption* opt = tmp.option(key);
+    if (opt != nullptr && opt->is_vector()) {
+        const auto* vec = static_cast<const Slic3r::ConfigOptionVectorBase*>(opt);
+        return vec->size() == 0 || vec->is_nil(0) ? nlohmann::json(nullptr) : nlohmann::json(vec->vserialize().front());
+    }
+    return opt ? nlohmann::json(opt->serialize()) : nlohmann::json(serialized);
+}
+
+// Valeur actuelle d'une clé du catalogue, comme dans le relevé envoyé à l'IA (un « nil » du filament : celle de l'imprimante).
+nlohmann::json snapshot_value(Preset::Type type, const std::string& key, const std::string& kind)
+{
+    nlohmann::json value = typed_value_of(edited_config(type), key, kind);
+    if (value.is_null() && key.rfind("filament_", 0) == 0)
+        value = typed_value_of(edited_configs().printer, key.substr(9), kind);
+    return value;
+}
+
+// Valeurs d'avant à proposer une par une quand l'annulation est refusée (« Remettre … à … ») : clés du catalogue seulement.
+nlohmann::json restore_offer(const std::vector<SavedValue>& saved)
+{
+    const Catalog::Policy& policy = Catalog::policy();
+    nlohmann::json         out    = nlohmann::json::array();
+    std::set<std::string>  seen;
+    for (const SavedValue& v : saved) {
+        const char* scope = scope_name(v.preset);
+        if (!policy.allows(scope, v.key) || !seen.insert(v.key).second)
+            continue;
+        const nlohmann::json value = shown_value(v.preset, v.key, v.serialized);
+        if (value.is_null())
+            continue;
+        out.push_back({{"key", v.key}, {"scope", scope}, {"label", label_of(v.key)}, {"value", value}});
+        if (out.size() >= 8)
+            break;
+    }
+    return out;
+}
+
+void drop(UndoEntry entry, std::vector<SavedValue> saved, DropReason reason)
+{
+    s_dropped.push_back({entry.id, reason, std::move(saved)});
+    while (s_dropped.size() > MAX_DROPPED)
+        s_dropped.pop_front();
+}
+
+const char* const ORCA_DIALOG_TEXT = "Orca attend ta réponse dans une fenêtre ouverte : réponds-y d'abord, puis réessaie. Aucune modification appliquée.";
+
+// Une fenêtre d'Orca est ouverte : écrire maintenant relancerait ses contrôles par-dessus. null si l'écriture est permise.
+nlohmann::json orca_dialog_refusal()
+{
+    if (!AutoSave::modal_open())
+        return nullptr;
+    return {{"ok", false}, {"text", ORCA_DIALOG_TEXT}, {"code", "orca_dialog"}};
+}
+
+std::optional<int> first_int(const DynamicPrintConfig& config, const std::string& key)
+{
+    const auto* opt = config.option<Slic3r::ConfigOptionInts>(key);
+    if (opt == nullptr || opt->values.empty())
+        return std::nullopt;
+    return opt->get_at(0);
+}
+
+// Règles d'Orca sur l'état prévu (`configs` : les configs modifiées par le lot) : refus, ou réglages à ajouter. Les contrôles
+// d'un onglet ne tournent que s'il est modifié ; les couples de températures sont ceux qu'Orca vérifie en enregistrant.
+ConfigRules::Outcome orca_rules(const std::map<Preset::Type, DynamicPrintConfig>& configs, const std::set<std::string>& requested)
+{
+    const auto                title    = [](const std::string& k) { return Catalog::policy().title(k); };
+    const bool                print    = configs.count(Preset::TYPE_PRINT) > 0;
+    const bool                filament = configs.count(Preset::TYPE_FILAMENT) > 0;
+    const DynamicPrintConfig& p        = print ? configs.at(Preset::TYPE_PRINT) : edited_config(Preset::TYPE_PRINT);
+    const DynamicPrintConfig& f        = filament ? configs.at(Preset::TYPE_FILAMENT) : edited_config(Preset::TYPE_FILAMENT);
+    ConfigRules::Values       state;
+    for (const std::string& key : ConfigRules::print_keys())
+        if (p.option(key) != nullptr)
+            state[key] = p.opt_serialize(key);
+    for (const std::string& key : ConfigRules::filament_keys())
+        if (f.option(key) != nullptr)
+            state[key] = f.opt_serialize(key);
+    const auto* belt = edited_configs().printer.option<Slic3r::ConfigOptionBool>("belt_printer");
+    ConfigRules::Outcome out = ConfigRules::complete(state, requested, print, filament, belt != nullptr && belt->value, title);
+    if (!out.ok || !filament)
+        return out;
+    const std::vector<ConfigRules::PairKeys> keys = AutoSave::temperature_pair_keys();
+    std::map<std::string, int>               before, after;
+    for (const ConfigRules::PairKeys& k : keys)
+        for (const std::string& key : {k.first, k.other}) {
+            if (const auto v = first_int(edited_config(Preset::TYPE_FILAMENT), key))
+                before[key] = *v;
+            if (const auto v = first_int(f, key))
+                after[key] = *v;
+        }
+    const ConfigRules::Outcome pairs = ConfigRules::temperature_pairs(keys, before, after, requested, title);
+    if (!pairs.ok)
+        return pairs;
+    out.added.insert(out.added.end(), pairs.added.begin(), pairs.added.end());
+    return out;
+}
+
+// Écriture d'un lot, puis relecture. Avant/après comparés sur les deux onglets : toute clé changée entre dans l'annulation
+// (`saved`), celles qu'Orca a changées en plus du lot sont rendues (`also`). Une clé du lot qu'Orca a remise ou modifiée
+// (ou une exception) : tout ce qui a changé est remis comme avant, et le refus le dit (tout ou rien).
+struct Batch
+{
+    bool                    ok = false;
+    std::string             text;
+    nlohmann::json          orca_refused = nlohmann::json::array();
+    std::vector<SavedValue> saved;
+    nlohmann::json          also = nlohmann::json::array();
+};
+
+Batch write_batch(const std::map<Preset::Type, DynamicPrintConfig>& configs, const std::vector<std::pair<Preset::Type, std::string>>& planned)
+{
+    Batch                                      out;
+    std::map<Preset::Type, DynamicPrintConfig> before;
+    std::map<Preset::Type, std::string>        names;
+    for (const Preset::Type type : {Preset::TYPE_PRINT, Preset::TYPE_FILAMENT}) {
+        before.emplace(type, edited_config(type));
+        names[type] = edited_name(type);
+    }
+    std::string error;
+    try {
+        load_into_tabs(configs);
+    } catch (const std::exception& e) {
+        error = e.what();
+    }
+
+    const auto id_of = [](Preset::Type type, const std::string& key) { return std::string(scope_name(type)) + "/" + key; };
+    std::map<std::string, std::pair<Preset::Type, std::string>> where;
+    std::set<std::string>                                       changed;
+    for (const auto& [type, config] : before)
+        for (const std::string& key : config.diff(edited_config(type))) {
+            changed.insert(id_of(type, key));
+            where[id_of(type, key)] = {type, key};
+        }
+    std::map<std::string, ConfigRules::Written> written;
+    for (const auto& [type, key] : planned)
+        if (const auto it = configs.find(type); it != configs.end()) {
+            written[id_of(type, key)] = {it->second.opt_serialize(key), edited_config(type).opt_serialize(key)};
+            where[id_of(type, key)]   = {type, key};
+        }
+    const ConfigRules::Verdict verdict = ConfigRules::verify(written, changed);
+
+    if (!error.empty() || !verdict.refused.empty()) {
+        std::map<Preset::Type, DynamicPrintConfig> back;
+        for (const std::string& id : changed) {
+            const auto& [type, key] = where[id];
+            if (!back.count(type))
+                back.emplace(type, edited_config(type));
+            if (const Slic3r::ConfigOption* opt = before.at(type).option(key))
+                back[type].set_key_value(key, opt->clone());
+        }
+        try {
+            load_into_tabs(back);
+        } catch (const std::exception& e) {
+            BOOST_LOG_TRIVIAL(error) << "Plyo: réglages d'avant non remis après un refus d'Orca : " << e.what();
+        }
+        if (!error.empty()) {
+            BOOST_LOG_TRIVIAL(error) << "Plyo: erreur d'Orca pendant l'écriture d'un lot : " << error;
+            out.text = "Orca a rencontré une erreur en écrivant ces réglages : j'ai tout remis comme avant. Aucune modification appliquée.";
+            return out;
+        }
+        std::string list;
+        for (const std::string& id : verdict.refused) {
+            const auto& [type, key]          = where[id];
+            const ConfigRules::Written& w    = written[id];
+            out.orca_refused.push_back({{"key", key}, {"label", label_of(key)}, {"value", shown_value(type, key, w.expected)},
+                                        {"orca_value", shown_value(type, key, w.actual)}});
+            list += (list.empty() ? "« " : ", « ") + label_of(key) + " »";
+        }
+        BOOST_LOG_TRIVIAL(warning) << "Plyo: Orca a refusé une partie du lot (" << list << ") : lot défait";
+        out.text = "Orca n'a pas accepté " + list + " : j'ai remis tout le lot comme avant. Aucune modification appliquée.";
+        return out;
+    }
+    for (const std::string& id : changed) {
+        const auto& [type, key] = where[id];
+        out.saved.push_back({type, key, before.at(type).opt_serialize(key), names[type], edited_config(type).opt_serialize(key)});
+    }
+    for (const std::string& id : verdict.also) {
+        const auto& [type, key] = where[id];
+        out.also.push_back({{"key", key}, {"scope", scope_name(type)}, {"label", label_of(key)},
+                            {"before", shown_value(type, key, before.at(type).opt_serialize(key))},
+                            {"after", shown_value(type, key, edited_config(type).opt_serialize(key))}});
+    }
+    if (!out.also.empty())
+        BOOST_LOG_TRIVIAL(info) << "Plyo: Orca a changé " << out.also.size() << " réglage(s) en plus du lot : ajoutés à l'annulation";
+    out.ok = true;
+    return out;
+}
+
+// « Orca a aussi réglé : Parois 3 → 1, … » ajouté au texte d'un lot appliqué ou annulé.
+std::string also_text(const nlohmann::json& also)
+{
+    if (also.empty())
+        return std::string();
+    const auto show = [](const nlohmann::json& v) {
+        return v.is_boolean() ? std::string(v.get<bool>() ? "oui" : "non") : v.is_string() ? v.get<std::string>() : v.is_null() ? std::string("—") : v.dump();
+    };
+    std::string text;
+    for (const nlohmann::json& a : also)
+        text += std::string(text.empty() ? "" : ", ") + a.value("label", std::string()) + " " + show(a["before"]) + " → " + show(a["after"]);
+    return " Orca a aussi réglé : " + text + ".";
+}
+
 } // namespace
 
-void clear_undo() { s_undo_stack.clear(); }
+void clear_undo(DropReason reason)
+{
+    for (UndoEntry& e : s_undo_stack)
+        drop(e, e.saved, reason);
+    s_undo_stack.clear();
+}
+
+void forget_scope(bool print, bool filament, DropReason reason)
+{
+    std::vector<UndoEntry> kept;
+    for (UndoEntry& e : s_undo_stack) {
+        const std::vector<SavedValue> all = e.saved;
+        std::vector<SavedValue>       left;
+        for (const SavedValue& v : e.saved) {
+            // Impression oubliée : toutes ses valeurs. Filament oublié : seulement celles qu'il n'a plus (un lot enregistré dans
+            // la bobine y est encore, et reste annulable).
+            const bool gone = v.preset == Preset::TYPE_PRINT ? print
+                                                              : filament && edited_config(Preset::TYPE_FILAMENT).opt_serialize(v.key) != v.after;
+            if (!gone)
+                left.push_back(v);
+            else if (v.preset == Preset::TYPE_PRINT)
+                e.print_dropped = true;
+        }
+        if (left.empty()) {
+            drop(e, all, reason);
+            continue;
+        }
+        e.saved = std::move(left);
+        kept.push_back(std::move(e));
+    }
+    s_undo_stack = std::move(kept);
+}
 
 nlohmann::json read_values()
 {
@@ -336,6 +605,8 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
 {
     if (!changes.is_array() || changes.empty())
         return {{"ok", false}, {"text", "Refusé : aucune modification reçue."}};
+    if (const nlohmann::json busy = orca_dialog_refusal(); !busy.is_null())
+        return busy;
 
     struct Planned { const Param* param; std::string key; double value; std::string text; Preset::Type type; };
     std::vector<Planned> planned;
@@ -397,28 +668,52 @@ nlohmann::json apply_changes(const nlohmann::json& changes)
         planned.push_back({param, key, value, to_config_string(value, param->kind), type});
     }
 
-    // 2. Mémorise les valeurs d'avant (pour l'annulation), puis prépare les nouvelles configs.
-    std::vector<SavedValue>                     saved;
+    // 2. Nouvelles configs.
     std::map<Preset::Type, DynamicPrintConfig> configs;
+    std::vector<std::pair<Preset::Type, std::string>> keys;
+    std::set<std::string>                       requested;
     std::string                                 summary;
     for (const Planned& p : planned) {
         const Preset::Type type = p.type;
         if (!configs.count(type))
             configs.emplace(type, edited_config(type));
-        saved.push_back({type, p.key, edited_config(type).opt_serialize(p.key), edited_name(type)});
         set_value(configs[type], p.key, p.text);
+        keys.push_back({type, p.key});
+        requested.insert(p.key);
         const std::string shown = p.param->kind == Kind::Enum ? p.text
                                 : p.param->kind == Kind::Bool ? (p.value != 0 ? "oui" : "non")
                                                               : format_number(p.value, p.param->kind) + " " + p.param->unit;
         summary += std::string(summary.empty() ? "" : ", ") + p.param->label + " → " + shown;
     }
 
-    // 3. Écriture.
-    load_into_tabs(configs);
+    // 3. Règles d'Orca : refus avant toute écriture, ou réglages ajoutés (première couche qui suit la température).
+    const ConfigRules::Outcome rules = orca_rules(configs, requested);
+    if (!rules.ok)
+        return {{"ok", false}, {"text", rules.text}, {"code", "orca_rule"}};
+    std::string added_text;
+    for (const ConfigRules::Added& a : rules.added) {
+        const Preset::Type type = a.scope == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
+        if (!Catalog::policy().allows(a.scope, a.key) || edited_config(type).option(a.key) == nullptr)
+            return {{"ok", false}, {"code", "orca_rule"},
+                    {"text", "Refusé : il faudrait aussi changer « " + label_of(a.key) + " » (" + a.why + "), un réglage que l'assistant ne modifie pas. Aucune modification appliquée."}};
+        if (const Catalog::CheckResult hard = Catalog::check_hard(label_of(a.key), a.key, {Catalog::policy().kind(a.scope, a.key), {}, {}, {}}, a.value, nullptr, 0); !hard.ok)
+            return {{"ok", false}, {"text", hard.text}, {"code", "orca_rule"}};
+        if (!configs.count(type))
+            configs.emplace(type, edited_config(type));
+        set_value(configs[type], a.key, a.serialized);
+        keys.push_back({type, a.key});
+        added_text += std::string(added_text.empty() ? "" : ", ") + label_of(a.key) + " → " + a.serialized + " (" + a.why + ")";
+    }
+
+    // 4. Écriture, relecture, annulation.
+    const Batch batch = write_batch(configs, keys);
+    if (!batch.ok)
+        return {{"ok", false}, {"text", batch.text}, {"code", "orca_refused"}, {"orca_refused", batch.orca_refused}};
     const int id = s_next_undo_id++;
-    s_undo_stack.push_back({id, std::move(saved), std::string()});
+    s_undo_stack.push_back({id, batch.saved, std::string()});
     BOOST_LOG_TRIVIAL(info) << "Plyo: modifications appliquées : " << summary;
-    return {{"ok", true}, {"text", "Appliqué : " + summary + "."}, {"undo_id", id}};
+    return {{"ok", true}, {"text", "Appliqué : " + summary + "." + (added_text.empty() ? "" : " J'ai aussi réglé : " + added_text + ".") + also_text(batch.also)},
+            {"undo_id", id}, {"also_changed", batch.also}};
 }
 
 nlohmann::json typed_value_of(const DynamicPrintConfig& config, const std::string& key, const std::string& kind)
@@ -450,13 +745,9 @@ nlohmann::json read_snapshot()
     for (const char* scope : {"print", "filament"}) {
         const DynamicPrintConfig& config = edited_config(std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT);
         for (const std::string& key : policy.keys(scope))
-            if (config.option(key) != nullptr) {
-                nlohmann::json value = typed_value_of(config, key, policy.kind(scope, key));
+            if (config.option(key) != nullptr)
                 // Surcharge du filament « nil » (ex. rétraction) : la valeur qui compte est celle de l'imprimante.
-                if (value.is_null() && key.rfind("filament_", 0) == 0)
-                    value = typed_value_of(edited_configs().printer, key.substr(9), policy.kind(scope, key));
-                snapshot[key] = value;
-            }
+                snapshot[key] = snapshot_value(std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT, key, policy.kind(scope, key));
     }
     return snapshot;
 }
@@ -488,9 +779,11 @@ nlohmann::json snapshot_raw()
 
 nlohmann::json restore_values(const nlohmann::json& values)
 {
-    const Catalog::Policy&                     policy = Catalog::policy();
-    std::vector<SavedValue>                     saved;
-    std::map<Preset::Type, DynamicPrintConfig> configs;
+    if (const nlohmann::json busy = orca_dialog_refusal(); !busy.is_null())
+        return busy;
+    const Catalog::Policy&                            policy = Catalog::policy();
+    std::vector<std::pair<Preset::Type, std::string>> keys;
+    std::map<Preset::Type, DynamicPrintConfig>        configs;
     for (const char* scope : {"print", "filament"}) {
         const Preset::Type type = std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
         const nlohmann::json one = Json::obj(values, scope);
@@ -506,32 +799,71 @@ nlohmann::json restore_values(const nlohmann::json& values)
             } catch (const std::exception&) {
                 return {{"ok", false}, {"text", "Je n'ai pas pu relire « " + key + " » dans la version fiable : rien n'a été remis."}};
             }
-            saved.push_back({type, key, edited_config(type).opt_serialize(key), edited_name(type)});
+            keys.push_back({type, key});
         }
     }
-    if (saved.empty())
+    if (keys.empty())
         return {{"ok", true}, {"text", "Tes réglages sont déjà ceux de ta dernière version fiable."}};
-    const size_t count = saved.size();
-    load_into_tabs(configs);
+    const size_t count = keys.size();
+    const Batch  batch = write_batch(configs, keys);
+    if (!batch.ok)
+        return {{"ok", false}, {"text", batch.text}, {"code", "orca_refused"}, {"orca_refused", batch.orca_refused}};
     const int id = s_next_undo_id++;
-    s_undo_stack.push_back({id, std::move(saved), std::string()});
-    return {{"ok", true}, {"text", std::to_string(count) + (count > 1 ? " réglages remis" : " réglage remis") + " comme dans ta dernière version fiable."}, {"undo_id", id}};
+    s_undo_stack.push_back({id, batch.saved, std::string()});
+    return {{"ok", true},
+            {"text", std::to_string(count) + (count > 1 ? " réglages remis" : " réglage remis") + " comme dans ta dernière version fiable." + also_text(batch.also)},
+            {"undo_id", id}, {"also_changed", batch.also}};
 }
 
 nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::string& print_name, const std::string& filament_name)
 {
-    const auto refused = [](const std::string& text) { return nlohmann::json{{"ok", false}, {"text", text}}; };
+    // `key` : le réglage en cause (le panneau propose « Montre-moi ce réglage ») ; `code` : needs_confirmation (une
+    // confirmation suffirait), orca_rule (règle d'Orca), orca_refused (Orca l'a remis après l'écriture), orca_dialog.
+    const auto refused = [](const std::string& text, const std::string& code = std::string(), const std::string& key = std::string()) {
+        nlohmann::json out{{"ok", false}, {"text", text}};
+        if (!code.empty())
+            out["code"] = code;
+        if (!key.empty())
+            out["key"] = key;
+        return out;
+    };
     if (!changes.is_array() || changes.empty())
         return refused("Refusé : aucune modification reçue.");
+    if (const nlohmann::json busy = orca_dialog_refusal(); !busy.is_null())
+        return busy;
     // Un autre profil que celui de la proposition : les valeurs d'avant ne seraient plus les bonnes.
     if (print_name != edited_name(Preset::TYPE_PRINT) || filament_name != edited_name(Preset::TYPE_FILAMENT))
         return refused("Tu as changé de profil depuis la proposition : redemande-moi, je regarde les réglages d'aujourd'hui. Aucune modification appliquée.");
 
-    const Catalog::Policy&   policy = Catalog::policy();
-    const Limits::Range      limits = Limits::current();
-    struct Planned { std::string key, label, text, kind; Preset::Type type; nlohmann::json value; };
-    std::vector<Planned>     planned;
+    const Catalog::Policy& policy = Catalog::policy();
+    const Limits::Range    limits = Limits::current();
+    const double           nozzle = first_value(edited_configs().printer, "nozzle_diameter").value_or(0);
+    struct Planned { std::string key, label, text, kind; Preset::Type type; nlohmann::json value, before; bool confirmed; std::string why; };
+    std::vector<Planned>   planned;
     std::vector<std::string> seen;
+
+    // Contrôle d'un changement (du lot, ou ajouté par une règle d'Orca) : catalogue, bornes, dernière barrière.
+    // Rend un refus, ou null et le changement prévu.
+    const auto check = [&](const std::string& key, const std::string& scope, const nlohmann::json& value, const std::string& label,
+                           bool confirmed_outside, bool confirmed, Planned& out) -> nlohmann::json {
+        const Preset::Type        type   = scope == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
+        const DynamicPrintConfig& config = edited_config(type);
+        const Slic3r::ConfigOptionDef* def = config.def() ? config.def()->get(key) : nullptr;
+        if (def == nullptr || config.option(key) == nullptr)
+            return refused("Refusé : « " + label + " » n'existe pas dans ce profil. Aucune modification appliquée.", "", key);
+        Catalog::OptionInfo info{policy.kind(scope, key), std::nullopt, std::nullopt, def->enum_values};
+        if (def->min > -1e9f) info.min = def->min;
+        if (def->max < 1e9f) info.max = def->max;
+        const nlohmann::json   current = snapshot_value(type, key, info.kind);
+        const Catalog::Verdict verdict = Catalog::check_barrier(policy, label, key, info, value, current, nozzle, limits, confirmed_outside, confirmed);
+        if (!verdict.check.ok)
+            return refused(verdict.check.text, verdict.code, key);
+        const std::string text = Catalog::to_serialized(info, value);
+        if (text.empty())
+            return refused("Refusé : valeur illisible pour « " + label + " ». Aucune modification appliquée.", "", key);
+        out = {key, label, text, info.kind, type, value, typed_value_of(config, key, info.kind), confirmed, ""};
+        return nullptr;
+    };
 
     // 1. Validation complète avant toute écriture (tout ou rien).
     for (const nlohmann::json& change : changes) {
@@ -542,56 +874,75 @@ nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::s
         if (std::find(seen.begin(), seen.end(), key) != seen.end())
             return refused("Refusé : « " + key + " » est demandé deux fois. Aucune modification appliquée.");
         seen.push_back(key);
-
-        const Preset::Type        type   = std::string(scope) == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
-        const DynamicPrintConfig& config = edited_config(type);
-        const Slic3r::ConfigOptionDef* def = config.def() ? config.def()->get(key) : nullptr;
-        if (def == nullptr || config.option(key) == nullptr)
-            return refused("Refusé : « " + key + " » n'existe pas dans ce profil. Aucune modification appliquée.");
-
-        Catalog::OptionInfo info{policy.kind(scope, key), std::nullopt, std::nullopt, def->enum_values};
-        if (def->min > -1e9f) info.min = def->min;
-        if (def->max < 1e9f) info.max = def->max;
-        // La hauteur de couche reste sous 75 % de la buse (comme pour les réglages d'origine).
-        if (key == "layer_height")
-            if (const std::optional<double> nozzle = first_value(edited_configs().printer, "nozzle_diameter"); nozzle && *nozzle > 0)
-                info.max = std::min(info.max.value_or(1e9), std::floor(*nozzle * 0.75 * 100 + 1e-6) / 100);
-
         const std::string label = Json::str(change, "label").empty() ? key : Json::str(change, "label");
-        const nlohmann::json value = change.contains("value") ? change["value"] : nlohmann::json();
-        const bool confirmed = change.contains("confirmed_outside_range") && change["confirmed_outside_range"] == true;
-        // Plafond Plyo : s'applique même avec une sortie de plage confirmée.
-        if (const Catalog::CheckResult capped = Catalog::check_temperature_cap(label, key, value); !capped.ok)
-            return refused(capped.text);
-        const Catalog::CheckResult checked = Catalog::check_change(label, info, value, limits, Catalog::limit_id_of(key), confirmed);
-        if (!checked.ok)
-            return refused(checked.text);
-        const std::string text = Catalog::to_serialized(info, value);
-        if (text.empty())
-            return refused("Refusé : valeur illisible pour « " + label + " ». Aucune modification appliquée.");
-        planned.push_back({key, label, text, info.kind, type, value});
+        // `confirmed` : la ligne a été cochée à la main, ou le bouton cliqué annonçait cette valeur. `confirmed_outside_range` :
+        // sortie de la plage du fabricant confirmée de la même façon.
+        Planned p;
+        const nlohmann::json bad = check(key, scope, change.contains("value") ? change["value"] : nlohmann::json(), label,
+                                         Json::boolean(change, "confirmed_outside_range", false), Json::boolean(change, "confirmed", false), p);
+        if (!bad.is_null())
+            return bad;
+        planned.push_back(p);
     }
 
-    // 2. Valeurs d'avant (annulation), nouvelles configs.
-    std::vector<SavedValue>                     saved;
+    // 2. Règles d'Orca sur l'état prévu : refus, ou réglages ajoutés (contrôlés comme les autres, avec la confirmation du
+    // réglage qui les exige).
     std::map<Preset::Type, DynamicPrintConfig> configs;
-    nlohmann::json                              applied = nlohmann::json::array();
-    std::string                                 summary;
+    std::set<std::string>                      requested;
     for (const Planned& p : planned) {
         if (!configs.count(p.type))
             configs.emplace(p.type, edited_config(p.type));
-        saved.push_back({p.type, p.key, edited_config(p.type).opt_serialize(p.key), edited_name(p.type)});
-        applied.push_back({{"id", p.key}, {"label", p.label}, {"before", typed_value_of(edited_config(p.type), p.key, p.kind)}, {"after", p.value}});
         set_value(configs[p.type], p.key, p.text);
-        summary += std::string(summary.empty() ? "" : ", ") + p.label + " → " + p.text;
+        requested.insert(p.key);
+    }
+    const ConfigRules::Outcome rules = orca_rules(configs, requested);
+    if (!rules.ok)
+        return refused(rules.text, "orca_rule");
+    for (const ConfigRules::Added& a : rules.added) {
+        const auto trigger = std::find_if(planned.begin(), planned.end(), [&](const Planned& p) { return p.key == a.trigger; });
+        if (!policy.allows(a.scope, a.key))
+            return refused("Refusé : " + (trigger != planned.end() ? "« " + trigger->label + " »" : std::string("ce lot")) + " demande aussi de changer « " +
+                               label_of(a.key) + " » (" + a.why + "), un réglage que l'assistant ne modifie pas. Fais ce changement dans Orca : il te "
+                               "proposera de tout régler d'un coup. Aucune modification appliquée.",
+                           "orca_rule", a.trigger);
+        Planned p;
+        const nlohmann::json bad = check(a.key, a.scope, a.value, label_of(a.key), false, trigger != planned.end() && trigger->confirmed, p);
+        if (!bad.is_null())
+            return bad;
+        p.why = a.why;
+        if (!configs.count(p.type))
+            configs.emplace(p.type, edited_config(p.type));
+        set_value(configs[p.type], p.key, p.text);
+        planned.push_back(p);
     }
 
-    // 3. Écriture (le profil est marqué « modifié » ; l'enregistrement vient après).
-    load_into_tabs(configs);
+    // 3. Écriture (le profil est marqué « modifié » ; l'enregistrement vient après), relecture, annulation.
+    std::vector<std::pair<Preset::Type, std::string>> keys;
+    for (const Planned& p : planned)
+        keys.push_back({p.type, p.key});
+    const Batch batch = write_batch(configs, keys);
+    if (!batch.ok) {
+        nlohmann::json out = refused(batch.text, "orca_refused", batch.orca_refused.empty() ? std::string() : batch.orca_refused[0].value("key", std::string()));
+        out["orca_refused"] = batch.orca_refused;
+        return out;
+    }
+    nlohmann::json applied = nlohmann::json::array();
+    std::string    summary, added;
+    for (const Planned& p : planned) {
+        nlohmann::json a = {{"id", p.key}, {"label", p.label}, {"before", p.before}, {"after", p.value}};
+        if (!p.why.empty()) {
+            a["added"] = p.why;
+            added += std::string(added.empty() ? "" : ", ") + p.label + " → " + p.text + " (" + p.why + ")";
+        } else
+            summary += std::string(summary.empty() ? "" : ", ") + p.label + " → " + p.text;
+        applied.push_back(a);
+    }
     const int id = s_next_undo_id++;
-    s_undo_stack.push_back({id, std::move(saved), std::string()});
-    BOOST_LOG_TRIVIAL(info) << "Plyo: réglages du catalogue appliqués : " << summary;
-    return {{"ok", true}, {"text", "Appliqué : " + summary + "."}, {"undo_id", id}, {"applied", applied}};
+    s_undo_stack.push_back({id, batch.saved, std::string()});
+    BOOST_LOG_TRIVIAL(info) << "Plyo: réglages du catalogue appliqués : " << summary << (added.empty() ? "" : " ; ajoutés : " + added);
+    return {{"ok", true},
+            {"text", "Appliqué : " + summary + "." + (added.empty() ? "" : " J'ai aussi réglé : " + added + ".") + also_text(batch.also)},
+            {"undo_id", id}, {"applied", applied}, {"also_changed", batch.also}};
 }
 
 void set_memory_key(int undo_id, const std::string& key)
@@ -603,31 +954,75 @@ void set_memory_key(int undo_id, const std::string& key)
 
 nlohmann::json undo_last(int expected_id)
 {
-    if (s_undo_stack.empty())
-        return {{"ok", false}, {"text", "Ce changement ne peut plus être annulé ici (un import ou une calibration est passé depuis). Remets la valeur à la main si besoin."}};
-    if (expected_id > 0 && s_undo_stack.back().id != expected_id) {
-        const bool known = std::any_of(s_undo_stack.begin(), s_undo_stack.end(), [&](const UndoEntry& e) { return e.id == expected_id; });
-        return {{"ok", false}, {"text", known ? "Un changement plus récent a été appliqué depuis : annule-le d'abord."
-                                              : "Ce changement ne peut plus être annulé ici (un import ou une calibration est passé depuis). Remets la valeur à la main si besoin."}};
+    if (const nlohmann::json busy = orca_dialog_refusal(); !busy.is_null())
+        return busy;
+    const bool known = std::any_of(s_undo_stack.begin(), s_undo_stack.end(), [&](const UndoEntry& e) { return e.id == expected_id; });
+    if (s_undo_stack.empty() || (expected_id > 0 && !known)) {
+        // Pourquoi il n'est plus là, et ses valeurs d'avant, à remettre une par une si l'utilisateur le veut.
+        const auto dropped = std::find_if(s_dropped.rbegin(), s_dropped.rend(), [&](const DroppedEntry& d) { return expected_id > 0 && d.id == expected_id; });
+        if (dropped == s_dropped.rend())
+            return {{"ok", false}, {"code", "undo_gone"}, {"text", "Ce changement ne peut plus être annulé ici : Plyo a été relancé depuis, ou il est trop ancien."}};
+        const char* why = dropped->reason == DropReason::Project      ? "un autre projet a été ouvert dans Orca depuis"
+                        : dropped->reason == DropReason::Conversation ? "tu es passé à un autre projet de l'assistant depuis, et ces réglages sont restés avec le précédent"
+                        : dropped->reason == DropReason::Import       ? "un fichier a été ouvert depuis, et ses réglages ont remplacé ceux-là"
+                        : dropped->reason == DropReason::Calibration  ? "une calibration a remis ses propres réglages depuis"
+                                                                      : "tu as changé d'imprimante ou de filament depuis";
+        const nlohmann::json offer = restore_offer(dropped->saved);
+        return {{"ok", false}, {"code", "undo_gone"}, {"restore", offer},
+                {"text", std::string("Ce changement ne peut plus être annulé ici : ") + why + "." +
+                             (offer.empty() ? "" : " Je peux remettre les valeurs d'avant, une à une.")}};
     }
+    if (expected_id > 0 && s_undo_stack.back().id != expected_id)
+        return {{"ok", false}, {"code", "undo_newer"}, {"text", "Un changement plus récent a été appliqué depuis : annule-le d'abord."}};
 
     // Changement de filament ou de profil depuis : remettre les anciennes valeurs écrirait dans le mauvais préréglage.
     for (const SavedValue& v : s_undo_stack.back().saved)
-        if (v.preset_name != edited_name(v.preset))
-            return {{"ok", false},
+        if (v.preset_name != edited_name(v.preset)) {
+            const nlohmann::json offer = restore_offer(s_undo_stack.back().saved);
+            return {{"ok", false}, {"code", "undo_profile"}, {"restore", offer},
                     {"text", "Tu as changé de " + std::string(v.preset == Preset::TYPE_PRINT ? "profil d'impression" : "filament") +
-                                 " depuis : je ne peux plus annuler ici sans risque. Repasse sur « " + v.preset_name + " » pour annuler, ou remets la valeur à la main."}};
+                                 " depuis : je ne peux plus annuler ce lot sans risque." +
+                                 (offer.empty() ? std::string() : " Je peux remettre les valeurs d'avant sur « " + edited_name(v.preset) + " », une à une.")}};
+        }
 
-    std::map<Preset::Type, DynamicPrintConfig> configs;
-    for (const SavedValue& v : s_undo_stack.back().saved) {
+    // Un réglage retouché à la main depuis le lot n'est pas écrasé : il est laissé tel quel, et la réponse le dit.
+    const UndoEntry                    entry = s_undo_stack.back();
+    std::map<std::string, std::string> after, current;
+    const auto                         id_of = [](const SavedValue& v) { return std::string(scope_name(v.preset)) + "/" + v.key; };
+    for (const SavedValue& v : entry.saved) {
+        after[id_of(v)]   = v.after;
+        current[id_of(v)] = edited_config(v.preset).opt_serialize(v.key);
+    }
+    const std::vector<std::string>                    touched = ConfigRules::retouched(after, current);
+    std::map<Preset::Type, DynamicPrintConfig>        configs;
+    std::vector<std::pair<Preset::Type, std::string>> keys;
+    nlohmann::json                                    kept = nlohmann::json::array();
+    for (const SavedValue& v : entry.saved) {
+        if (std::find(touched.begin(), touched.end(), id_of(v)) != touched.end()) {
+            kept.push_back({{"key", v.key}, {"label", label_of(v.key)}, {"value", shown_value(v.preset, v.key, current[id_of(v)])}});
+            continue;
+        }
         if (!configs.count(v.preset))
             configs.emplace(v.preset, edited_config(v.preset));
         configs[v.preset].set_deserialize_strict(v.key, v.serialized);
+        keys.push_back({v.preset, v.key});
     }
-    const UndoEntry undone = s_undo_stack.back();
+    std::string kept_text;
+    for (const nlohmann::json& k : kept)
+        kept_text += (kept_text.empty() ? "« " : ", « ") + k.value("label", std::string()) + " »";
+    const std::string after_text = (kept_text.empty() ? std::string() : " J'ai laissé tels quels les réglages que tu as retouchés depuis : " + kept_text + ".") +
+                                   (entry.print_dropped ? " Les réglages d'impression de ce lot sont restés avec le projet d'avant." : "");
+    Batch batch;
+    batch.ok = true;
+    if (!keys.empty()) {
+        batch = write_batch(configs, keys);
+        if (!batch.ok)
+            return {{"ok", false}, {"code", "orca_refused"}, {"orca_refused", batch.orca_refused}, {"text", batch.text}};
+    }
     s_undo_stack.pop_back();
-    load_into_tabs(configs);
-    return {{"ok", true}, {"text", "Annulé : valeurs d'avant remises."}, {"undone_id", undone.id}, {"memory_key", undone.memory_key}};
+    const std::string text = keys.empty() ? "Rien à remettre : tu as retouché ces réglages depuis, je les laisse tels quels."
+                                          : "Annulé : valeurs d'avant remises." + after_text + also_text(batch.also);
+    return {{"ok", true}, {"text", text}, {"undone_id", entry.id}, {"memory_key", entry.memory_key}, {"kept", kept}, {"also_changed", batch.also}};
 }
 
 bool filament_only(const nlohmann::json& changes)

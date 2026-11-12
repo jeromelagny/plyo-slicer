@@ -563,7 +563,9 @@
   var lastGauge = null;      // dernière jauge reçue du service ({ plan, used_pct, resets_at, extra_pct, state })
   var attachments = [];      // [{ media_type, data, preview }]
   var busy = false;
-  var pendingSheet = null;   // fiche dont on attend le résultat d'application ou d'annulation
+  var pendingSheet = null;   // gestionnaire de la prochaine demande envoyée par postRequest (application, annulation, calibration)
+  var pendingResults = {};   // identifiant de demande → gestionnaire : chaque « result » va à la demande qui le porte, et à elle seule
+  var nextRequest = 1;
   var undoneListeners = {};  // identifiant d'un lot appliqué → fiche à prévenir s'il est annulé (même depuis le menu)
   var phoneLink = null;      // lien téléphone de la conversation : { id, qr_svg }
   var phoneTimer = null;
@@ -1780,14 +1782,15 @@
     if (!st.changes.length) { done(null); return; }
     var names = Logic.namesForApply(null, lastValues && lastValues.context);
     pendingSheet = { kind: 'apply', onResult: function (ok, text, result) { if (!ok) { releaseIntent(); noteLine(text, 'error', 'alert', 'guide'); return; } done(result); } };
-    window.orca.postMessage({ type: 'apply', changes: st.changes.map(function (c) { return { key: c.key, value: c.value, label: c.label }; }),
+    // Valeurs de la table du panneau (intent-logic.js), jamais de l'IA, annoncées par le résumé que l'utilisateur valide : confirmées.
+    postRequest({ type: 'apply', changes: Logic.confirmedChanges(st.changes.map(function (c) { return { key: c.key, value: c.value, label: c.label }; })),
       print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: 'Intention : ' + st.summary.sentence.replace(/ :$/, '') });
   }
   // « Annuler » du lot de l'intention : réglages d'avant remis, puis retour au résumé (« Appliquer et préparer ») de l'étape Préparer.
   function intentUndoButton(undoId, mine) {
     var b = undoButton('Annuler', function () {
       pendingSheet = { kind: 'undo', onResult: function (ok, text) { if (!ok) { b.disabled = false; noteLine(text, 'error', 'alert', 'guide'); } } };
-      window.orca.postMessage({ type: 'undo', undo_id: undoId });
+      postRequest({ type: 'undo', undo_id: undoId });
     });
     undoneListeners[undoId] = function () {
       if (intentUI.doneLine) { intentUI.doneLine.remove(); intentUI.doneLine = null; }
@@ -1854,7 +1857,7 @@
       if (b !== null) changes.push({ id: 'bed_temp', value: b }, { id: 'bed_temp_initial', value: b });
       if (!changes.length) { renderProject(); if (done) done(true); return; }
       pendingSheet = { kind: 'apply', onResult: function (ok, text) { if (done) done(ok, text); else if (!ok) noteLine(text, 'error', 'alert', 'guide'); } };
-      window.orca.postMessage({ type: 'apply', project_edit: true, changes: changes, why: 'Étiquette de la bobine' });
+      postRequest({ type: 'apply', project_edit: true, changes: changes, why: 'Étiquette de la bobine' });
       projectUI.pending = { kind: 'temps' };
       window.orca.postMessage({ type: 'project_state' });
     },
@@ -2753,7 +2756,7 @@
               noteLine(ok ? 'Réglages de « ' + g.part + ' » réappliqués.' : text, ok ? 'ok' : 'error', ok ? 'check' : 'alert');
               if (ok) closeDrawer(); else re.disabled = false;
             } };
-            window.orca.postMessage({ type: 'apply', changes: again, why: 'Journal : ' + g.part });
+            postRequest({ type: 'apply', changes: again, why: 'Journal : ' + g.part });
           }, 'btn ghost sm', 'wand');
           re.title = fr('Remettre ces réglages sur ton profil actuel');
           acts.appendChild(re);
@@ -3209,14 +3212,15 @@
           fixed.remove();
           noteLine('Réglage d’avant remis : découpe à nouveau quand tu veux.', '', 'undo', 'guide');
         } };
-        window.orca.postMessage({ type: 'undo', undo_id: undoId });
+        postRequest({ type: 'undo', undo_id: undoId });
       }));
       fixed.body.appendChild(row);
       box.replaceWith(fixed);
       if (conv === mine) plateAction('slice');
       done(true);
     } };
-    window.orca.postMessage({ type: 'apply', changes: a.changes, print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: 'Correction demandée par Orca' });
+    // Le bouton annonce la valeur (« Mettre la hauteur de couche à 0,2 mm ») : son clic vaut confirmation.
+    postRequest({ type: 'apply', changes: Logic.confirmedChanges(a.changes), print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: 'Correction demandée par Orca' });
   }
   // Ligne d'étape avec ses boutons (découpe sans nouvelle, découpe arrêtée, export en échec).
   function orcaNote(view, tone) {
@@ -3546,7 +3550,7 @@
       var undo = button('Annuler', function () {
         undo.disabled = true;
         pendingSheet = { kind: 'undo', onResult: function (ok, text) { if (!ok) { undo.disabled = false; noteLine(text, 'error', 'alert'); } } };
-        window.orca.postMessage({ type: 'undo', undo_id: a.undo_id });
+        postRequest({ type: 'undo', undo_id: a.undo_id });
       }, 'btn ghost sm', 'undo');
       box.body.appendChild(undo);
     }
@@ -3638,6 +3642,56 @@
     send(next.message, { photos: next.photos, fromPhone: true });
   }
 
+  // Demande qui attend un « result » (apply, undo, calib_*) : le gestionnaire posé juste avant dans `pendingSheet` lui est
+  // attaché par un identifiant, que le slicer renvoie tel quel. Une réponse sans rapport (autre demande, erreur générale) ne
+  // peut donc plus déverrouiller ni marquer une fiche.
+  function postRequest(message) {
+    var waiting = pendingSheet;
+    pendingSheet = null;
+    if (waiting) { message.request = nextRequest++; waiting.message = message; pendingResults[message.request] = waiting; }
+    window.orca.postMessage(message);
+  }
+  // Annulation refusée : les valeurs d'avant, un bouton par réglage (« Remettre … à … »), un pour tout le lot, et
+  // « Montre-moi où il est ». Chaque remise est un nouveau lot vérifié par le slicer, avec son « Annuler ».
+  // `into` : la fiche qui a demandé l'annulation (l'offre s'y affiche, sous son message) ; sinon une ligne de la discussion.
+  function restoreOffer(list, into) {
+    var items = (Array.isArray(list) ? list : []).filter(function (r) { return r && r.key; });
+    if (!items.length) return null;
+    var lead = items.length > 1 ? 'Je peux remettre les valeurs d’avant :' : 'Je peux remettre la valeur d’avant :', line;
+    if (into) { line = el('div', 'note-line restore-offer'); line.appendChild(icon('undo', 14)); line.appendChild(el('span', 'note-text', lead)); into.appendChild(line); }
+    else line = noteLine(lead, '', 'undo', 'chat');
+    var acts = el('div', 'row-acts');
+    function put(group, b) {
+      b.disabled = true;
+      var names = Logic.namesForApply(null, lastValues && lastValues.context);
+      pendingSheet = { kind: 'apply', extras: false, onResult: function (ok, text, result) {
+        if (!ok) { b.disabled = false; noteLine(text, 'error', 'alert', 'chat'); return; }
+        line.remove();
+        var done = noteLine(group.length > 1 ? 'Valeurs d’avant remises.' : 'Remis : ' + group[0].label + ' à ' + Logic.valueText(group[0].value, group[0].key) + '.', 'ok', 'check', 'chat');
+        if (result && result.undo_id) done.appendChild(undoButton('Annuler', function (u) {
+          pendingSheet = { kind: 'undo', onResult: function (okU, t) { if (!okU) { u.disabled = false; noteLine(t, 'error', 'alert', 'chat'); } else done.remove(); } };
+          postRequest({ type: 'undo', undo_id: result.undo_id });
+        }));
+      } };
+      postRequest({ type: 'apply', revert: true, changes: Logic.restoreChanges(group), print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: 'Valeur d’avant remise' });
+    }
+    items.slice(0, 4).forEach(function (r) { var b = button(Logic.restoreLabel(r), function () { put([r], b); }, 'btn ghost sm', 'undo'); acts.appendChild(b); });
+    if (items.length > 1) { var all = button('Tout remettre comme avant', function () { put(items, all); }, 'btn sm', 'undo'); acts.appendChild(all); }
+    acts.appendChild(button('Montre-moi où il est', function () { window.orca.postMessage({ type: 'show_setting', key: items[0].key }); }, 'link'));
+    line.appendChild(acts);
+    if (into) line.scrollIntoView({ block: 'end' }); // l'offre suit le message de refus, sous la fiche
+    return line;
+  }
+  // Lot refusé : ses issues (réessayer, confirmer, montrer le réglage) sous le message. `retry(confirmKey)` relance le lot.
+  function refusalButtons(result, retry) {
+    var acts = el('div', 'row-acts');
+    Logic.refusalActions(result).forEach(function (a) {
+      if (a.kind === 'show') acts.appendChild(button(a.label, function () { window.orca.postMessage({ type: 'show_setting', key: a.key }); }, 'link', 'eye'));
+      else if (retry) { var b = button(a.label, function () { b.disabled = true; retry(a.kind === 'confirm' ? a.key : null); }, 'btn ghost sm', a.kind === 'retry' ? '' : 'check'); acts.appendChild(b); }
+    });
+    return acts.children.length ? acts : null;
+  }
+
   // « Annuler » : toujours le même petit bouton discret avec son icône, à droite de « Fait ✓ ».
   function undoButton(label, onClick) {
     var b = button(label || 'Annuler', function () { b.disabled = true; onClick(b); }, 'btn ghost sm', 'undo');
@@ -3668,14 +3722,14 @@
     var start = button('Lancer le test', function () {
       start.disabled = true;
       pendingSheet = { kind: 'calib', onResult: function (ok, t) { if (!ok) { start.disabled = false; noteLine(t, 'error', 'alert'); } } };
-      window.orca.postMessage({ type: 'calib_start', test: offer.test, pass: 1 });
+      postRequest({ type: 'calib_start', test: offer.test, pass: 1 });
     }, secondary ? 'btn ghost sm' : 'btn sm', 'target');
     box.body.appendChild(el('div', 'row-acts')).appendChild(start);
     return box;
   }
 
   function onCalibStarted(msg) {
-    pendingSheet = null;
+    delete pendingResults[msg.request];
     if (calibCard) calibCard.box.remove();
     showConversation();
     var info = CALIB[msg.test];
@@ -3818,7 +3872,7 @@
       action.disabled = true;
       if (msg.test === 'flow' && msg.pass === 1) {
         pendingSheet = { kind: 'calib', onResult: function (ok, t) { if (!ok) { action.disabled = false; status.textContent = fr(t); } } };
-        window.orca.postMessage({ type: 'calib_start', test: 'flow', pass: 2, base_value: choice.value });
+        postRequest({ type: 'calib_start', test: 'flow', pass: 2, base_value: choice.value });
         return;
       }
       pendingSheet = { kind: 'calib_save', onResult: function (ok, t) {
@@ -3835,7 +3889,7 @@
           on.dataset.keep = '1';
           var activate = function () {
             pendingSheet = { kind: 'apply', onResult: function (okOn, tt) { on.replaceWith(okOn ? doneLabel('Lissage activé') : el('span', 'fail-text', tt)); } };
-            window.orca.postMessage({ type: 'apply', changes: [{ id: 'ironing_type', value: 'top' }], why: 'Plaque de lissage' });
+            postRequest({ type: 'apply', changes: [{ id: 'ironing_type', value: 'top' }], why: 'Plaque de lissage' });
           };
           on.addEventListener('click', function () {
             on.disabled = true;
@@ -3845,7 +3899,7 @@
           footer.appendChild(on);
         }
       } };
-      window.orca.postMessage({ type: 'calib_save', test: msg.test, value: choice.value });
+      postRequest({ type: 'calib_save', test: msg.test, value: choice.value });
     });
     back.addEventListener('click', function () { restoreCalibration(back); });
   }
@@ -3859,7 +3913,7 @@
       noteLine(t, 'ok', 'check');
       if (after) after(true);
     } };
-    window.orca.postMessage({ type: 'calib_restore' });
+    postRequest({ type: 'calib_restore' });
   }
 
   // ---------- Premiers pas : parcours « Ma première impression », « Tu regardes », fiches ----------
@@ -4024,7 +4078,7 @@
           undo.replaceWith(done);
         } };
         // Sans « ask » : un retour en arrière ne doit pas reposer la question « Ça a marché ? ».
-        window.orca.postMessage({ type: 'apply', revert: true, changes: revert, why: 'Retour aux réglages d’avant' + (item.why ? ' (' + item.why + ')' : '') });
+        postRequest({ type: 'apply', revert: true, changes: revert, why: 'Retour aux réglages d’avant' + (item.why ? ' (' + item.why + ')' : '') });
       }, 'btn', 'undo');
       acts.appendChild(undo);
     }
@@ -4273,7 +4327,7 @@
               if (!ok && left.length === plateDone.length) { b.disabled = false; noteLine(t, 'error', 'alert'); return; }
               said(ok, ok ? '' : t);
             } };
-            window.orca.postMessage({ type: 'undo', undo_id: undoId });
+            postRequest({ type: 'undo', undo_id: undoId });
           }
           function said(settingsUndone, refused) {
             slot.textContent = '';
@@ -4293,7 +4347,7 @@
         undoId = (result && result.undo_id) || 0;
         next(0);
       } };
-      window.orca.postMessage({ type: 'apply', changes: changes, why: 'Vérification avant impression' });
+      postRequest({ type: 'apply', changes: changes, why: 'Vérification avant impression' });
     });
     slot.appendChild(box);
   }
@@ -4792,24 +4846,29 @@
     updateCount();
 
     function lock(locked) { rows.forEach(function (r) { r.box.disabled = locked; }); apply.disabled = locked; ignore.disabled = locked; }
+    // Réglages confirmés par l'utilisateur après un refus (« Je confirme, applique quand même ») ; une case cochée à la main
+    // vaut aussi confirmation (Logic.sheetChange).
+    var confirmedKeys = [];
 
     apply.addEventListener('click', function () {
       var picked = checked();
-      var changes = picked.map(function (r) {
-        // Réglage du catalogue : la case cochée à la main vaut confirmation s'il sort de la plage du fabricant.
-        if (r.s.catalog) return { key: r.s.id, value: r.s.value, label: r.s.label, confirmed_outside_range: !!r.s.beyond };
-        return r.s.delta !== null ? { id: r.s.id, delta: r.s.delta } : { id: r.s.id, value: r.s.value };
-      });
+      var changes = picked.map(function (r) { return Logic.sheetChange(r.s, confirmedKeys); });
       fail.classList.add('hidden');
       completeSlot.classList.add('hidden');
       lock(true);
-      pendingSheet = { kind: 'apply', onResult: function (ok, text, result) {
+      pendingSheet = { kind: 'apply', extras: true, onResult: function (ok, text, result) {
         if (!ok) {
           lock(false); updateCount(); fail.textContent = fr(text); fail.classList.remove('hidden');
           // La fiche reste applicable : une fois la machine et la bobine choisies, « Appliquer » marche depuis ici.
           var complete = completeProjectButton(result && result.missing);
           completeSlot.textContent = '';
           if (complete) { completeSlot.appendChild(complete); completeSlot.classList.remove('hidden'); }
+          // Refus de la dernière barrière ou d'Orca : réessayer, confirmer ce réglage, ou le montrer.
+          var fixes = refusalButtons(result, function (confirmKey) {
+            if (confirmKey && confirmedKeys.indexOf(confirmKey) < 0) confirmedKeys.push(confirmKey);
+            apply.click();
+          });
+          if (fixes) { while (fixes.firstChild) completeSlot.appendChild(fixes.firstChild); completeSlot.classList.remove('hidden'); }
           return;
         }
         completeSlot.textContent = '';
@@ -4824,29 +4883,38 @@
         footer.classList.add('undo-row');
         var preset = lastValues && lastValues.context ? lastValues.context.process : '';
         footer.appendChild(doneLabel('Appliqué'));
+        // Ce qui est réellement en place en plus des lignes cochées : réglages ajoutés par Plyo, réglages changés par Orca.
+        [Logic.addedText(result.applied), Logic.alsoChangedText(result.also_changed)].forEach(function (t) { if (t) footer.appendChild(el('p', 'small footnote orca-also', fr(t))); });
         var savedLine = Logic.savedText(result);
         if (savedLine) footer.appendChild(el('p', 'muted small footnote', fr(savedLine)));
         else if (preset) footer.appendChild(el('p', 'muted small footnote', 'Le préréglage « ' + preset + ' » est marqué modifié : enregistre-le si tu veux garder ces réglages.'));
-        function showUndone() {
+        function showUndone(done) {
           entry.applied = false;
           scheduleSave();
           footer.textContent = '';
           footer.appendChild(doneLabel('Réglages d’avant remis', 'undo'));
+          // Retouches faites à la main depuis : laissées telles quelles, et dit.
+          var kept = Logic.keptText(done && done.kept);
+          if (kept) footer.appendChild(el('p', 'small footnote', fr(kept)));
         }
         if (undoId) undoneListeners[undoId] = showUndone;
         footer.appendChild(undoButton('Annuler', function (undoBtn) {
-          pendingSheet = { kind: 'undo', onResult: function (okUndo, msg) {
+          pendingSheet = { kind: 'undo', extras: true, onResult: function (okUndo, msg, undoResult) {
             if (okUndo) return; // la fiche est prévenue par undoneListeners
+            // Annulation refusée : les valeurs d'avant, à remettre d'un clic, dans la fiche (une seule offre à la fois).
+            var previous = sheet.querySelector('.restore-offer');
+            if (previous) previous.remove();
+            restoreOffer(undoResult && undoResult.restore, sheet);
             undoBtn.disabled = false;
             fail.textContent = fr(msg);
             fail.classList.remove('hidden');
           } };
-          window.orca.postMessage({ type: 'undo', undo_id: undoId || 0 });
+          postRequest({ type: 'undo', undo_id: undoId || 0 });
         }));
       } };
       // `ask` : ces réglages viennent de l'IA, Plyo demandera plus tard si l'impression a marché.
       var names = Logic.namesForApply(entry.data, lastValues && lastValues.context);
-      window.orca.postMessage({ type: 'apply', changes: changes, print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: (entry.data.defect && entry.data.defect.name) || '',
+      postRequest({ type: 'apply', changes: changes, print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: (entry.data.defect && entry.data.defect.name) || '',
         ask: { conv: conv ? conv.id : '', defect: (entry.data.defect && entry.data.defect.key) || '' } });
     });
     ignore.addEventListener('click', function () { sheet.remove(); });
@@ -5003,12 +5071,34 @@
       if (firstValues) { askOutcome(); applyMachineQuestion(); } // au démarrage, une fois les libellés des réglages et la machine d'Orca connus
       window.orca.postMessage({ type: 'calib_history' }); // l'historique dépend du filament et de l'imprimante en cours
       drainPhoneQueue();
+    } else if (msg.type === 'error') {
+      // Erreur générale du slicer : seule la demande qui porte cet identifiant est prévenue ; sinon une simple ligne.
+      var failed = msg.request && pendingResults[msg.request];
+      if (failed) { delete pendingResults[msg.request]; failed.onResult(false, msg.text, msg); }
+      else noteLine(msg.text, 'error', 'alert');
     } else if (msg.type === 'result') {
       syncProjectNames(msg.saved);
       if (msg.can_restore) offerRestore();
-      if (msg.undone_id && undoneListeners[msg.undone_id]) { undoneListeners[msg.undone_id](); delete undoneListeners[msg.undone_id]; }
-      if (pendingSheet) { var p = pendingSheet; pendingSheet = null; p.onResult(msg.ok, msg.text, msg); }
+      if (msg.undone_id && undoneListeners[msg.undone_id]) { undoneListeners[msg.undone_id](msg); delete undoneListeners[msg.undone_id]; }
+      var waiting = msg.request && pendingResults[msg.request];
+      if (waiting) { delete pendingResults[msg.request]; waiting.onResult(msg.ok, msg.text, msg); }
       else noteLine(msg.text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert');
+      // Ce que le lot a vraiment fait, quand la fiche qui l'a demandé ne le montre pas elle-même : réglages ajoutés, réglages
+      // changés en plus par Orca, retouches laissées par l'annulation ; et, pour une annulation refusée, les valeurs d'avant.
+      if (!waiting || !waiting.extras) {
+        if (msg.ok) [Logic.addedText(msg.applied), Logic.alsoChangedText(msg.also_changed), Logic.keptText(msg.kept)].forEach(function (t) { if (t) noteLine(t, '', 'info'); });
+        else if (msg.restore && msg.restore.length) restoreOffer(msg.restore);
+        else if (waiting && waiting.message && waiting.message.type === 'apply') {
+          var fixes = refusalButtons(msg, function (confirmKey) {
+            var again = JSON.parse(JSON.stringify(waiting.message));
+            delete again.request;
+            if (confirmKey) (again.changes || []).forEach(function (c) { if (c.key === confirmKey) c.confirmed = true; });
+            pendingSheet = { kind: waiting.kind, extras: waiting.extras, onResult: waiting.onResult };
+            postRequest(again);
+          });
+          if (fixes) noteLine('Que veux-tu faire ?', '', 'info').appendChild(fixes);
+        }
+      }
       // Un lot appliqué : Orca peut le refuser ou prévenir (validation). On relit ce qu'il en dit, une fois le lot pris en compte.
       if (msg.ok && msg.undo_id && conv) {
         orcaUI.afterApply = { tries: 0, keys: (Array.isArray(msg.applied) ? msg.applied : []).map(function (a) { return a && a.id; }) };
