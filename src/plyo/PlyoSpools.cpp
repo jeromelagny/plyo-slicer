@@ -1,4 +1,5 @@
 #include "PlyoSpools.hpp"
+#include "PlyoCatalog.hpp"
 #include "PlyoFirstSteps.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoProfiles.hpp"
@@ -210,6 +211,14 @@ bool is_spool_preset(const std::string& filament_preset)
 
 nlohmann::json current()
 {
+    const nlohmann::json full = current_full();
+    if (full.empty())
+        return full;
+    return {{"id", full["id"]}, {"name", full["name"]}};
+}
+
+nlohmann::json current_full()
+{
     if (bundle() == nullptr)
         return nlohmann::json::object();
     const std::string filament = bundle()->filament_presets.empty() ? bundle()->filaments.get_selected_preset_name()
@@ -218,7 +227,66 @@ nlohmann::json current()
     const std::string    id  = SpoolsLogic::spool_of_preset(reg, filament);
     if (id.empty())
         return nlohmann::json::object();
-    return {{"id", id}, {"name", SpoolsLogic::spool_name(reg, id)}};
+    return {{"id", id}, {"name", SpoolsLogic::spool_name(reg, id)}, {"printer", current_printer()}, {"preset", filament}};
+}
+
+nlohmann::json preset_values(const std::string& preset)
+{
+    nlohmann::json out = nlohmann::json::object();
+    if (bundle() == nullptr || preset.empty())
+        return out;
+    Slic3r::PresetCollection& filaments = bundle()->filaments;
+    const Preset*             saved     = filaments.find_preset(preset, false);
+    if (saved == nullptr)
+        return out;
+    // Le préréglage ouvert dans l'onglet : ses valeurs du moment (ce qui part à l'imprimante), pas seulement l'enregistré.
+    const Slic3r::DynamicPrintConfig& config = filaments.get_edited_preset().name == preset ? filaments.get_edited_preset().config
+                                                                                             : saved->config;
+    for (const std::string& key : Catalog::policy().keys("filament"))
+        if (config.option(key) != nullptr)
+            out[key] = config.opt_serialize(key);
+    return out;
+}
+
+nlohmann::json read_version(bool ok, const std::string& id, const std::string& printer)
+{
+    if (id.empty() || printer.empty())
+        return nlohmann::json::object();
+    const nlohmann::json v = SpoolsLogic::sanitize_version(
+        Store::read(Store::dir(ok ? "fiable" : "essai") / (SpoolsLogic::version_stem(id, printer) + ".json")));
+    // Le nom du fichier vient d'une empreinte : on vérifie aussi que c'est bien cette bobine sur cette imprimante.
+    if (v.empty() || v["spool"] != id || v["printer"] != printer)
+        return nlohmann::json::object();
+    return v;
+}
+
+bool write_version(bool ok, const nlohmann::json& version)
+{
+    const nlohmann::json v = SpoolsLogic::sanitize_version(version);
+    if (v.empty())
+        return false;
+    return Store::write(Store::dir(ok ? "fiable" : "essai") / (SpoolsLogic::version_stem(v["spool"], v["printer"]) + ".json"), v);
+}
+
+bool note_outcome(const std::string& id, const std::string& printer, const std::string& outcome, const std::string& date)
+{
+    const nlohmann::json reg  = load();
+    const nlohmann::json next = SpoolsLogic::set_outcome(reg, id, printer, outcome, date);
+    return next != reg && save(next);
+}
+
+nlohmann::json success_for(const std::string& id, const std::string& printer)
+{
+    const nlohmann::json none = {{"available", false}, {"date", ""}, {"differs", false}, {"summary", ""}};
+    const nlohmann::json ok   = read_version(true, id, printer);
+    if (ok.empty())
+        return none;
+    const nlohmann::json               before = preset_values(SpoolsLogic::preset_for(load(), id, printer));
+    std::map<std::string, std::string> titles;
+    for (const auto& [key, value] : ok["values"].items())
+        titles[key] = Catalog::policy().title(key);
+    const nlohmann::json diff = SpoolsLogic::success_summary(before, ok["values"], titles);
+    return {{"available", true}, {"date", ok["date"]}, {"differs", diff["differs"]}, {"summary", diff["summary"]}};
 }
 
 }} // namespace Plyo::Spools

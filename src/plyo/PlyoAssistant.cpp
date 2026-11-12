@@ -256,9 +256,20 @@ void handle_page_message(const nlohmann::json& data)
             Journal::set_outcome(Json::str(data, "conv"), Json::str(data, "outcome"), note);
             const bool saved_outcome = Memory::set_outcome(Json::str(data, "machine"), Json::str(data, "at"), Json::str(data, "outcome"), note);
             // « Ça a marché » : ces réglages deviennent la version fiable de cette imprimante + filament (si c'est bien le couple en cours).
-            if (saved_outcome && Json::str(data, "outcome") == "ok" && Json::str(data, "machine") == Limits::machine_key())
+            const bool current_pair = Json::str(data, "machine") == Limits::machine_key();
+            if (saved_outcome && Json::str(data, "outcome") == "ok" && current_pair)
                 Profiles::mark_reliable(Json::str(data, "at"));
+            // Bobine en cours : la version envoyée à l'imprimante devient sa version réussie ; un échec est noté au registre.
+            if (current_pair && Json::str(data, "outcome") == "ok")
+                Profiles::mark_spool_success();
+            else if (current_pair && Json::str(data, "outcome") == "bad")
+                Profiles::mark_spool_failure();
             send({{"type", "outcome_saved"}, {"ok", saved_outcome}});
+        } else if (type == "spool_success") {
+            // Réussite déclarée hors de la carte « Ça a marché ? » (phrase dans la discussion).
+            const bool     ok    = Profiles::mark_spool_success();
+            nlohmann::json spool = Spools::current();
+            send({{"type", "spool_success_done"}, {"ok", ok}, {"name", Json::str(spool, "name")}});
         } else if (type == "journal_add")
             Journal::record(data);
         else if (type == "journal_list")
@@ -514,18 +525,27 @@ void handle_page_message(const nlohmann::json& data)
             // Bobine nommée : son préréglage pour cette machine est choisi, ou créé depuis le profil de la matière de cette machine.
             nlohmann::json r = Spools::create_or_choose(Json::str(data, "name"), Json::str(data, "material"), Json::str(data, "printer"));
             r["type"]        = "spool_chosen";
+            // Dernière version réussie de cette bobine sur cette machine, et ce qui en diffère aujourd'hui (phrase de reprise).
+            if (Json::boolean(r, "ok", false))
+                r["success"] = Spools::success_for(Json::str(r, "id"), Spools::current_full().value("printer", std::string()));
             send(r);
             send_values();
         } else if (type == "print_start") {
             if (Json::boolean(data, "export", false))
                 // La réponse ne part qu'à la fin réelle de l'export ; la fenêtre d'enregistrement s'ouvre dans cet appel, comme celle de connexion.
                 FirstSteps::export_file([](nlohmann::json r) {
+                    // Le fichier est écrit : ses réglages de bobine sont ceux à retenir si l'impression réussit.
+                    if (Json::boolean(r, "ok", false))
+                        Profiles::note_sent();
                     r["type"]   = "print_started";
                     r["export"] = true;
                     send(r);
                 });
             else {
                 nlohmann::json r = FirstSteps::start_print();
+                // Parti à l'imprimante : ces réglages de bobine sont ceux à retenir si l'impression réussit.
+                if (Json::boolean(r, "ok", false))
+                    Profiles::note_sent();
                 r["type"]        = "print_started";
                 send(r);
                 // Le démarrage est vérifié sur l'imprimante elle-même (état avant l'envoi, puis relu jusqu'au verdict).

@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -74,6 +75,31 @@ constexpr long long AUTOSAVE_QUIET_MS = 2000;
 // n'est en cours (ses valeurs de test ne doivent jamais entrer dans la bobine), et après AUTOSAVE_QUIET_MS sans
 // changement (l'utilisateur a fini de taper).
 bool should_save_spool(const AutoSaveState& state);
+
+// Résultat d'une impression avec la bobine `id` sur cette imprimante : "ok" (last_outcome "ok", last_ok_at = `date`) ou
+// "bad" (last_outcome "bad", la date de la dernière réussite reste). Bobine inconnue, machine sans préréglage (ou encore
+// « en attente »), résultat ou date invalides : registre (nettoyé) inchangé.
+nlohmann::json set_outcome(const nlohmann::json& reg, const std::string& id, const std::string& printer, const std::string& outcome,
+                           const std::string& date);
+
+// Nom du fichier de la version envoyée (plyo/essai) ou réussie (plyo/fiable) d'une bobine sur une imprimante :
+// Profiles::file_stem(id + "|" + imprimante).
+std::string version_stem(const std::string& id, const std::string& printer);
+
+// Fichier de version relu : {spool, printer, date: "AAAA-MM-JJ", values: {clé filament: texte d'Orca}}, ou {} s'il manque
+// la bobine, l'imprimante ou une date valable. Les valeurs qui ne sont pas du texte sont écartées.
+nlohmann::json sanitize_version(const nlohmann::json& raw);
+
+// Nom court d'un réglage dans une phrase : un nom simple pour les plus courants (« débit »), sinon la dernière partie du
+// titre du catalogue (après « · »), mots en minuscule sauf les sigles (« PEI »). Titre vide : la clé.
+std::string short_title(const std::string& key, const std::string& catalog_title);
+
+// Écart entre les valeurs d'aujourd'hui (`values_before`) et celles de la version réussie (`values_ok`), toutes deux
+// {clé: texte d'Orca} : {differs, summary}. `summary` cite au plus 3 réglages réussis, « débit 0,88, température de buse
+// 210 °C » : débit, températures de buse, pressure advance et rétraction d'abord, puis par clé ; première valeur d'un
+// tableau, virgule décimale ; un titre déjà cité ne l'est pas deux fois. Clés absentes d'aujourd'hui : ignorées.
+nlohmann::json success_summary(const nlohmann::json& values_before, const nlohmann::json& values_ok,
+                               const std::map<std::string, std::string>& catalog_titles);
 
 // Couple de températures « première couche / couches suivantes » et l'écart permis (buse 30 °C, plateau 15 °C).
 struct TempPair

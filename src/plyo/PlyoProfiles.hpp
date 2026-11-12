@@ -33,9 +33,21 @@ nlohmann::json save_applied();
 // a appliqué, mise à l'essai. Elle devient la version fiable seulement si l'utilisateur répond « ça a marché » pour ce lot.
 bool           note_trial(const std::string& at);
 bool           mark_reliable(const std::string& at);
+// Filament en cours qui est une bobine : la version réussie de la bobine sur cette imprimante (plyo/fiable, voir
+// mark_spool_success) remplace celle du couple imprimante + filament.
 nlohmann::json reliable_info(); // {"available": bool, "date": "2026-10-28"}
-// Remet la version fiable (annulable) puis enregistre les profils. Refuse si l'imprimante ou le filament ne sont plus
-// ceux de la version fiable. {ok, text, undo_id?, saved, save_error}
+// Remet la version fiable (annulable) puis enregistre les profils (le préréglage d'une bobine est écrasé sous son nom).
+// Refuse si l'imprimante ou le filament ne sont plus ceux de la version fiable. {ok, text, undo_id?, saved, save_error}
 nlohmann::json restore_reliable();
+
+// Bobines : la version qui a réussi est celle qui est partie à l'imprimante. À chaque envoi ou export réussi, les valeurs
+// filament du catalogue de la bobine en cours sont notées à l'essai (plyo/essai, {spool, printer, date, values}).
+// Faux si le filament en cours n'est pas une bobine, ou si l'écriture échoue.
+bool note_sent();
+// « Ça a marché » : la dernière version envoyée de la bobine en cours sur cette imprimante devient sa version réussie
+// (plyo/fiable), et le registre note last_outcome "ok" et last_ok_at (date de l'envoi). Faux sans bobine ni envoi noté.
+bool mark_spool_success();
+// « Ça n'a pas marché » : le registre note last_outcome "bad" pour la bobine en cours sur cette imprimante.
+bool mark_spool_failure();
 
 }} // namespace Plyo::Profiles

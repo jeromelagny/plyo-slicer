@@ -2358,3 +2358,104 @@ TEST_CASE("Bobines : la vérification des températures d'Orca a toujours les m�
     CHECK(body.find("if (delta <= rule.max_delta)") != std::string::npos);
     CHECK(body.find("get_at(0)") != std::string::npos);
 }
+
+TEST_CASE("Bobines : résumé de la version réussie, au format « débit 0,88 »")
+{
+    using namespace Plyo::SpoolsLogic;
+    const std::map<std::string, std::string> titles = {
+        {"filament_flow_ratio", "Rapport de débit"},
+        {"nozzle_temperature", "Buse · Température de la buse"},
+        {"nozzle_temperature_initial_layer", "Buse · Température de la buse de couche initiale"},
+        {"hot_plate_temp", "Plateau PEI lisse / Plateau haute température · Température du plateau"},
+        {"textured_plate_temp", "Plateau PEI texturé · Température du plateau"},
+        {"fan_max_speed", "Seuil de vitesse maximale du ventilateur · Vitesse du ventilateur"},
+        {"pressure_advance", "Pressure Advance"},
+        {"slow_down_layer_time", "Temps de couche"}};
+
+    // Un écart : le débit réussi (0,88) est cité avec une virgule décimale.
+    json r = success_summary({{"filament_flow_ratio", "0.95"}, {"nozzle_temperature", "215"}},
+                             {{"filament_flow_ratio", "0.88"}, {"nozzle_temperature", "215"}}, titles);
+    CHECK(r["differs"] == true);
+    CHECK(r["summary"] == "débit 0,88");
+
+    // Aucun écart : rien à proposer.
+    r = success_summary({{"filament_flow_ratio", "0.88"}}, {{"filament_flow_ratio", "0.88"}}, titles);
+    CHECK(r["differs"] == false);
+    CHECK(r["summary"] == "");
+
+    // Quatre écarts : trois cités, les plus parlants d'abord (débit, températures), séparés par une virgule.
+    r = success_summary({{"filament_flow_ratio", "0.95"}, {"nozzle_temperature", "220"}, {"nozzle_temperature_initial_layer", "225"},
+                         {"slow_down_layer_time", "8"}},
+                        {{"filament_flow_ratio", "0.88"}, {"nozzle_temperature", "210"}, {"nozzle_temperature_initial_layer", "215"},
+                         {"slow_down_layer_time", "6"}},
+                        titles);
+    CHECK(r["differs"] == true);
+    CHECK(r["summary"] == "débit 0,88, température de buse (première couche) 215 °C, température de buse 210 °C");
+
+    // Tableau d'Orca (plusieurs extrudeurs) : la première valeur. Titre du catalogue sans nom court : sa dernière partie,
+    // en minuscule. Deux plateaux au même titre ne sont cités qu'une fois. Un sigle garde ses majuscules.
+    r = success_summary({{"fan_max_speed", "100,100"}, {"hot_plate_temp", "65"}, {"textured_plate_temp", "65"}},
+                        {{"fan_max_speed", "80,80"}, {"hot_plate_temp", "60"}, {"textured_plate_temp", "55"}}, titles);
+    CHECK(r["summary"] == "vitesse du ventilateur 80, température du plateau 60 °C");
+    r = success_summary({{"pressure_advance", "0.04"}, {"fan_max_speed", "100"}}, {{"pressure_advance", "0.035"}, {"fan_max_speed", "80"}}, titles);
+    CHECK(r["summary"] == "pressure advance 0,035, vitesse du ventilateur 80");
+    CHECK(short_title("x", "Plateau PEI texturé") == "plateau PEI texturé");
+    CHECK(short_title("x", "") == "x");
+    CHECK(short_title("x", "Écart") == "écart");
+    // Pourcentage d'Orca : espace avant « % ».
+    r = success_summary({{"slow_down_layer_time", "15%"}}, {{"slow_down_layer_time", "12.5%"}}, titles);
+    CHECK(r["summary"] == "temps de couche 12,5 %");
+
+    // Clé absente des valeurs d'aujourd'hui (option disparue) ou illisible (« nil ») : ignorée.
+    r = success_summary({{"filament_flow_ratio", "0.88"}}, {{"filament_flow_ratio", "0.88"}, {"pressure_advance", "0.04"}}, titles);
+    CHECK(r["differs"] == false);
+    r = success_summary({{"pressure_advance", "0.04"}}, {{"pressure_advance", "nil"}}, titles);
+    CHECK(r["differs"] == true);
+    CHECK(r["summary"] == "");
+    // Entrées qui ne sont pas des objets : rien.
+    CHECK(success_summary(json(), json::array(), titles)["differs"] == false);
+}
+
+TEST_CASE("Bobines : fichier de la version envoyée ou réussie, relu prudemment")
+{
+    using namespace Plyo::SpoolsLogic;
+    CHECK(version_stem("b1", "Ma Creality CR-10 SE 0.4 nozzle") == Plyo::Profiles::file_stem("b1|Ma Creality CR-10 SE 0.4 nozzle"));
+    CHECK(version_stem("b1", "A") != version_stem("b2", "A"));
+
+    const json ok = sanitize_version({{"spool", "b1"}, {"printer", "P"}, {"date", "2026-11-12"},
+                                      {"values", {{"filament_flow_ratio", "0.88"}, {"bad", 3}, {"nozzle_temperature", "215"}}}});
+    CHECK(ok["spool"] == "b1");
+    CHECK(ok["printer"] == "P");
+    CHECK(ok["date"] == "2026-11-12");
+    CHECK(ok["values"] == json({{"filament_flow_ratio", "0.88"}, {"nozzle_temperature", "215"}}));
+    // Sans bobine, imprimante ou date valable : rien.
+    CHECK(sanitize_version({{"printer", "P"}, {"date", "2026-11-12"}, {"values", json::object()}}).empty());
+    CHECK(sanitize_version({{"spool", "b1"}, {"date", "2026-11-12"}}).empty());
+    CHECK(sanitize_version({{"spool", "b1"}, {"printer", "P"}, {"date", "hier"}}).empty());
+    CHECK(sanitize_version(json::array()).empty());
+}
+
+TEST_CASE("Bobines : résultat d'impression noté par machine")
+{
+    using namespace Plyo::SpoolsLogic;
+    const json r   = add(sanitize(json::object()), "Sunlu PLA+ noir", "PLA");
+    const json reg = set_preset(r["reg"], r["id"], "P", "Sunlu PLA+ noir — P");
+
+    const json ok = set_outcome(reg, r["id"], "P", "ok", "2026-11-12");
+    CHECK(for_machine(ok, "P")[0]["last_outcome"] == "ok");
+    CHECK(for_machine(ok, "P")[0]["last_ok_at"] == "2026-11-12");
+    // Une impression ratée ensuite : « dernière impression ratée », la date de la dernière réussite reste.
+    const json bad = set_outcome(ok, r["id"], "P", "bad", "2026-11-13");
+    CHECK(for_machine(bad, "P")[0]["last_outcome"] == "bad");
+    CHECK(for_machine(bad, "P")[0]["last_ok_at"] == "2026-11-12");
+    // Le préréglage est gardé.
+    CHECK(preset_for(bad, r["id"], "P") == "Sunlu PLA+ noir — P");
+    // Machine sans préréglage, bobine inconnue, résultat inconnu ou date invalide : inchangé.
+    CHECK(set_outcome(reg, r["id"], "K2", "ok", "2026-11-12") == sanitize(reg));
+    CHECK(set_outcome(reg, "b99", "P", "ok", "2026-11-12") == sanitize(reg));
+    CHECK(set_outcome(reg, r["id"], "P", "super", "2026-11-12") == sanitize(reg));
+    CHECK(set_outcome(reg, r["id"], "P", "ok", "demain") == sanitize(reg));
+    // Un préréglage encore « en attente » n'a pas imprimé : inchangé.
+    const json pending = set_preset(r["reg"], r["id"], "P", "Sunlu PLA+ noir — P", true);
+    CHECK(set_outcome(pending, r["id"], "P", "ok", "2026-11-12") == sanitize(pending));
+}

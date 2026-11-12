@@ -246,6 +246,164 @@ bool should_save_spool(const AutoSaveState& state)
            state.quiet_ms >= AUTOSAVE_QUIET_MS;
 }
 
+nlohmann::json set_outcome(const nlohmann::json& reg, const std::string& id, const std::string& printer, const std::string& outcome,
+                           const std::string& date)
+{
+    nlohmann::json clean = sanitize(reg);
+    if ((outcome != "ok" && outcome != "bad") || !valid_date(date))
+        return clean;
+    for (nlohmann::json& s : clean["spools"]) {
+        if (s["id"] != id || !s["machines"].contains(printer))
+            continue;
+        nlohmann::json& entry = s["machines"][printer];
+        if (entry["preset"].get<std::string>().empty() || entry["pending"].get<bool>())
+            break; // aucun préréglage utilisable : rien n'a pu être imprimé avec
+        entry["last_outcome"] = outcome;
+        if (outcome == "ok")
+            entry["last_ok_at"] = date;
+    }
+    return clean;
+}
+
+std::string version_stem(const std::string& id, const std::string& printer) { return Profiles::file_stem(id + "|" + printer); }
+
+nlohmann::json sanitize_version(const nlohmann::json& raw)
+{
+    const std::string spool   = Json::str(raw, "spool", MAX_ID_BYTES);
+    const std::string printer = Json::str(raw, "printer", 200);
+    const std::string date    = Json::str(raw, "date");
+    if (spool.empty() || printer.empty() || !valid_date(date))
+        return nlohmann::json::object();
+    nlohmann::json       values = nlohmann::json::object();
+    const nlohmann::json src    = Json::obj(raw, "values"); // copie nommée : items() ne garde pas un temporaire
+    for (const auto& [key, value] : src.items())
+        if (!key.empty() && key.size() <= 80 && value.is_string())
+            values[key] = value;
+    return {{"spool", spool}, {"printer", printer}, {"date", date}, {"values", values}};
+}
+
+namespace {
+
+// Réglages cités d'abord, avec leur nom simple (vide : celui du catalogue).
+const std::vector<std::pair<std::string, std::string>> SUMMARY_FIRST = {
+    {"filament_flow_ratio", "débit"},
+    {"nozzle_temperature_initial_layer", "température de buse (première couche)"},
+    {"nozzle_temperature", "température de buse"},
+    {"pressure_advance", ""},
+    {"filament_retraction_length", "rétraction"},
+};
+
+// Première lettre d'un mot en minuscule (A-Z et À-Þ en UTF-8).
+void lower_first(std::string& word)
+{
+    if (word.empty())
+        return;
+    if (word[0] >= 'A' && word[0] <= 'Z')
+        word[0] = static_cast<char>(word[0] - 'A' + 'a');
+    else if (word.size() >= 2 && static_cast<unsigned char>(word[0]) == 0xC3) {
+        const unsigned char c = static_cast<unsigned char>(word[1]);
+        if (c >= 0x80 && c <= 0x9E && c != 0x97) // pas « × »
+            word[1] = static_cast<char>(c + 0x20);
+    }
+}
+
+bool is_temperature(const std::string& key)
+{
+    return key.find("temperature") != std::string::npos || key.find("plate_temp") != std::string::npos;
+}
+
+// Valeur d'Orca dite dans une phrase : première valeur d'un tableau, virgule décimale, « % » détaché. "" si illisible.
+std::string spoken_value(const std::string& key, const std::string& serialized)
+{
+    std::string v = collapse(serialized.substr(0, serialized.find(',')));
+    if (v.empty() || v == "nil")
+        return "";
+    bool percent = false;
+    if (v.back() == '%') {
+        percent = true;
+        v.pop_back();
+    }
+    for (char& c : v)
+        if (c == '.')
+            c = ',';
+    if (percent)
+        return v + " %";
+    return is_temperature(key) ? v + " \xC2\xB0" "C" : v;
+}
+
+} // namespace
+
+std::string short_title(const std::string& key, const std::string& catalog_title)
+{
+    for (const auto& [k, title] : SUMMARY_FIRST)
+        if (k == key && !title.empty())
+            return title;
+    std::string title = catalog_title;
+    const std::string dot = " \xC2\xB7 "; // « · »
+    if (const size_t at = title.rfind(dot); at != std::string::npos)
+        title = title.substr(at + dot.size());
+    title = collapse(title);
+    if (title.empty())
+        return key;
+    std::string out, word;
+    auto flush = [&]() {
+        bool caps_inside = false; // sigle (« PEI ») : gardé tel quel
+        for (size_t i = 1; i < word.size(); ++i)
+            if (word[i] >= 'A' && word[i] <= 'Z')
+                caps_inside = true;
+        if (!caps_inside)
+            lower_first(word);
+        out += word;
+        word.clear();
+    };
+    for (const char c : title) {
+        if (c == ' ') {
+            flush();
+            out.push_back(' ');
+        } else
+            word.push_back(c);
+    }
+    flush();
+    return out;
+}
+
+nlohmann::json success_summary(const nlohmann::json& values_before, const nlohmann::json& values_ok,
+                               const std::map<std::string, std::string>& catalog_titles)
+{
+    if (!values_before.is_object() || !values_ok.is_object())
+        return {{"differs", false}, {"summary", ""}};
+    std::vector<std::string> changed; // par clé (ordre de l'objet JSON)
+    for (const auto& [key, ok] : values_ok.items()) {
+        const auto before = values_before.find(key);
+        if (ok.is_string() && before != values_before.end() && before->is_string() && *before != ok)
+            changed.push_back(key);
+    }
+    std::vector<std::string> ordered;
+    for (const auto& first : SUMMARY_FIRST)
+        if (std::find(changed.begin(), changed.end(), first.first) != changed.end())
+            ordered.push_back(first.first);
+    for (const std::string& key : changed)
+        if (std::find(ordered.begin(), ordered.end(), key) == ordered.end())
+            ordered.push_back(key);
+
+    std::vector<std::string> titles_said;
+    std::string              summary;
+    for (const std::string& key : ordered) {
+        if (titles_said.size() >= 3)
+            break;
+        const std::string value = spoken_value(key, values_ok[key].get<std::string>());
+        if (value.empty())
+            continue;
+        const auto        it    = catalog_titles.find(key);
+        const std::string title = short_title(key, it == catalog_titles.end() ? std::string() : it->second);
+        if (std::find(titles_said.begin(), titles_said.end(), title) != titles_said.end())
+            continue;
+        titles_said.push_back(title);
+        summary += (summary.empty() ? "" : ", ") + title + " " + value;
+    }
+    return {{"differs", !changed.empty()}, {"summary", summary}};
+}
+
 bool temperature_pairs_ok(const std::vector<TempPair>& pairs)
 {
     for (const TempPair& p : pairs) {

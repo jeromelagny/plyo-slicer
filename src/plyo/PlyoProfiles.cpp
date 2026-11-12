@@ -34,6 +34,8 @@ Slic3r::PresetCollection& collection(Preset::Type type)
 boost::filesystem::path reliable_file() { return Store::dir("fiable") / (file_stem(Limits::machine_key()) + ".json"); }
 boost::filesystem::path trial_file() { return Store::dir("essai") / (file_stem(Limits::machine_key()) + ".json"); }
 
+std::string today() { return boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time()).substr(0, 10); }
+
 const char* scope_of(Preset::Type type) { return type == Preset::TYPE_PRINT ? "print" : "filament"; }
 
 // Valeur typée si la clé est au catalogue, sinon son texte tel qu'Orca l'écrit.
@@ -134,8 +136,7 @@ bool note_trial(const std::string& at)
 {
     if (at.empty())
         return false;
-    const std::string date = boost::posix_time::to_iso_extended_string(boost::posix_time::second_clock::local_time()).substr(0, 10);
-    return Store::write(trial_file(), {{"machine", Limits::machine_key()}, {"date", date}, {"at", at}, {"values", SettingsBridge::snapshot_raw()}});
+    return Store::write(trial_file(), {{"machine", Limits::machine_key()}, {"date", today()}, {"at", at}, {"values", SettingsBridge::snapshot_raw()}});
 }
 
 bool mark_reliable(const std::string& at)
@@ -149,6 +150,11 @@ bool mark_reliable(const std::string& at)
 
 nlohmann::json reliable_info()
 {
+    const nlohmann::json spool = Spools::current_full();
+    if (!spool.empty()) {
+        const nlohmann::json ok = Spools::read_version(true, spool["id"], spool["printer"]);
+        return {{"available", !ok.empty()}, {"date", ok.empty() ? nlohmann::json("") : ok["date"]}};
+    }
     const nlohmann::json stored = Sanitize::reliable(Store::read(reliable_file()));
     // Le nom du fichier vient d'une empreinte : on vérifie aussi que c'est bien ce couple imprimante + filament.
     const bool available = !stored.empty() && stored["machine"] == Limits::machine_key();
@@ -157,16 +163,65 @@ nlohmann::json reliable_info()
 
 nlohmann::json restore_reliable()
 {
-    const nlohmann::json stored = Sanitize::reliable(Store::read(reliable_file()));
-    if (stored.empty() || stored["machine"] != Limits::machine_key())
-        return {{"ok", false}, {"text", "Je n'ai pas de version fiable pour cette imprimante et ce filament."}};
-    nlohmann::json result = SettingsBridge::restore_values(stored["values"]);
+    nlohmann::json    values;
+    const nlohmann::json spool = Spools::current_full();
+    if (!spool.empty()) {
+        const nlohmann::json ok = Spools::read_version(true, spool["id"], spool["printer"]);
+        if (ok.empty())
+            return {{"ok", false}, {"text", "Je n'ai pas encore de version réussie pour la bobine « " + spool["name"].get<std::string>() + " » sur cette imprimante."}};
+        // Les valeurs vont dans l'onglet Filament : il doit montrer le préréglage de la bobine (filament 1).
+        if (collection(Preset::TYPE_FILAMENT).get_edited_preset().name != spool["preset"])
+            return {{"ok", false}, {"text", "Ouvre le filament de la bobine « " + spool["name"].get<std::string>() + " » dans Orca, puis redemande-moi."}};
+        values = {{"filament", ok["values"]}};
+    } else {
+        const nlohmann::json stored = Sanitize::reliable(Store::read(reliable_file()));
+        if (stored.empty() || stored["machine"] != Limits::machine_key())
+            return {{"ok", false}, {"text", "Je n'ai pas de version fiable pour cette imprimante et ce filament."}};
+        values = stored["values"];
+    }
+    nlohmann::json result = SettingsBridge::restore_values(values);
     if (result.value("ok", false)) {
         const nlohmann::json saved = save_applied();
         result["saved"]            = saved["saved"];
         result["save_error"]       = saved["save_error"];
     }
     return result;
+}
+
+bool note_sent()
+{
+    const nlohmann::json spool = Spools::current_full();
+    if (spool.empty())
+        return false;
+    // Les valeurs du moment (modifications pas encore enregistrées comprises) : ce sont elles qui sont parties.
+    const nlohmann::json values = Spools::preset_values(spool["preset"]);
+    if (values.empty())
+        return false;
+    const bool written = Spools::write_version(false, {{"spool", spool["id"]}, {"printer", spool["printer"]}, {"date", today()}, {"values", values}});
+    if (!written)
+        BOOST_LOG_TRIVIAL(error) << "Plyo: version envoyée de la bobine « " << spool["name"].get<std::string>() << " » non écrite";
+    return written;
+}
+
+bool mark_spool_success()
+{
+    const nlohmann::json spool = Spools::current_full();
+    if (spool.empty())
+        return false;
+    // Ce qui a réussi, c'est ce qui est parti à l'imprimante, même si un réglage a changé depuis.
+    const nlohmann::json sent = Spools::read_version(false, spool["id"], spool["printer"]);
+    if (sent.empty() || !Spools::write_version(true, sent))
+        return false;
+    Spools::note_outcome(spool["id"], spool["printer"], "ok", sent["date"]);
+    BOOST_LOG_TRIVIAL(info) << "Plyo: version réussie retenue pour la bobine « " << spool["name"].get<std::string>() << " » (envoi du "
+                            << sent["date"].get<std::string>() << ")";
+    return true;
+}
+
+bool mark_spool_failure()
+{
+    const nlohmann::json spool = Spools::current_full();
+    return !spool.empty() && Spools::note_outcome(spool["id"], spool["printer"], "bad", today());
 }
 
 }} // namespace Plyo::Profiles
