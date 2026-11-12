@@ -2236,6 +2236,32 @@ TEST_CASE("Bobines : une autre machine ne reprend pas le préréglage d'une mach
     CHECK(spool_name(again, "inconnu") == "");
 }
 
+TEST_CASE("Bobines : nom noté avant l'enregistrement, repris tel quel après un échec")
+{
+    using namespace Plyo::SpoolsLogic;
+    const std::string printer = "Ma Creality CR-10 SE 0.4 nozzle";
+    const json        r       = add(sanitize(json::object()), "Sunlu PLA+ noir", "PLA");
+    const std::string id      = r["id"];
+    const std::string name    = preset_name("Sunlu PLA+ noir", machine_label(printer), {}, {});
+    // Noté « en attente » avant save_preset : pas encore un préréglage de bobine utilisable.
+    const json pending = set_preset(r["reg"], id, printer, name, true);
+    CHECK(is_pending(pending, id, printer));
+    CHECK(preset_for(pending, id, printer) == name);
+    CHECK(for_machine(pending, printer)[0]["has_preset"] == false);
+    CHECK(spool_of_preset(pending, name) == "");
+    // L'enregistrement a échoué après avoir laissé le préréglage dans Orca : le nouvel essai reprend le même nom.
+    CHECK(preset_name("Sunlu PLA+ noir", machine_label(printer), {name}, {preset_for(pending, id, printer)}) == name);
+    // L'attente survit à la relecture du fichier.
+    CHECK(is_pending(sanitize(pending), id, printer));
+    // Réussite : l'entrée devient un vrai préréglage de bobine.
+    const json done = set_preset(pending, id, printer, name);
+    CHECK_FALSE(is_pending(done, id, printer));
+    CHECK(for_machine(done, printer)[0]["has_preset"] == true);
+    CHECK(spool_of_preset(done, name) == id);
+    CHECK_FALSE(is_pending(done, "inconnu", printer));
+    CHECK_FALSE(is_pending(done, id, "Autre"));
+}
+
 TEST_CASE("Bobines : nom court de la machine (comme le panneau)")
 {
     using namespace Plyo::SpoolsLogic;

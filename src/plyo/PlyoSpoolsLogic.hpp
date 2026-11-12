@@ -41,7 +41,14 @@ std::string preset_for(const nlohmann::json& reg, const std::string& id, const s
 
 // Note le préréglage de la bobine `id` pour cette imprimante. Le résultat de la machine repart à zéro : il parlait
 // d'autres valeurs. Bobine inconnue ou imprimante vide : registre (nettoyé) inchangé.
-nlohmann::json set_preset(const nlohmann::json& reg, const std::string& id, const std::string& printer, const std::string& preset);
+// `pending` : nom réservé AVANT l'enregistrement par Orca. Si l'enregistrement échoue en laissant le préréglage dans
+// Orca, le nouvel essai retrouve ce nom (preset_for → `ours` de preset_name) et l'écrase, au lieu de créer « … 2 ».
+// Tant qu'il est en attente, ce n'est pas un préréglage de bobine utilisable (has_preset faux, spool_of_preset l'ignore).
+nlohmann::json set_preset(const nlohmann::json& reg, const std::string& id, const std::string& printer, const std::string& preset,
+                          bool pending = false);
+
+// Le préréglage noté pour la bobine `id` sur cette imprimante attend-il encore son enregistrement ?
+bool is_pending(const nlohmann::json& reg, const std::string& id, const std::string& printer);
 
 // Nom de la bobine `id`, vide si elle est inconnue.
 std::string spool_name(const nlohmann::json& reg, const std::string& id);

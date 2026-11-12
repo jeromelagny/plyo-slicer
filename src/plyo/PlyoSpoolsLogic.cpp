@@ -68,7 +68,8 @@ nlohmann::json machine_entry(const nlohmann::json& raw)
     std::string date = Json::str(raw, "last_ok_at");
     if (!valid_date(date))
         date.clear();
-    return {{"preset", Json::str(raw, "preset", Profiles::MAX_NAME_BYTES)}, {"last_outcome", outcome}, {"last_ok_at", date}};
+    return {{"preset", Json::str(raw, "preset", Profiles::MAX_NAME_BYTES)}, {"last_outcome", outcome}, {"last_ok_at", date},
+            {"pending", Json::boolean(raw, "pending", false)}};
 }
 
 } // namespace
@@ -160,7 +161,7 @@ nlohmann::json for_machine(const nlohmann::json& reg, const std::string& printer
         rows.push_back({{"id", s["id"]},
                         {"name", s["name"]},
                         {"material", s["material"]},
-                        {"has_preset", !Json::str(entry, "preset").empty()},
+                        {"has_preset", !Json::str(entry, "preset").empty() && !Json::boolean(entry, "pending", false)},
                         {"last_outcome", Json::str(entry, "last_outcome")},
                         {"last_ok_at", Json::str(entry, "last_ok_at")}});
     }
@@ -177,7 +178,7 @@ std::string spool_of_preset(const nlohmann::json& reg, const std::string& filame
     const nlohmann::json clean = sanitize(reg);
     for (const nlohmann::json& s : clean["spools"])
         for (const auto& [printer, entry] : s["machines"].items())
-            if (entry["preset"] == filament_preset)
+            if (entry["preset"] == filament_preset && !entry["pending"].get<bool>())
                 return s["id"];
     return "";
 }
@@ -191,15 +192,25 @@ std::string preset_for(const nlohmann::json& reg, const std::string& id, const s
     return "";
 }
 
-nlohmann::json set_preset(const nlohmann::json& reg, const std::string& id, const std::string& printer, const std::string& preset)
+nlohmann::json set_preset(const nlohmann::json& reg, const std::string& id, const std::string& printer, const std::string& preset,
+                          bool pending)
 {
     nlohmann::json clean = sanitize(reg);
     if (printer.empty())
         return clean;
     for (nlohmann::json& s : clean["spools"])
         if (s["id"] == id)
-            s["machines"][printer] = {{"preset", preset}, {"last_outcome", ""}, {"last_ok_at", ""}};
+            s["machines"][printer] = {{"preset", preset}, {"last_outcome", ""}, {"last_ok_at", ""}, {"pending", pending}};
     return sanitize(clean); // le nom du préréglage est borné comme à la lecture
+}
+
+bool is_pending(const nlohmann::json& reg, const std::string& id, const std::string& printer)
+{
+    const nlohmann::json clean = sanitize(reg);
+    for (const nlohmann::json& s : clean["spools"])
+        if (s["id"] == id)
+            return Json::boolean(Json::obj(s["machines"], printer.c_str()), "pending", false);
+    return false;
 }
 
 std::string spool_name(const nlohmann::json& reg, const std::string& id)

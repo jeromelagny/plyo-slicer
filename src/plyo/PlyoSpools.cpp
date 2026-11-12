@@ -55,39 +55,26 @@ const Preset* system_base(const std::string& material)
     return p != nullptr && p->is_system && p->is_visible && p->is_compatible ? p : nullptr;
 }
 
-// Crée « <bobine> — <machine> » depuis le profil système de la matière, compatible avec cette seule imprimante, et le
-// choisi. Renvoie son nom, ou vide avec `text` (refus) ou `cancelled` (fenêtre d'Orca annulée) dans `out`.
-std::string create_preset(const std::string& spool, const std::string& material, const std::string& printer,
-                          const std::string& recorded, nlohmann::json& out)
+// Enregistre `name` (créé ou écrasé) depuis le profil système `base_name`, compatible avec cette seule imprimante, et le
+// choisit. Faux avec `text` (refus) ou `cancelled` (fenêtre d'Orca annulée) dans `out`.
+bool save_spool_preset(const std::string& base_name, const std::string& name, const std::string& printer, nlohmann::json& out)
 {
     Slic3r::PresetCollection& filaments = bundle()->filaments;
-    const Preset*             base      = system_base(material);
-    if (base == nullptr) {
-        out = refuse("Je ne trouve pas de profil " + material + " pour cette imprimante dans Orca.");
-        return "";
-    }
-    const std::string base_name = base->name; // le pointeur ne survit pas aux changements de la collection
-    std::vector<std::string> existing;
-    for (const Preset& p : filaments)
-        existing.push_back(p.name);
-    // Seul le nom déjà noté pour cette bobine sur cette machine peut être repris (son préréglage a disparu d'Orca).
-    std::vector<std::string> ours;
-    if (!recorded.empty())
-        ours.push_back(recorded);
-    const std::string name = SpoolsLogic::preset_name(spool, SpoolsLogic::machine_label(printer), existing, ours);
-
     // L'onglet d'abord : si le filament en cours a des modifications, Orca demande quoi en faire, et l'utilisateur peut annuler.
     if (!FirstSteps::select_filament(base_name)) {
         out = {{"ok", false}, {"cancelled", true}};
-        return "";
+        return false;
     }
     // Valeurs ENREGISTRÉES du profil de la matière (pas l'édité, qui peut porter des valeurs transférées d'un autre filament).
     Slic3r::DynamicPrintConfig cfg = filaments.get_selected_preset().config;
     cfg.set_key_value("compatible_printers", new Slic3r::ConfigOptionStrings({printer}));
+    // Pour un nouveau préréglage, Orca relie lui-même la copie au profil système ; pour un préréglage écrasé (nouvel essai
+    // après un échec), il garde l'`inherits` de la config : on le donne donc explicitement.
+    cfg.option<Slic3r::ConfigOptionString>("inherits", true)->value = base_name;
     Slic3r::GUI::Tab* tab = Slic3r::GUI::wxGetApp().get_tab(Preset::TYPE_FILAMENT);
     if (tab == nullptr) {
         out = refuse("L'onglet Filament d'Orca n'est pas disponible.");
-        return "";
+        return false;
     }
     const std::time_t started = std::time(nullptr);
     try {
@@ -96,29 +83,33 @@ std::string create_preset(const std::string& spool, const std::string& material,
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: préréglage de bobine « " << name << " » impossible : " << e.what();
         out = refuse("Orca n'a pas pu écrire le préréglage « " + name + " ».");
-        return "";
+        return false;
     }
     // Orca peut refuser sans le dire (températures incohérentes) ou ne pas écrire le fichier (disque) : on vérifie tout.
     const Preset* saved = filaments.find_preset(name, false);
     if (saved == nullptr || filaments.get_selected_preset_name() != name || filaments.current_is_dirty()) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: le préréglage de bobine « " << name << " » n'a pas été enregistré par Orca";
         out = refuse("Orca a refusé d'enregistrer le préréglage « " + name + " ».");
-        return "";
+        return false;
     }
     if (!Profiles::written_since(saved->file, started - 2)) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: le fichier du préréglage de bobine « " << name << " » n'a pas été écrit : " << saved->file;
         out = refuse("Orca n'a pas pu écrire le préréglage « " + name + " ».");
-        return "";
+        return false;
     }
     if (saved->inherits() != base_name) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: le préréglage de bobine « " << name << " » hérite de « " << saved->inherits()
                                  << " » au lieu de « " << base_name << " »";
         out = refuse("Le préréglage « " + name + " » n'est pas relié au profil « " + base_name + " » d'Orca : je ne le retiens pas.");
-        return "";
+        return false;
     }
-    FirstSteps::select_filament(name); // comme un choix dans la liste du plateau (aucune question : rien n'est modifié)
-    BOOST_LOG_TRIVIAL(info) << "Plyo: préréglage de bobine créé « " << name << " » depuis « " << base_name << " »";
-    return name;
+    // Comme un choix dans la liste du plateau (aucune question attendue : rien n'est modifié).
+    if (!FirstSteps::select_filament(name)) {
+        out = refuse("Le préréglage « " + name + " » est enregistré, mais Orca ne l'a pas choisi. Choisis-le dans la liste des filaments.");
+        return false;
+    }
+    BOOST_LOG_TRIVIAL(info) << "Plyo: préréglage de bobine enregistré « " << name << " » depuis « " << base_name << " »";
+    return true;
 }
 
 } // namespace
@@ -148,8 +139,10 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
     const std::string spool = SpoolsLogic::spool_name(reg, id);
     nlohmann::json    out   = {{"ok", true}, {"id", id}, {"name", spool}, {"created", created}};
 
-    const std::string recorded = SpoolsLogic::preset_for(reg, id, printer);
-    if (!recorded.empty() && bundle()->filaments.find_preset(recorded, false) != nullptr) {
+    Slic3r::PresetCollection& filaments = bundle()->filaments;
+    const std::string         recorded  = SpoolsLogic::preset_for(reg, id, printer);
+    const bool                pending   = SpoolsLogic::is_pending(reg, id, printer);
+    if (!recorded.empty() && !pending && filaments.find_preset(recorded, false) != nullptr) {
         if (!FirstSteps::select_filament(recorded))
             return {{"ok", false}, {"cancelled", true}, {"id", id}, {"name", spool}, {"created", created}};
         out["preset"] = recorded;
@@ -157,18 +150,37 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
     }
 
     // La bobine garde sa matière d'origine (« sunlu pla+ noir » retrouvée reste du PLA).
-    nlohmann::json    failure;
-    const std::string preset = create_preset(spool, material_of(reg, id), printer, recorded, failure);
-    if (preset.empty()) {
+    const std::string material_kept = material_of(reg, id);
+    const Preset*     base          = system_base(material_kept);
+    if (base == nullptr)
+        return {{"ok", false}, {"id", id}, {"name", spool}, {"created", created},
+                {"text", "Je ne trouve pas de profil " + material_kept + " pour cette imprimante dans Orca."}};
+    const std::string base_name = base->name; // le pointeur ne survit pas aux changements de la collection
+
+    // Nom réservé au registre AVANT l'enregistrement par Orca : si celui-ci échoue en laissant le préréglage dans Orca,
+    // le nouvel essai retrouve ce nom (seul nom noté pour cette bobine sur cette machine) et l'écrase, sans « … 2 ».
+    std::vector<std::string> existing;
+    for (const Preset& p : filaments)
+        existing.push_back(p.name);
+    std::vector<std::string> ours;
+    if (!recorded.empty())
+        ours.push_back(recorded);
+    const std::string preset = SpoolsLogic::preset_name(spool, SpoolsLogic::machine_label(printer), existing, ours);
+    if (!save(SpoolsLogic::set_preset(reg, id, printer, preset, true)))
+        return {{"ok", false}, {"id", id}, {"name", spool}, {"created", created}, {"text", "Je n'ai pas pu enregistrer la liste de tes bobines."}};
+
+    nlohmann::json failure;
+    if (!save_spool_preset(base_name, preset, printer, failure)) {
         failure["id"]      = id;
         failure["name"]    = spool;
         failure["created"] = created;
         return failure;
     }
     if (!save(SpoolsLogic::set_preset(reg, id, printer, preset))) {
-        BOOST_LOG_TRIVIAL(error) << "Plyo: registre des bobines non écrit après la création de « " << preset << " »";
+        // L'entrée reste « en attente » sous ce nom : le prochain choix le réécrit, sans doublon.
+        BOOST_LOG_TRIVIAL(error) << "Plyo: registre des bobines non écrit après l'enregistrement de « " << preset << " »";
         return {{"ok", false}, {"id", id}, {"name", spool}, {"preset", preset}, {"created", created},
-                {"text", "Le préréglage « " + preset + " » est créé, mais je n'ai pas pu le noter dans la liste de tes bobines."}};
+                {"text", "Le préréglage « " + preset + " » est enregistré, mais je n'ai pas pu le noter dans la liste de tes bobines. Choisis à nouveau ta bobine."}};
     }
     out["preset"] = preset;
     return out;
