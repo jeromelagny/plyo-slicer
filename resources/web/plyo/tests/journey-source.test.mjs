@@ -707,7 +707,7 @@ test('fin d’impression : le panneau la relie au suivi, aux gestes du Résultat
   assert.equal((page.match(/noteSendWatched\(\)/g) || []).length, 3, 'définie, et notée aux deux envois suivis');
   assert.match(cppSrc('PlyoPrinterStatus.cpp'), /ended\["phase"\]\s*= "end"/);
   const status = cppSrc('PlyoPrinterStatus.cpp');
-  assert.match(status, /Bind\(wxEVT_DESTROY[\s\S]*g_closing = true;\s*stop\(\);/, 'le suivi s’arrête avec la fenêtre principale, panneau ouvert ou non');
+  assert.match(status, /Bind\(wxEVT_DESTROY[\s\S]*g_closing = true;[^\n]*\n\s*stop\(\);/, 'le suivi s’arrête avec la fenêtre principale, panneau ouvert ou non');
   assert.doesNotMatch(status.slice(status.indexOf('void watch(')), /is_closing\(\)/, 'le fil ne lit jamais l’application');
   assert.match(status, /read\(kind, \*config, true, logged\);\s*if \(!alive\(\)\)\s*return;/, 'rien n’est posté après une fermeture');
   assert.equal((cppSrc('PlyoAssistant.cpp').match(/w\["id"\]\s*= id;/g) || []).length, 2, 'les deux suivis renvoient l’id de l’envoi');
@@ -759,4 +759,14 @@ test('reprise 1 : ids d’envoi, bobine des envois avec emplacements, réussite 
   assert.match(end, /currentStep\(conv\.project\) === 'resultat'\) \{ renderProject\(\);/, 'M8 : au Résultat, seulement l’étape');
   assert.match(page, /Cette question concerne une autre conversation\./);
   assert.match(page, /lastSend\.conv !== conv\)\) staleEndNote\(\);/);
+});
+
+test('reprise 2 : une fenêtre principale recréée (changement de langue) ne coupe pas les suivis suivants', () => {
+  const src = cppSrc('PlyoPrinterStatus.cpp');
+  const fn = src.slice(src.indexOf('void watch_closing()'), src.indexOf('void watch_closing()') + 900);
+  assert.match(fn, /if \(Slic3r::GUI::wxGetApp\(\)\.is_closing\(\)\)\s*g_closing = true;/, 'le drapeau ne se lève qu’à la vraie fermeture d’Orca');
+  assert.match(fn, /frame == g_bound_frame\)\s*return;\s*g_bound_frame = frame;/, 'liaison par fenêtre : une nouvelle fenêtre est liée');
+  assert.match(fn, /if \(g_bound_frame == frame\)\s*g_bound_frame = nullptr;/, 'la fenêtre détruite libère la liaison');
+  assert.doesNotMatch(src, /static bool bound/);
+  assert.match(src, /void watch\(const std::string& preset[^\n]*\n\{\s*watch_closing\(\);/, 'vérifiée à chaque suivi');
 });

@@ -32,19 +32,25 @@ std::atomic<int>  g_generation{0};
 std::atomic<bool> g_closing{false}; // fenêtre principale détruite : Orca se ferme, aucun fil ne touche plus à l'application
 
 // Le fil de suivi ne lit jamais l'application : ce drapeau à Plyo est levé sur le fil principal quand la fenêtre principale
-// est détruite (panneau ouvert ou non). wxEVT_DESTROY plutôt que wxEVT_CLOSE_WINDOW : une fermeture peut encore être
-// annulée (projet non enregistré), pas une destruction.
+// est détruite pendant la fermeture d'Orca (panneau ouvert ou non). wxEVT_DESTROY plutôt que wxEVT_CLOSE_WINDOW : une
+// fermeture peut encore être annulée (projet non enregistré), pas une destruction. Une fenêtre principale recréée
+// (GUI_App::recreate_GUI, changement de langue) est aussi détruite, Orca continuant : on arrête seulement le suivi en
+// cours, sans lever le drapeau, et la nouvelle fenêtre est liée au prochain suivi.
+Slic3r::GUI::MainFrame* g_bound_frame = nullptr; // fil principal seulement
+
 void watch_closing()
 {
-    static bool bound = false;
     Slic3r::GUI::MainFrame* frame = Slic3r::GUI::wxGetApp().mainframe;
-    if (bound || frame == nullptr)
+    if (frame == nullptr || frame == g_bound_frame)
         return;
-    bound = true;
+    g_bound_frame = frame;
     frame->Bind(wxEVT_DESTROY, [frame](wxWindowDestroyEvent& e) {
         if (e.GetEventObject() == frame) {
-            g_closing = true;
+            if (Slic3r::GUI::wxGetApp().is_closing())
+                g_closing = true; // Orca se ferme pour de bon
             stop();
+            if (g_bound_frame == frame)
+                g_bound_frame = nullptr;
         }
         e.Skip();
     });
