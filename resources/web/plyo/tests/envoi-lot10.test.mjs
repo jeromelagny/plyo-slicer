@@ -41,10 +41,10 @@ test('échec inconnu ou refus avant l’envoi : la phrase de Plyo d’abord, le 
   assert.deepEqual(v.actions.slice(0, 3).map((a) => a.kind), ['retry', 'link', 'export'], 'des suites gratuites avant « Demander »');
   assert.equal(v.quote, 'Unable to log in to the Flashforge printer.');
   const ask = v.actions.find((a) => a.kind === 'ask');
-  assert.match(ask.prompt, /Orca dit : « Unable to log in to the Flashforge printer\. »/);
+  assert.match(ask.prompt, /Plyo Slicer dit : « Unable to log in to the Flashforge printer\. »/);
   assert.doesNotMatch(ask.prompt, /AD5X/, 'le nom de l’imprimante ne part pas dans la question');
   const before = PF.uploadFailureView({ code: 'before_send', text: '' }, 'AD5X');
-  assert.match(before.text, /^Orca a refusé de lancer l’envoi, sans une raison que je sache expliquer\. Rien n’est parti/);
+  assert.match(before.text, /^Plyo Slicer a refusé de lancer l’envoi, sans une raison que je sache expliquer\. Rien n’est parti/);
   assert.equal(PF.uploadFailureView({}, '').title, 'L’envoi à ton imprimante n’a pas abouti');
 });
 
@@ -59,23 +59,23 @@ test('vérifier la liaison : une suite pour chaque résultat, sans jamais tester
 });
 
 test('fenêtres d’Orca : ligne d’attente, carte seulement pour une erreur fermée et non expliquée ailleurs', () => {
-  assert.equal(PF.dialogWaitText({ kind: 'question', during: 'model_add' }), 'Orca te demande comment ouvrir ce fichier : réponds dans sa fenêtre.');
-  assert.equal(PF.dialogWaitText({ kind: 'error', during: '' }), 'Orca attend ta réponse dans sa fenêtre.');
+  assert.equal(PF.dialogWaitText({ kind: 'question', during: 'model_add' }), 'Plyo Slicer te demande comment ouvrir ce fichier : réponds dans sa fenêtre.');
+  assert.equal(PF.dialogWaitText({ kind: 'error', during: '' }), 'Plyo Slicer attend ta réponse dans sa fenêtre.');
   assert.ok(PF.dialogCardWanted({ phase: 'closed', kind: 'error', covered: '' }));
   assert.ok(!PF.dialogCardWanted({ phase: 'open', kind: 'error', covered: '' }));
   assert.ok(!PF.dialogCardWanted({ phase: 'closed', kind: 'error', covered: 'upload_error' }), 'envoi : déjà dans la carte d’échec');
   assert.ok(!PF.dialogCardWanted({ phase: 'closed', kind: 'error', covered: 'slice_result' }), 'découpe : déjà dans la carte d’Orca');
   assert.ok(!PF.dialogCardWanted({ phase: 'closed', kind: 'question', covered: '' }));
   const v = PF.dialogView({ kind: 'error', text: 'Loading of a model file failed.', during: 'model_add' });
-  assert.equal(v.title, 'Orca n’a pas pu ajouter ta pièce');
+  assert.equal(v.title, 'Plyo Slicer n’a pas pu ajouter ta pièce');
   assert.equal(v.quote, 'Loading of a model file failed.');
   assert.deepEqual(kinds(v), ['import', 'ask']);
   assert.match(v.actions[1].prompt, /« Loading of a model file failed\. »/);
   assert.equal(v.quoteMain, false, 'N7 : la fenêtre d’Orca citée en détail');
-  assert.match(v.text, /^Orca n’a pas pu ouvrir ce fichier, pour une raison que je ne sais pas encore expliquer\. Rien n’a été ajouté au plateau/);
+  assert.match(v.text, /^Plyo Slicer n’a pas pu ouvrir ce fichier, pour une raison que je ne sais pas encore expliquer\. Rien n’a été ajouté au plateau/);
   const other = PF.dialogView({ kind: 'error', text: '' });
   assert.deepEqual(kinds(other), ['slice', 'ask'], 'N7 : une suite gratuite, « Découper à nouveau »');
-  assert.match(other.text, /^Orca a affiché une erreur que je ne sais pas encore expliquer\./);
+  assert.match(other.text, /^Plyo Slicer a affiché une erreur que je ne sais pas encore expliquer\./);
 });
 
 test('panneau : « parti » seulement quand Orca a pris l’envoi, jamais « démarré » sur la foi de l’envoi', () => {
@@ -118,8 +118,8 @@ test('ajout de pièce refusé (ERR-14) : messages d’Orca cités, question sans
   assert.ok(!PF.modelDialogQuoted({ phase: 'closed', during: 'model_add', kind: 'question', text: 'Charger en un seul objet ?' }), 'une question n’est pas une raison');
   assert.ok(!PF.modelDialogQuoted({ phase: 'open', during: 'model_add', kind: 'error', text: 'x' }));
   assert.ok(!PF.modelDialogQuoted({ phase: 'closed', during: 'send', kind: 'error', text: 'x' }));
-  assert.equal(PF.modelFailPrompt(['A.', 'B.']), 'Orca n’a pas pu ouvrir mon fichier 3D. Il m’a affiché : « A. » « B. ». Explique-moi simplement pourquoi et comment obtenir un fichier qui marche.');
-  assert.equal(PF.modelFailPrompt([]), 'Orca n’a pas pu ouvrir mon fichier 3D. Explique-moi simplement pourquoi et comment obtenir un fichier qui marche.');
+  assert.equal(PF.modelFailPrompt(['A.', 'B.']), 'Plyo Slicer n’a pas pu ouvrir mon fichier 3D. Il m’a affiché : « A. » « B. ». Explique-moi simplement pourquoi et comment obtenir un fichier qui marche.');
+  assert.equal(PF.modelFailPrompt([]), 'Plyo Slicer n’a pas pu ouvrir mon fichier 3D. Explique-moi simplement pourquoi et comment obtenir un fichier qui marche.');
   const page = read('index.html');
   assert.match(page, /seen\.forEach\(function \(d\) \{ quoteUnderModelFail\(d\.text\); \}\);/, 'messages vus avant la réponse : cités sous l’échec');
   assert.match(page, /if \(PF\.modelDialogQuoted\(msg\)\) \{/);

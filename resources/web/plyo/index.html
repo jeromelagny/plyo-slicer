@@ -959,7 +959,7 @@
     slot.textContent = '';
     if (msg.ok) return;
     if (msg.needs_confirmation) {
-      var box = alertBox('warn', 'Tu as des réglages non enregistrés dans Orca. Les abandonner pour revenir à l’imprimante et au filament de ce projet ?', 'alert');
+      var box = alertBox('warn', 'Tu as des réglages non enregistrés dans Plyo Slicer. Les abandonner pour revenir à l’imprimante et au filament de ce projet ?', 'alert');
       var acts = el('div', 'printer-actions');
       acts.appendChild(button('Les abandonner', function () { slot.textContent = ''; restoreProjectInOrca(true); }, 'btn sm'));
       acts.appendChild(button('Garder mes réglages', function () { slot.textContent = ''; }, 'btn ghost sm'));
@@ -967,7 +967,7 @@
       slot.appendChild(box);
       return;
     }
-    slot.appendChild(alertBox('error', msg.text || 'Je n’ai pas pu remettre ce projet dans Orca.', 'alert'));
+    slot.appendChild(alertBox('error', msg.text || 'Je n’ai pas pu remettre ce projet dans Plyo Slicer.', 'alert'));
   }
 
   // ---------- Fiche « Mon projet » : imprimante, filament (buse et plateau), pièce ----------
@@ -1285,7 +1285,7 @@
       var chosen = conv.project.canvas || [], imposed = PlyoCanvas.isImposed(chosen);
       if (!msg.ok && imposed) { unlockSend(); refuseReread(msg); return; }
       // Lu sans imposer et illisible maintenant : rien n'était promis, la fenêtre d'Orca reste le juge.
-      if (!msg.ok) noteLine('Je n’arrive pas à relire tes emplacements : vérifie-les bien dans la fenêtre d’Orca.', 'warn', 'alert', 'guide');
+      if (!msg.ok) noteLine('Je n’arrive pas à relire tes emplacements : vérifie-les bien dans la fenêtre de Plyo Slicer.', 'warn', 'alert', 'guide');
       var route = msg.ok ? PlyoCanvas.sendRoute(chosen, msg) : 'orca';
       if (msg.ok) {
         var check = slotsCheck(msg);
@@ -1641,7 +1641,7 @@
         return;
       }
       if (msg.reason === 'not_started') { orcaNote({ text: S.notStarted, actions: [{ kind: 'slice', label: 'Découper à nouveau' }] }, 'error'); return; }
-      noteLine(msg.text || 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
+      noteLine(msg.text || 'Plyo Slicer ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
       return;
     }
     noteSpoolSent();
@@ -1739,7 +1739,7 @@
     box.classList.add('upload-failure'); // pas « orca-issue » : une nouvelle découpe (fin de l'envoi comprise) ne l'efface pas
     box.body.appendChild(el('b', '', fr(v.title)));
     box.body.appendChild(el('p', '', fr(v.text)));
-    if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message d’Orca : ') + '« ' + v.quote + ' »'));
+    if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message de Plyo Slicer : ') + '« ' + v.quote + ' »'));
     var status = el('div', 'printer-status hidden');
     box.body.appendChild(status);
     box.body.appendChild(sendActions(v.actions, { box: box, status: status, name: name || printerName() }, true));
@@ -1782,7 +1782,7 @@
     line.appendChild(icon(iconName, 14));
     line.appendChild(rich(text));
     st.appendChild(line);
-    if (quote) st.appendChild(el('p', 'muted small', 'Message d’Orca : « ' + quote + ' »'));
+    if (quote) st.appendChild(el('p', 'muted small', 'Message de Plyo Slicer : « ' + quote + ' »'));
     if (actions.length) st.appendChild(sendActions(actions, card, false));
   }
   function onLinkRechecked(msg) {
@@ -1810,7 +1810,7 @@
   function quoteUnderModelFail(text) {
     var f = modelFail;
     f.quotes.push(text);
-    f.line.insertBefore(el('span', 'muted small orca-said', ' Message d’Orca : « ' + text + ' »'), f.ask);
+    f.line.insertBefore(el('span', 'muted small orca-said', ' Message de Plyo Slicer : « ' + text + ' »'), f.ask);
     if (!f.ask) {
       f.ask = button(actionLabel({ kind: 'ask', label: window.PlyoPreflight.ASK_LABEL }), function () { send(window.PlyoPreflight.modelFailPrompt(f.quotes)); }, 'link');
       f.line.appendChild(f.ask);
@@ -1847,7 +1847,7 @@
     box.classList.add('orca-dialog');
     box.body.appendChild(el('b', '', fr(v.title)));
     box.body.appendChild(el('p', '', fr(v.text)));
-    if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message d’Orca : ') + '« ' + v.quote + ' »'));
+    if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message de Plyo Slicer : ') + '« ' + v.quote + ' »'));
     box.body.appendChild(orcaActions(conv ? v.actions : v.actions.filter(function (a) { return a.kind !== 'slice'; }), box));
     if (conv) { $('project-alert').appendChild(box); if (viewUI.tab === 'guide') box.scrollIntoView({ block: 'nearest' }); }
     else placeInOpenTab(box);
@@ -1860,7 +1860,7 @@
       // La phrase vient du type de l'erreur (kind), avec la suite : jamais le texte brut d'Orca seul.
       var ev = window.PlyoPreflight.exportErrorView(msg);
       var line = orcaNote(ev, 'error');
-      if (ev.quote) line.appendChild(el('span', 'muted small', ' Message d’Orca : « ' + ev.quote + ' »'));
+      if (ev.quote) line.appendChild(el('span', 'muted small', ' Message de Plyo Slicer : « ' + ev.quote + ' »'));
       return;
     }
     if (!msg.ok) {
@@ -2002,7 +2002,7 @@
   function onSpoolCurrent(msg) {
     var alert = $('project-alert'), of = fdivUI.waiting;
     fdivUI.waiting = '';
-    if (!of || !conv || msg.preset !== of) { if (of) noteLine('Orca a encore changé de filament : regarde la carte au-dessus.', '', 'info', 'guide'); return; }
+    if (!of || !conv || msg.preset !== of) { if (of) noteLine('Plyo Slicer a encore changé de filament : regarde la carte au-dessus.', '', 'info', 'guide'); return; }
     var path = PlyoRetouches.adoptionPath(msg);
     if (path === 'attach') { clearFilamentCard(alert); attachSpoolToProject(msg.spool, msg.material); return; }
     alert.textContent = '';
@@ -2344,7 +2344,7 @@
     var p = conv && conv.project, orcaPrinter = lastValues && lastValues.context ? lastValues.context.printer : '';
     if (p && p.printer && p.printer.preset === orcaPrinter && filamentDiverges(p)) { slot.textContent = ''; slot.dataset.kind = ''; renderFilamentCard(slot, filamentDiverges(p), p.filament); return; }
     slot.textContent = '';
-    var box = alertBox('warn', 'Orca n’est plus sur l’imprimante ou le filament de ce projet.', 'alert');
+    var box = alertBox('warn', 'Plyo Slicer n’est plus sur l’imprimante ou le filament de ce projet.', 'alert');
     var acts = el('div', 'printer-actions');
     acts.appendChild(button('Remettre le projet', function () { slot.textContent = ''; restoreProjectInOrca(false); }, 'btn sm'));
     acts.appendChild(button('Fermer', function () { slot.textContent = ''; }, 'btn ghost sm'));
@@ -2401,7 +2401,7 @@
   function onProjectPrinterSelected(msg) {
     var pend = projectUI.pending;
     projectUI.pending = null;
-    if (!msg.ok) { projectUI.switchedFrom = null; projectUI.error = { printer: 'Je n’ai pas pu sélectionner cette imprimante dans Orca.' }; renderProject(); return; }
+    if (!msg.ok) { projectUI.switchedFrom = null; projectUI.error = { printer: 'Je n’ai pas pu sélectionner cette imprimante dans Plyo Slicer.' }; renderProject(); return; }
     var sameMachine = conv.project.filament && conv.project.printer && conv.project.printer.preset === pend.preset;
     conv.project.printer = { preset: pend.preset, name: pend.name };
     if (!sameMachine) conv.project.filament = null; // le filament dépend de la machine : « comme avant » est reproposé pour celle-ci
@@ -2409,7 +2409,7 @@
     projectChanged();
     // Le panneau a changé la machine d'Orca : il le dit, et l'autre machine reste à un clic.
     if (projectUI.switchedFrom) {
-      var tip = noteLine('Orca était sur « ' + projectUI.switchedFrom + ' » : je l’ai mis sur ' + pend.name + ', ta machine.', '', 'info', 'guide');
+      var tip = noteLine('Plyo Slicer était sur « ' + projectUI.switchedFrom + ' » : je l’ai mis sur ' + pend.name + ', ta machine.', '', 'info', 'guide');
       projectUI.switchedFrom = null;
       tip.appendChild(button('Choisir une autre machine', function () { tip.remove(); projectHandlers.change('printer'); }, 'link'));
     }
@@ -3688,7 +3688,7 @@
   }
   function dropPlacing() { if (projectUI.placing) { projectUI.placing.remove(); projectUI.placing = null; } }
   function importModel(file) {
-    if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd pour passer par ce panneau (150 Mo au plus). Importe-le plutôt par Fichier › Importer dans Orca : je verrai la pièce arriver.', 'error', 'alert', 'guide'); return; }
+    if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd pour passer par ce panneau (150 Mo au plus). Importe-le plutôt par le menu Fichier › Importer : je verrai la pièce arriver.', 'error', 'alert', 'guide'); return; }
     var reader = new FileReader();
     reader.onload = function () {
       var data = String(reader.result || '');
@@ -3848,7 +3848,7 @@
     box.body.appendChild(el('b', '', fr(v.title)));
     box.body.appendChild(el('p', '', fr(v.text)));
     if (v.impact) box.body.appendChild(el('p', 'orca-impact', fr(v.impact))); // bloquant ou non, dit avant la citation d'Orca
-    if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message d’Orca : ') + '« ' + v.quote + ' »'));
+    if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message de Plyo Slicer : ') + '« ' + v.quote + ' »'));
     if (v.note) box.body.appendChild(el('p', 'muted small', fr(v.note)));
     box.body.appendChild(orcaActions(v.actions, box));
     return box;
@@ -3923,7 +3923,7 @@
       done(true);
     } };
     // Le bouton annonce la valeur (« Mettre la hauteur de couche à 0,2 mm ») : son clic vaut confirmation.
-    postRequest({ type: 'apply', changes: Logic.confirmedChanges(a.changes), print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: 'Correction demandée par Orca' });
+    postRequest({ type: 'apply', changes: Logic.confirmedChanges(a.changes), print_name: names.process, filament_name: names.filament, printer_name: names.printer, why: 'Correction demandée par Plyo Slicer' });
   }
   // Ligne d'étape avec ses boutons (découpe sans nouvelle, découpe arrêtée, export en échec).
   function orcaNote(view, tone) {

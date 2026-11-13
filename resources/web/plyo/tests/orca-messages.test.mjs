@@ -22,7 +22,7 @@ test('cas fréquents : une explication Plyo par code, la pièce nommée, et touj
     assert.ok(!/lis-le|lis le message|regarde ses messages/i.test(v.text), code + ' : jamais renvoyé vers Orca');
   }
   const v = PF.orcaIssueView({ source: 'slicing_error', code: 'no_layers', level: 'error', text: 'No layers were detected.', object_name: 'Clé' });
-  assert.equal(v.title, 'Orca n’a pas pu préparer ta pièce');
+  assert.equal(v.title, 'Plyo Slicer n’a pas pu préparer ta pièce');
   assert.match(v.text, /« Clé »/);
   assert.match(v.text, /trop petite ou trop fine/);
   assert.equal(v.quote, 'No layers were detected.', 'le texte d’Orca reste visible en détail');
@@ -39,7 +39,7 @@ test('cas fréquents : une explication Plyo par code, la pièce nommée, et touj
 test('hauteur de couche plus grande que la buse : la correction sûre en un clic, sur le réglage du catalogue', () => {
   const v = PF.orcaIssueView({ source: 'validate_error', code: 'layer_height_over_nozzle', level: 'error', text: 'Layer height cannot exceed nozzle diameter.',
     opt_key: 'layer_height', scope: 'print', object_name: 'Cube', fix: { key: 'layer_height', value: 0.2 } });
-  assert.equal(v.title, 'Orca refuse de découper cette plaque');
+  assert.equal(v.title, 'Plyo Slicer refuse de découper cette plaque');
   const fix = v.actions.find((a) => a.kind === 'fix');
   assert.equal(fix.label, 'Mettre la hauteur de couche à 0,2 mm');
   assert.deepEqual(fix.changes, [{ key: 'layer_height', value: 0.2, label: 'Hauteur de couche' }]);
@@ -74,23 +74,23 @@ test('N7 : problème inconnu, d’abord ce qui se passe et ce que ça change, le
   const v = PF.orcaIssueView({ source: 'slicing_error', code: 'RuntimeError', level: 'error', text: 'Wipe tower generation failed.', object_name: 'Tour' });
   assert.ok(!v.quoteMain);
   assert.equal(v.quote, 'Wipe tower generation failed.');
-  assert.equal(v.text, 'Orca a trouvé un problème sur « Tour », que je ne sais pas encore expliquer.');
-  assert.equal(v.impact, 'C’est bloquant : tant que ce n’est pas réglé, Orca ne découpera pas ta plaque, et rien ne peut partir à l’imprimante.');
+  assert.equal(v.text, 'Plyo Slicer a trouvé un problème sur « Tour », que je ne sais pas encore expliquer.');
+  assert.equal(v.impact, 'C’est bloquant : tant que ce n’est pas réglé, Plyo Slicer ne découpera pas ta plaque, et rien ne peut partir à l’imprimante.');
   assert.deepEqual(kinds(v), ['slice', 'ask']);
-  assert.equal(v.actions[1].prompt, 'Orca m’affiche ce message pour « Tour » : « Wipe tower generation failed. ». Explique-moi simplement ce qui se passe et comment le corriger.');
+  assert.equal(v.actions[1].prompt, 'Plyo Slicer m’affiche ce message pour « Tour » : « Wipe tower generation failed. ». Explique-moi simplement ce qui se passe et comment le corriger.');
   const w = PF.orcaIssueView({ source: 'validate_warning', code: 'mystere', level: 'warning', text: 'Something odd.', opt_key: 'mystere', scope: 'print' });
   assert.equal(w.tone, 'warn');
-  assert.equal(w.title, 'Orca prévient');
-  assert.equal(w.text, 'Orca signale un point à surveiller, que je ne sais pas encore expliquer.');
+  assert.equal(w.title, 'Plyo Slicer prévient');
+  assert.equal(w.text, 'Plyo Slicer signale un point à surveiller, que je ne sais pas encore expliquer.');
   assert.equal(w.impact, 'Ce n’est pas bloquant : tu peux imprimer quand même.');
   assert.deepEqual(kinds(w), ['show_setting', 'preview', 'dismiss', 'ask']);
   assert.equal(w.actions.find((a) => a.kind === 'dismiss').label, 'Continuer quand même');
   const blank = PF.orcaIssueView({ source: 'validate_error', code: 'unknown', level: 'error', text: '' });
   assert.match(blank.text, /sans me donner de détail/);
-  assert.match(blank.actions.find((a) => a.kind === 'ask').prompt, /^Orca signale un problème sur ma plaque\./);
+  assert.match(blank.actions.find((a) => a.kind === 'ask').prompt, /^Plyo Slicer signale un problème sur ma plaque\./);
   // Contrôle du G-code (plaque non imprimable) : bloquant, l'aperçu montre où ; jamais « Continuer quand même ».
   const g = PF.orcaIssueView({ source: 'gcode_check', code: 'not_printable', level: 'error', text: '' });
-  assert.match(g.impact, /Orca ne laissera pas imprimer cette plaque/);
+  assert.match(g.impact, /Plyo Slicer ne laissera pas imprimer cette plaque/);
   assert.deepEqual(kinds(g), ['preview', 'ask']);
   assert.ok(!kinds(PF.orcaIssueView({ source: 'validate_error', code: 'collision', level: 'error', text: '' })).includes('dismiss'), 'un refus ne se contourne jamais');
 });
@@ -159,11 +159,11 @@ test('parcours : plaque découpée mais non imprimable, pas de « Continuer » n
   assert.equal(J.primaryAction('imprimer', { sliced: true, blocked: true, linked: true }).kind, 'none');
   assert.equal(J.primaryAction('imprimer', { sliced: true, linked: true }).kind, 'send');
   assert.equal(J.afterSliceFollow({ sliced: true, blocked: true, linked: true }), null);
-  assert.match(J.prompt('preparer', { sliced: true, blocked: true }), /Orca bloque l’impression/);
-  assert.match(J.prompt('imprimer', { sliced: true, blocked: true }), /Orca bloque l’impression/);
+  assert.match(J.prompt('preparer', { sliced: true, blocked: true }), /Plyo Slicer bloque l’impression/);
+  assert.match(J.prompt('imprimer', { sliced: true, blocked: true }), /Plyo Slicer bloque l’impression/);
   assert.equal(J.prompt('imprimer', { sliced: true }), 'Prêt à imprimer');
   // Découpe refusée ou en erreur : plus de « Je découpe… », l'explication est annoncée, « Découper » reste possible.
-  assert.match(J.prompt('preparer', { sliceFailed: true }), /Orca n’a pas pu découper ta plaque/);
+  assert.match(J.prompt('preparer', { sliceFailed: true }), /Plyo Slicer n’a pas pu découper ta plaque/);
   assert.equal(J.primaryAction('preparer', { sliceFailed: true }).kind, 'slice');
   assert.equal(J.primaryAction('preparer', { sliceFailed: true }).enabled, true);
 });

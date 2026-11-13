@@ -150,11 +150,11 @@
         if (!c.sliced && c.intent === 'repeat') return 'Même usage que ta dernière pièce ?';
         if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';
         if (!c.sliced && c.slicing) return 'Je découpe ta plaque…';
-        if (!c.sliced && c.sliceFailed) return 'Orca n’a pas pu découper ta plaque : je t’explique ci-dessous';
-        if (c.sliced && c.blocked) return 'Orca bloque l’impression de cette plaque : je t’explique ci-dessous';
+        if (!c.sliced && c.sliceFailed) return 'Plyo Slicer n’a pas pu découper ta plaque : je t’explique ci-dessous';
+        if (c.sliced && c.blocked) return 'Plyo Slicer bloque l’impression de cette plaque : je t’explique ci-dessous';
         return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler : coche ce que tu veux corriger ci-dessous'
           : c.checked === 'clean' ? 'Tout est bon, on passe à l’impression' : c.checked === 'ignored' ? 'Tu as ignoré des points : à toi de voir' : 'Je vérifie ta plaque…');
-      case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : c.blocked ? 'Orca bloque l’impression de cette plaque : je t’explique ci-dessous' : 'Prêt à imprimer';
+      case 'imprimer': return !c.sliced ? 'Redécoupe la plaque avant d’imprimer' : c.blocked ? 'Plyo Slicer bloque l’impression de cette plaque : je t’explique ci-dessous' : 'Prêt à imprimer';
       default: if (c.success) return 'Bravo, c’est réussi !';
         if (c.failed) return 'Dommage. Montre-moi ta pièce en photo';
         // La question de fin d'impression est dans l'étape : la consigne dit seulement ce qui s'est passé.
@@ -172,7 +172,7 @@
     if (!before || !after || baseName(before) === baseName(after)) return '';
     var b = show ? show(before) || before : before, a = show ? show(after) || after : after;
     if (b === a) { b = before; a = after; } // raccourcis identiques : les noms entiers, pour que la différence se voie
-    return 'Profil de filament changé dans Orca : « ' + b + ' » devient « ' + a + ' ».';
+    return 'Profil de filament changé dans Plyo Slicer : « ' + b + ' » devient « ' + a + ' ».';
   }
   function afterPreflight(risks) { return risks === 0 ? 'advance' : 'stay'; }
   // Message au passage à l'impression : « Pas de risque » seulement si la vérification n'a rien trouvé, même ignoré.

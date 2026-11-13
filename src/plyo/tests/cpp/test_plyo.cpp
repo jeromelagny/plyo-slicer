@@ -2870,7 +2870,7 @@ TEST_CASE("Projets : départ d'une conversation selon l'écriture de son 3MF")
     CHECK_FALSE(l.forget);
     CHECK(l.pending);
     // Seul un vrai état occupé mérite « occupe ».
-    CHECK(BUSY_TEXT == std::string("J’attends qu’Orca ait fini ce qu’il fait (découpe, envoi, test ou fenêtre ouverte) pour ranger le projet d’avant ; réessaie dans un instant."));
+    CHECK(BUSY_TEXT == std::string("J’attends que Plyo Slicer ait fini ce qu’il fait (découpe, envoi, test ou fenêtre ouverte) pour ranger le projet d’avant ; réessaie dans un instant."));
 }
 
 TEST_CASE("Projets : après « occupe » à l'ouverture, rien ne s'applique au plateau de l'autre conversation")

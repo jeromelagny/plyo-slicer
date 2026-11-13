@@ -4,7 +4,8 @@
 Lecture seule des sources d'Orca (aucune compilation) :
 - src/libslic3r/PrintConfig.cpp : définitions (type, libellé, infobulle, bornes, choix) ;
 - src/slic3r/GUI/Tab.cpp : TabPrint::build et TabFilament::build, qui définissent ce qu'un maker voit et son onglet ;
-- localization/i18n/fr/OrcaSlicer_fr.po : libellés français ;
+- localization/i18n/fr/OrcaSlicer_fr.po : libellés français, renommés comme dans l'application (rebrand_translations.py :
+  « Plyo Slicer », jamais « Orca », dans ce que l'assistant lit et répète) ;
 - resources/plyo/policy.json : exclusions (G-code, identité des profils…) et niveaux de risque.
 
 Usage : python3 -I src/plyo/catalog/generate_catalog.py [--out ../plyo-api/knowledge/settings-catalog.json]
@@ -14,6 +15,9 @@ import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from rebrand_translations import rebrand  # noqa: E402
 
 STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
 DEF = re.compile(r'def\s*=\s*this->add(?:_nullable)?\("(\w+)",\s*(co\w+)\)\s*;')
@@ -128,7 +132,7 @@ def generate(root):
     defs = parse_definitions((root / "src/libslic3r/PrintConfig.cpp").read_text(encoding="utf-8"))
     tab_text = (root / "src/slic3r/GUI/Tab.cpp").read_text(encoding="utf-8")
     fr = parse_po(root / "localization/i18n/fr/OrcaSlicer_fr.po")
-    t = lambda s: fr.get(s, s)  # noqa: E731
+    t = lambda s: rebrand(fr.get(s, s))  # noqa: E731  (texte montré par l'application : traduction renommée)
     seen, entries, excluded, read = set(), [], {}, 0
     for scope, cls in (("print", "TabPrint"), ("filament", "TabFilament")):
         for key, tab, group, line in parse_tab_keys(tab_text, cls):

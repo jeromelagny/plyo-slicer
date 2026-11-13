@@ -414,7 +414,7 @@ void drop(UndoEntry entry, std::vector<SavedValue> saved, DropReason reason)
         s_dropped.pop_front();
 }
 
-const char* const ORCA_DIALOG_TEXT = "Orca attend ta réponse dans une fenêtre ouverte : réponds-y d'abord, puis réessaie. Aucune modification appliquée.";
+const char* const ORCA_DIALOG_TEXT = "Plyo Slicer attend ta réponse dans une fenêtre ouverte : réponds-y d'abord, puis réessaie. Aucune modification appliquée.";
 
 // Une fenêtre d'Orca est ouverte : écrire maintenant relancerait ses contrôles par-dessus. null si l'écriture est permise.
 nlohmann::json orca_dialog_refusal()
@@ -528,7 +528,7 @@ Batch write_batch(const std::map<Preset::Type, DynamicPrintConfig>& configs, con
         }
         if (!error.empty()) {
             BOOST_LOG_TRIVIAL(error) << "Plyo: erreur d'Orca pendant l'écriture d'un lot : " << error;
-            out.text = "Orca a rencontré une erreur en écrivant ces réglages : j'ai tout remis comme avant. Aucune modification appliquée.";
+            out.text = "Plyo Slicer a rencontré une erreur en écrivant ces réglages : j'ai tout remis comme avant. Aucune modification appliquée.";
             return out;
         }
         std::string list;
@@ -540,7 +540,7 @@ Batch write_batch(const std::map<Preset::Type, DynamicPrintConfig>& configs, con
             list += (list.empty() ? "« " : ", « ") + label_of(key) + " »";
         }
         BOOST_LOG_TRIVIAL(warning) << "Plyo: Orca a refusé une partie du lot (" << list << ") : lot défait";
-        out.text = "Orca n'a pas accepté " + list + " : j'ai remis tout le lot comme avant. Aucune modification appliquée.";
+        out.text = "Plyo Slicer n'a pas accepté " + list + " : j'ai remis tout le lot comme avant. Aucune modification appliquée.";
         return out;
     }
     for (const std::string& id : changed) {
@@ -570,7 +570,7 @@ std::string also_text(const nlohmann::json& also)
     std::string text;
     for (const nlohmann::json& a : also)
         text += std::string(text.empty() ? "" : ", ") + a.value("label", std::string()) + " " + show(a["before"]) + " → " + show(a["after"]);
-    return " Orca a aussi réglé : " + text + ".";
+    return " Plyo Slicer a aussi réglé : " + text + ".";
 }
 
 // Ce qu'un lot a laissé, tel qu'Orca l'écrit : le panneau retient ainsi les réglages posés par l'assistant pour ce projet et
@@ -982,7 +982,7 @@ nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::s
         const auto trigger = std::find_if(planned.begin(), planned.end(), [&](const Planned& p) { return p.key == a.trigger; });
         if (!policy.allows(a.scope, a.key))
             return refused("Refusé : " + (trigger != planned.end() ? "« " + trigger->label + " »" : std::string("ce lot")) + " demande aussi de changer « " +
-                               label_of(a.key) + " » (" + a.why + "), un réglage que l'assistant ne modifie pas. Fais ce changement dans Orca : il te "
+                               label_of(a.key) + " » (" + a.why + "), un réglage que l'assistant ne modifie pas. Fais ce changement dans Plyo Slicer : il te "
                                "proposera de tout régler d'un coup. Aucune modification appliquée.",
                            "orca_rule", a.trigger);
         Planned p;
@@ -1042,7 +1042,7 @@ nlohmann::json undo_last(int expected_id)
         const auto dropped = std::find_if(s_dropped.rbegin(), s_dropped.rend(), [&](const DroppedEntry& d) { return expected_id > 0 && d.id == expected_id; });
         if (dropped == s_dropped.rend())
             return {{"ok", false}, {"code", "undo_gone"}, {"text", "Ce changement ne peut plus être annulé ici : Plyo a été relancé depuis, ou il est trop ancien."}};
-        const char* why = dropped->reason == DropReason::Project      ? "un autre projet a été ouvert dans Orca depuis"
+        const char* why = dropped->reason == DropReason::Project      ? "un autre projet a été ouvert dans Plyo Slicer depuis"
                         : dropped->reason == DropReason::Conversation ? "tu es passé à un autre projet de l'assistant depuis, et ces réglages sont restés avec le précédent"
                         : dropped->reason == DropReason::Import       ? "un fichier a été ouvert depuis, et ses réglages ont remplacé ceux-là"
                         : dropped->reason == DropReason::Calibration  ? "une calibration a remis ses propres réglages depuis"

@@ -32,11 +32,11 @@ test('chaque bulle connue : explication Plyo en français, impact, et une issue 
 
 test('erreur reconnue : « Orca refuse de découper », bloquant ; avertissement : « Orca prévient », non bloquant', () => {
   const e = PF.orcaIssueView({ source: 'notification', code: 'filament_unprintable', level: 'error', text: 'x' });
-  assert.equal(e.title, 'Orca refuse de découper cette plaque');
+  assert.equal(e.title, 'Plyo Slicer refuse de découper cette plaque');
   assert.match(e.impact, /^C’est bloquant/);
   assert.equal(e.tone, 'error');
   const w = PF.orcaIssueView({ source: 'notification', code: 'pla_petg_mix', level: 'warning', text: 'x' });
-  assert.equal(w.title, 'Orca prévient');
+  assert.equal(w.title, 'Plyo Slicer prévient');
   assert.match(w.impact, /pas bloquant/);
   assert.ok(kinds(w).includes('dismiss') && kinds(w).includes('preview'));
 });
@@ -61,12 +61,12 @@ test('maillage abîmé : la pièce nommée et le vrai geste d’Orca (« Répare
 
 test('bulle inconnue : dit honnêtement, impact incertain, « Découper à nouveau » gratuit', () => {
   const e = PF.orcaIssueView({ source: 'notification', code: 'unknown', level: 'error', text: 'Something new.' });
-  assert.equal(e.title, 'Orca a un souci');
+  assert.equal(e.title, 'Plyo Slicer a un souci');
   assert.match(e.text, /que je ne sais pas encore expliquer/);
   assert.match(e.impact, /^Je ne sais pas si ça bloque/);
   assert.ok(kinds(e).includes('slice'));
   const w = PF.orcaIssueView({ source: 'notification', code: 'unknown', level: 'warning', text: 'Something new.' });
-  assert.equal(w.title, 'Orca prévient');
+  assert.equal(w.title, 'Plyo Slicer prévient');
   assert.match(w.impact, /pas bloquant/);
   assert.ok(kinds(w).includes('dismiss'));
 });

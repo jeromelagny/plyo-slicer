@@ -210,11 +210,11 @@
 
   // Explication Plyo par code : { title?, text, actions }. `p` : la pièce nommée (« … » ou « ta pièce »), `P` : en début de phrase.
   var EXPLAIN = {
-    no_layers: function (i, p) { return { text: 'Orca ne trouve aucune couche à imprimer dans ' + p + ' : elle est sans doute trop petite ou trop fine, ou son fichier est abîmé. Regarde sa taille sur le plateau : un modèle dessiné en pouces paraît 25 fois trop petit.', actions: [] }; },
+    no_layers: function (i, p) { return { text: 'Plyo Slicer ne trouve aucune couche à imprimer dans ' + p + ' : elle est sans doute trop petite ou trop fine, ou son fichier est abîmé. Regarde sa taille sur le plateau : un modèle dessiné en pouces paraît 25 fois trop petit.', actions: [] }; },
     empty_first_layer: function (i, p) { return { text: 'La première couche de ' + p + ' est vide : la pièce ne pose pas à plat sur le plateau (elle flotte, ou repose sur une pointe).', actions: [
       { kind: 'plate', action: 'orient', label: 'Orienter automatiquement' },
       { kind: 'fix', label: 'Activer les supports', changes: [{ key: 'enable_support', value: true, label: 'Supports' }] }] }; },
-    nothing_to_print: function (i, p) { return { text: 'Orca n’a rien trouvé à imprimer : ' + p + ' est sans doute trop petite pour la buse de ton imprimante.', actions: [] }; },
+    nothing_to_print: function (i, p) { return { text: 'Plyo Slicer n’a rien trouvé à imprimer : ' + p + ' est sans doute trop petite pour la buse de ton imprimante.', actions: [] }; },
     print_empty: function () { return { text: 'Avec les réglages actuels, ta plaque ne donne rien à imprimer : la pièce est peut-être trop petite ou trop fine.', actions: [] }; },
     prime_tower: function () { return { text: 'La tour de purge (le petit bloc qui nettoie la buse entre deux couleurs) sort du plateau ou touche une zone interdite.', actions: [ARRANGE_ACT] }; },
     PlaceholderParserError: function () { return { text: 'Le G-code de ton imprimante (les commandes de début et de fin, dans les réglages de l’imprimante) contient une erreur. Je ne modifie jamais ces commandes : corrige-les dans l’onglet de l’imprimante, ou reprends son profil d’origine.', actions: [{ kind: 'show_me', target: 'printer', label: 'Montre-moi l’imprimante' }] }; },
@@ -222,67 +222,67 @@
     plate_empty: function () { return { text: 'Il n’y a aucune pièce sur cette plaque.', actions: [{ kind: 'import', label: 'Choisir un fichier' }], noAsk: true }; },
     layer_height_over_nozzle: function (i) {
       var fix = i.fix && SCOPES[i.scope] ? [{ kind: 'fix', label: 'Mettre la hauteur de couche à ' + decimal(i.fix.value) + ' mm', changes: [{ key: i.fix.key, value: i.fix.value, label: 'Hauteur de couche' }] }] : [];
-      return { text: 'La hauteur de couche est plus grande que le trou de la buse : la buse ne peut pas déposer une couche aussi épaisse, alors Orca refuse de découper.', actions: fix }; },
+      return { text: 'La hauteur de couche est plus grande que le trou de la buse : la buse ne peut pas déposer une couche aussi épaisse, alors Plyo Slicer refuse de découper.', actions: fix }; },
     vase_several_objects: function (i) {
       // Avec ce que le mode vase avait imposé (parois, couches du dessus, remplissage…) : sinon la pièce partirait creuse et ouverte.
       var also = i.fix ? leftovers(i.fix.also) : [];
       var label = 'Désactiver le mode vase' + (also.length ? ' et remettre ' + leftoverNames(also) : '');
       var fix = i.fix && SCOPES[i.scope] ? [{ kind: 'fix', label: label, changes: [{ key: i.fix.key, value: i.fix.value, label: 'Mode vase' }].concat(leftoverChanges(also)) }] : [];
-      return { text: 'Le mode vase imprime une seule pièce, en un seul trait qui monte en spirale. Avec plusieurs pièces sur la plaque, Orca refuse.', actions: fix }; },
+      return { text: 'Le mode vase imprime une seule pièce, en un seul trait qui monte en spirale. Avec plusieurs pièces sur la plaque, Plyo Slicer refuse.', actions: fix }; },
     spiral_mode: function () { return { text: 'Le mode vase ne marche pas avec une pièce de plusieurs couleurs ou matières.', actions: [] }; },
     object_too_tall: function (i, p, P) { return { text: P + ' est trop haute pour ton imprimante : son sommet dépasse la hauteur maximale.', actions: [{ kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour qu’elle tienne' }] }; },
-    filament_bed_type: function () { return { text: 'Orca déconseille ce filament sur le type de plateau choisi : pour cette surface, sa température de plateau est à 0.', actions: [{ kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' }] }; },
+    filament_bed_type: function () { return { text: 'Plyo Slicer déconseille ce filament sur le type de plateau choisi : pour cette surface, sa température de plateau est à 0.', actions: [{ kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' }] }; },
     collision: function () { return { text: 'Des pièces sont trop proches : la buse ou la tête d’impression les toucherait.', actions: [ARRANGE_ACT] }; },
     collision_by_object: function () { return { text: 'En impression pièce par pièce, la tête de l’imprimante toucherait une pièce déjà imprimée : elles sont trop proches, ou l’une est trop haute.', actions: [ARRANGE_ACT] }; },
-    object_outside: function () { return { text: 'Une pièce dépasse du plateau : elle déborde sur un bord, ou elle est plus haute que ce que ton imprimante peut atteindre. Orca vérifie la vraie forme du plateau, zones interdites comprises.',
+    object_outside: function () { return { text: 'Une pièce dépasse du plateau : elle déborde sur un bord, ou elle est plus haute que ce que ton imprimante peut atteindre. Plyo Slicer vérifie la vraie forme du plateau, zones interdites comprises.',
       actions: [ARRANGE_ACT, SCALE_ACT] }; },
-    plate_refused: function () { return { text: 'Orca refuse de découper cette plaque sans me dire pourquoi. Range le plateau, puis découpe à nouveau.', actions: [ARRANGE_ACT] }; },
+    plate_refused: function () { return { text: 'Plyo Slicer refuse de découper cette plaque sans me dire pourquoi. Range le plateau, puis découpe à nouveau.', actions: [ARRANGE_ACT] }; },
     toolpath_outside: function () { return { text: 'Une partie du trajet de la buse sort du plateau : souvent la bordure (rebord collé autour de la pièce) ou la jupe (contour tracé autour d’elle) d’une pièce placée trop près du bord.', actions: [ARRANGE_ACT] }; },
     height_outside: function () { return { text: 'Le trajet de la buse monte plus haut que ce que ton imprimante peut atteindre.', actions: [{ kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour que ça tienne' }] }; },
     filament_bed_surface: function () { return { text: 'Un filament de ta plaque ne peut pas être imprimé directement sur la surface de ce plateau.', actions: [{ kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' }] }; },
     nozzle_area: function () { return { text: 'Une partie de la plaque est hors de la zone que peut atteindre l’une des buses.', actions: [ARRANGE_ACT] }; },
     nozzle_height: function () { return { text: 'Une partie de la plaque est trop haute pour l’une des buses.', actions: [] }; },
-    not_printable: function () { return { text: 'Orca a découpé ta plaque, mais ne la juge pas imprimable telle quelle.', actions: [] }; },
+    not_printable: function () { return { text: 'Plyo Slicer a découpé ta plaque, mais ne la juge pas imprimable telle quelle.', actions: [] }; },
     empty_layers: function (i, p, P) { return { text: P + ' a des couches vides à certaines hauteurs : des parties sont trop fines, ou le fichier est abîmé. L’impression risque de rater à cet endroit.', actions: [] }; },
     exclusion_area: function () { return { text: 'Un trajet de la buse passe dans une zone interdite du plateau.', actions: [ARRANGE_ACT] }; },
     // N7 : avertissements et refus courants d'Orca qui n'avaient pas d'explication (identifiants, jamais le texte d'Orca).
     filaments_temp: function () { return { text: 'Les filaments de ta plaque demandent des températures de buse trop différentes : imprimés ensemble, l’un risque de boucher la buse ou de mal coller.', actions: [{ kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' }] }; },
-    skirt_brim: function () { return { text: 'Orca n’a pas pu tracer la bordure (rebord collé autour de la pièce) ou la jupe (contour tracé autour d’elle) : la pièce est peut-être trop près du bord du plateau.', actions: [ARRANGE_ACT] }; },
+    skirt_brim: function () { return { text: 'Plyo Slicer n’a pas pu tracer la bordure (rebord collé autour de la pièce) ou la jupe (contour tracé autour d’elle) : la pièce est peut-être trop près du bord du plateau.', actions: [ARRANGE_ACT] }; },
     precise_seam: function (i, p) { return { text: 'Une zone ajoutée sur ' + p + ' pour placer la couture (l’endroit où chaque tour de paroi commence) n’a pas d’effet : la couture risque d’être ailleurs. Seul l’aspect change, pas la solidité.', actions: [] }; },
-    support_base_pattern: function () { return { text: 'Le motif choisi pour la base des supports ne va pas avec ce type de supports : Orca en prend un autre tout seul.', actions: [] }; },
-    precise_outer_wall: function () { return { text: 'L’option « Parois précises » ne marche pas avec l’ordre des parois choisi : Orca l’ignore et imprime sans elle.', actions: [] }; },
+    support_base_pattern: function () { return { text: 'Le motif choisi pour la base des supports ne va pas avec ce type de supports : Plyo Slicer en prend un autre tout seul.', actions: [] }; },
+    precise_outer_wall: function () { return { text: 'L’option « Parois précises » ne marche pas avec l’ordre des parois choisi : Plyo Slicer l’ignore et imprime sans elle.', actions: [] }; },
     adaptive_layer_height: function () { return { text: 'La tour de purge (le petit bloc qui nettoie la buse entre deux couleurs) ne marche pas avec la hauteur de couche adaptative : toutes les pièces doivent avoir la même hauteur de couche.', actions: [] }; },
     enable_prime_tower: function (i) { return { text: 'La tour de purge (le petit bloc qui nettoie la buse entre deux couleurs) ne va pas avec tes réglages actuels' +
-      (i.level === 'error' ? ' : en impression pièce par pièce, Orca ne sait pas la faire.' : '.'), actions: [] }; },
+      (i.level === 'error' ? ' : en impression pièce par pièce, Plyo Slicer ne sait pas la faire.' : '.'), actions: [] }; },
     // ERR-11 : bulles d'Orca sur la plaque et la pièce (source « notification »), reconnues par leur type, jamais par leur texte.
-    plate_warning: function () { return { text: 'Orca signale un point à surveiller sur le plateau. Je cite son message juste en dessous : le plus souvent, ranger le plateau suffit.', actions: [ARRANGE_ACT] }; },
-    flushing_volume_zero: function () { return { text: 'Quand ta plaque change de couleur, la buse jette un peu de filament (la purge) pour repartir avec une couleur propre. Ici, certains volumes de purge sont à 0 : les couleurs risquent de se mélanger sur ta pièce. Pour les régler, clique sur « Volume de purge » dans la bulle d’Orca, ou sur le bouton « Volumes de purge » au-dessus de la liste des filaments.', actions: [FILAMENT_ACT] }; },
+    plate_warning: function () { return { text: 'Plyo Slicer signale un point à surveiller sur le plateau. Je cite son message juste en dessous : le plus souvent, ranger le plateau suffit.', actions: [ARRANGE_ACT] }; },
+    flushing_volume_zero: function () { return { text: 'Quand ta plaque change de couleur, la buse jette un peu de filament (la purge) pour repartir avec une couleur propre. Ici, certains volumes de purge sont à 0 : les couleurs risquent de se mélanger sur ta pièce. Pour les régler, clique sur « Volume de purge » dans la bulle de Plyo Slicer, ou sur le bouton « Volumes de purge » au-dessus de la liste des filaments.', actions: [FILAMENT_ACT] }; },
     nozzle_filament: function () { return { text: 'Un filament de ta plaque ne va pas avec la buse de ton imprimante : par exemple un filament chargé de fibres, qui use vite une buse en laiton. L’impression peut rater, ou abîmer la buse.', actions: [FILAMENT_ACT, PRINTER_ACT] }; },
     pla_petg_mix: function () { return { text: 'Ta plaque mélange du PLA et du PETG. Ces deux matières collent mal l’une sur l’autre : dans une même pièce, les couches risquent de se séparer. Pour des supports faciles à détacher, c’est au contraire voulu.', actions: [FILAMENT_ACT] }; },
     mixed_filament_single_nozzle: function () { return { text: 'Ta plaque utilise un filament « mélangé » (deux couleurs qui alternent) sur une imprimante à une seule buse : elle va changer très souvent de filament et purger à chaque fois. L’impression sera plus longue et utilisera plus de filament.', actions: [FILAMENT_ACT] }; },
     mixed_filament_broken: function () { return { text: 'Un filament « mélangé » de ta liste renvoie à un filament supprimé, ou mélange des matières qui ne vont pas ensemble. Ouvre la liste des filaments pour le corriger avant de découper.', actions: [FILAMENT_ACT] }; },
     filament_unprintable: function () { return { text: 'Un des filaments de ta plaque ne peut pas être imprimé par cette imprimante telle qu’elle est réglée (matière qu’elle ne gère pas, ou filament placé sur une buse qui ne peut pas l’imprimer). Choisis un autre filament pour cette pièce.', actions: [FILAMENT_ACT] }; },
     extruder_unprintable: function () { return { text: 'Ton imprimante a deux buses, et une pièce est placée là où la buse prévue pour son filament ne peut pas aller. Range le plateau, ou change le filament de cette pièce.', actions: [ARRANGE_ACT, FILAMENT_ACT] }; },
-    plugin_missing: function () { return { text: 'Le profil choisi a besoin d’une extension d’Orca (un module ajouté au logiciel) qui n’est pas installée ou pas activée. Tant qu’elle manque, Orca ne découpe pas. La bulle d’Orca propose de la régler ; sinon, choisis un autre profil d’imprimante.', actions: [PRINTER_ACT] }; },
-    mesh_errors: function (i, p, P) { return { text: P + ' a un maillage abîmé : sa surface a des trous ou des faces mal raccordées. Orca s’en sort souvent, mais des couches peuvent manquer à l’impression. Pour la réparer : clic droit sur la pièce, puis « Réparer le modèle » (Fix Model).', actions: [{ kind: 'show_me', target: 'plate', label: 'Montre-moi le plateau' }] }; },
-    simplify_suggestion: function () { return { text: 'Ta pièce a énormément de petites facettes : Orca propose de la simplifier pour travailler plus vite. Ce n’est pas obligatoire.', actions: [] }; },
-    unknown_font: function () { return { text: 'Le texte ajouté sur ta pièce utilise une police absente de cet ordinateur : Orca l’a remplacée par une police proche. Le texte peut avoir un aspect un peu différent.', actions: [] }; },
-    project_load_warning: function () { return { text: 'En ouvrant ce projet, Orca n’a pas pu reprendre certains réglages du fichier tels quels (valeur refusée, réglage ignoré, ou emplacement de filament changé). Je cite son message juste en dessous : vérifie le filament et l’imprimante avant d’imprimer.', actions: [FILAMENT_ACT, PRINTER_ACT] }; },
-    preview_only: function () { return { text: 'Tu as ouvert un fichier G-code : Orca le montre seulement en aperçu, il ne peut ni le modifier ni le redécouper. Pour changer des réglages, ouvre le modèle 3D (STL ou 3MF).', actions: [{ kind: 'import', label: 'Choisir un fichier' }] }; },
-    repair_removed_paint: function () { return { text: 'Pour réparer la pièce, Orca a dû retirer les supports peints à la main et la couleur peinte. Si tu en avais besoin, annule la réparation avec Cmd + Z (Ctrl + Z sur Windows) dans la fenêtre de Plyo.', actions: [] }; }
+    plugin_missing: function () { return { text: 'Le profil choisi a besoin d’une extension de Plyo Slicer (un module ajouté au logiciel) qui n’est pas installée ou pas activée. Tant qu’elle manque, le logiciel ne découpe pas. Sa bulle d’alerte propose de la régler ; sinon, choisis un autre profil d’imprimante.', actions: [PRINTER_ACT] }; },
+    mesh_errors: function (i, p, P) { return { text: P + ' a un maillage abîmé : sa surface a des trous ou des faces mal raccordées. Plyo Slicer s’en sort souvent, mais des couches peuvent manquer à l’impression. Pour la réparer : clic droit sur la pièce, puis « Réparer le modèle » (Fix Model).', actions: [{ kind: 'show_me', target: 'plate', label: 'Montre-moi le plateau' }] }; },
+    simplify_suggestion: function () { return { text: 'Ta pièce a énormément de petites facettes : Plyo Slicer propose de la simplifier pour travailler plus vite. Ce n’est pas obligatoire.', actions: [] }; },
+    unknown_font: function () { return { text: 'Le texte ajouté sur ta pièce utilise une police absente de cet ordinateur : Plyo Slicer l’a remplacée par une police proche. Le texte peut avoir un aspect un peu différent.', actions: [] }; },
+    project_load_warning: function () { return { text: 'En ouvrant ce projet, Plyo Slicer n’a pas pu reprendre certains réglages du fichier tels quels (valeur refusée, réglage ignoré, ou emplacement de filament changé). Je cite son message juste en dessous : vérifie le filament et l’imprimante avant d’imprimer.', actions: [FILAMENT_ACT, PRINTER_ACT] }; },
+    preview_only: function () { return { text: 'Tu as ouvert un fichier G-code : Plyo Slicer le montre seulement en aperçu, il ne peut ni le modifier ni le redécouper. Pour changer des réglages, ouvre le modèle 3D (STL ou 3MF).', actions: [{ kind: 'import', label: 'Choisir un fichier' }] }; },
+    repair_removed_paint: function () { return { text: 'Pour réparer la pièce, Plyo Slicer a dû retirer les supports peints à la main et la couleur peinte. Si tu en avais besoin, annule la réparation avec Cmd + Z (Ctrl + Z sur Windows) dans sa fenêtre principale.', actions: [] }; }
   };
   // Ce que change une bulle d'Orca dont l'effet n'est pas celui de son niveau (N7) ; sinon impactOf dit bloquant ou non.
   var NOTICE_IMPACT = {
-    prime_tower: 'Orca ne bloque pas encore, mais la découpe risque d’échouer tant que la tour dépasse.',
+    prime_tower: 'Plyo Slicer ne bloque pas encore, mais la découpe risque d’échouer tant que la tour dépasse.',
     preview_only: 'Rien n’est abîmé : avec ce fichier, seul l’aperçu est possible.',
-    unknown: 'Je ne sais pas si ça bloque : découpe ta plaque, et si Orca refuse, je te dirai pourquoi.'
+    unknown: 'Je ne sais pas si ça bloque : découpe ta plaque, et si Plyo Slicer refuse, je te dirai pourquoi.'
   };
   // Ce que le problème change pour l'impression, dit juste après l'explication (N7) : bloquant ou non.
   function impactOf(i) {
     if (i.source === 'notification' && NOTICE_IMPACT[i.code] && (i.code !== 'unknown' || i.level === 'error')) return NOTICE_IMPACT[i.code];
     if (i.level !== 'error') return 'Ce n’est pas bloquant : tu peux imprimer quand même.';
-    if (i.source === 'gcode_check') return 'C’est bloquant : Orca ne laissera pas imprimer cette plaque tant que ce n’est pas réglé.';
-    return 'C’est bloquant : tant que ce n’est pas réglé, Orca ne découpera pas ta plaque, et rien ne peut partir à l’imprimante.';
+    if (i.source === 'gcode_check') return 'C’est bloquant : Plyo Slicer ne laissera pas imprimer cette plaque tant que ce n’est pas réglé.';
+    return 'C’est bloquant : tant que ce n’est pas réglé, Plyo Slicer ne découpera pas ta plaque, et rien ne peut partir à l’imprimante.';
   }
   // Au moins une suite gratuite et sans compte, adaptée (N7). Avertissement : voir l'aperçu, ou continuer (il n'est pas
   // bloquant : « Continuer quand même » ferme la carte, sans contourner aucun refus). Erreur : annuler les derniers réglages
@@ -303,12 +303,12 @@
   // « Pièce flottante » : déjà dans la carte « Avant d'imprimer » (risque « support »), avec ses corrections.
   var LEFT_TO_PREFLIGHT = { need_support: true };
 
-  var TITLES = { slicing_error: 'Orca n’a pas pu préparer ta pièce', validate_error: 'Orca refuse de découper cette plaque',
-    gcode_check: 'Orca bloque l’impression de cette plaque', validate_warning: 'Orca prévient', step_warning: 'Orca prévient' };
+  var TITLES = { slicing_error: 'Plyo Slicer n’a pas pu préparer ta pièce', validate_error: 'Plyo Slicer refuse de découper cette plaque',
+    gcode_check: 'Plyo Slicer bloque l’impression de cette plaque', validate_warning: 'Plyo Slicer prévient', step_warning: 'Plyo Slicer prévient' };
   // Bulle d'Orca : une erreur reconnue l'empêche de découper ; une erreur inconnue ou un avertissement n'est qu'un signalement.
   function titleOf(i, warn) {
-    if (i.source === 'notification') return warn ? 'Orca prévient' : i.code === 'unknown' ? 'Orca a un souci' : 'Orca refuse de découper cette plaque';
-    return TITLES[i.source] || (warn ? 'Orca prévient' : 'Orca a un souci');
+    if (i.source === 'notification') return warn ? 'Plyo Slicer prévient' : i.code === 'unknown' ? 'Plyo Slicer a un souci' : 'Plyo Slicer refuse de découper cette plaque';
+    return TITLES[i.source] || (warn ? 'Plyo Slicer prévient' : 'Plyo Slicer a un souci');
   }
 
   // Problèmes à montrer en carte : les erreurs d'abord ; les avertissements seulement si `warnings` ; au plus `max` (3).
@@ -337,8 +337,8 @@
   // La question préremplie pour l'assistant : le texte d'Orca tel quel, et la pièce quand elle est connue.
   function askPrompt(issue, explained) {
     var on = issue.object_name ? ' pour « ' + issue.object_name + ' »' : '';
-    var said = issue.text ? 'Orca m’affiche ce message' + on + ' : « ' + issue.text + ' ».'
-      : 'Orca signale un problème sur ma plaque' + on + (explained ? ' (' + explained + ')' : '') + '.';
+    var said = issue.text ? 'Plyo Slicer m’affiche ce message' + on + ' : « ' + issue.text + ' ».'
+      : 'Plyo Slicer signale un problème sur ma plaque' + on + (explained ? ' (' + explained + ')' : '') + '.';
     return said + ' Explique-moi simplement ce qui se passe et comment le corriger.';
   }
 
@@ -357,7 +357,7 @@
     } else {
       // Pas d'explication Plyo : on le dit simplement ; le texte d'Orca (parfois en anglais) reste un détail cité.
       var on = i.object_name ? ' sur ' + p : '';
-      view.text = (warn ? 'Orca signale un point à surveiller' + on : 'Orca a trouvé un problème' + on) +
+      view.text = (warn ? 'Plyo Slicer signale un point à surveiller' + on : 'Plyo Slicer a trouvé un problème' + on) +
         (i.text ? ', que je ne sais pas encore expliquer.' : ', sans me donner de détail.');
     }
     if (i.opt_key && !view.actions.some(function (a) { return a.kind === 'fix'; })) {
@@ -381,20 +381,20 @@
     var m = msg || {}, t = EXPORT_TEXTS[m.kind] || EXPORT_TEXTS.other;
     var actions = t.actions.slice();
     if (m.kind !== 'slicing' && m.kind !== 'memory')
-      actions.push({ kind: 'ask', label: ASK_LABEL, prompt: (m.text ? 'L’export de mon fichier a échoué. Orca dit : « ' + m.text + ' ».' : 'L’export de mon fichier a échoué.') + ' Que faire ?' });
+      actions.push({ kind: 'ask', label: ASK_LABEL, prompt: (m.text ? 'L’export de mon fichier a échoué. Plyo Slicer dit : « ' + m.text + ' ».' : 'L’export de mon fichier a échoué.') + ' Que faire ?' });
     return { text: t.text, quote: typeof m.text === 'string' ? m.text : '', actions: actions };
   }
 
   // Découpe sans nouvelle au bout du délai (filet de sécurité) ou arrêtée avant la fin : la suite, jamais « lis le message d'Orca ».
-  var SLICE_SLOW = { text: 'La découpe prend plus longtemps que prévu, et Orca ne m’a rien dit. Relance-la ; si rien ne change, demande-moi.',
+  var SLICE_SLOW = { text: 'La découpe prend plus longtemps que prévu, et Plyo Slicer ne m’a rien dit. Relance-la ; si rien ne change, demande-moi.',
     actions: [{ kind: 'slice', label: 'Découper à nouveau' }, { kind: 'ask', label: ASK_LABEL, prompt: 'J’ai lancé la découpe de ma plaque il y a deux minutes et rien ne se passe. Que faire ?' }] };
   // Découpe demandée qui ne démarre pas, sans refus lisible : Orca ne redécoupe pas une plaque restée en erreur tant que rien ne change.
-  var SLICE_NOT_STARTED = { text: 'Orca n’a pas lancé la découpe. Après une erreur, il attend qu’un réglage ou la pièce change avant de redécouper : corrige ce qui a été signalé, ou demande-moi.',
-    actions: [{ kind: 'ask', label: ASK_LABEL, prompt: 'Je clique sur « Découper » mais Orca ne lance pas la découpe de ma plaque. Que faire ?' }] };
+  var SLICE_NOT_STARTED = { text: 'Plyo Slicer n’a pas lancé la découpe. Après une erreur, il attend qu’un réglage ou la pièce change avant de redécouper : corrige ce qui a été signalé, ou demande-moi.',
+    actions: [{ kind: 'ask', label: ASK_LABEL, prompt: 'Je clique sur « Découper » mais Plyo Slicer ne lance pas la découpe de ma plaque. Que faire ?' }] };
   // Même cas juste après un réglage changé par l'assistant : « il attend qu'un réglage change » serait faux.
-  var SLICE_NOT_STARTED_AFTER_CHANGE = { text: 'Orca n’a pas relancé la découpe, alors que le réglage vient de changer. Relance-la ; si rien ne se passe, demande-moi.',
-    actions: [{ kind: 'slice', label: 'Découper à nouveau' }, { kind: 'ask', label: ASK_LABEL, prompt: 'Je viens de changer un réglage et Orca ne relance pas la découpe de ma plaque. Que faire ?' }] };
-  var SLICE_STOPPED = { text: 'La découpe s’est arrêtée avant la fin : un réglage a changé pendant qu’Orca découpait, ou elle a été annulée.',
+  var SLICE_NOT_STARTED_AFTER_CHANGE = { text: 'Plyo Slicer n’a pas relancé la découpe, alors que le réglage vient de changer. Relance-la ; si rien ne se passe, demande-moi.',
+    actions: [{ kind: 'slice', label: 'Découper à nouveau' }, { kind: 'ask', label: ASK_LABEL, prompt: 'Je viens de changer un réglage et Plyo Slicer ne relance pas la découpe de ma plaque. Que faire ?' }] };
+  var SLICE_STOPPED = { text: 'La découpe s’est arrêtée avant la fin : un réglage a changé pendant que Plyo Slicer découpait, ou elle a été annulée.',
     actions: [{ kind: 'slice', label: 'Découper à nouveau' }] };
 
   // ---------- Envoi à l'imprimante et fenêtres d'Orca (PlyoSend.cpp, PlyoOrcaWindows.cpp, lot 10) ----------
@@ -402,15 +402,15 @@
   // adresse ni chemin, n'est que cité et passé à l'assistant. `n` : le nom de l'imprimante du projet.
   function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
   var SEND_TEXTS = {
-    waiting: 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.',
-    device: 'Orca ouvre la fenêtre d’envoi de ton imprimante : choisis-la, puis valide. Dis-moi ensuite quand l’impression a démarré.',
+    waiting: 'Plyo Slicer te demande de confirmer : vérifie le nom de ton imprimante, puis valide.',
+    device: 'Plyo Slicer ouvre la fenêtre d’envoi de ton imprimante : choisis-la, puis valide. Dis-moi ensuite quand l’impression a démarré.',
     closed: 'Tu as fermé la fenêtre d’envoi : rien n’est parti.',
-    notStarted: 'Orca n’a pas lancé l’envoi, sans me dire pourquoi : rien n’est parti. Découpe à nouveau la plaque, puis réessaie.',
-    notReady: 'Orca ne laisse pas encore envoyer cette plaque, sans me dire pourquoi : découpe-la à nouveau, puis réessaie.',
+    notStarted: 'Plyo Slicer n’a pas lancé l’envoi, sans me dire pourquoi : rien n’est parti. Découpe à nouveau la plaque, puis réessaie.',
+    notReady: 'Plyo Slicer ne laisse pas encore envoyer cette plaque, sans me dire pourquoi : découpe-la à nouveau, puis réessaie.',
     sending: function (n) { return 'J’envoie le fichier à ' + n + '…'; },
     progress: function (n, p) { return 'J’envoie le fichier à ' + n + '… ' + p + ' %'; },
     arrived: function (n) { return 'Le fichier est arrivé sur ' + n + '.'; },
-    cancelled: function (n) { return 'L’envoi a été annulé dans la file d’Orca : le fichier n’est pas arrivé sur ' + n + '.'; },
+    cancelled: function (n) { return 'L’envoi a été annulé dans la file de Plyo Slicer : le fichier n’est pas arrivé sur ' + n + '.'; },
     silent: function (n) { return cap(n) + ' ne répond pas encore. Si elle est éteinte ou hors du Wi-Fi, l’envoi va échouer : vérifie-la.'; }
   };
   var UPLOAD_TEXTS = {
@@ -423,8 +423,8 @@
     interrupted: function (n) { return 'La liaison avec ' + n + ' s’est coupée pendant l’envoi : le fichier n’est pas arrivé en entier. Vérifie son Wi-Fi, puis réessaie.'; },
     // Erreur sans code après « 100 % » (Elegoo CC2, par exemple) : le fichier est arrivé, c'est le démarrage qui n'est pas confirmé.
     no_confirmation: function (n) { return 'Le fichier est bien arrivé sur ' + n + ', mais elle n’a pas confirmé le démarrage de l’impression. Regarde son écran : si elle imprime, dis-le-moi ; sinon, lance le fichier depuis son écran, ou réessaie l’envoi.'; },
-    before_send: function () { return 'Orca a refusé de lancer l’envoi, sans une raison que je sache expliquer. Rien n’est parti : réessaie, ou exporte le fichier pour une carte SD ou une clé USB.'; },
-    unknown: function () { return 'Orca n’a pas pu envoyer le fichier, et je ne reconnais pas la raison. Rien n’est parti : réessaie, ou exporte le fichier pour une carte SD ou une clé USB.'; }
+    before_send: function () { return 'Plyo Slicer a refusé de lancer l’envoi, sans une raison que je sache expliquer. Rien n’est parti : réessaie, ou exporte le fichier pour une carte SD ou une clé USB.'; },
+    unknown: function () { return 'Plyo Slicer n’a pas pu envoyer le fichier, et je ne reconnais pas la raison. Rien n’est parti : réessaie, ou exporte le fichier pour une carte SD ou une clé USB.'; }
   };
   // Suites proposées, dans l'ordre : la plus utile d'abord.
   var UPLOAD_ACTIONS = {
@@ -447,18 +447,18 @@
     var view = { tone: code === 'no_confirmation' ? 'warn' : 'error', title: title, text: UPLOAD_TEXTS[code](n), quote: quote,
       quoteMain: false, actions: acts(UPLOAD_ACTIONS[code]) };
     view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: (code === 'no_confirmation' ? 'Mon fichier est arrivé sur mon imprimante, mais elle n’a pas confirmé le démarrage de l’impression.' : 'L’envoi de mon fichier à mon imprimante n’a pas abouti.') +
-      (quote ? ' Orca dit : « ' + quote + ' ».' : '') + ' Explique-moi simplement ce qui se passe et quoi faire.' });
+      (quote ? ' Plyo Slicer dit : « ' + quote + ' ».' : '') + ' Explique-moi simplement ce qui se passe et quoi faire.' });
     return view;
   }
 
   // Résultat de « Vérifier la liaison » (printer_link_rechecked : { code, http, text }). { tone, text, quote, actions }.
   var RECHECK = {
     ok: function (n) { return { tone: 'ok', text: cap(n) + ' répond, et la liaison enregistrée fonctionne : réessaie l’envoi.', actions: ['retry'] }; },
-    auth: function (n) { return { tone: 'warn', text: cap(n) + ' répond, mais refuse le code d’accès (ou la clé d’API) enregistré. Corrige-le dans la fenêtre « Connexion » d’Orca, puis réessaie.', actions: ['connexion', 'retry'] }; },
+    auth: function (n) { return { tone: 'warn', text: cap(n) + ' répond, mais refuse le code d’accès (ou la clé d’API) enregistré. Corrige-le dans la fenêtre « Connexion » de Plyo Slicer, puis réessaie.', actions: ['connexion', 'retry'] }; },
     unreachable: function (n) { return { tone: 'warn', text: 'Je n’arrive toujours pas à joindre ' + n + '. Vérifie qu’elle est allumée, que son écran est actif, et qu’elle est sur le même Wi-Fi que cet ordinateur.', actions: ['retest', 'search'] }; },
     not_printer: function (n) { return { tone: 'warn', text: 'À l’adresse enregistrée, ce n’est pas ' + n + ' qui répond : cherche-la à nouveau sur le Wi-Fi pour la relier.', actions: ['search', 'connexion'] }; },
-    error: function (n) { return { tone: 'warn', text: cap(n) + ' répond, mais pas comme prévu. Vérifie sa connexion dans la fenêtre « Connexion » d’Orca.', actions: ['connexion', 'retry'] }; },
-    not_local: function () { return { tone: 'warn', text: 'L’adresse enregistrée n’est pas sur ton réseau local : je ne la teste pas d’ici. Vérifie-la dans la fenêtre « Connexion » d’Orca.', actions: ['connexion'] }; },
+    error: function (n) { return { tone: 'warn', text: cap(n) + ' répond, mais pas comme prévu. Vérifie sa connexion dans la fenêtre « Connexion » de Plyo Slicer.', actions: ['connexion', 'retry'] }; },
+    not_local: function () { return { tone: 'warn', text: 'L’adresse enregistrée n’est pas sur ton réseau local : je ne la teste pas d’ici. Vérifie-la dans la fenêtre « Connexion » de Plyo Slicer.', actions: ['connexion'] }; },
     none: function () { return { tone: 'warn', text: 'Ton imprimante n’est plus reliée à Plyo : cherche-la sur le Wi-Fi pour la relier à nouveau.', actions: ['search'] }; }
   };
   function linkRecheckView(result, printerName) {
@@ -470,19 +470,19 @@
   // Fenêtre de message d'Orca (orca_dialog : { phase, kind, title, text, during, covered }). Pendant qu'elle est ouverte : une
   // ligne discrète. Une erreur fermée, qu'aucune autre carte n'explique (covered), devient une carte qui cite son texte.
   function dialogWaitText(d) {
-    return d && d.during === 'model_add' && d.kind === 'question' ? 'Orca te demande comment ouvrir ce fichier : réponds dans sa fenêtre.'
-      : 'Orca attend ta réponse dans sa fenêtre.';
+    return d && d.during === 'model_add' && d.kind === 'question' ? 'Plyo Slicer te demande comment ouvrir ce fichier : réponds dans sa fenêtre.'
+      : 'Plyo Slicer attend ta réponse dans sa fenêtre.';
   }
   function dialogCardWanted(d) { return !!d && d.phase === 'closed' && d.kind === 'error' && !d.covered; }
   function dialogView(d) {
     var x = d || {}, quote = typeof x.text === 'string' ? x.text : '';
     var addModel = x.during === 'model_add';
     // N7 : ce qui se passe et la suite d'abord, gratuite ; le texte de la fenêtre n'est qu'une citation.
-    var view = { tone: 'error', title: addModel ? 'Orca n’a pas pu ajouter ta pièce' : 'Orca a affiché une erreur',
-      text: addModel ? 'Orca n’a pas pu ouvrir ce fichier, pour une raison que je ne sais pas encore expliquer. Rien n’a été ajouté au plateau : essaie un autre fichier (STL ou 3MF).'
-        : 'Orca a affiché une erreur que je ne sais pas encore expliquer. Refais ce que tu étais en train de faire ; si c’était une découpe, découpe à nouveau ta plaque.',
+    var view = { tone: 'error', title: addModel ? 'Plyo Slicer n’a pas pu ajouter ta pièce' : 'Plyo Slicer a affiché une erreur',
+      text: addModel ? 'Plyo Slicer n’a pas pu ouvrir ce fichier, pour une raison que je ne sais pas encore expliquer. Rien n’a été ajouté au plateau : essaie un autre fichier (STL ou 3MF).'
+        : 'Plyo Slicer a affiché une erreur que je ne sais pas encore expliquer. Refais ce que tu étais en train de faire ; si c’était une découpe, découpe à nouveau ta plaque.',
       quote: quote, quoteMain: false, actions: addModel ? acts(['import']) : [{ kind: 'slice', label: 'Découper à nouveau' }] };
-    view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: (quote ? 'Orca m’a affiché ce message d’erreur : « ' + quote + ' ».' : 'Orca m’a affiché une erreur sans détail.') +
+    view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: (quote ? 'Plyo Slicer m’a affiché ce message d’erreur : « ' + quote + ' ».' : 'Plyo Slicer m’a affiché une erreur sans détail.') +
       (addModel ? ' C’était en ajoutant un fichier 3D.' : '') + ' Explique-moi simplement ce qui se passe et comment le corriger.' });
     return view;
   }
@@ -492,7 +492,7 @@
   function modelDialogQuoted(d) { return !!d && d.phase === 'closed' && d.during === 'model_add' && !!d.text && d.kind !== 'question'; }
   function modelFailPrompt(quotes) {
     var q = (quotes || []).filter(Boolean);
-    return 'Orca n’a pas pu ouvrir mon fichier 3D.' + (q.length ? ' Il m’a affiché : ' + q.map(function (t) { return '« ' + t + ' »'; }).join(' ') + '.' : '') +
+    return 'Plyo Slicer n’a pas pu ouvrir mon fichier 3D.' + (q.length ? ' Il m’a affiché : ' + q.map(function (t) { return '« ' + t + ' »'; }).join(' ') + '.' : '') +
       ' Explique-moi simplement pourquoi et comment obtenir un fichier qui marche.';
   }
 

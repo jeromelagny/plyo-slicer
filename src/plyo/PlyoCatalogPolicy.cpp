@@ -160,7 +160,7 @@ CheckResult check_change(const std::string& label, const OptionInfo& info, const
     if (info.kind == "int" && std::abs(*number - std::round(*number)) > 1e-9)
         return refuse(label, "attend un nombre entier.");
     if ((info.min && *number < *info.min - BOUND_MARGIN) || (info.max && *number > *info.max + BOUND_MARGIN))
-        return refuse(label, "à " + plain(*number) + " est hors de la plage autorisée par Orca.");
+        return refuse(label, "à " + plain(*number) + " est hors de la plage autorisée par Plyo Slicer.");
     if (!limit_id.empty() && !confirmed_outside) {
         const Limits::Verdict verdict = Limits::check(limit_id, *number, limits);
         if (verdict != Limits::Verdict::Ok)

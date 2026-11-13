@@ -85,7 +85,7 @@ nlohmann::json place(const fs::path& path, const std::string& shown_name, const 
         return {{"ok", false},
                 {"reason", "orca_refused"},
                 {"step_file", step},
-                {"text", "Orca n'a pas pu ouvrir « " + shown_name + " »" +
+                {"text", "Plyo Slicer n'a pas pu ouvrir « " + shown_name + " »" +
                              (step ? std::string(". Les fichiers STEP sont parfois mal lus : exporte-le plutôt en STL ou en 3MF depuis ton "
                                                  "logiciel de dessin, puis réessaie.")
                                    : std::string(" : le fichier est peut-être abîmé ou incomplet (téléchargement interrompu), ou ce "
@@ -126,7 +126,7 @@ nlohmann::json add(const std::string& name, const std::string& base64, const nlo
     if (file.empty())
         return {{"ok", false}, {"text", "Ce type de fichier n'est pas un modèle 3D (STL, 3MF, OBJ, STEP ou AMF)."}};
     if (base64.empty() || boost::beast::detail::base64::decoded_size(base64.size()) > MAX_BYTES)
-        return {{"ok", false}, {"text", "Fichier vide ou trop lourd (150 Mo au plus). Importe-le plutôt par Fichier › Importer d'Orca : je verrai la pièce arriver."}};
+        return {{"ok", false}, {"text", "Fichier vide ou trop lourd (150 Mo au plus). Importe-le plutôt par le menu Fichier › Importer : je verrai la pièce arriver."}};
 
     std::string bytes(boost::beast::detail::base64::decoded_size(base64.size()), '\0');
     bytes.resize(boost::beast::detail::base64::decode(bytes.data(), base64.data(), base64.size()).first);

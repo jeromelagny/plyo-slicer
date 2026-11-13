@@ -121,7 +121,7 @@ std::string sent_refusal(const nlohmann::json& pointer, const std::string& expec
 enum class Flush { Clean, Save, NotSpool, Refuse };
 Flush flush_before_switch(bool filament_dirty, bool is_spool, bool calibrating, bool temperatures_ok);
 
-constexpr const char* FLUSH_REFUSED_TEXT = "Je n’arrive pas à enregistrer les derniers réglages de ta bobine (un test est en cours, ou Orca refuse ses "
+constexpr const char* FLUSH_REFUSED_TEXT = "Je n’arrive pas à enregistrer les derniers réglages de ta bobine (un test est en cours, ou Plyo Slicer refuse ses "
                                            "températures) : je ne change rien pour ne pas les perdre. Termine le test ou vérifie ses températures, puis réessaie.";
 
 // Matière d'un préréglage de l'utilisateur qui peut devenir une bobine (« filament_type », première valeur), ou "" :

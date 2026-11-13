@@ -99,8 +99,8 @@ test('UX-32 : retouche du filament gardée dans la bobine, avec « Annuler » ; 
   assert.equal(R.spoolKeptText('Sunlu PLA+ noir', [{ key: 'filament_flow_ratio', label: 'Débit', before: 0.98, after: 0.95 }]), 'Gardé dans ta bobine « Sunlu PLA+ noir » : débit 0,98 → 0,95.');
   assert.equal(R.spoolKeptText('x', []), '');
   assert.equal(R.spoolFailText('temperatures', 'Température de la buse (première couche)', 'Sunlu PLA+ noir'),
-    'Je n’ai pas pu garder ce changement dans ta bobine « Sunlu PLA+ noir » : l’écart entre la température de la première couche et celle des autres couches dépasse ce qu’Orca accepte (« Température de la buse (première couche) »). Rapproche-les dans l’onglet Filament : je la garde dès que c’est bon.');
-  assert.match(R.spoolFailText('write', '', ''), /^Je n’ai pas pu garder ce changement dans ta bobine : Orca n’a pas pu écrire son fichier\./);
+    'Je n’ai pas pu garder ce changement dans ta bobine « Sunlu PLA+ noir » : l’écart entre la température de la première couche et celle des autres couches dépasse ce que Plyo Slicer accepte (« Température de la buse (première couche) »). Rapproche-les dans l’onglet Filament : je la garde dès que c’est bon.');
+  assert.match(R.spoolFailText('write', '', ''), /^Je n’ai pas pu garder ce changement dans ta bobine : Plyo Slicer n’a pas pu écrire son fichier\./);
   const page = read('index.html');
   assert.match(page, /type: 'spool_kept_undo', token: token/);
   assert.match(page, /button\('Montre-moi où il est', function \(\) \{ showSetting\(msg\.key\); \}/);
@@ -123,7 +123,7 @@ test('UX-35 : filament changé dans Orca : carte avec adoption (nom demandé) et
   assert.equal(R.sameFilament('Generic PLA', 'Generic PLA (Plyo)'), true);
   assert.equal(R.sameFilament('Sunlu PLA+ noir', 'My eSun PLA+'), false);
   const d = R.filamentDivergence('My eSun PLA+', { preset: 'Sunlu', spool: { id: 's1', name: 'Sunlu PLA+ noir' } });
-  assert.equal(d.text, 'Orca est passé sur **My eSun PLA+**, mais ton projet utilise **Sunlu PLA+ noir**.');
+  assert.equal(d.text, 'Plyo Slicer est passé sur **My eSun PLA+**, mais ton projet utilise **Sunlu PLA+ noir**.');
   assert.equal(d.use, 'Utiliser « My eSun PLA+ » pour ce projet');
   assert.equal(d.restore, 'Remettre Sunlu PLA+ noir');
   assert.equal(R.adoptionPath({ spool: { id: 'a', name: 'b' } }), 'attach');

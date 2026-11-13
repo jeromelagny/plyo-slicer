@@ -283,7 +283,7 @@
     return 'Tu as ouvert un autre projet pendant que je répondais' + (hadCommands ? ' : je n’ai pas exécuté les ordres prévus pour l’ancien.' : '.') +
       ' Ma réponse est gardée avec l’ancien projet, dans « Mes projets ».';
   }
-  var STALE_PROJECT_TEXT = 'Tu as ouvert un autre projet dans Orca : je ne change rien tant que ma réponse n’est pas terminée. Ensuite, je repars sur ce projet.';
+  var STALE_PROJECT_TEXT = 'Tu as ouvert un autre projet dans Plyo Slicer : je ne change rien tant que ma réponse n’est pas terminée. Ensuite, je repars sur ce projet.';
 
   // Flux NDJSON reçu par morceaux : une ligne JSON par événement ; une ligne illisible est ignorée.
   function ndjsonReader() {
@@ -798,9 +798,9 @@
   function savedText(result) {
     var r = result || {};
     // Écart de températures qu'Orca refuserait : Plyo n'enregistre pas plutôt que d'ouvrir sa fenêtre.
-    if (r.save_error === 'temperatures') return 'Appliqué. Je n’ai pas enregistré le filament : sa première couche et les couches suivantes auraient un écart de température qu’Orca refuse. Rapproche ces deux températures et je l’enregistrerai.';
+    if (r.save_error === 'temperatures') return 'Appliqué. Je n’ai pas enregistré le filament : sa première couche et les couches suivantes auraient un écart de température que Plyo Slicer refuse. Rapproche ces deux températures et je l’enregistrerai.';
     if (r.save_error) return r.save_spool ? 'Appliqué, mais je n’ai pas pu le garder dans ta bobine (' + r.save_error + ') : je réessaie à ta prochaine modification.'
-      : 'Appliqué, mais je n’ai pas pu le garder dans ton profil de filament (' + r.save_error + ') : il reste en place sur ce plateau, et Orca te demandera quoi en faire en quittant.';
+      : 'Appliqué, mais je n’ai pas pu le garder dans ton profil de filament (' + r.save_error + ') : il reste en place sur ce plateau, et Plyo Slicer te demandera quoi en faire en quittant.';
     var saved = Array.isArray(r.saved) ? r.saved : [];
     // Réglages d'impression du plateau d'une conversation : gardés dans son projet 3MF, pas dans un profil partagé.
     // Sans projet de conversation, ils restent modifiés sur ce plateau (Orca demandera quoi en faire à la fermeture).
@@ -808,7 +808,7 @@
       : r.print_edited ? 'Réglages de la pièce appliqués à ce plateau seulement : ton profil d’impression ne change pas.' : '';
     if (!saved.length) return kept;
     return saved.map(function (s) {
-      return s.created ? 'Enregistré dans une copie à toi, « ' + s.name + ' » : « ' + s.from + ' » est un profil d’Orca, qui ne se modifie pas.' : 'Enregistré dans le profil « ' + s.name + ' ».';
+      return s.created ? 'Enregistré dans une copie à toi, « ' + s.name + ' » : « ' + s.from + ' » est un profil de Plyo Slicer, qui ne se modifie pas.' : 'Enregistré dans le profil « ' + s.name + ' ».';
     }).concat(kept ? [kept] : []).join(' ');
   }
 
@@ -828,7 +828,7 @@
   function alsoChangedText(list) {
     var items = (Array.isArray(list) ? list : []).filter(function (a) { return a && a.key; });
     if (!items.length) return '';
-    return 'Orca a aussi réglé : ' + listOf(items.map(function (a) { return (a.label || a.key) + ' (' + valueText(a.before, a.key) + ' → ' + valueText(a.after, a.key) + ')'; })) + '. « Annuler » les remet aussi.';
+    return 'Plyo Slicer a aussi réglé : ' + listOf(items.map(function (a) { return (a.label || a.key) + ' (' + valueText(a.before, a.key) + ' → ' + valueText(a.after, a.key) + ')'; })) + '. « Annuler » les remet aussi.';
   }
   // Réglages ajoutés par Plyo pour qu'Orca n'ait rien à changer (mode vase, première couche…).
   function addedText(applied) {
@@ -972,17 +972,17 @@
   var RAW_TEST_TEXT = {
     max_flow: {
       name: 'Débit maximal',
-      before: 'Ce test ouvre une fenêtre d’Orca et remplace ta plaque par la pièce de test. Ta pièce reste rangée dans ce projet : tu la retrouveras dans « Mes projets ».',
-      after: 'Imprime la tour de test. Repère la hauteur juste sous les premiers défauts (la surface passe de brillante à mate, ou se creuse). Ton débit maximal en mm³/s = départ + hauteur mesurée × pas : avec les valeurs proposées par Orca (départ 5, pas 0,5), 19 mm donnent 14,5. Garde 10 à 20 % de moins, et mets-le dans « Vitesse volumétrique maximale » de ton filament. Si tu hésites, envoie-moi une photo de la tour.'
+      before: 'Ce test ouvre une fenêtre de Plyo Slicer et remplace ta plaque par la pièce de test. Ta pièce reste rangée dans ce projet : tu la retrouveras dans « Mes projets ».',
+      after: 'Imprime la tour de test. Repère la hauteur juste sous les premiers défauts (la surface passe de brillante à mate, ou se creuse). Ton débit maximal en mm³/s = départ + hauteur mesurée × pas : avec les valeurs proposées par Plyo Slicer (départ 5, pas 0,5), 19 mm donnent 14,5. Garde 10 à 20 % de moins, et mets-le dans « Vitesse volumétrique maximale » de ton filament. Si tu hésites, envoie-moi une photo de la tour.'
     },
     vfa: {
       name: 'VFA',
-      before: 'Ce test ouvre une fenêtre d’Orca et remplace ta plaque par la pièce de test. Ta pièce reste rangée dans ce projet : tu la retrouveras dans « Mes projets ».',
+      before: 'Ce test ouvre une fenêtre de Plyo Slicer et remplace ta plaque par la pièce de test. Ta pièce reste rangée dans ce projet : tu la retrouveras dans « Mes projets ».',
       after: 'Imprime la tour de test : chaque bloc est imprimé plus vite que celui du dessous. Regarde les parois en lumière rasante : les blocs couverts de fines stries verticales régulières montrent les vitesses à éviter pour les parois extérieures. Si tu hésites, envoie-moi une photo de la tour.'
     },
     tolerance: {
-      name: 'Test de tolérance Orca',
-      before: 'J’ajoute la pièce « Test de tolérance Orca » sur ta plaque, à côté de ta pièce. Rien n’est remplacé.',
+      name: 'Test de tolérance Plyo Slicer',
+      before: 'J’ajoute la pièce « Test de tolérance Plyo Slicer » sur ta plaque, à côté de ta pièce. Rien n’est remplacé.',
       after: 'Imprime la pièce, puis essaie d’enfoncer chaque tige dans son trou : le plus petit jeu où elle entre sans forcer est celui à prévoir dans tes modèles. Pour la retirer de la plaque, clique dessus puis appuie sur la touche Suppr de ton clavier.'
     }
   };
@@ -993,7 +993,7 @@
     if (!msg || !msg.ok) return { tone: 'error', text: (msg && msg.text) || 'Je n’ai pas pu ouvrir ce test.', back: false };
     if (!t) return { tone: 'error', text: 'Je ne connais pas ce test.', back: false };
     if (msg.target === 'tolerance') return { tone: 'ok', text: 'La pièce « ' + t.name + ' » est sur ta plaque' + (msg.arranged ? ' ; j’ai organisé la plaque pour qu’elle ne touche pas ta pièce' : '') + '. ' + t.after, back: false };
-    if (!msg.replaced) return { tone: 'info', text: 'Tu as fermé la fenêtre d’Orca sans lancer le test : ta plaque n’a pas changé.', back: false };
+    if (!msg.replaced) return { tone: 'info', text: 'Tu as fermé la fenêtre de Plyo Slicer sans lancer le test : ta plaque n’a pas changé.', back: false };
     return { tone: 'ok', text: 'Le test « ' + t.name + ' » est sur la plaque. ' + t.after + ' Pour retrouver ta pièce ensuite : menu « ⋯ », « Mes projets », puis ton projet.', back: true };
   }
   // Réponse du slicer à « show_preview ».

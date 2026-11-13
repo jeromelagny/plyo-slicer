@@ -203,7 +203,7 @@ test('printNote : la CC2 n’a rien de plus ; ailleurs le panneau ne présente r
   assert.ok(imposed.includes('pas encore été essayé'), 'validated faux');
   assert.ok(!/vérifié|garanti/i.test(imposed));
   const read = C.printNote([readOnlyEntry]);
-  assert.ok(read.includes('fenêtre d’Orca'));
+  assert.ok(read.includes('fenêtre de Plyo Slicer'));
   assert.ok(!/impos[ée]+\b(?! sur)/.test(read.replace('je ne les impose pas', '')), 'aucune répartition présentée comme imposée');
   assert.ok(!C.printNote([Object.assign({}, imposedEntry, { validated: true })]).includes('pas encore été essayé'), 'une marque validée perd la mention');
 });
@@ -212,7 +212,7 @@ test('orcaConfirm : CC2 et machine sans emplacements : texte d’aujourd’hui ;
   assert.equal(C.orcaConfirm(undefined), '');
   assert.equal(C.orcaConfirm([]), '');
   assert.equal(C.orcaConfirm([{ t: 0, tray_id: 0 }]), '');
-  assert.equal(C.orcaConfirm([readOnlyEntry]), 'Orca te demande de confirmer : choisis les mêmes emplacements dans sa fenêtre, puis valide.');
+  assert.equal(C.orcaConfirm([readOnlyEntry]), 'Plyo Slicer te demande de confirmer : choisis les mêmes emplacements dans sa fenêtre, puis valide.');
 });
 
 const u1Entry = { t: 0, canvas_id: 0, tray_id: 1, label: '2', type: 'PLA', color: '#000000', imposable: false, source: 'printer', system: 'u1', validated: false };

@@ -129,7 +129,7 @@
       body.appendChild(ui.el('p', 'muted small', 'Ta machine a été reliée sans son numéro de série ni son code d’accès : je ne lis pas ses emplacements. Allume-la, et je la cherche sur le réseau pour la relier.'));
       body.appendChild(ui.button('Relier à nouveau', ctx.handlers.setupPrinter, 'link'));
     }
-    if (ctx.noSlots) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas les emplacements de ta machine pour l’instant : choisis ta bobine ici. À l’envoi, regarde la fenêtre d’Orca et l’écran de l’imprimante.'));
+    if (ctx.noSlots) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas les emplacements de ta machine pour l’instant : choisis ta bobine ici. À l’envoi, regarde la fenêtre de Plyo Slicer et l’écran de l’imprimante.'));
     if (ctx.slotRemark) body.appendChild(ui.el('p', 'muted small', ctx.slotRemark));
   }
   // Pas de question par défaut : le profil ne permet pas de reconnaître une machine à une bobine. Un lien discret, après les bobines.
@@ -254,7 +254,7 @@
       // Un débutant n'a souvent aucun fichier : le petit bateau de test fourni avec le slicer se pose comme une pièce choisie.
       body.appendChild(ui.button('Pas encore de fichier ? Essaie avec le petit bateau de test', h.samplePart, 'link'));
       if (ctx.oldPart) {
-        body.appendChild(ui.el('p', 'muted small', '« ' + ctx.oldPart + ' », la pièce de ton projet précédent, est encore sur le plateau d’Orca. Si tu choisis un fichier, elle sera retirée, et tu pourras annuler.'));
+        body.appendChild(ui.el('p', 'muted small', '« ' + ctx.oldPart + ' », la pièce de ton projet précédent, est encore sur le plateau de Plyo Slicer. Si tu choisis un fichier, elle sera retirée, et tu pourras annuler.'));
         body.appendChild(ui.button('Garder cette pièce', h.keepOldPart, 'link'));
       }
     }

@@ -87,7 +87,7 @@ inline bool forget_edits_on_attach(bool owns_edits, const std::string& owner, co
     return owns_edits && owner != attaching;
 }
 
-constexpr const char* BUSY_TEXT = "J’attends qu’Orca ait fini ce qu’il fait (découpe, envoi, test ou fenêtre ouverte) pour ranger le projet d’avant ; réessaie dans un instant.";
+constexpr const char* BUSY_TEXT = "J’attends que Plyo Slicer ait fini ce qu’il fait (découpe, envoi, test ou fenêtre ouverte) pour ranger le projet d’avant ; réessaie dans un instant.";
 
 // Résultat d'une écriture du 3MF : écrit, Orca occupé (rien n'est tenté), ou perdu (trop lourd, disque plein, droits :
 // le plateau n'est plus gardé avec la conversation, seule sa fiche reste, et le panneau le dit).

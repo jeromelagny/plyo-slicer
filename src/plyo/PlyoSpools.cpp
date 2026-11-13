@@ -85,40 +85,40 @@ bool save_spool_preset(const std::string& base_name, const std::string& name, co
     cfg.option<Slic3r::ConfigOptionString>("inherits", true)->value = base_name;
     Slic3r::GUI::Tab* tab = Slic3r::GUI::wxGetApp().get_tab(Preset::TYPE_FILAMENT);
     if (tab == nullptr) {
-        out = refuse("L'onglet Filament d'Orca n'est pas disponible.");
+        out = refuse("L'onglet Filament de Plyo Slicer n'est pas disponible.");
         return false;
     }
     try {
         tab->load_config(cfg);
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: préréglage de bobine « " << name << " » impossible : " << e.what();
-        out = refuse("Orca n'a pas pu écrire le profil « " + name + " ».");
+        out = refuse("Plyo Slicer n'a pas pu écrire le profil « " + name + " ».");
         return false;
     }
     // Mêmes vérifications que save_applied : choisi sous ce nom, plus modifié, fichier réécrit.
     switch (Profiles::save_current_as(false, name)) {
     case Profiles::SaveOutcome::Ok: break;
     case Profiles::SaveOutcome::Refused:
-        out = refuse("Orca a refusé d'enregistrer le profil « " + name + " ».");
+        out = refuse("Plyo Slicer a refusé d'enregistrer le profil « " + name + " ».");
         return false;
     default:
-        out = refuse("Orca n'a pas pu écrire le profil « " + name + " ».");
+        out = refuse("Plyo Slicer n'a pas pu écrire le profil « " + name + " ».");
         return false;
     }
     const Preset* saved = filaments.find_preset(name, false);
     if (saved == nullptr) {
-        out = refuse("Orca a refusé d'enregistrer le profil « " + name + " ».");
+        out = refuse("Plyo Slicer a refusé d'enregistrer le profil « " + name + " ».");
         return false;
     }
     if (saved->inherits() != base_name) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: le préréglage de bobine « " << name << " » hérite de « " << saved->inherits()
                                  << " » au lieu de « " << base_name << " »";
-        out = refuse("Le profil « " + name + " » ne part pas du profil « " + base_name + " » d'Orca : je ne le retiens pas comme bobine.");
+        out = refuse("Le profil « " + name + " » ne part pas du profil « " + base_name + " » de Plyo Slicer : je ne le retiens pas comme bobine.");
         return false;
     }
     // Comme un choix dans la liste du plateau (aucune question attendue : rien n'est modifié).
     if (!FirstSteps::select_filament(name)) {
-        out = refuse("Le profil « " + name + " » est enregistré, mais Orca ne l'a pas choisi. Choisis-le dans la liste des filaments, à gauche du plateau.");
+        out = refuse("Le profil « " + name + " » est enregistré, mais Plyo Slicer ne l'a pas choisi. Choisis-le dans la liste des filaments, à gauche du plateau.");
         return false;
     }
     BOOST_LOG_TRIVIAL(info) << "Plyo: préréglage de bobine enregistré « " << name << " » depuis « " << base_name << " »";
@@ -135,11 +135,11 @@ nlohmann::json list(const std::string& printer_preset)
 nlohmann::json create_or_choose(const std::string& name, const std::string& material, const std::string& printer_preset)
 {
     if (bundle() == nullptr)
-        return refuse("Orca n'est pas prêt.");
+        return refuse("Plyo Slicer n'est pas prêt.");
     const std::string printer = printer_preset.empty() ? current_printer() : printer_preset;
     // Le profil de départ est pris pour la machine en cours : jamais pour une autre (point de vigilance 3).
     if (printer.empty() || printer != current_printer())
-        return refuse("Choisis d'abord cette imprimante dans Orca.");
+        return refuse("Choisis d'abord cette imprimante dans Plyo Slicer.");
     // La bobine en cours est écrite d'abord : sinon Orca proposerait de transférer ses modifications sur l'autre filament.
     if (AutoSave::flush_spool() == SpoolsLogic::Flush::Refuse)
         return refuse(SpoolsLogic::FLUSH_REFUSED_TEXT);
@@ -172,7 +172,7 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
     const Preset*     base          = system_base(material_kept);
     if (base == nullptr)
         return {{"ok", false}, {"id", id}, {"name", spool}, {"created", created},
-                {"text", "Je ne trouve pas de profil " + material_kept + " pour cette imprimante dans Orca."}};
+                {"text", "Je ne trouve pas de profil " + material_kept + " pour cette imprimante dans Plyo Slicer."}};
     const std::string base_name = base->name; // le pointeur ne survit pas aux changements de la collection
 
     // Nom réservé au registre AVANT l'enregistrement par Orca : si celui-ci échoue en laissant le préréglage dans Orca,
@@ -243,7 +243,7 @@ nlohmann::json adopt(const std::string& filament_preset, const std::string& name
 {
     const std::string material = adoptable_material(filament_preset);
     if (material.empty())
-        return {{"ok", false}, {"preset", filament_preset}, {"text", "Je ne peux pas retenir « " + filament_preset + " » comme bobine : je ne retiens que le premier filament de ta liste, s'il vient d'un profil PLA, PETG, ABS, ASA ou TPU d'Orca. Sinon, crée une nouvelle bobine à l'étape Filament."}};
+        return {{"ok", false}, {"preset", filament_preset}, {"text", "Je ne peux pas retenir « " + filament_preset + " » comme bobine : je ne retiens que le premier filament de ta liste, s'il vient d'un profil PLA, PETG, ABS, ASA ou TPU de Plyo Slicer. Sinon, crée une nouvelle bobine à l'étape Filament."}};
     const nlohmann::json reg = load();
     const nlohmann::json r   = SpoolsLogic::adopt(reg, filament_preset, name, material, current_printer());
     const std::string    id  = Json::str(r, "id");

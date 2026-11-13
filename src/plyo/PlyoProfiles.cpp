@@ -133,7 +133,7 @@ nlohmann::json save_applied()
         const std::string name    = created ? copy_name(from, existing) : from;
         const SaveOutcome outcome = save_current_as(false, name);
         if (outcome != SaveOutcome::Ok) {
-            error       = outcome == SaveOutcome::Refused ? "Orca a refusé l'enregistrement" : "Orca n'a pas pu écrire le fichier";
+            error       = outcome == SaveOutcome::Refused ? "Plyo Slicer a refusé l'enregistrement" : "Plyo Slicer n'a pas pu écrire le fichier";
             error_spool = spool;
         }
         else {
@@ -218,7 +218,7 @@ nlohmann::json restore_reliable()
             return {{"ok", false}, {"text", "Je n'ai pas encore de réglages réussis pour la bobine « " + spool["name"].get<std::string>() + " » sur cette imprimante."}};
         // Les valeurs vont dans l'onglet Filament : il doit montrer le préréglage de la bobine (filament 1).
         if (collection(Preset::TYPE_FILAMENT).get_edited_preset().name != spool["preset"])
-            return {{"ok", false}, {"text", "Ouvre le filament de la bobine « " + spool["name"].get<std::string>() + " » dans Orca, puis redemande-moi."}};
+            return {{"ok", false}, {"text", "Ouvre le filament de la bobine « " + spool["name"].get<std::string>() + " » dans Plyo Slicer, puis redemande-moi."}};
         values = {{"filament", ok["values"]}};
     } else {
         const nlohmann::json stored = Sanitize::reliable(Store::read(reliable_file()));

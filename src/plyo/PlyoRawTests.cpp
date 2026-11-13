@@ -76,15 +76,15 @@ nlohmann::json refusal(const std::string& target)
     if (plater == nullptr || wxGetApp().mainframe == nullptr || plater->printer_technology() != Slic3r::ptFFF)
         return refused("Ce test n'est pas disponible pour cette imprimante.");
     if (plater->is_background_process_slicing())
-        return refused("Orca découpe en ce moment : attends la fin de la découpe, puis réessaie.");
+        return refused("Plyo Slicer découpe en ce moment : attends la fin de la découpe, puis réessaie.");
     if (AutoSave::sending())
-        return refused("Orca envoie ou exporte un fichier en ce moment : attends la fin, puis réessaie.");
+        return refused("Plyo Slicer envoie ou exporte un fichier en ce moment : attends la fin, puis réessaie.");
     if (Calibration::active() || AutoSave::calibrating())
         return refused("Un test de calibration est déjà sur le plateau : termine-le (ou remets ta pièce) avant d'en lancer un autre.");
     if (AutoSave::modal_open())
-        return refused("Orca attend ta réponse dans une fenêtre ouverte : réponds-y d'abord, puis réessaie.");
+        return refused("Plyo Slicer attend ta réponse dans une fenêtre ouverte : réponds-y d'abord, puis réessaie.");
     if (!plater->get_ui_job_worker().is_idle())
-        return refused("Orca est déjà occupé sur le plateau. Réessaie dans un instant.");
+        return refused("Plyo Slicer est déjà occupé sur le plateau. Réessaie dans un instant.");
     if (ProjectFiles::edits_blocked() || ProjectFiles::opening())
         return refused(ProjectFiles::busy_text());
     return nullptr;
@@ -142,7 +142,7 @@ void open(const std::string& target, std::function<void(nlohmann::json)> reply)
         // Erreur inattendue (journalisée par guarded) : le panneau n'attend pas une réponse qui ne viendrait jamais.
         if (!replied)
             reply({{"ok", false}, {"target", target}, {"replaced", false}, {"added", 0},
-                   {"text", "Quelque chose s'est mal passé de mon côté en ouvrant ce test. Tu le trouves aussi dans le menu « Calibration » d'Orca."}});
+                   {"text", "Quelque chose s'est mal passé de mon côté en ouvrant ce test. Tu le trouves aussi dans le menu « Calibration » de Plyo Slicer."}});
     });
 }
 

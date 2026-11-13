@@ -143,18 +143,18 @@
     var trial = first.validated === true ? '' : ' Plyo n’a pas encore été essayé sur cette marque : regarde sur l’écran de l’imprimante que la bonne bobine alimente.';
     if (first.source === 'manual') return 'Ces emplacements viennent de ce que tu m’as dit : sélectionne-les sur l’imprimante.';
     if (first.system === 'u1') return 'Ces couleurs sont sur tes têtes. Je ne change pas l’ordre des têtes : vérifie sur l’écran de la U1 laquelle imprime chaque couleur.' + trial;
-    if (isImposed(canvas)) return 'Passe par « Envoyer et imprimer » : le bouton d’envoi d’Orca ouvre sa propre fenêtre et ne garde pas ce choix.' + trial;
-    return 'Je lis ces emplacements, mais je ne les impose pas sur ta machine : choisis-les dans la fenêtre d’Orca à l’envoi.' + trial;
+    if (isImposed(canvas)) return 'Passe par « Envoyer et imprimer » : le bouton d’envoi de Plyo Slicer ouvre sa propre fenêtre et ne garde pas ce choix.' + trial;
+    return 'Je lis ces emplacements, mais je ne les impose pas sur ta machine : choisis-les dans la fenêtre de Plyo Slicer à l’envoi.' + trial;
   }
 
   // Ce que dit le panneau quand Orca ouvre sa fenêtre d'envoi, s'il y a quelque chose à y vérifier (sinon vide : texte habituel).
   function orcaConfirm(canvas) {
     if (Array.isArray(canvas) && canvas.length && canvas[0].system === 'u1')
-      return 'Orca te demande de confirmer : valide, puis vérifie sur l’écran de ta U1 quelle tête imprime chaque couleur.';
+      return 'Plyo Slicer te demande de confirmer : valide, puis vérifie sur l’écran de ta U1 quelle tête imprime chaque couleur.';
     if (Array.isArray(canvas) && canvas.length && canvas[0].source === 'manual')
-      return 'Orca te demande de confirmer : valide, puis sélectionne sur l’imprimante les emplacements que tu m’as indiqués.';
+      return 'Plyo Slicer te demande de confirmer : valide, puis sélectionne sur l’imprimante les emplacements que tu m’as indiqués.';
     if (Array.isArray(canvas) && canvas.length && canvas[0].system && canvas[0].system !== 'canvas' && !isImposed(canvas))
-      return 'Orca te demande de confirmer : choisis les mêmes emplacements dans sa fenêtre, puis valide.';
+      return 'Plyo Slicer te demande de confirmer : choisis les mêmes emplacements dans sa fenêtre, puis valide.';
     return '';
   }
 

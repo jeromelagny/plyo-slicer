@@ -25,9 +25,9 @@ test('ROB-04 : « Orca a aussi réglé » et les réglages ajoutés pour que ça
   assert.equal(L.alsoChangedText([]), '');
   assert.equal(L.alsoChangedText(undefined), '');
   assert.equal(L.alsoChangedText([{ key: 'detect_overhang_wall', label: 'Détection des surplombs', before: false, after: true }]),
-    'Orca a aussi réglé : Détection des surplombs (non → oui). « Annuler » les remet aussi.');
+    'Plyo Slicer a aussi réglé : Détection des surplombs (non → oui). « Annuler » les remet aussi.');
   assert.equal(L.alsoChangedText([{ key: 'wall_loops', label: 'Parois', before: 3, after: 1 }, { key: 'sparse_infill_density', label: 'Remplissage', before: '15%', after: '0%' }]),
-    'Orca a aussi réglé : Parois (3 → 1) et Remplissage (15 % → 0 %). « Annuler » les remet aussi.');
+    'Plyo Slicer a aussi réglé : Parois (3 → 1) et Remplissage (15 % → 0 %). « Annuler » les remet aussi.');
   const applied = [{ id: 'spiral_mode', label: 'Vase spirale', after: true }, { id: 'wall_loops', label: 'Parois', after: 1, added: 'le mode vase l’exige' }];
   assert.equal(L.addedText(applied), 'J’ai aussi réglé, pour que ça tienne : Parois → 1 (le mode vase l’exige).');
   assert.equal(L.addedText([{ id: 'x', after: 1 }]), '');
@@ -80,7 +80,7 @@ test('issues d’un lot refusé : confirmer, réessayer, montrer le réglage', (
 
 test('ROB-05 : enregistrement évité pour un écart de températures, dit clairement', () => {
   assert.match(L.savedText({ save_error: 'temperatures' }), /^Appliqué\. Je n’ai pas enregistré le filament : .*Rapproche ces deux températures/);
-  assert.match(L.savedText({ save_error: 'Orca a refusé l’enregistrement' }), /^Appliqué, mais je n’ai pas pu le garder dans ton profil de filament/);
+  assert.match(L.savedText({ save_error: 'Plyo Slicer a refusé l’enregistrement' }), /^Appliqué, mais je n’ai pas pu le garder dans ton profil de filament/);
 });
 
 test('ROB-11 : chaque demande qui attend un « result » porte un identifiant, l’erreur générale a son propre type', () => {

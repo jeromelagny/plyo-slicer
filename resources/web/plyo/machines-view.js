@@ -26,7 +26,7 @@
       });
       body.appendChild(card);
     });
-    body.appendChild(ui.el('p', 'muted small', 'Retirer une machine la cache seulement : ses profils et sa connexion restent dans Orca.'));
+    body.appendChild(ui.el('p', 'muted small', 'Retirer une machine la cache seulement : ses profils et sa connexion restent dans Plyo Slicer.'));
     var acts = ui.el('div', 'printer-actions');
     acts.appendChild(ui.button('Ajouter une machine', opts.handlers.add, 'btn ghost sm', 'plus'));
     body.appendChild(acts);
@@ -46,7 +46,7 @@
   // Orca a changé de profil d'imprimante alors que le projet en avait un autre.
   function renderDivergence(slot, ui, opts) {
     slot.textContent = '';
-    var box = ui.alertBox('warn', 'Orca est passé sur **' + opts.to + '**, mais ton projet est sur **' + opts.from + '**.', 'alert');
+    var box = ui.alertBox('warn', 'Plyo Slicer est passé sur **' + opts.to + '**, mais ton projet est sur **' + opts.from + '**.', 'alert');
     box.body.appendChild(ui.el('p', 'muted small', 'Utiliser ' + opts.to + ' refait la préparation : filament, vérification et découpe.'));
     var acts = ui.el('div', 'printer-actions');
     acts.appendChild(ui.button('Utiliser ' + opts.to, opts.handlers.useNew, 'btn ghost sm'));

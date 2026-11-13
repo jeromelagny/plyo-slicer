@@ -283,7 +283,7 @@ bool start_print(const std::string& host, const std::string& access_code, const 
         if (!s.open(host, access_code, serial, error))
             return false;
         if (planned_here && !known)
-            return refused("Je n'ai pas pu vérifier la pièce dans Orca : l'impression n'a pas démarré. Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Laisser l'imprimante choisir l'emplacement ».");
+            return refused("Je n'ai pas pu vérifier la pièce dans Plyo Slicer : l'impression n'a pas démarré. Le fichier est sur l'imprimante : dans Plyo, à l'étape Imprimer, « Laisser l'imprimante choisir l'emplacement ».");
         nlohmann::json map = nlohmann::json::array();
         if (!planned.empty()) {
             // Relecture juste avant le départ : on n'envoie jamais une carte qui ne correspond plus à l'imprimante.

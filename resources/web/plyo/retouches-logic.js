@@ -51,9 +51,9 @@
   function spoolFailText(reason, label, spool) {
     var where = spool ? 'ta bobine « ' + spool + ' »' : 'ta bobine';
     if (reason === 'temperatures')
-      return 'Je n’ai pas pu garder ce changement dans ' + where + ' : l’écart entre la température de la première couche et celle des autres couches dépasse ce qu’Orca accepte' +
+      return 'Je n’ai pas pu garder ce changement dans ' + where + ' : l’écart entre la température de la première couche et celle des autres couches dépasse ce que Plyo Slicer accepte' +
         (label ? ' (« ' + label + ' »)' : '') + '. Rapproche-les dans l’onglet Filament : je la garde dès que c’est bon.';
-    return 'Je n’ai pas pu garder ce changement dans ' + where + ' : Orca n’a pas pu écrire son fichier. Ton changement reste dans l’onglet Filament ; je réessaie au prochain changement.';
+    return 'Je n’ai pas pu garder ce changement dans ' + where + ' : Plyo Slicer n’a pas pu écrire son fichier. Ton changement reste dans l’onglet Filament ; je réessaie au prochain changement.';
   }
 
   // ---------- UX-36 : valeurs du filament d'un fichier ouvert ----------
@@ -75,9 +75,9 @@
   function projectFilamentName(f) { return f ? (f.spool && f.spool.name) || f.preset || '' : ''; }
   function filamentDivergence(orcaPreset, projectFilament) {
     var from = projectFilamentName(projectFilament);
-    return { text: 'Orca est passé sur **' + orcaPreset + '**, mais ton projet utilise **' + from + '**.',
+    return { text: 'Plyo Slicer est passé sur **' + orcaPreset + '**, mais ton projet utilise **' + from + '**.',
       use: 'Utiliser « ' + orcaPreset + ' » pour ce projet', restore: 'Remettre ' + from,
-      note: 'Utiliser l’autre filament refait la vérification et la découpe. Ses réglages restent ceux de ce filament dans Orca.' };
+      note: 'Utiliser l’autre filament refait la vérification et la découpe. Ses réglages restent ceux de ce filament dans Plyo Slicer.' };
   }
   // Ce que fait « Utiliser … » selon ce que le slicer dit du filament d'Orca (spool_current) : 'attach' (c'est déjà une bobine),
   // 'name' (il peut le devenir : son nom est demandé), 'none' (il ne peut pas : on propose de choisir une bobine).
@@ -86,7 +86,7 @@
     if (c.spool && c.spool.id) return 'attach';
     return c.adoptable ? 'name' : 'none';
   }
-  var ADOPT_NONE = 'Je ne peux pas retenir ce filament comme bobine : je ne retiens qu’un profil de l’utilisateur qui vient d’un profil PLA, PETG, ABS, ASA ou TPU d’Orca. Choisis plutôt ta bobine à l’étape Filament.';
+  var ADOPT_NONE = 'Je ne peux pas retenir ce filament comme bobine : je ne retiens qu’un profil de l’utilisateur qui vient d’un profil PLA, PETG, ABS, ASA ou TPU de Plyo Slicer. Choisis plutôt ta bobine à l’étape Filament.';
 
   // ---------- UX-34 : calibrer cette bobine ----------
   // Trois tests guidés, gratuits à lancer ; seule la lecture de la photo du test utilise la jauge.

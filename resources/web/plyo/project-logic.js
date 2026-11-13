@@ -73,7 +73,7 @@
 
   // Réponse négative de filament_choose : fenêtre d'Orca annulée (`cancelled`, réglages non enregistrés gardés), ou pas de profil.
   function filamentChoiceError(msg, type) {
-    if (msg && msg.cancelled) return 'Choix annulé : ton filament n’a pas changé, tes modifications restent en place. Choisis à nouveau quand tu veux : Orca te redemandera quoi en faire.';
+    if (msg && msg.cancelled) return 'Choix annulé : ton filament n’a pas changé, tes modifications restent en place. Choisis à nouveau quand tu veux : Plyo Slicer te redemandera quoi en faire.';
     return 'Je n’ai pas trouvé de profil ' + type + ' pour cette imprimante. Choisis un autre filament.';
   }
 
@@ -91,7 +91,7 @@
   function projectOpenedText(reason) {
     if (!reason) return '';
     if (reason === 'annule') return 'D’accord, ton plateau reste tel quel.';
-    if (reason === 'occupe') return 'Orca est occupé (découpe, envoi, test ou fenêtre ouverte) : je rouvre le plateau de ce projet dès qu’il a fini. D’ici là, je ne change rien.';
+    if (reason === 'occupe') return 'Plyo Slicer est occupé (découpe, envoi, test ou fenêtre ouverte) : je rouvre le plateau de ce projet dès qu’il a fini. D’ici là, je ne change rien.';
     return 'Je n’ai pas retrouvé le plateau de ce projet : je remets ta machine et ta bobine.';
   }
   // Plateau pas retrouvé : la machine et la bobine de la fiche reviennent, comme avant les projets 3MF. Pas si l'utilisateur
@@ -104,7 +104,7 @@
     return tries < OPEN_RETRY_MAX ? 'retry' : 'give_up';
   }
   function openGiveUpText() {
-    return 'Orca est toujours occupé : je n’ai pas pu rouvrir le plateau de ce projet. Rouvre-le depuis « Mes projets » (menu « ⋯ ») quand il aura fini ; d’ici là, je ne change rien.';
+    return 'Plyo Slicer est toujours occupé : je n’ai pas pu rouvrir le plateau de ce projet. Rouvre-le depuis « Mes projets » (menu « ⋯ ») quand il aura fini ; d’ici là, je ne change rien.';
   }
   function restoresAfterOpen(reason) { return !!reason && reason !== 'annule' && reason !== 'occupe'; }
   // `previous` : le plateau trop lourd est celui de la conversation qu'on vient de quitter.

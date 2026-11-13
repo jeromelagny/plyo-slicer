@@ -73,7 +73,7 @@ test('IA-16 : une action que le panneau ne sait pas exécuter n’a jamais de bo
 
 test('IA-16 : chaque test d’Orca est annoncé avant, puis expliqué (lecture, retour à la pièce)', () => {
   for (const t of ['max_flow', 'vfa']) {
-    assert.match(L.rawTestText(t).before, /^Ce test ouvre une fenêtre d’Orca et remplace ta plaque par la pièce de test\./);
+    assert.match(L.rawTestText(t).before, /^Ce test ouvre une fenêtre de Plyo Slicer et remplace ta plaque par la pièce de test\./);
     const r = L.rawTestResult({ ok: true, target: t, replaced: true });
     assert.equal(r.back, true);
     assert.match(r.text, /« Mes projets »/);
@@ -87,7 +87,7 @@ test('IA-16 : chaque test d’Orca est annoncé avant, puis expliqué (lecture, 
   const closed = L.rawTestResult({ ok: true, target: 'vfa', replaced: false });
   assert.equal(closed.back, false);
   assert.match(closed.text, /ta plaque n’a pas changé/);
-  assert.equal(L.rawTestResult({ ok: false, target: 'vfa', text: 'Orca découpe en ce moment.' }).text, 'Orca découpe en ce moment.');
+  assert.equal(L.rawTestResult({ ok: false, target: 'vfa', text: 'Plyo Slicer découpe en ce moment.' }).text, 'Plyo Slicer découpe en ce moment.');
   assert.match(L.previewText({ ok: true, sliced: false }), /« Découper la plaque »/);
   assert.match(L.previewText({ ok: true, sliced: true }), /« Préparer »/);
 });

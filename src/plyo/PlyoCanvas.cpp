@@ -282,7 +282,7 @@ nlohmann::json apply(const nlohmann::json& entries)
     // Annulé : le filament en cours n'est pas une bobine, et ses modifications restent telles quelles.
     for (const auto& [t, name] : presets)
         if (t == 0 && !set_preset(t, name))
-            return {{"ok", false}, {"text", "Choix annulé : les emplacements et ton filament n'ont pas changé, tes modifications restent en place. Choisis à nouveau quand tu veux : Orca te redemandera quoi en faire."}};
+            return {{"ok", false}, {"text", "Choix annulé : les emplacements et ton filament n'ont pas changé, tes modifications restent en place. Choisis à nouveau quand tu veux : Plyo Slicer te redemandera quoi en faire."}};
     nlohmann::json out = {{"ok", true}, {"presets", nlohmann::json::array()}};
     for (size_t i = 0; i < presets.size(); ++i) {
         if (presets[i].first != 0)
@@ -392,7 +392,7 @@ nlohmann::json finish_send(const Target& t, const nlohmann::json& state)
     if (!Json::boolean(state, "ok", false))
         return refuse(SlotsLogic::decide_map(Json::arr(g_send_plan, "map"), nlohmann::json(), ignored, opts).refusal);
     if (!Json::boolean(state, "imposable", false))
-        return refuse("Je lis cette imprimante, mais je ne peux pas y imposer les emplacements (" + Json::str(state, "blocker", 80) + ")." + nothing + " Envoie par le bouton d'Orca, sa fenêtre te laisse choisir.");
+        return refuse("Je lis cette imprimante, mais je ne peux pas y imposer les emplacements (" + Json::str(state, "blocker", 80) + ")." + nothing + " Envoie par le bouton de Plyo Slicer, sa fenêtre te laisse choisir.");
 
     Slic3r::GUI::Plater*    plater = wxGetApp().plater();
     Slic3r::GUI::MainFrame* frame  = wxGetApp().mainframe;
@@ -401,7 +401,7 @@ nlohmann::json finish_send(const Target& t, const nlohmann::json& state)
         return refuse("La plaque n'est pas découpée ou sa découpe est périmée : découpe-la, puis relance l'envoi." + nothing);
     plater->apply_background_progress(); // comme FirstSteps::start_print
     if (!plate->is_slice_result_valid() || !plate->is_slice_result_ready_for_print() || !frame->get_enable_print_status())
-        return refuse("Orca n'est pas prêt à envoyer cette plaque : regarde les messages du plateau, découpe à nouveau au besoin, puis relance l'envoi." + nothing);
+        return refuse("Plyo Slicer n'est pas prêt à envoyer cette plaque : regarde les messages du plateau, découpe à nouveau au besoin, puis relance l'envoi." + nothing);
 
     // L'envoi part avec le profil édité, pas forcément celui du plan.
     const Slic3r::DynamicPrintConfig& edited_config = bundle().printers.get_edited_preset().config;
@@ -415,7 +415,7 @@ nlohmann::json finish_send(const Target& t, const nlohmann::json& state)
     std::vector<int>         cursor_t;
     std::vector<std::string> presets;
     if (!orca_state(cursor_t, presets))
-        return refuse("Je n'ai pas pu vérifier la pièce dans Orca." + nothing);
+        return refuse("Je n'ai pas pu vérifier la pièce dans Plyo Slicer." + nothing);
     std::vector<int> plan_t;
     for (const nlohmann::json& e : Json::arr(g_send_plan, "map"))
         plan_t.push_back(static_cast<int>(Json::integer(e, "t", -1)));
@@ -433,7 +433,7 @@ nlohmann::json finish_send(const Target& t, const nlohmann::json& state)
     const auto* filament_colour = bundle().project_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
     const int   filament_count  = filament_colour != nullptr ? static_cast<int>(filament_colour->values.size()) : 0;
     if (filament_count != static_cast<int>(presets.size()))
-        return refuse("Les filaments du projet ne sont pas cohérents dans Orca : recharge le projet, puis relance l'envoi." + nothing);
+        return refuse("Les filaments du projet ne sont pas cohérents dans Plyo Slicer : recharge le projet, puis relance l'envoi." + nothing);
 
     // Mêmes clés et mêmes défauts que les fenêtres d'Orca (PrintHostDialogs.hpp) ; un test de source vérifie qu'elles existent encore.
     const auto recent = [](const char* key) { return wxGetApp().app_config->get("recent", key); };
@@ -461,7 +461,7 @@ nlohmann::json finish_send(const Target& t, const nlohmann::json& state)
         BOOST_LOG_TRIVIAL(error) << "Plyo: envoi avec répartition en échec : " << e.what();
     }
     if (!taken)
-        return refuse("Orca n'a pas lancé l'envoi." + nothing + " Regarde ses messages, puis réessaie.");
+        return refuse("Plyo Slicer n'a pas lancé l'envoi." + nothing + " Regarde ses messages, puis réessaie.");
     return {{"ok", true}, {"text", "J'envoie le fichier : la répartition part avec. Regarde l'écran de ton imprimante."}};
 }
 

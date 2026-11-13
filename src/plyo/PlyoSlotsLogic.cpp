@@ -125,7 +125,7 @@ MapDecision decide_map(const nlohmann::json& planned, const nlohmann::json& canv
         }
         const std::string preset = Json::str(e, "preset");
         if (!preset.empty() && (t < 0 || t >= static_cast<int>(presets.size()) || !ProjectLogic::same_filament(preset, presets[t]))) {
-            out.refusal = "Le filament de la couleur " + std::to_string(t + 1) + " a changé dans Orca depuis le choix des emplacements : l'impression n'a pas démarré." + again;
+            out.refusal = "Le filament de la couleur " + std::to_string(t + 1) + " a changé dans Plyo Slicer depuis le choix des emplacements : l'impression n'a pas démarré." + again;
             return out;
         }
     }
@@ -198,9 +198,9 @@ std::string used_refusal(const std::vector<int>& model_t, const std::vector<int>
     if (plan.empty() || sliced.empty())
         return "Je ne sais pas quels filaments la plaque utilise : découpe-la à nouveau, puis relance l'envoi." + nothing;
     if (REFUSE_CURSOR_FILAMENT_CHANGES && model != cursor)
-        return "Cette plaque change de filament à une couche choisie dans l'aperçu : je ne sais pas encore l'envoyer avec une répartition. Envoie-la par le bouton d'Orca." + nothing;
+        return "Cette plaque change de filament à une couche choisie dans l'aperçu : je ne sais pas encore l'envoyer avec une répartition. Envoie-la par le bouton de Plyo Slicer." + nothing;
     if (cursor != sliced)
-        return "La découpe n'utilise pas les filaments prévus par les réglages (support, tour de purge, filament par zone) : vérifie tes réglages, ou envoie par le bouton d'Orca." + nothing;
+        return "La découpe n'utilise pas les filaments prévus par les réglages (support, tour de purge, filament par zone) : vérifie tes réglages, ou envoie par le bouton de Plyo Slicer." + nothing;
     if (plan != sliced)
         return "Les emplacements choisis ne couvrent plus les couleurs de la pièce découpée : choisis à nouveau les emplacements." + nothing;
     return std::string();
@@ -235,7 +235,7 @@ std::string profile_refusal(const nlohmann::json& plan, const Detection& edited,
 {
     const bool same = plan.is_object() && edited.imposable && !edited_host.empty() && edited.kind == Json::str(plan, "kind") && edited_host == Json::str(plan, "host") &&
                       edited_host_type == Json::str(plan, "host_type") && edited_model == Json::str(plan, "model");
-    return same ? std::string() : "L'imprimante choisie dans Orca n'est plus celle des emplacements choisis : rien n'est parti. Remets-la, ou choisis à nouveau les emplacements.";
+    return same ? std::string() : "L'imprimante choisie dans Plyo Slicer n'est plus celle des emplacements choisis : rien n'est parti. Remets-la, ou choisis à nouveau les emplacements.";
 }
 
 namespace {

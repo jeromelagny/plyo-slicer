@@ -98,7 +98,7 @@
     } else if (opts.step === 'preparer') {
       body.appendChild(line(ui, c.sliced ? 'check' : 'info', c.sliced ? 'Découpe faite' : c.slicing ? 'Découpe en cours' : 'Découpe à faire', c.sliced ? 'ok' : ''));
       // Plaque qu'Orca refuse d'imprimer : jamais « Aucun risque », la carte d'Orca au-dessus dit pourquoi.
-      if (c.sliced && c.blocked) body.appendChild(line(ui, 'alert', 'Orca ne laisse pas imprimer cette plaque', 'warn'));
+      if (c.sliced && c.blocked) body.appendChild(line(ui, 'alert', 'Plyo Slicer ne laisse pas imprimer cette plaque', 'warn'));
       else if (c.sliced) body.appendChild(line(ui, c.risks > 0 ? 'alert' : 'check', c.risks > 0 ? c.risks + ' point' + (c.risks > 1 ? 's' : '') + ' à régler avant d’imprimer' : checkedLine(c.checked), c.risks > 0 || c.checked === 'ignored' ? 'warn' : c.checked === 'clean' ? 'ok' : ''));
       if (c.sliced && c.risks > 0) body.appendChild(ui.button('Imprimer quand même', h.skip, 'link'));
     } else if (opts.step === 'imprimer') {

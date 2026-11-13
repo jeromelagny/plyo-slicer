@@ -94,7 +94,7 @@ nlohmann::json slice_refusal(Slic3r::GUI::Plater& plater)
     const OrcaMessages::Validation checked = OrcaMessages::validate_plate();
     if (!checked.busy && !checked.pending && OrcaMessagesLogic::has_error(checked.issues))
         return {{"ok", false}, {"reason", "orca_refused"}, {"issues", checked.issues},
-                {"text", "Orca refuse de découper cette plaque pour l'instant : je t'explique pourquoi juste en dessous."}};
+                {"text", "Plyo Slicer refuse de découper cette plaque pour l'instant : je t'explique pourquoi juste en dessous."}};
     return nullptr;
 }
 
@@ -225,7 +225,7 @@ nlohmann::json run(const std::string& kind)
         return {{"ok", false}, {"text", "Le plateau est vide : ajoute d'abord un modèle."}};
     // Orienter et organiser tournent en tâche de fond : une seule à la fois, comme dans Orca.
     if (!plater->get_ui_job_worker().is_idle())
-        return {{"ok", false}, {"reason", "busy"}, {"text", "Orca est déjà occupé sur le plateau. Réessaie dans un instant."}};
+        return {{"ok", false}, {"reason", "busy"}, {"text", "Plyo Slicer est déjà occupé sur le plateau. Réessaie dans un instant."}};
     if (auto* frame = wxGetApp().mainframe)
         frame->select_tab(TAB_ID_PREPARE);
     // Une action annulable prend un instantané d'Orca ; s'il n'y en a pas de nouveau, rien n'a été fait.

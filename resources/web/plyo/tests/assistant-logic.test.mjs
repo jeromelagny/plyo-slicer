@@ -274,9 +274,9 @@ test('modifications manuelles enregistrées avec le lot : liste courte et lisibl
 
 test('texte après l’enregistrement du profil par l’assistant', () => {
   assert.equal(L.savedText({ saved: [{ type: 'print', name: 'Mon profil', created: false }] }), 'Enregistré dans le profil « Mon profil ».');
-  assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Generic TPU (Plyo)', created: true, from: 'Generic TPU' }] }), 'Enregistré dans une copie à toi, « Generic TPU (Plyo) » : « Generic TPU » est un profil d’Orca, qui ne se modifie pas.');
+  assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Generic TPU (Plyo)', created: true, from: 'Generic TPU' }] }), 'Enregistré dans une copie à toi, « Generic TPU (Plyo) » : « Generic TPU » est un profil de Plyo Slicer, qui ne se modifie pas.');
   // Lot 8 (UX-14) : jamais « enregistre-le toi-même » ; la suite est dite (bobine : nouvel essai ; sinon Orca demandera).
-  assert.equal(L.savedText({ saved: [], save_error: 'disque plein' }), 'Appliqué, mais je n’ai pas pu le garder dans ton profil de filament (disque plein) : il reste en place sur ce plateau, et Orca te demandera quoi en faire en quittant.');
+  assert.equal(L.savedText({ saved: [], save_error: 'disque plein' }), 'Appliqué, mais je n’ai pas pu le garder dans ton profil de filament (disque plein) : il reste en place sur ce plateau, et Plyo Slicer te demandera quoi en faire en quittant.');
   assert.equal(L.savedText({ saved: [], save_error: 'disque plein', save_spool: true }), 'Appliqué, mais je n’ai pas pu le garder dans ta bobine (disque plein) : je réessaie à ta prochaine modification.');
   assert.doesNotMatch(L.savedText({ save_error: 'x' }) + L.savedText({ save_error: 'x', save_spool: true }), /toi-même|[Ee]nregistre-le/);
   assert.equal(L.savedText({}), '');

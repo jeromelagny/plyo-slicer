@@ -73,9 +73,9 @@ std::string edit_refusal(const nlohmann::json& project, const std::string& curre
     const bool has_printer  = std::find(todo.begin(), todo.end(), "printer") == todo.end();
     const bool has_filament = std::find(todo.begin(), todo.end(), "filament") == todo.end();
     if (has_printer && Json::str(*Json::field(project, "printer"), "preset") != current_printer)
-        return "Orca n'est plus sur l'imprimante de ce projet. Remets le projet dans Orca avant de changer des réglages.";
+        return "Plyo Slicer n'est plus sur l'imprimante de ce projet. Remets le projet en place avant de changer des réglages.";
     if (has_filament && !same_filament(Json::str(*Json::field(project, "filament"), "preset"), current_filament))
-        return "Orca n'est plus sur le filament de ce projet. Remets le projet dans Orca avant de changer des réglages.";
+        return "Plyo Slicer n'est plus sur le filament de ce projet. Remets le projet en place avant de changer des réglages.";
     return std::string();
 }
 
@@ -112,7 +112,7 @@ std::string refusal(const nlohmann::json& project, const std::string& current_pr
     }
     if (Json::str(*Json::field(project, "printer"), "preset") != current_printer ||
         !same_filament(Json::str(*Json::field(project, "filament"), "preset"), current_filament))
-        return "Orca n'est plus sur l'imprimante ou le filament de ce projet. Remets le projet dans Orca avant de changer des réglages.";
+        return "Plyo Slicer n'est plus sur l'imprimante ou le filament de ce projet. Remets le projet en place avant de changer des réglages.";
     return std::string();
 }
 

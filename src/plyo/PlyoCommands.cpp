@@ -432,7 +432,7 @@ nlohmann::json run(const nlohmann::json& commands)
     if (!commands.is_array() || commands.empty() || commands.size() > 6)
         return {{"ok", false}, {"text", "Aucun ordre à exécuter."}, {"done", nlohmann::json::array()}};
     if (!plater().get_ui_job_worker().is_idle())
-        return {{"ok", false}, {"text", "Orca est déjà occupé sur le plateau. Réessaie dans un instant."}, {"done", nlohmann::json::array()}};
+        return {{"ok", false}, {"text", "Plyo Slicer est déjà occupé sur le plateau. Réessaie dans un instant."}, {"done", nlohmann::json::array()}};
     if (auto* frame = wxGetApp().mainframe)
         frame->select_tab(TAB_ID_PREPARE);
     canvas().get_gizmos_manager().reset_all_states();
@@ -452,7 +452,7 @@ nlohmann::json run(const nlohmann::json& commands)
     }
     // Découper pendant qu'Orca range ou oriente la plaque donnerait un résultat périmé.
     if (!background.empty() && !slicing.empty()) {
-        skipped.push_back("Découpe la plaque quand Orca a fini : clique sur « Découper la plaque ».");
+        skipped.push_back("Découpe la plaque quand Plyo Slicer a fini : clique sur « Découper la plaque ».");
         slicing.clear();
     }
     ordered.insert(ordered.end(), background.begin(), background.end());
@@ -479,7 +479,7 @@ nlohmann::json run(const nlohmann::json& commands)
         plater().arrange();
         done.push_back("J'ai réorganisé la plaque : les pièces se chevauchaient, elles sont maintenant regroupées sans se toucher.");
         if (!slicing.empty()) {
-            skipped.push_back("Découpe la plaque quand Orca a fini de la ranger : clique sur « Découper la plaque ».");
+            skipped.push_back("Découpe la plaque quand Plyo Slicer a fini de la ranger : clique sur « Découper la plaque ».");
             ordered.resize(first_async);
         }
     };
@@ -505,7 +505,7 @@ nlohmann::json run(const nlohmann::json& commands)
                 break;
             } catch (const std::exception& e) {
                 BOOST_LOG_TRIVIAL(error) << "Plyo: ordre " << Json::str(c, "op") << " en échec : " << e.what();
-                failure = "Orca n'a pas pu exécuter cet ordre.";
+                failure = "Plyo Slicer n'a pas pu exécuter cet ordre.";
                 orca_failed = true;
                 break;
             }

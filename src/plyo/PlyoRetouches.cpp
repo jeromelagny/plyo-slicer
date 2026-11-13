@@ -97,13 +97,13 @@ nlohmann::json write_and_save(bool print, const nlohmann::json& values, const st
     if (!print && !AutoSave::temperatures_ok(collection(false).get_edited_preset().config)) {
         if (id > 0)
             SettingsBridge::undo_last(id);
-        return {{"ok", false}, {"text", "Orca refuserait d'enregistrer ces températures dans ta bobine : rien n'a changé."}};
+        return {{"ok", false}, {"text", "Plyo Slicer refuserait d'enregistrer ces températures dans ta bobine : rien n'a changé."}};
     }
     const Profiles::SaveOutcome saved = Profiles::save_current_as(print, save_as);
     if (saved != Profiles::SaveOutcome::Ok) {
         if (id > 0 && collection(print).current_is_dirty())
             SettingsBridge::undo_last(id);
-        return {{"ok", false}, {"text", "Orca n'a pas pu enregistrer le profil « " + save_as + " » : rien n'a changé."}};
+        return {{"ok", false}, {"text", "Plyo Slicer n'a pas pu enregistrer le profil « " + save_as + " » : rien n'a changé."}};
     }
     if (id > 0)
         SettingsBridge::discard_entry(id);
@@ -191,7 +191,7 @@ nlohmann::json print_pending() { return RetouchesLogic::sanitize_pending(Store::
 nlohmann::json keep_print()
 {
     if (bundle() == nullptr)
-        return {{"ok", false}, {"text", "Orca n'est pas prêt : réessaie dans un instant."}};
+        return {{"ok", false}, {"text", "Plyo Slicer n'est pas prêt : réessaie dans un instant."}};
     const nlohmann::json      pending = print_pending();
     Slic3r::PresetCollection& prints  = bundle()->prints;
     const std::string         preset  = Json::str(pending, "preset");
@@ -199,7 +199,7 @@ nlohmann::json keep_print()
     if (refusal == "empty")
         return {{"ok", false}, {"gone", true}, {"text", "Ces retouches ne sont plus disponibles : rien n'a changé."}};
     if (refusal == "other_preset")
-        return {{"ok", false}, {"text", "Orca n'est plus sur ton profil d'impression « " + preset + " » : choisis-le dans l'onglet Impression, puis réessaie."}};
+        return {{"ok", false}, {"text", "Plyo Slicer n'est plus sur ton profil d'impression « " + preset + " » : choisis-le dans l'onglet Impression, puis réessaie."}};
     if (refusal == "dirty")
         return {{"ok", false}, {"text", "Ce projet a déjà des réglages d'impression changés (par toi ou par moi) : je ne les mélange pas avec tes retouches d'avant. Je te reposerai la question au prochain nouveau projet."}};
     std::vector<std::string> existing;
@@ -219,7 +219,7 @@ nlohmann::json keep_print()
     boost::filesystem::remove(pending_path(), ec);
     BOOST_LOG_TRIVIAL(info) << "Plyo: retouches d'impression gardées dans le profil « " << name << " »";
     const std::string text = own ? "C'est gardé dans ton profil d'impression « " + name + " » : tes prochains projets partent de ces réglages."
-                                 : "C'est gardé dans « " + name + " », ta copie du profil d'Orca « " + preset + " » : tes prochains projets partent de ces réglages.";
+                                 : "C'est gardé dans « " + name + " », ta copie du profil de Plyo Slicer « " + preset + " » : tes prochains projets partent de ces réglages.";
     return {{"ok", true}, {"text", text}, {"name", name}};
 }
 
@@ -236,7 +236,7 @@ nlohmann::json undo_keep_print()
         return {{"ok", false}, {"text", "Il n'y a plus rien à annuler ici."}};
     Slic3r::PresetCollection& prints = bundle()->prints;
     if (prints.get_selected_preset_name() != name)
-        return {{"ok", false}, {"text", "Orca n'est plus sur ton profil « " + name + " » : choisis-le dans l'onglet Impression, puis réessaie."}};
+        return {{"ok", false}, {"text", "Plyo Slicer n'est plus sur ton profil « " + name + " » : choisis-le dans l'onglet Impression, puis réessaie."}};
     if (prints.current_is_dirty())
         return {{"ok", false}, {"text", "Ton profil « " + name + " » a d'autres retouches en cours : remets-les comme avant dans l'onglet Impression, puis réessaie."}};
     nlohmann::json r = write_and_save(true, s_kept_print["before"], name);
@@ -277,7 +277,7 @@ nlohmann::json undo_spool(int token)
     const std::string         refusal   = RetouchesLogic::spool_undo_refusal(s_spool_kept, filaments.get_selected_preset_name(),
                                                                              filaments.current_is_dirty(), saved_values(false));
     if (refusal == "other_spool")
-        return {{"ok", false}, {"text", "Orca n'est plus sur ta bobine « " + spool + " » : je ne peux pas l'annuler d'ici."}};
+        return {{"ok", false}, {"text", "Plyo Slicer n'est plus sur ta bobine « " + spool + " » : je ne peux pas l'annuler d'ici."}};
     if (refusal == "dirty")
         return {{"ok", false}, {"text", "Ta bobine a un changement pas encore gardé : attends deux secondes, puis réessaie."}};
     if (refusal == "changed")
@@ -319,7 +319,7 @@ nlohmann::json take_file_filament()
     if (bundle() == nullptr || !s_file.is_object())
         return {{"ok", false}, {"text", "Les réglages de ton fichier ne sont plus disponibles : rouvre-le pour les reprendre."}};
     if (bundle()->filaments.get_selected_preset_name() != Json::str(s_file, "preset"))
-        return {{"ok", false}, {"text", "Orca n'est plus sur ta bobine « " + Json::str(s_file, "spool") + " » : je ne reprends pas ces réglages sur une autre."}};
+        return {{"ok", false}, {"text", "Plyo Slicer n'est plus sur ta bobine « " + Json::str(s_file, "spool") + " » : je ne reprends pas ces réglages sur une autre."}};
     // Les valeurs d'un fichier viennent d'ailleurs : elles passent par les mêmes contrôles que toute modification de
     // l'assistant (catalogue, bornes d'Orca, plage du fabricant, règles d'Orca), sans confirmation implicite. Une valeur
     // refusée est laissée de côté et nommée ; les autres sont reprises en un lot annulable.

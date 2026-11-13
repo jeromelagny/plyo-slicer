@@ -121,7 +121,7 @@ Outcome one_pass(const Values& state, const std::set<std::string>& requested, bo
             return refuse(quoted("initial_layer_print_height", title) + " ne peut pas être nulle.");
         for (const char* key : {"ironing_spacing", "support_ironing_spacing"})
             if (const auto v = number(state, key); v && *v < IRONING_SPACING_MIN)
-                return refuse(quoted(key, title) + " doit être d'au moins 0,05 mm, sinon Orca le remet à 0,1 mm.");
+                return refuse(quoted(key, title) + " doit être d'au moins 0,05 mm, sinon Plyo Slicer le remet à 0,1 mm.");
         for (const char* key : {"xy_hole_compensation", "xy_contour_compensation"})
             if (const auto v = number(state, key); v && std::abs(*v) > MAX_XY_COMPENSATION)
                 return refuse(quoted(key, title) + " sert aux petits ajustements de taille (2 mm au plus, dans un sens ou dans l'autre). "
@@ -168,12 +168,12 @@ Outcome one_pass(const Values& state, const std::set<std::string>& requested, bo
             const bool                  pct   = !first_of(state, "seam_slope_start_height").empty() && first_of(state, "seam_slope_start_height").back() == '%';
             if (layer && start && (pct ? *layer * *start / 100. : *start) >= *layer)
                 return refuse(quoted("seam_slope_start_height", title) + " doit rester sous la hauteur de couche (" + fr_number(*layer) +
-                              " mm), sinon Orca la remet à 0.");
+                              " mm), sinon Plyo Slicer la remet à 0.");
         }
 
         if (const auto lock = number(state, "infill_lock_depth"), skin = number(state, "skin_infill_depth"); lock && skin && *lock > *skin)
             return refuse(quoted("infill_lock_depth", title) + " doit rester inférieure ou égale à " + quoted("skin_infill_depth", title) + " (" +
-                          fr_number(*skin) + " mm), sinon Orca la ramène à la moitié.");
+                          fr_number(*skin) + " mm), sinon Plyo Slicer la ramène à la moitié.");
 
         // Peau irrégulière en mode « Extrusion » ou « Combiné » : Orca exige le générateur de parois Arachne.
         if (has(state, "fuzzy_skin_mode") && first_of(state, "fuzzy_skin_mode") != "displacement" && first_of(state, "wall_generator") != "arachne") {
@@ -186,9 +186,9 @@ Outcome one_pass(const Values& state, const std::set<std::string>& requested, bo
     }
     if (filament_touched) {
         if (const auto v = number(state, "filament_max_volumetric_speed"); v && *v < MIN_VOLUMETRIC)
-            return refuse(quoted("filament_max_volumetric_speed", title) + " doit être d'au moins 0,5 mm³/s, sinon Orca la remet à 0,5.");
+            return refuse(quoted("filament_max_volumetric_speed", title) + " doit être d'au moins 0,5 mm³/s, sinon Plyo Slicer la remet à 0,5.");
         if (const auto v = number(state, "filament_ironing_spacing"); v && *v < IRONING_SPACING_MIN)
-            return refuse(quoted("filament_ironing_spacing", title) + " doit être d'au moins 0,05 mm, sinon Orca le remet à 0,1 mm.");
+            return refuse(quoted("filament_ironing_spacing", title) + " doit être d'au moins 0,05 mm, sinon Plyo Slicer le remet à 0,1 mm.");
     }
     return out;
 }
@@ -250,7 +250,7 @@ Outcome temperature_pairs(const std::vector<PairKeys>& pairs, const std::map<std
             out.added.push_back({p.first, "filament", first, std::to_string(first), p.other, "la première couche suit le changement"});
             continue;
         }
-        const std::string gap = "plus de " + std::to_string(p.max_delta) + " °C d'écart entre la première couche et les suivantes : Orca refuserait d'enregistrer le profil.";
+        const std::string gap = "plus de " + std::to_string(p.max_delta) + " °C d'écart entre la première couche et les suivantes : Plyo Slicer refuserait d'enregistrer le profil.";
         if (requested.count(p.first) && !requested.count(p.other))
             return refuse(quoted(p.first, title) + " passerait à " + std::to_string(a1->second) + " °C alors que " + quoted(p.other, title) +
                           " reste à " + std::to_string(a2->second) + " °C, soit " + gap + " Change aussi " + quoted(p.other, title) + ".");

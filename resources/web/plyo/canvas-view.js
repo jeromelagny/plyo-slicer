@@ -22,7 +22,7 @@
     else if (opts.trial) body.appendChild(ui.el('p', 'muted small', 'Plyo n’a pas encore été essayé sur cette marque : compare ces emplacements avec l’écran de ton imprimante.'));
     if (opts.mode === 'tooMany') {
       body.appendChild(ui.el('p', 'muted small', 'Ta pièce a ' + opts.colours.length + ' couleurs et ' + w.unit + ' ' + trays.length +
-        ' ' + w.slots + '. Réduis le nombre de couleurs de la pièce dans Orca, puis reviens ici.'));
+        ' ' + w.slots + '. Réduis le nombre de couleurs de la pièce dans Plyo Slicer, puis reviens ici.'));
       body.appendChild(ui.button('Vérifier à nouveau', h.recheck, 'link'));
     } else if (opts.mode === 'multi') {
       body.appendChild(ui.el('p', 'muted small', u1 ? 'Je propose une tête par couleur d’après le type et la couleur. Change celles qui ne te conviennent pas.' : 'Je propose un emplacement par couleur d’après le type et la couleur. Change ceux qui ne te conviennent pas.'));
