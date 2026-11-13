@@ -10,9 +10,45 @@
   // readOnly : lire sans imposer, avec `blocker` (pourquoi) ; trial : lecture pas encore essayée sur une vraie machine (validated faux).
   // opts : { mode: single|multi|tooMany, system, emptyBlocks, readOnly, blocker, trial, trays, colours, mapping, error, handlers: { pickTray(tray), setTray(t, key), recheck(), useList() } }
   // emptyBlocks : un emplacement vide sera refusé à l'envoi (CFS, IFS) : il ne se choisit pas. Sur la CC2 son « status » n'est pas fiable : « vide ? ».
+  // Marque d'un emplacement (opts.brand, voir index.html slotBrandView) : une ligne discrète « Marque : … · changer », et la
+  // question « De quelle marque ? » sous elle quand on l'a ouverte. Rien tant que le slicer n'a pas répondu.
+  function brandRow(body, ui, opts, tray) {
+    var b = opts.brand, S = root.PlyoSpools;
+    if (!b || !tray) return;
+    var key = S.slotKey(tray), it = b.items[key];
+    if (!it || !it.material) return;
+    var row = ui.el('div', 'project-row project-sub');
+    row.appendChild(ui.el('span', 'muted small', (opts.mode === 'multi' ? tray.slot + ' · ' : '') + S.slotBrandText(b.choices[key])));
+    row.appendChild(ui.button('changer', function () { opts.handlers.slotBrandOpen(key); }, 'link'));
+    body.appendChild(row);
+    if (b.picker && b.picker.key === key)
+      root.PlyoProjectCard.renderBrandPicker(body, ui, { brands: it.brands, state: b.picker, field: 'Marque de la bobine ' + tray.slot, handlers: b.pickerHandlers });
+  }
+  // Une seule question pour les emplacements dont l'annonce correspond à un profil fourni : jamais bloquante (sans réponse,
+  // les réglages communs restent), « Oui » prend le profil de la marque pour chacun.
+  function brandQuestion(body, ui, opts) {
+    var b = opts.brand, h = opts.handlers;
+    if (!b || !b.question || b.picker) return;
+    var box = ui.el('div', 'brand-ask');
+    box.appendChild(ui.el('p', 'small', b.question));
+    var acts = ui.el('div', 'printer-actions');
+    acts.appendChild(ui.button(b.offers.length === 1 ? 'Oui, c’est elle' : 'Oui, ce sont elles', function () { h.slotBrandYes(b.offers); }, 'btn ghost sm', 'check'));
+    if (b.offers.length === 1) acts.appendChild(ui.button('Autre marque', function () { h.slotBrandOpen(b.offers[0].key); }, 'link'));
+    acts.appendChild(ui.button('Je ne sais pas', function () { h.slotBrandUnknown(b.offers); }, 'link'));
+    box.appendChild(acts);
+    if (b.offers.length > 1) box.appendChild(ui.el('p', 'muted small', 'Pour en changer une, touche « changer » sur sa ligne.'));
+    body.appendChild(box);
+  }
+
   function render(slot, ui, opts) {
     var h = opts.handlers, trays = opts.trays || [], body = ui.el('div', 'project-body canvas-choices');
     var w = root.PlyoCanvas.words(opts.system);
+    // Le panneau se redessine souvent : la marque en cours de saisie garde le curseur tant que rien de ce qui est montré ne change.
+    var b0 = opts.brand, pk0 = b0 && b0.picker;
+    var key = JSON.stringify([opts.mode, opts.mapping, opts.error, trays, b0 ? [b0.choices, b0.question, !!b0.items, pk0 && [pk0.key, pk0.showAll, pk0.picked && pk0.picked.brand, pk0.other, pk0.error]] : null]);
+    var active = typeof document !== 'undefined' ? document.activeElement : null;
+    if (active && active.dataset && active.dataset.spoolName && slot.contains(active) && slot.canvasKey === key) return;
+    slot.canvasKey = key;
     slot.textContent = '';
     if (opts.error) body.appendChild(ui.el('p', 'project-error', opts.error));
     var u1 = opts.system === 'u1', manual = opts.system === 'manual';
@@ -45,7 +81,9 @@
         select.addEventListener('change', function () { h.setTray(m.t, select.value); });
         row.appendChild(select);
         body.appendChild(row);
+        brandRow(body, ui, opts, trays.filter(function (t) { return t.tray_id === m.tray_id && t.canvas_id === m.canvas_id; })[0]);
       });
+      brandQuestion(body, ui, opts);
     } else {
       body.appendChild(ui.el('p', 'muted small', u1 ? 'Tes têtes, telles que réglées sur l’écran de l’imprimante. Touche celle où se trouve ton filament.' : (manual ? 'Touche celui où se trouve ton filament.' : 'Tes emplacements, tels que réglés sur l’écran de l’imprimante. Touche celui où se trouve ton filament.')));
       var acts = ui.el('div', 'printer-actions');
@@ -58,6 +96,9 @@
         acts.appendChild(b);
       });
       body.appendChild(acts);
+      // La marque de l'emplacement proposé (celui que garde « Utiliser… » de la ligne d'action).
+      brandQuestion(body, ui, opts);
+      brandRow(body, ui, opts, chosen && trays.filter(function (t) { return t.tray_id === chosen.tray_id && t.canvas_id === chosen.canvas_id; })[0]);
       if (trays.some(function (t) { return t.empty; }) && !opts.emptyBlocks && !manual)
         body.appendChild(ui.el('p', 'muted small', '« vide ? » : l’imprimante pense que cet emplacement est vide. S’il est chargé, tu peux le choisir quand même.'));
     }

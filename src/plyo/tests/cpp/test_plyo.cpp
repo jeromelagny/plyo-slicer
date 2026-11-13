@@ -3,6 +3,7 @@
 #include <catch_amalgamated.hpp>
 
 #include "../../PlyoBedLogic.hpp"
+#include "../../PlyoBrandsLogic.hpp"
 #include "../../PlyoFiles.hpp"
 #include "../../PlyoJson.hpp"
 #include "../../PlyoSanitize.hpp"
@@ -5100,4 +5101,145 @@ TEST_CASE("Lot 16 · sentinelle ERR-11 : types de notification nommés par Plyo,
     CHECK(hpp.find("std::vector<PlyoNotice> plyo_notices() const;") != std::string::npos);
     const std::string cpp = read_source("../../../../src/slic3r/GUI/NotificationManager.cpp");
     CHECK(between(cpp, "NotificationManager::plyo_notices() const", "// PLYO: end").find("if (!notification->is_finished())") != std::string::npos);
+}
+
+// ---------- Marque d'une bobine (BrandsLogic) ----------
+
+namespace {
+// Profils fournis d'une K2 pour du PLA, comme Brands::groups les lit chez Orca (noms vérifiés dans resources/profiles).
+std::vector<Plyo::BrandsLogic::Candidate> k2_pla()
+{
+    return {{"Generic PLA @K2-all", "Generic", true},
+            {"Hyper PLA @K2-all", "Creality", true},
+            {"CR-PLA @K2-all", "Creality", true},
+            {"Ender-PLA @K2-all", "Creality", true},
+            {"Generic PLA @System", "Generic", false},
+            {"Creality Hyper PLA @System", "Creality", false}, // même gamme que « Hyper PLA » : celle de l'imprimante reste
+            {"eSUN PLA+ @System", "eSUN", false},
+            {"eSUN PLA-Basic @System", "eSUN", false},
+            {"Polymaker PLA @System", "Polymaker", false},
+            {"Sans marque @System", "", false}};
+}
+} // namespace
+
+TEST_CASE("Marque : normalisation, nom de gamme, générique")
+{
+    using namespace Plyo::BrandsLogic;
+    CHECK(norm("Hyper-PLA") == norm("hyper pla"));
+    CHECK(norm(" CR_PLA ") == "crpla");
+    CHECK(norm("PLA+") != norm("PLA"));
+    CHECK(range_label("Hyper PLA @K2-all") == "Hyper PLA");
+    CHECK(range_label("eSUN PLA+ @System") == "eSUN PLA+");
+    CHECK(range_label("Sans arobase") == "Sans arobase");
+    CHECK(is_generic("Generic", "Hyper PLA"));
+    CHECK(is_generic("", "Hyper PLA"));
+    CHECK(is_generic("Creality", "Generic PLA High Speed"));
+    CHECK_FALSE(is_generic("Creality", "Hyper PLA"));
+    CHECK(clean_brand("  Sun/lu  ") == "Sun lu");
+    CHECK(clean_brand("a") == "");
+    CHECK(clean_brand(std::string(80, 'x')).size() == MAX_BRAND_BYTES);
+}
+
+TEST_CASE("Marque : regroupement et ordre (la marque de l'imprimante d'abord, puis l'alphabet)")
+{
+    using namespace Plyo::BrandsLogic;
+    const json g = group(k2_pla(), "Creality");
+    REQUIRE(g.size() == 3);
+    CHECK(g[0]["brand"] == "Creality");
+    CHECK(g[1]["brand"] == "eSUN");
+    CHECK(g[2]["brand"] == "Polymaker");
+    CHECK(g[0]["printer"] == true);
+    CHECK(g[1]["printer"] == false);
+    // Génériques et profils sans marque écartés ; « Creality Hyper PLA » de la bibliothèque fondu dans « Hyper PLA » de la K2.
+    REQUIRE(g[0]["ranges"].size() == 3);
+    CHECK(g[0]["ranges"][0]["label"] == "CR-PLA");
+    CHECK(g[0]["ranges"][1]["label"] == "Ender-PLA");
+    CHECK(g[0]["ranges"][2]["label"] == "Hyper PLA");
+    CHECK(g[0]["ranges"][2]["preset"] == "Hyper PLA @K2-all");
+    CHECK(g[1]["ranges"][0]["short"] == "PLA+");
+    CHECK(g[1]["ranges"][1]["short"] == "PLA-Basic");
+    // Sans marque d'imprimante connue : les marques fournies avec l'imprimante restent devant.
+    CHECK(group(k2_pla(), "")[0]["brand"] == "Creality");
+    // Une marque de la bibliothèque seule passe après une marque fournie avec l'imprimante, quel que soit l'alphabet.
+    const json abc = group({{"Acme PLA @System", "Acme", false}, {"Zeta PLA @Z", "Zeta", true}}, "");
+    CHECK(abc[0]["brand"] == "Zeta");
+    CHECK(abc[1]["brand"] == "Acme");
+    CHECK(group({}, "Creality").empty());
+}
+
+TEST_CASE("Marque : rapprochement exact de ce qu'annonce un CFS, jamais approché")
+{
+    using namespace Plyo::BrandsLogic;
+    const json g = group(k2_pla(), "Creality");
+    CHECK(match(g, "Creality", "Hyper PLA")["preset"] == "Hyper PLA @K2-all");
+    CHECK(match(g, "CREALITY", "hyper-pla")["preset"] == "Hyper PLA @K2-all");
+    CHECK(match(g, "Creality", "Creality Hyper PLA")["preset"] == "Hyper PLA @K2-all");
+    CHECK(match(g, "eSUN", "PLA+")["preset"] == "eSUN PLA+ @System");
+    CHECK(match(g, "esun", "eSUN PLA-Basic")["preset"] == "eSUN PLA-Basic @System");
+    CHECK(match(g, "Creality", "Hyper PLA")["brand"] == "Creality");
+    // Rien de sûr : pas de proposition.
+    CHECK(match(g, "eSUN", "PLA").empty());          // PLA+ n'est pas PLA
+    CHECK(match(g, "Creality", "Hyper").empty());    // un bout de nom ne suffit pas
+    CHECK(match(g, "Creality", "PLA").empty());
+    CHECK(match(g, "", "Hyper PLA").empty());        // marque non annoncée
+    CHECK(match(g, "Creality", "").empty());         // nom non annoncé (U1, IFS…)
+    CHECK(match(g, "Sunlu", "PLA").empty());         // marque sans profil pour cette imprimante
+    CHECK(match(g, "Generic", "PLA").empty());
+    CHECK(match(json(), "Creality", "Hyper PLA").empty());
+    // Deux gammes pour un même nom annoncé : aucune proposition.
+    const json twice = json::array({{{"brand", "Acme"}, {"ranges", json::array({{{"preset", "a"}, {"label", "Silk"}, {"short", "Silk"}},
+                                                                               {{"preset", "b"}, {"label", "Acme Silk"}, {"short", "Silk-2"}}})}}});
+    CHECK(match(twice, "Acme", "Acme Silk").empty());
+    // Même gamme sur une autre imprimante (bobine déjà nommée).
+    CHECK(same_range(g, "Creality", "Hyper PLA")["preset"] == "Hyper PLA @K2-all");
+    CHECK(same_range(g, "Creality", "Hyper PLA Matte").empty());
+    // Recherche d'un profil choisi dans le panneau : seulement s'il fait partie des marques lues.
+    CHECK(find(g, "CR-PLA @K2-all")["label"] == "CR-PLA");
+    CHECK(find(g, "Generic PLA @K2-all").empty());
+    CHECK(find(g, "").empty());
+}
+
+TEST_CASE("Bobines : la marque et la gamme sont gardées avec une nouvelle bobine")
+{
+    using namespace Plyo::SpoolsLogic;
+    const json added = add(json::object(), "Creality Hyper PLA noir", "PLA", "Creality", "Hyper PLA");
+    REQUIRE(added["created"] == true);
+    const std::string id = added["id"];
+    CHECK(added["reg"]["spools"][0]["brand"] == "Creality");
+    CHECK(added["reg"]["spools"][0]["range"] == "Hyper PLA");
+    CHECK(brand_of(added["reg"], id) == json({{"brand", "Creality"}, {"range", "Hyper PLA"}}));
+    CHECK(for_machine(added["reg"], "K2")[0]["brand"] == "Creality");
+    // Une bobine retrouvée par son nom garde sa marque d'origine.
+    const json again = add(added["reg"], "creality hyper pla NOIR", "PLA", "Sunlu", "");
+    CHECK(again["created"] == false);
+    CHECK(brand_of(again["reg"], id)["brand"] == "Creality");
+    // Marque écrite sans gamme (« Autre marque »), et « Je ne sais pas » : rien de plus dans le registre.
+    const json other = add(json::object(), "Sunlu PLA", "PLA", "Sunlu", "");
+    CHECK(other["reg"]["spools"][0]["brand"] == "Sunlu");
+    CHECK_FALSE(other["reg"]["spools"][0].contains("range"));
+    const json none = add(json::object(), "Ma bobine", "PLA");
+    CHECK_FALSE(none["reg"]["spools"][0].contains("brand"));
+    CHECK_FALSE(for_machine(none["reg"], "K2")[0].contains("brand"));
+    CHECK(brand_of(none["reg"], none["id"]) == json({{"brand", ""}, {"range", ""}}));
+    // Relu du disque : une gamme sans marque disparaît, une marque illisible aussi.
+    const json raw = {{"spools", {{{"id", "b1"}, {"name", "Une bobine"}, {"material", "PLA"}, {"range", "Hyper PLA"}},
+                                  {{"id", "b2"}, {"name", "Autre bobine"}, {"material", "PLA"}, {"brand", 12}}}}};
+    const json clean = sanitize(raw);
+    CHECK_FALSE(clean["spools"][0].contains("range"));
+    CHECK_FALSE(clean["spools"][1].contains("brand"));
+}
+
+TEST_CASE("Projet : la marque de la bobine et des emplacements est gardée")
+{
+    using namespace Plyo::ProjectLogic;
+    const json p = sanitize({{"filament", {{"type", "PLA"}, {"brand", "Creality"}, {"range", "Hyper PLA"}, {"brand_profile", true}}},
+                             {"canvas", {{{"t", 0}, {"canvas_id", 1}, {"tray_id", 1}, {"type", "PLA"}, {"brand", "eSUN"}, {"range", "eSUN PLA+"}}}}});
+    CHECK(p["filament"]["brand"] == "Creality");
+    CHECK(p["filament"]["range"] == "Hyper PLA");
+    CHECK(p["filament"]["brand_profile"] == true);
+    CHECK(p["canvas"][0]["brand"] == "eSUN");
+    CHECK(p["canvas"][0]["range"] == "eSUN PLA+");
+    const json q = sanitize({{"filament", {{"type", "PLA"}, {"brand_profile", "oui"}}}});
+    CHECK_FALSE(q["filament"].contains("brand_profile"));
+    CHECK_FALSE(q["filament"].contains("brand"));
 }

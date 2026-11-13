@@ -1,5 +1,6 @@
 #include "PlyoSpoolsLogic.hpp"
 
+#include "PlyoBrandsLogic.hpp"
 #include "PlyoJson.hpp"
 
 #include <algorithm>
@@ -72,6 +73,18 @@ nlohmann::json machine_entry(const nlohmann::json& raw)
             {"pending", Json::boolean(raw, "pending", false)}};
 }
 
+// Marque et gamme de la bobine (étape Filament), seulement si elles sont dites : un registre d'avant reste identique.
+// La gamme n'existe pas sans marque.
+void put_brand(nlohmann::json& spool, const std::string& brand, const std::string& range)
+{
+    const std::string b = BrandsLogic::clean_brand(brand);
+    if (b.empty())
+        return;
+    spool["brand"] = b;
+    if (const std::string r = BrandsLogic::clean_brand(range); !r.empty())
+        spool["range"] = r;
+}
+
 } // namespace
 
 std::string clean_name(const std::string& typed)
@@ -125,12 +138,15 @@ nlohmann::json sanitize(const nlohmann::json& raw)
         for (const auto& [printer, entry] : rawMachines.items())
             if (!printer.empty() && entry.is_object())
                 machines[printer] = machine_entry(entry);
-        spools.push_back({{"id", id}, {"name", name}, {"material", material}, {"machines", machines}});
+        nlohmann::json spool = {{"id", id}, {"name", name}, {"material", material}, {"machines", machines}};
+        put_brand(spool, Json::str(row, "brand"), Json::str(row, "range"));
+        spools.push_back(spool);
     }
     return {{"spools", spools}};
 }
 
-nlohmann::json add(const nlohmann::json& reg, const std::string& name, const std::string& material)
+nlohmann::json add(const nlohmann::json& reg, const std::string& name, const std::string& material, const std::string& brand,
+                   const std::string& range)
 {
     nlohmann::json    clean   = sanitize(reg);
     const std::string cleaned = clean_name(name);
@@ -147,8 +163,10 @@ nlohmann::json add(const nlohmann::json& reg, const std::string& name, const std
     size_t n = clean["spools"].size() + 1;
     while (ids.count("b" + std::to_string(n)) != 0)
         ++n;
-    const std::string id = "b" + std::to_string(n);
-    clean["spools"].push_back({{"id", id}, {"name", cleaned}, {"material", material}, {"machines", nlohmann::json::object()}});
+    const std::string id    = "b" + std::to_string(n);
+    nlohmann::json    spool = {{"id", id}, {"name", cleaned}, {"material", material}, {"machines", nlohmann::json::object()}};
+    put_brand(spool, brand, range);
+    clean["spools"].push_back(spool);
     return {{"reg", clean}, {"id", id}, {"created", true}};
 }
 
@@ -158,12 +176,14 @@ nlohmann::json for_machine(const nlohmann::json& reg, const std::string& printer
     const nlohmann::json        clean = sanitize(reg); // nommé : la boucle ne doit pas parcourir un temporaire
     for (const nlohmann::json& s : clean["spools"]) {
         const nlohmann::json entry = Json::obj(s["machines"], printer.c_str());
-        rows.push_back({{"id", s["id"]},
-                        {"name", s["name"]},
-                        {"material", s["material"]},
-                        {"has_preset", !Json::str(entry, "preset").empty() && !Json::boolean(entry, "pending", false)},
-                        {"last_outcome", Json::str(entry, "last_outcome")},
-                        {"last_ok_at", Json::str(entry, "last_ok_at")}});
+        nlohmann::json       row   = {{"id", s["id"]},
+                                      {"name", s["name"]},
+                                      {"material", s["material"]},
+                                      {"has_preset", !Json::str(entry, "preset").empty() && !Json::boolean(entry, "pending", false)},
+                                      {"last_outcome", Json::str(entry, "last_outcome")},
+                                      {"last_ok_at", Json::str(entry, "last_ok_at")}};
+        put_brand(row, Json::str(s, "brand"), Json::str(s, "range"));
+        rows.push_back(row);
     }
     std::stable_sort(rows.begin(), rows.end(), [](const nlohmann::json& a, const nlohmann::json& b) {
         return a["last_ok_at"].get<std::string>() > b["last_ok_at"].get<std::string>();
@@ -229,6 +249,15 @@ bool is_pending(const nlohmann::json& reg, const std::string& id, const std::str
         if (s["id"] == id)
             return Json::boolean(Json::obj(s["machines"], printer.c_str()), "pending", false);
     return false;
+}
+
+nlohmann::json brand_of(const nlohmann::json& reg, const std::string& id)
+{
+    const nlohmann::json clean = sanitize(reg);
+    for (const nlohmann::json& s : clean["spools"])
+        if (s["id"] == id)
+            return {{"brand", Json::str(s, "brand")}, {"range", Json::str(s, "range")}};
+    return {{"brand", ""}, {"range", ""}};
 }
 
 std::string spool_name(const nlohmann::json& reg, const std::string& id)

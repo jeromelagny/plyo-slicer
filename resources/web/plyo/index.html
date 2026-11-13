@@ -989,13 +989,24 @@
     // « Quelle bobine ? » : bobines de la machine `printer` (items null tant que le slicer ne les a pas données), saisie d'une
     // nouvelle bobine, préréglages déjà proposés, question de fin posée en note (et sa conversation). L'envoi ou l'export fait
     // avec une bobine (question de l'étape Résultat) est gardé dans le projet : conv.project.send (sendOf).
-    spools: { printer: null, items: null }, newSpool: { open: false, material: '', name: '', error: '', focus: false }, adoptAsked: {}, endNote: null, endNoteConv: null };
+    spools: { printer: null, items: null }, newSpool: freshNewSpool(), adoptAsked: {}, endNote: null, endNoteConv: null };
+  // Nouvelle bobine : matière, marque (« De quelle marque est ta bobine ? » : `brands` du slicer pour cette matière, null tant
+  // qu'il cherche ; `picker` : état de la question ; `choice` : la réponse, PlyoSpools.brandChoice ; `brandOpen` : le confirmé
+  // l'a ouverte ; `suggested` : le nom prérempli, remplacé tant que tu ne l'as pas changé), puis nom.
+  function freshNewSpool() {
+    return { open: false, material: '', name: '', error: '', focus: false, brands: null, brandsFor: '', picker: freshPicker(), choice: null, brandOpen: false, suggested: '' };
+  }
+  function freshPicker() { return { showAll: false, picked: null, other: false, otherText: '', error: '' }; }
   // Emplacements (Canvas, CFS, IFS, U1) à l'étape Filament : lecture, proposition, application, plan d'envoi.
   // readId : numéro de la dernière lecture (une réponse plus ancienne est ignorée) ; planKey null : le premier affichage
   // envoie le plan ou l'efface (rien ne reste d'un panneau rechargé) ; refusedConv : conversation du départ refusé.
   var canvasUI = { preset: null, state: null, loading: false, mapping: null, useList: false, error: '', applying: null, applyingConv: null, sendPending: false, refused: '', refusedConv: null, planKey: null, readId: 0,
     // Saisie manuelle : `state` lu dans slots.json, `confirmed` après le « Oui » du rappel, `form` : écran de saisie ouvert.
-    manual: { preset: null, state: null, loading: false, confirmed: false, form: false, draft: null, count: 2, error: '' } };
+    manual: { preset: null, state: null, loading: false, confirmed: false, form: false, draft: null, count: 2, error: '' },
+    // Marque des emplacements : `brands` (réponse du slicer pour l'état lu `of` : items[clé] = {material, brands, match}),
+    // `choice[clé]` (PlyoSpools.brandChoice, sur un geste de l'utilisateur seulement), `dismissed[clé]` (« Je ne sais pas » dit à
+    // l'annonce), `picker` (question ouverte pour l'emplacement `picker.key`).
+    brands: { of: null, id: 0, items: null }, choice: {}, dismissed: {}, picker: null };
   // Plateau posé sur l'imprimante (question de l'étape Machine) : `editing` (« changer » de la fiche), `token` de la demande en
   // attente (0 sinon), `shown` : imprimantes dont la carte est montrée pendant cette session (elle reste jusqu'à la réponse).
   // Le type ne change que sur un clic ici : jamais sur une réponse de l'IA (aucun autre chemin n'envoie bed_type_set).
@@ -1157,8 +1168,13 @@
       var tray = trays.filter(function (t) { return t.tray_id === m.tray_id && t.canvas_id === m.canvas_id; })[0];
       if (!tray) return;
       if (!tray.type && st.system && st.system !== 'canvas') unknown = tray;
-      entries.push({ t: m.t, type: tray.type, color: tray.color });
+      // Marque choisie (ou confirmée) par l'utilisateur pour cet emplacement : son profil, vérifié par le slicer ; sinon le générique.
+      var choice = slotChoice(PlyoSpools.slotKey(tray));
+      var sent = { t: m.t, type: tray.type, color: tray.color };
+      if (choice && choice.kind === 'brand' && choice.preset) sent.preset = choice.preset;
+      entries.push(sent);
       var entry = { t: m.t, canvas_id: tray.canvas_id, tray_id: tray.tray_id, type: tray.type, color: tray.color };
+      if (choice && choice.brand && (choice.kind === 'brand' || choice.kind === 'brand_only' || choice.kind === 'other')) { entry.brand = choice.brand; if (choice.kind === 'brand') entry.range = choice.range; }
       // Numéro du traducteur et nature de la lecture (la CC2 reste sans : son plan et ses projets ne changent pas).
       if (st.system && st.system !== 'canvas') { entry.label = tray.slot; entry.imposable = st.imposable === true; entry.source = st.source; entry.system = st.system; entry.validated = st.validated === true; }
       full.push(entry);
@@ -1408,8 +1424,57 @@
     openManual: openManual,
     manualCount: function (n) { canvasUI.manual.count = n; renderProject(); },
     manualSet: function (i, field, value) { canvasUI.manual.draft[i][field] = value; renderProject(); }, // le formulaire reste tel quel, seule la ligne d'action suit
-    manualCancel: function () { canvasUI.manual.form = false; canvasUI.manual.error = ''; renderProject(); }
+    manualCancel: function () { canvasUI.manual.form = false; canvasUI.manual.error = ''; renderProject(); },
+    // Marque des emplacements : « Oui » à l'annonce reconnue, « Je ne sais pas », ou « changer » sur la ligne d'un emplacement.
+    // Le profil de marque ne part au slicer qu'avec le choix des emplacements (applyCanvas), sur ton geste.
+    slotBrandYes: function (offers) { (offers || []).forEach(function (o) { canvasUI.choice[o.key] = PlyoSpools.brandChoice({ brand: o.match.brand }, o.match); }); canvasUI.picker = null; renderProject(); },
+    slotBrandUnknown: function (offers) { (offers || []).forEach(function (o) { canvasUI.dismissed[o.key] = true; }); canvasUI.picker = null; renderProject(); },
+    slotBrandOpen: function (key) { canvasUI.picker = { key: key, showAll: false, picked: null, other: false, otherText: '', error: '' }; renderProject(); }
   };
+  // Pour le panneau d'un emplacement : marques de sa matière et rapprochement exact de son annonce, demandés au slicer une fois
+  // par lecture. Ce que l'imprimante annonce reste dans le slicer et le panneau.
+  function ensureSlotBrands(st) {
+    var b = canvasUI.brands;
+    if (!st || !st.ok || b.of === st || !conv || !conv.project.printer) return;
+    b.of = st; b.items = null; b.id += 1;
+    canvasUI.choice = {}; canvasUI.dismissed = {}; canvasUI.picker = null; // nouvelle lecture : les réponses d'avant ne valent plus
+    var slots = PlyoCanvas.trays(st).map(function (t) { return { key: PlyoSpools.slotKey(t), type: t.type, brand: t.brand || '', name: t.name || '' }; });
+    window.orca.postMessage({ type: 'slot_brands_get', printer: conv.project.printer.preset, id: b.id, slots: slots });
+  }
+  function onSlotBrands(msg) {
+    var b = canvasUI.brands;
+    if (msg.id !== b.id) return;
+    b.items = {};
+    (Array.isArray(msg.items) ? msg.items : []).forEach(function (it) { if (it && it.key) b.items[it.key] = it; });
+    if (conv) renderProject();
+  }
+  // Marque retenue pour un emplacement : la réponse de cette lecture, sinon celle déjà gardée dans le projet.
+  function slotChoice(key) {
+    if (canvasUI.choice[key]) return canvasUI.choice[key];
+    var e = (conv && Array.isArray(conv.project.canvas) ? conv.project.canvas : []).filter(function (x) { return PlyoSpools.slotKey(x) === key && x.brand; })[0];
+    if (!e) return null;
+    return e.range ? { kind: 'brand', brand: e.brand, range: e.range, short: e.range, preset: e.preset } : { kind: 'other', brand: e.brand, range: '', short: '', preset: '' };
+  }
+  // Ce que la vue des emplacements montre de la marque : null tant que le slicer n'a pas répondu (rien n'est affiché).
+  function slotBrandView(st) {
+    var items = canvasUI.brands.of === st ? canvasUI.brands.items : null;
+    if (!items) return null;
+    var trays = PlyoCanvas.trays(st), choices = {};
+    trays.forEach(function (t) { var k = PlyoSpools.slotKey(t), c = slotChoice(k); if (c) choices[k] = c; });
+    var offers = PlyoSpools.slotOffers(canvasUI.mapping, trays, items, choices, canvasUI.dismissed);
+    var pk = canvasUI.picker, w = PlyoCanvas.words(st.system || slotWordsKey());
+    return { items: items, choices: choices, offers: offers, question: PlyoSpools.slotQuestion(offers, w), picker: pk && items[pk.key] ? pk : null,
+      pickerHandlers: pk ? {
+        pick: function (c) { canvasUI.choice[pk.key] = c; canvasUI.picker = null; renderProject(); }, // « Je ne sais pas » compris : le générique
+        pickGroup: function (g) { pk.picked = g; pk.showAll = false; renderProject(); },
+        back: function () { pk.picked = null; pk.other = false; renderProject(); },
+        showAll: function () { pk.showAll = true; renderProject(); },
+        openOther: function () { pk.other = true; renderProject(); },
+        typeOther: function (text) { pk.otherText = text; },
+        confirmOther: function () { var c = PlyoSpools.otherChoice(pk.otherText); if (!c) { pk.error = 'Écris la marque (au moins 2 lettres), ou choisis « Je ne sais pas ».'; renderProject(); return; } canvasUI.choice[pk.key] = c; canvasUI.picker = null; renderProject(); },
+        cancel: function () { canvasUI.picker = null; renderProject(); }
+      } : null };
+  }
   function openManual() {
     var m = canvasUI.manual, st = m.state;
     m.draft = PlyoCanvas.manualDraft(st);
@@ -1554,14 +1619,17 @@
       PlyoCanvasView.renderManual($('project-card'), ui, { draft: canvasUI.manual.draft, count: canvasUI.manual.count, error: canvasUI.manual.error, types: PlyoCanvas.MANUAL_TYPES, colours: PlyoCanvas.MANUAL_COLOURS, handlers: canvasHandlers });
     else if (cmode === 'recall')
       PlyoCanvasView.renderRecall($('project-card'), ui, { trays: PlyoCanvas.trays(cst), handlers: canvasHandlers });
-    else if (cmode && cmode !== 'loading')
-      PlyoCanvasView.render($('project-card'), ui, { mode: cmode, system: cst.system || slotWordsKey(), emptyBlocks: !!cst.empty_blocks, readOnly: cst.imposable === false && cst.source !== 'manual', blocker: cst.blocker || '', trial: cst.validated === false && cst.source !== 'manual', trays: PlyoCanvas.trays(cst), colours: canvasColours(), mapping: canvasUI.mapping, error: canvasUI.error, handlers: canvasHandlers });
+    else if (cmode && cmode !== 'loading') {
+      if (cmode === 'single' || cmode === 'multi') ensureSlotBrands(cst);
+      PlyoCanvasView.render($('project-card'), ui, { mode: cmode, system: cst.system || slotWordsKey(), emptyBlocks: !!cst.empty_blocks, readOnly: cst.imposable === false && cst.source !== 'manual', blocker: cst.blocker || '', trial: cst.validated === false && cst.source !== 'manual', trays: PlyoCanvas.trays(cst), colours: canvasColours(), mapping: canvasUI.mapping, error: canvasUI.error, handlers: canvasHandlers,
+        brand: cmode === 'single' || cmode === 'multi' ? slotBrandView(cst) : null });
+    }
     else if (cmode === 'loading') { $('project-card').textContent = ''; }
     else if (step === 'filament' && PlyoJourney.tempsPending(conv.project) && projectUI.editing !== 'filament') renderTempsStep();
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds,
-        spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, handlers: projectHandlers });
+        spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, beginner: fsState.level !== 'expert', handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()), spoolAsk: spoolAsk(), spoolNo: !!(sendOf() && sendOf().failed), endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
@@ -2330,14 +2398,43 @@
     // « Quelle bobine ? » : une bobine de la liste, ou une nouvelle (matière, puis nom obligatoire).
     pickSpool: function (row) { chooseSpool(row.name, row.material); },
     toggleNewSpool: function () { var ns = projectUI.newSpool; ns.open = !ns.open; ns.error = ''; renderProject(); },
-    pickMaterial: function (type) { var ns = projectUI.newSpool; ns.open = true; ns.material = type; ns.error = ''; ns.focus = true; renderProject(); },
+    pickMaterial: function (type) {
+      var ns = projectUI.newSpool;
+      ns.open = true; ns.error = ''; ns.focus = true;
+      // Une autre matière : les marques sont celles de cette matière, la question repart de zéro.
+      if (ns.material !== type) { ns.material = type; ns.choice = null; ns.picker = freshPicker(); askBrands(type); }
+      renderProject();
+    },
     typeSpoolName: function (text) { projectUI.newSpool.name = text; },
     createSpool: function () {
       var ns = projectUI.newSpool;
       ns.error = PlyoSpools.nameError(ns.name);
       if (ns.error || !ns.material) { ns.focus = true; renderProject(); return; } // l'aide reste sous le champ, avec la raison
-      chooseSpool(PlyoSpools.cleanName(ns.name), ns.material);
+      chooseSpool(PlyoSpools.cleanName(ns.name), ns.material, ns.choice);
     },
+    // « De quelle marque est ta bobine ? » (nouvelle bobine). Le profil de marque n'est demandé au slicer qu'au clic sur
+    // « C'est ma bobine » (createSpool), jamais par l'IA.
+    brandPick: function (choice) {
+      var ns = projectUI.newSpool, name = PlyoSpools.suggestedName(choice, ns.material);
+      ns.choice = choice; ns.picker = freshPicker(); ns.brandOpen = false;
+      // Le nom suit la marque tant que tu ne l'as pas changé toi-même.
+      if (!PlyoSpools.cleanName(ns.name) || PlyoSpools.cleanName(ns.name) === ns.suggested) { ns.name = name; ns.suggested = name; }
+      ns.focus = true;
+      renderProject();
+    },
+    brandPickGroup: function (group) { projectUI.newSpool.picker.picked = group; projectUI.newSpool.picker.showAll = false; renderProject(); },
+    brandBack: function () { projectUI.newSpool.picker = freshPicker(); renderProject(); },
+    brandShowAll: function () { projectUI.newSpool.picker.showAll = true; renderProject(); },
+    brandOpenOther: function () { projectUI.newSpool.picker.other = true; renderProject(); },
+    brandTypeOther: function (text) { projectUI.newSpool.picker.otherText = text; },
+    brandConfirmOther: function () {
+      var pk = projectUI.newSpool.picker, c = PlyoSpools.otherChoice(pk.otherText);
+      if (!c) { pk.error = 'Écris la marque (au moins 2 lettres), ou choisis « Je ne sais pas ».'; renderProject(); return; }
+      projectHandlers.brandPick(c);
+    },
+    brandReset: function () { var ns = projectUI.newSpool; ns.choice = null; ns.picker = freshPicker(); ns.brandOpen = true; renderProject(); },
+    brandOpen: function () { projectUI.newSpool.brandOpen = true; renderProject(); },
+    brandClose: function () { var ns = projectUI.newSpool; ns.brandOpen = false; ns.picker = freshPicker(); renderProject(); },
     // `done(ok, texte)` : la réponse d'Orca ; sans `done`, seul un refus est dit.
     setTemps: function (nozzle, bed, done) {
       var f = conv.project.filament;
@@ -2457,6 +2554,8 @@
       conv.project.filament = { type: pend.type, preset: msg.filament_preset, nozzle_temp: msg.nozzle_temp, bed_temp: msg.bed_temp };
       // Une bobine qui avait déjà son préréglage sur cette machine garde ses températures : rien à redemander.
       if (pend.spool) { conv.project.filament.spool = pend.spool; if (!pend.fresh) conv.project.filament.temps_ok = true; }
+      // Marque de la bobine (rappelée dans la fiche) et origine de son profil.
+      if (pend.spool && pend.brand) { conv.project.filament.brand = pend.brand; if (pend.range) conv.project.filament.range = pend.range; if (pend.brandProfile) conv.project.filament.brand_profile = true; }
       projectUI.editing = null;
       var wanted = projectUI.keepTemps;
       projectUI.keepTemps = null;
@@ -2507,11 +2606,38 @@
     projectUI.spools.items = msg.items;
     if (conv) renderProject();
   }
-  function chooseSpool(name, material) {
+  // `choice` (facultatif) : la marque dite pour une NOUVELLE bobine (PlyoSpools.brandChoice). Le slicer vérifie le profil de
+  // marque et garde la marque avec la bobine ; une bobine qui a déjà son préréglage sur cette machine le garde.
+  function chooseSpool(name, material, choice) {
     if (!conv || !conv.project.printer) return;
     projectUI.error = {};
     projectUI.pending = { kind: 'spool', type: material, profileBefore: lastValues && lastValues.context ? lastValues.context.filament : '' };
-    window.orca.postMessage({ type: 'spool_choose', name: name, material: material, printer: conv.project.printer.preset });
+    var msg = { type: 'spool_choose', name: name, material: material, printer: conv.project.printer.preset };
+    if (choice && choice.brand) { msg.brand = choice.brand; msg.range = choice.kind === 'brand' ? choice.range : ''; msg.brand_preset = choice.kind === 'brand' ? choice.preset : ''; }
+    window.orca.postMessage(msg);
+  }
+  // Marques de cette matière pour la machine du projet (profils fournis du slicer) ; la réponse arrive dans onBrands.
+  function askBrands(material) {
+    var ns = projectUI.newSpool;
+    ns.brands = null;
+    ns.brandsFor = material;
+    clearTimeout(ns.brandsTimer);
+    if (!conv || !conv.project.printer || !material) return;
+    window.orca.postMessage({ type: 'brands_get', material: material, printer: conv.project.printer.preset });
+    // Sans réponse du slicer (occupé, ou version qui ne connaît pas cette demande) : ne jamais laisser « Je cherche les
+    // marques… » sans fin. On montre alors le champ libre et « Je ne sais pas » ; une réponse tardive complète la liste.
+    ns.brandsTimer = setTimeout(function () {
+      if (projectUI.newSpool !== ns || ns.brands !== null || ns.brandsFor !== material) return;
+      ns.brands = [];
+      renderProject();
+    }, PlyoSpools.BRANDS_WAIT_MS);
+  }
+  function onBrands(msg) {
+    var ns = projectUI.newSpool;
+    if (!conv || !conv.project.printer || msg.material !== ns.brandsFor || msg.printer !== conv.project.printer.preset) return;
+    clearTimeout(ns.brandsTimer);
+    ns.brands = msg.ok && Array.isArray(msg.brands) ? msg.brands : [];
+    renderProject();
   }
   function onSpoolChosen(msg) {
     var pend = projectUI.pending;
@@ -2523,9 +2649,10 @@
       renderProject();
       return;
     }
-    projectUI.newSpool = { open: false, material: '', name: '', error: '', focus: false };
+    projectUI.newSpool = freshNewSpool();
     projectUI.spools.printer = null; // relue la prochaine fois (une bobine de plus, un préréglage de plus)
-    projectUI.pending = { kind: 'filament', type: pend.type, spool: { id: msg.id, name: msg.name }, fresh: msg.preset_created === undefined ? !!msg.created : !!msg.preset_created, success: msg.success || null, profileBefore: pend.profileBefore };
+    projectUI.pending = { kind: 'filament', type: pend.type, spool: { id: msg.id, name: msg.name }, fresh: msg.preset_created === undefined ? !!msg.created : !!msg.preset_created, success: msg.success || null, profileBefore: pend.profileBefore,
+      brand: typeof msg.brand === 'string' ? msg.brand : '', range: typeof msg.range === 'string' ? msg.range : '', brandProfile: msg.brand_profile === true };
     window.orca.postMessage({ type: 'project_state' }); // lit le préréglage choisi et ses températures
   }
   // Après le choix : la phrase de reprise (dernière impression réussie), et le retour aux réglages réussis s'ils ont changé.
@@ -6458,6 +6585,10 @@
       askRetouches(300);
     } else if (msg.type === 'spools') {
       onSpools(msg);
+    } else if (msg.type === 'brands') {
+      onBrands(msg);
+    } else if (msg.type === 'slot_brands') {
+      onSlotBrands(msg);
     } else if (msg.type === 'spool_chosen') {
       onSpoolChosen(msg);
     } else if (msg.type === 'spool_success_done') {

@@ -162,6 +162,12 @@ nlohmann::json sanitize(const nlohmann::json& project)
             if (spool.contains("id") && spool.contains("name"))
                 o["spool"] = spool;
         }
+        // Marque de la bobine (« De quelle marque est ta bobine ? ») et gamme, rappelées dans la fiche ; `brand_profile` : son
+        // profil de départ est celui de la marque (sinon les réglages communs de la matière).
+        text(*f, o, "brand");
+        text(*f, o, "range");
+        if (const nlohmann::json* v = Json::field(*f, "brand_profile"); v != nullptr && v->is_boolean() && v->get<bool>())
+            o["brand_profile"] = true;
         out["filament"] = o;
     }
     if (const nlohmann::json* a = Json::field(project, "part"); a != nullptr && a->is_object()) {
@@ -194,6 +200,9 @@ nlohmann::json sanitize(const nlohmann::json& project)
             text(e, o, "type");
             text(e, o, "color");
             text(e, o, "preset");
+            // Marque et gamme choisies (ou confirmées) par l'utilisateur pour cet emplacement.
+            text(e, o, "brand");
+            text(e, o, "range");
             // Numéro affiché et nature de l'emplacement (CFS, IFS, U1, saisie manuelle). Une valeur illisible disparaît.
             text(e, o, "label");
             for (const char* key : {"imposable", "validated"})

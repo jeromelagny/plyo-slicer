@@ -1,5 +1,7 @@
 #include "PlyoSpools.hpp"
 #include "PlyoAutoSave.hpp"
+#include "PlyoBrands.hpp"
+#include "PlyoBrandsLogic.hpp"
 #include "PlyoCatalog.hpp"
 #include "PlyoFirstSteps.hpp"
 #include "PlyoJson.hpp"
@@ -132,7 +134,22 @@ nlohmann::json list(const std::string& printer_preset)
     return SpoolsLogic::for_machine(load(), printer_preset.empty() ? current_printer() : printer_preset);
 }
 
-nlohmann::json create_or_choose(const std::string& name, const std::string& material, const std::string& printer_preset)
+namespace {
+
+// Marque de la bobine et origine de son profil, pour le panneau : {brand, range, base, brand_profile}.
+void put_brand_info(nlohmann::json& out, const nlohmann::json& reg, const std::string& id, const std::string& material, const std::string& base)
+{
+    const nlohmann::json b = SpoolsLogic::brand_of(reg, id);
+    out["brand"]          = b["brand"];
+    out["range"]          = b["range"];
+    out["base"]           = base;
+    out["brand_profile"]  = !base.empty() && !Brands::check(material, base).empty();
+}
+
+} // namespace
+
+nlohmann::json create_or_choose(const std::string& name, const std::string& material, const std::string& printer_preset,
+                                const std::string& brand_preset, const std::string& brand, const std::string& range)
 {
     if (bundle() == nullptr)
         return refuse("Plyo Slicer n'est pas prêt.");
@@ -144,7 +161,7 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
     if (AutoSave::flush_spool() == SpoolsLogic::Flush::Refuse)
         return refuse(SpoolsLogic::FLUSH_REFUSED_TEXT);
 
-    const nlohmann::json added = SpoolsLogic::add(load(), name, material);
+    const nlohmann::json added = SpoolsLogic::add(load(), name, material, brand, range);
     const std::string    id    = Json::str(added, "id");
     if (id.empty())
         return refuse("Je n'ai pas pu retenir cette bobine : écris sa marque et son type (au moins 3 lettres) et choisis sa matière.");
@@ -158,22 +175,41 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
     Slic3r::PresetCollection& filaments = bundle()->filaments;
     const std::string         recorded  = SpoolsLogic::preset_for(reg, id, printer);
     const bool                pending   = SpoolsLogic::is_pending(reg, id, printer);
+    // La bobine garde sa matière d'origine (« sunlu pla+ noir » retrouvée reste du PLA).
+    const std::string material_kept = material_of(reg, id);
     if (!recorded.empty() && !pending && filaments.find_preset(recorded, false) != nullptr) {
+        // Une bobine qui a déjà son préréglage sur cette machine le garde : la marque choisie maintenant ne le change pas.
+        const std::string parent = filaments.find_preset(recorded, false)->inherits();
         if (!FirstSteps::select_filament(recorded))
             return {{"ok", false}, {"cancelled", true}, {"id", id}, {"name", spool}, {"created", created}};
         out["preset"]         = recorded;
         out["printer"]        = printer;
         out["preset_created"] = false;
+        put_brand_info(out, reg, id, material_kept, parent);
         return out;
     }
 
-    // La bobine garde sa matière d'origine (« sunlu pla+ noir » retrouvée reste du PLA).
-    const std::string material_kept = material_of(reg, id);
-    const Preset*     base          = system_base(material_kept);
-    if (base == nullptr)
-        return {{"ok", false}, {"id", id}, {"name", spool}, {"created", created},
-                {"text", "Je ne trouve pas de profil " + material_kept + " pour cette imprimante dans Plyo Slicer."}};
-    const std::string base_name = base->name; // le pointeur ne survit pas aux changements de la collection
+    // Profil de départ : celui de la marque choisie dans le panneau (vérifié : profil fourni de cette matière, compatible avec
+    // cette imprimante) ; sinon, pour une bobine déjà nommée avec sa gamme, la même gamme sur cette imprimante si elle existe
+    // exactement ; sinon le profil générique de la matière, comme avant.
+    std::string base_name;
+    if (!brand_preset.empty()) {
+        if (Brands::check(material_kept, brand_preset).empty())
+            return {{"ok", false}, {"id", id}, {"name", spool}, {"created", created},
+                    {"text", "Le profil « " + brand_preset + " » ne va pas avec cette imprimante et du " + material_kept + " : choisis à nouveau la marque, ou « Je ne sais pas »."}};
+        base_name = brand_preset;
+    } else if (const nlohmann::json known = SpoolsLogic::brand_of(reg, id); !Json::str(known, "range").empty()) {
+        base_name = Json::str(BrandsLogic::same_range(Brands::groups(material_kept), Json::str(known, "brand"), Json::str(known, "range")), "preset");
+    }
+    if (!base_name.empty())
+        Brands::keep_visible(base_name); // choisi par l'utilisateur : Orca le garde au prochain lancement
+    else {
+        const Preset* base = system_base(material_kept);
+        if (base == nullptr)
+            return {{"ok", false}, {"id", id}, {"name", spool}, {"created", created},
+                    {"text", "Je ne trouve pas de profil " + material_kept + " pour cette imprimante dans Plyo Slicer."}};
+        base_name = base->name; // le pointeur ne survit pas aux changements de la collection
+    }
 
     // Nom réservé au registre AVANT l'enregistrement par Orca : si celui-ci échoue en laissant le préréglage dans Orca,
     // le nouvel essai retrouve ce nom (seul nom noté pour cette bobine sur cette machine) et l'écrase, sans « … 2 ».
@@ -203,6 +239,7 @@ nlohmann::json create_or_choose(const std::string& name, const std::string& mate
     out["preset"]         = preset;
     out["printer"]        = printer;
     out["preset_created"] = true; // parti du profil de la matière : ses températures sont à vérifier
+    put_brand_info(out, reg, id, material_kept, base_name);
     return out;
 }
 

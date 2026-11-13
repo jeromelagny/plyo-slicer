@@ -68,7 +68,8 @@
         // CC2 : plusieurs Canvas se distinguent par un préfixe ; le libellé du CFS porte déjà sa boîte (« 1A »).
         var prefix = system === 'canvas' && units.length > 1 ? 'Canvas ' + (c.canvas_id + 1) + ' · ' : '';
         var name = slotName(t);
-        out.push({ canvas_id: c.canvas_id, tray_id: t.tray_id, type: t.type || '', color: t.color || '', status: t.status,
+        // brand, name : ce que l'emplacement annonce (CFS, Canvas…), rapproché d'un profil de marque par le slicer.
+        out.push({ canvas_id: c.canvas_id, tray_id: t.tray_id, type: t.type || '', color: t.color || '', brand: typeof t.brand === 'string' ? t.brand : '', name: typeof t.name === 'string' ? t.name : '', status: t.status,
           empty: t.status === 0, slot: name, system: system, label: prefix + (system === 'u1' ? w.Slot + ' ' : '') + name + ' · ' + trayText(t.type, t.color) });
       });
     });

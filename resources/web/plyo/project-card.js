@@ -91,6 +91,9 @@
   function renderSpool(card, ui, fi, ctx) {
     var h = ctx.handlers, sp = ctx.spool || {};
     var wrap = ui.el('div', 'project-spool');
+    // La marque de la bobine (ou des emplacements) et d'où partent ses réglages.
+    var brand = root.PlyoSpools ? root.PlyoSpools.brandLine(projectOf(ctx)) : '';
+    if (brand) wrap.appendChild(ui.el('p', 'muted small', brand));
     if (ctx.beginner && (fi.nozzle_temp != null || fi.bed_temp != null))
       wrap.appendChild(ui.el('p', 'muted small', 'Buse ' + (fi.nozzle_temp != null ? fi.nozzle_temp + ' °C' : '?') + ' · plateau ' + (fi.bed_temp != null ? fi.bed_temp + ' °C' : '?')));
     if (!sp.open && !ctx.spoolLinkInStep) wrap.appendChild(ui.button('Températures de l’étiquette', h.toggleSpool, 'link'));
@@ -156,8 +159,93 @@
     if (ctx.manualLink) body.appendChild(ui.button('Ma machine a plusieurs bobines (AMS, CFS…)', ctx.handlers.openManual, 'link'));
   }
 
-  // Une nouvelle bobine : sa matière (puces), puis son nom, obligatoire et toujours avec l'aide (où regarder, un exemple).
-  // ctx.newSpool : { open, material, name, error ('vide'|'court'|texte du slicer), focus }.
+  // « De quelle marque est ta bobine ? » : pour une nouvelle bobine (étape Filament) et pour un emplacement (CFS, Canvas…).
+  // ctx : { brands (null : le slicer cherche ; [] : aucune marque fournie pour cette imprimante et cette matière ; sinon
+  // [{brand, ranges}]), state : { showAll, picked (marque à plusieurs gammes : « Laquelle ? »), other (champ libre ouvert),
+  // otherText, error }, field (aria-label du champ libre), handlers : { pick(choix), pickGroup(marque), back(), showAll(),
+  // openOther(), typeOther(texte), confirmOther(), cancel? } }. Toujours une issue : « Je ne sais pas ».
+  function renderBrandPicker(body, ui, ctx) {
+    var S = root.PlyoSpools, st = ctx.state || {}, h = ctx.handlers, groups = ctx.brands;
+    var box = ui.el('div', 'brand-ask');
+    var links = ui.el('div', 'printer-actions');
+    if (st.picked) {
+      var g = st.picked;
+      box.appendChild(ui.el('p', 'intent-q', 'Laquelle ?'));
+      box.appendChild(ui.el('p', 'muted small', S.rangeHelp(g.brand)));
+      var ranges = ui.el('div', 'printer-actions');
+      var rv = S.rangeButtons(g.ranges, st.showAll);
+      rv.shown.forEach(function (r) { ranges.appendChild(ui.button(r.short || r.label, function () { h.pick(S.brandChoice(g, r)); }, 'btn ghost sm')); });
+      if (rv.hidden) ranges.appendChild(ui.button('Voir les autres gammes (' + rv.hidden + ')', h.showAll, 'link'));
+      box.appendChild(ranges);
+      links.appendChild(ui.button('Je ne sais pas', function () { h.pick(S.brandChoice(g, null)); }, 'link'));
+      links.appendChild(ui.button('Une autre marque', h.back, 'link'));
+      box.appendChild(links);
+      body.appendChild(box);
+      return;
+    }
+    box.appendChild(ui.el('p', 'intent-q', S.BRAND_QUESTION));
+    var none = Array.isArray(groups) && !S.brandButtons(groups, true).shown.length;
+    box.appendChild(ui.el('p', 'muted small', none ? 'Elle est écrite sur l’étiquette. Écris-la, ou passe : je pars de réglages qui conviennent à la plupart des bobines.' : S.BRAND_HELP));
+    if (groups === null || groups === undefined) box.appendChild(ui.el('p', 'muted small', 'Je cherche les marques…'));
+    else if (!none) {
+      var view = S.brandButtons(groups, st.showAll), acts = ui.el('div', 'printer-actions');
+      view.shown.forEach(function (gr) {
+        acts.appendChild(ui.button(gr.brand, function () { if (gr.ranges.length === 1) h.pick(S.brandChoice(gr, gr.ranges[0])); else h.pickGroup(gr); }, 'btn ghost sm'));
+      });
+      if (view.hidden) acts.appendChild(ui.button('Voir les autres marques (' + view.hidden + ')', h.showAll, 'link'));
+      box.appendChild(acts);
+    }
+    // Champ libre : « Autre marque », ou d'emblée quand aucune marque n'a de profil (pas de liste vide).
+    if (st.other || none) {
+      var lab = ui.el('label', 'temp-field spool-name');
+      lab.appendChild(ui.el('span', 'muted small', 'Marque de ta bobine'));
+      var input = ui.el('input', 'field');
+      input.type = 'text';
+      input.maxLength = 60;
+      input.value = st.otherText || '';
+      input.setAttribute('aria-label', ctx.field || 'Marque de ta bobine');
+      input.dataset.spoolName = '1'; // le panneau ne redessine pas sous les doigts
+      input.addEventListener('input', function () { h.typeOther(input.value); });
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); h.confirmOther(); } });
+      lab.appendChild(input);
+      box.appendChild(lab);
+      if (st.error) box.appendChild(ui.el('p', 'project-error', st.error));
+      var go = ui.el('div', 'printer-actions');
+      go.appendChild(ui.button('Continuer', h.confirmOther, 'btn ghost sm', 'check'));
+      box.appendChild(go);
+      if (st.other && !none) setTimeout(function () { if (!input.value) input.focus(); }, 0);
+    } else links.appendChild(ui.button('Autre marque', h.openOther, 'link'));
+    links.appendChild(ui.button('Je ne sais pas', function () { h.pick(S.unknownChoice()); }, 'link'));
+    if (h.cancel) links.appendChild(ui.button('Annuler', h.cancel, 'link'));
+    box.appendChild(links);
+    body.appendChild(box);
+  }
+
+  // La marque d'une nouvelle bobine, une fois la matière choisie. Vrai si la question est posée (le nom attend sa réponse).
+  // Sinon : la réponse rappelée en une ligne (d'où partent les réglages, « changer »), ou, pour le confirmé, un lien discret.
+  function renderSpoolBrand(box, ui, ctx, closable) {
+    var h = ctx.handlers, ns = ctx.newSpool || {}, S = root.PlyoSpools;
+    if (!ns.material || !h.brandPick) return false;
+    if (!ns.choice && (ctx.beginner !== false || ns.brandOpen)) {
+      renderBrandPicker(box, ui, { brands: ns.brands, state: ns.picker, handlers: { pick: h.brandPick, pickGroup: h.brandPickGroup, back: h.brandBack,
+        showAll: h.brandShowAll, openOther: h.brandOpenOther, typeOther: h.brandTypeOther, confirmOther: h.brandConfirmOther, cancel: ns.brandOpen ? h.brandClose : null } });
+      if (closable) box.appendChild(ui.button('Annuler', h.toggleNewSpool, 'link'));
+      return true;
+    }
+    if (ns.choice) {
+      var said = ui.el('div', 'project-row project-sub');
+      said.appendChild(ui.el('span', 'muted small', S.brandNote(ns.choice, ns.material)));
+      said.appendChild(ui.button('changer', h.brandReset, 'link'));
+      box.appendChild(said);
+    } else box.appendChild(ui.button('Choisir la marque (réglages du fabricant)', h.brandOpen, 'link'));
+    return false;
+  }
+
+  // Une nouvelle bobine : sa matière (puces), puis sa marque (BrandsLogic, côté slicer), puis son nom, obligatoire, prérempli
+  // d'après la marque et toujours avec l'aide (où regarder, un exemple).
+  // ctx.newSpool : { open, material, name, error ('vide'|'court'|texte du slicer), focus, brands (voir renderBrandPicker),
+  // picker (son état), choice (choix fait, ou null), brandOpen (le confirmé a ouvert la question) }. ctx.beginner : la question
+  // de la marque vient avant le nom ; pour le confirmé, elle reste à un clic (« Choisir la marque »).
   function renderNewSpool(body, ui, ctx, closable) {
     var h = ctx.handlers, ns = ctx.newSpool || {}, S = root.PlyoSpools;
     var box = ui.el('div', 'new-spool');
@@ -168,6 +256,7 @@
       kinds.appendChild(ui.button(k, function () { h.pickMaterial(k); }, 'btn ghost sm' + (ns.material === k ? ' on' : '')));
     });
     box.appendChild(kinds);
+    if (renderSpoolBrand(box, ui, ctx, closable)) { body.appendChild(box); return; } // la marque avant le nom
     if (ns.material) {
       var lab = ui.el('label', 'temp-field spool-name');
       lab.appendChild(ui.el('span', 'muted small', 'Nom de ta bobine'));
@@ -181,7 +270,8 @@
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); h.createSpool(); } });
       lab.appendChild(input);
       box.appendChild(lab);
-      box.appendChild(ui.el('p', 'muted small', root.PlyoSpools.NAME_HELP));
+      // Nom prérempli d'après la marque : on suggère d'y ajouter la couleur, pour distinguer tes bobines.
+      box.appendChild(ui.el('p', 'muted small', ns.choice && S.suggestedName(ns.choice, ns.material) ? 'Tu peux ajouter la couleur, par exemple « ' + S.suggestedName(ns.choice, ns.material) + ' noir ».' : root.PlyoSpools.NAME_HELP));
       if (ns.error) box.appendChild(ui.el('p', 'project-error', S.nameErrorText(ns.error) || ns.error));
       var acts = ui.el('div', 'printer-actions');
       acts.appendChild(ui.button('C’est ma bobine', h.createSpool, 'btn ghost sm', 'check'));
@@ -197,7 +287,9 @@
     var P = root.PlyoProject, project = projectOf(ctx), step = P.nextStep(project), h = ctx.handlers;
     // Le panneau se redessine souvent (signaux, redimensionnement) : le nom de bobine en cours de saisie garde le curseur
     // tant que rien de ce qui est montré ne change.
-    var ns0 = ctx.newSpool || {}, key = JSON.stringify([step, project.filament, ctx.editing, ctx.spools, ns0.open, ns0.material, ns0.error, ctx.error, ctx.showKinds, ctx.noCanvas, ctx.noSlots, ctx.manualLink, ctx.slotRemark, ctx.relink]);
+    var ns0 = ctx.newSpool || {}, pk0 = ns0.picker || {};
+    var key = JSON.stringify([step, project.filament, ctx.editing, ctx.spools, ns0.open, ns0.material, ns0.error, ctx.error, ctx.showKinds, ctx.noCanvas, ctx.noSlots, ctx.manualLink, ctx.slotRemark, ctx.relink,
+      ns0.brands, ns0.choice, ns0.brandOpen, pk0.showAll, pk0.picked && pk0.picked.brand, pk0.other, pk0.error, ctx.beginner]);
     var active = typeof document !== 'undefined' ? document.activeElement : null;
     if (active && active.dataset && active.dataset.spoolName && slot.contains(active) && slot.choicesKey === key) return;
     slot.choicesKey = key;
@@ -311,6 +403,6 @@
     slot.appendChild(box);
   }
 
-  root.PlyoProjectCard = { renderBedQuestion: renderBedQuestion, renderFiche: renderFiche, renderChoices: renderChoices, renderSpoolEditor: renderSpoolEditor, MATERIALS: MATERIALS, LABEL_LINK: LABEL_LINK };
+  root.PlyoProjectCard = { renderBedQuestion: renderBedQuestion, renderFiche: renderFiche, renderChoices: renderChoices, renderSpoolEditor: renderSpoolEditor, renderBrandPicker: renderBrandPicker, MATERIALS: MATERIALS, LABEL_LINK: LABEL_LINK };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.PlyoProjectCard;
 })(typeof window !== 'undefined' ? window : globalThis);

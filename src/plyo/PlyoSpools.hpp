@@ -14,9 +14,15 @@ nlohmann::json list(const std::string& printer_preset);
 // Bobine nommée par l'utilisateur (retrouvée si elle existe déjà, créée sinon), puis son préréglage pour cette machine :
 // choisi s'il existe, sinon créé depuis le profil système de la matière compatible avec la machine en cours (jamais depuis
 // les valeurs d'une autre machine), compatible avec elle seule, et choisi. L'imprimante doit être celle en cours.
-// { ok, id, name, preset, printer, created, preset_created, cancelled?, text? } (`created` : la bobine est nouvelle ;
-// `preset_created` : son préréglage pour cette machine vient d'être créé ; `printer` et `preset_created` si ok).
-nlohmann::json create_or_choose(const std::string& name, const std::string& material, const std::string& printer_preset);
+// { ok, id, name, preset, printer, created, preset_created, brand, range, base, brand_profile, cancelled?, text? } (`created` :
+// la bobine est nouvelle ; `preset_created` : son préréglage pour cette machine vient d'être créé ; `printer`, `preset_created`,
+// `brand`, `range`, `base` (profil dont il hérite) et `brand_profile` (ce profil est celui d'une marque) si ok).
+// Marque (choix de l'utilisateur à l'étape Filament) : `brand` et `range` sont gardés avec une NOUVELLE bobine ; `brand_preset`,
+// s'il est donné, est le profil de départ, vérifié par Brands::check (sinon refus). Sans lui, une bobine déjà nommée avec sa
+// gamme reprend exactement la même gamme sur cette imprimante si elle existe (BrandsLogic::same_range), sinon le générique.
+// Une bobine qui a déjà son préréglage sur cette machine le garde, quelle que soit la marque donnée.
+nlohmann::json create_or_choose(const std::string& name, const std::string& material, const std::string& printer_preset,
+                                const std::string& brand_preset = "", const std::string& brand = "", const std::string& range = "");
 
 // Préréglage de l'utilisateur choisi dans Orca (filament 1), hors registre : peut-on proposer d'en faire une bobine ?
 // { preset, offer, material } ; `offer` faux pour un profil système, une bobine, un autre préréglage que le filament 1 en

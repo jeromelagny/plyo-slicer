@@ -23,16 +23,23 @@ std::string key_of(const std::string& name);
 std::string preset_name(const std::string& spool, const std::string& machine_label, const std::vector<std::string>& existing,
                         const std::vector<std::string>& ours);
 
-// Registre lu depuis le disque, remis en forme : {spools: [{id, name, material, machines: {<imprimante>: {preset,
+// Registre lu depuis le disque, remis en forme : {spools: [{id, name, material, brand?, range?, machines: {<imprimante>: {preset,
 // last_outcome: "ok"|"bad"|"", last_ok_at: "AAAA-MM-JJ"|""}}}]}. Lignes invalides écartées, 200 bobines au plus.
+// `brand` (marque dite à l'étape Filament) et `range` (sa gamme) n'existent que s'ils sont dits (BrandsLogic::clean_brand) ;
+// une gamme sans marque est écartée.
 nlohmann::json sanitize(const nlohmann::json& raw);
 
-// Ajoute une bobine : {reg, id, created}. Une bobine de même `key_of` est reprise (created faux). Refus (nom ou matière
-// invalide, registre plein) : registre inchangé, id "", created faux.
-nlohmann::json add(const nlohmann::json& reg, const std::string& name, const std::string& material);
+// Ajoute une bobine : {reg, id, created}. Une bobine de même `key_of` est reprise (created faux), sans changer sa marque.
+// Refus (nom ou matière invalide, registre plein) : registre inchangé, id "", created faux.
+nlohmann::json add(const nlohmann::json& reg, const std::string& name, const std::string& material, const std::string& brand = "",
+                   const std::string& range = "");
 
-// Bobines pour une imprimante : [{id, name, material, has_preset, last_outcome, last_ok_at}], la dernière réussite d'abord.
+// Bobines pour une imprimante : [{id, name, material, brand?, range?, has_preset, last_outcome, last_ok_at}], la dernière
+// réussite d'abord.
 nlohmann::json for_machine(const nlohmann::json& reg, const std::string& printer);
+
+// Marque et gamme de la bobine `id` : {brand, range} (textes vides si elles n'ont pas été dites ou si la bobine est inconnue).
+nlohmann::json brand_of(const nlohmann::json& reg, const std::string& id);
 
 // Id de la bobine qui possède ce préréglage filament, ou "".
 std::string spool_of_preset(const nlohmann::json& reg, const std::string& filament_preset);

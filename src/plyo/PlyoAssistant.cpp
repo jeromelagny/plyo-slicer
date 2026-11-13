@@ -1,5 +1,7 @@
 #include "PlyoAssistant.hpp"
 #include "PlyoAutoSave.hpp"
+#include "PlyoBrands.hpp"
+#include "PlyoBrandsLogic.hpp"
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoCalibration.hpp"
@@ -790,13 +792,42 @@ void handle_page_message(const nlohmann::json& data)
             send(r);
         } else if (type == "spools_get") {
             send({{"type", "spools"}, {"items", Spools::list(Json::str(data, "printer"))}});
+        } else if (type == "brands_get") {
+            // « De quelle marque est ta bobine ? » : profils fournis de marque pour cette matière, sur l'imprimante en cours
+            // seulement (le profil de départ d'une bobine est toujours pris pour elle). Lecture seule.
+            const std::string material = Json::str(data, "material", 30), printer = Json::str(data, "printer", 200);
+            const bool        current  = Brands::is_current_printer(printer);
+            send({{"type", "brands"}, {"material", material}, {"printer", printer}, {"ok", current},
+                  {"brands", current ? Brands::groups(material) : nlohmann::json::array()}});
+        } else if (type == "slot_brands_get") {
+            // Emplacements lus (CFS, Canvas…) : pour chacun, les marques de sa matière et ce que son annonce (marque, nom)
+            // rapproche exactement d'un profil fourni. Reste dans le slicer et le panneau : rien n'en part au service.
+            nlohmann::json items = nlohmann::json::array();
+            std::map<std::string, nlohmann::json> by_type;
+            const nlohmann::json slots = Brands::is_current_printer(Json::str(data, "printer", 200)) ? Json::arr(data, "slots") : nlohmann::json::array();
+            for (const nlohmann::json& s : slots) {
+                if (items.size() >= 32)
+                    break;
+                const std::string slot_type = Json::str(s, "type", 30);
+                if (by_type.find(slot_type) == by_type.end())
+                    by_type[slot_type] = Brands::for_type(slot_type);
+                const nlohmann::json& found = by_type[slot_type];
+                items.push_back({{"key", Json::str(s, "key", 20)},
+                                 {"material", found["material"]},
+                                 {"brands", found["brands"]},
+                                 {"match", BrandsLogic::match(found["brands"], Json::str(s, "brand", 60), Json::str(s, "name", 60))}});
+            }
+            send({{"type", "slot_brands"}, {"printer", Json::str(data, "printer", 200)}, {"id", Json::integer(data, "id", 0)}, {"items", items}});
         } else if (type == "spool_choose") {
             if (ProjectFiles::edits_blocked()) { // le plateau est encore celui d'une autre conversation
                 send({{"type", "spool_chosen"}, {"ok", false}, {"text", ProjectFiles::busy_text()}});
                 return;
             }
             // Bobine nommée : son préréglage pour cette machine est choisi, ou créé depuis le profil de la matière de cette machine.
-            nlohmann::json r = Spools::create_or_choose(Json::str(data, "name"), Json::str(data, "material"), Json::str(data, "printer"));
+            // Marque choisie dans le panneau (geste de l'utilisateur) : profil de départ vérifié par Spools, marque et gamme gardées.
+            nlohmann::json r = Spools::create_or_choose(Json::str(data, "name"), Json::str(data, "material"), Json::str(data, "printer"),
+                                                        Json::str(data, "brand_preset", 200), Json::str(data, "brand", 200),
+                                                        Json::str(data, "range", 200));
             r["type"]        = "spool_chosen";
             // Dernière version réussie de cette bobine sur cette machine, et ce qui en diffère aujourd'hui (phrase de reprise).
             if (Json::boolean(r, "ok", false))

@@ -92,6 +92,10 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSpoolsLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSpools.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSpools.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoBrandsLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoBrandsLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoBrands.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoBrands.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoAutoSave.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoAutoSave.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoProjectFiles.cpp

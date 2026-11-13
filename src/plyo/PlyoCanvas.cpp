@@ -4,6 +4,7 @@
 
 #include "PlyoCC2.hpp"
 #include "PlyoAutoSave.hpp"
+#include "PlyoBrands.hpp"
 #include "PlyoCanvasLogic.hpp"
 #include "PlyoCfs.hpp"
 #include "PlyoFirstSteps.hpp"
@@ -268,9 +269,19 @@ nlohmann::json apply(const nlohmann::json& entries)
             return {{"ok", false}, {"text", "Cette couleur n'existe pas dans la pièce. Recharge la pièce, puis choisis à nouveau."}};
         std::string name;
         const std::string type = Json::str(e, "type", 30);
-        for (const std::string& candidate : CanvasLogic::profile_types(type))
-            if (name = FirstSteps::best_filament(candidate); !name.empty())
+        // Marque choisie par l'utilisateur pour cet emplacement : un profil fourni de la matière de l'emplacement, compatible
+        // avec cette imprimante (même matière que le générique ci-dessous), sinon refus. Sans marque : le générique, comme avant.
+        if (const std::string brand_preset = Json::str(e, "preset", 200); !brand_preset.empty()) {
+            const nlohmann::json slot = Brands::for_type(type);
+            if (Brands::check(Json::str(slot, "material"), brand_preset).empty())
+                return {{"ok", false}, {"text", "Le profil « " + brand_preset + " » ne va pas avec cet emplacement sur cette imprimante : choisis à nouveau sa marque, ou « Je ne sais pas »."}};
+            name = brand_preset;
+        }
+        for (const std::string& candidate : CanvasLogic::profile_types(type)) {
+            if (!name.empty())
                 break;
+            name = FirstSteps::best_filament(candidate);
+        }
         if (name.empty())
             return {{"ok", false}, {"text", "Je n'ai pas trouvé de profil " + (type.empty() ? std::string("de filament") : type) + " pour cette imprimante. Choisis un autre emplacement ou un autre filament."}};
         presets.emplace_back(tv->get<size_t>(), name);
@@ -283,6 +294,10 @@ nlohmann::json apply(const nlohmann::json& entries)
     for (const auto& [t, name] : presets)
         if (t == 0 && !set_preset(t, name))
             return {{"ok", false}, {"text", "Choix annulé : les emplacements et ton filament n'ont pas changé, tes modifications restent en place. Choisis à nouveau quand tu veux : Plyo Slicer te redemandera quoi en faire."}};
+    // Profils de marque choisis : Orca les garde au prochain lancement (voir Brands::keep_visible).
+    for (size_t i = 0; i < presets.size(); ++i)
+        if (!Json::str(entries[i], "preset", 200).empty())
+            Brands::keep_visible(presets[i].second);
     nlohmann::json out = {{"ok", true}, {"presets", nlohmann::json::array()}};
     for (size_t i = 0; i < presets.size(); ++i) {
         if (presets[i].first != 0)
