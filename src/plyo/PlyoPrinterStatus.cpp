@@ -1,6 +1,7 @@
 #include "PlyoPrinterStatus.hpp"
 
 #include "PlyoPrinterStatusLogic.hpp"
+#include "PlyoLifetime.hpp"
 
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -29,26 +30,23 @@ namespace websocket = beast::websocket;
 using tcp           = boost::asio::ip::tcp;
 
 std::atomic<int>  g_generation{0};
-std::atomic<bool> g_closing{false}; // fenêtre principale détruite : Orca se ferme, aucun fil ne touche plus à l'application
 
-// Le fil de suivi ne lit jamais l'application : ce drapeau à Plyo est levé sur le fil principal quand la fenêtre principale
-// est détruite pendant la fermeture d'Orca (panneau ouvert ou non). wxEVT_DESTROY plutôt que wxEVT_CLOSE_WINDOW : une
-// fermeture peut encore être annulée (projet non enregistré), pas une destruction. Une fenêtre principale recréée
-// (GUI_App::recreate_GUI, changement de langue) est aussi détruite, Orca continuant : on arrête seulement le suivi en
-// cours, sans lever le drapeau, et la nouvelle fenêtre est liée au prochain suivi.
+// Le fil de suivi ne lit jamais l'application : il s'arrête au drapeau commun « on ferme » (Lifetime::closing, levé quand la
+// fenêtre principale est détruite pendant la fermeture d'Orca). Une fenêtre principale recréée (GUI_App::recreate_GUI,
+// changement de langue) est aussi détruite, Orca continuant : on arrête alors seulement le suivi en cours, et la nouvelle
+// fenêtre est liée au prochain suivi.
 Slic3r::GUI::MainFrame* g_bound_frame = nullptr; // fil principal seulement
 
 void watch_closing()
 {
+    Lifetime::watch_main_frame(); // drapeau commun « on ferme » (Lifetime::closing)
     Slic3r::GUI::MainFrame* frame = Slic3r::GUI::wxGetApp().mainframe;
     if (frame == nullptr || frame == g_bound_frame)
         return;
     g_bound_frame = frame;
     frame->Bind(wxEVT_DESTROY, [frame](wxWindowDestroyEvent& e) {
         if (e.GetEventObject() == frame) {
-            if (Slic3r::GUI::wxGetApp().is_closing())
-                g_closing = true; // Orca se ferme pour de bon
-            stop();
+            stop(); // fermeture d'Orca ou fenêtre recréée : le suivi en cours s'arrête
             if (g_bound_frame == frame)
                 g_bound_frame = nullptr;
         }
@@ -160,9 +158,9 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
     const Slic3r::Preset* p = Slic3r::GUI::wxGetApp().preset_bundle->printers.find_preset(preset, false);
     const int             gen = ++g_generation;
     auto post = [notify, gen](nlohmann::json r) {
-        if (g_closing.load() || gen != g_generation.load())
+        if (Lifetime::closing() || gen != g_generation.load())
             return; // Orca se ferme ou un autre suivi a pris la place : on ne touche plus à l'application
-        Slic3r::GUI::wxGetApp().CallAfter([notify, gen, r]() { if (gen == g_generation.load() && !g_closing.load()) notify(r); });
+        Slic3r::GUI::wxGetApp().CallAfter([notify, gen, r]() { if (gen == g_generation.load() && !Lifetime::closing()) notify(r); });
     };
     if (p == nullptr || !p->config.has("print_host") || p->config.opt_string("print_host").empty()) {
         post(to_json("unknown", Status{"unknown", "", -1}));
@@ -172,7 +170,7 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
     const std::string kind   = host_type_of(*config);
     std::thread([config, kind, post, gen]() {
         // Un nouvel envoi (ou stop()) remplace ce suivi ; Orca qui se ferme l'arrête aussi.
-        const auto alive = [gen]() { return gen == g_generation.load() && !g_closing.load(); };
+        const auto alive = [gen]() { return gen == g_generation.load() && !Lifetime::closing(); };
         const auto pause = [&alive](int seconds) {
             for (int i = 0; i < seconds && alive(); ++i)
                 std::this_thread::sleep_for(std::chrono::seconds(1));

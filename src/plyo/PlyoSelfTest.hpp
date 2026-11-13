@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 // Banc d'essai dans la vraie application : quand la variable d'environnement PLYO_SELFTEST donne le chemin d'un fichier
 // JavaScript (le « pilote »), ce fichier est ajouté à la fin de la page du panneau. Le pilote clique alors sur les vrais
@@ -19,8 +20,10 @@ bool active();
 // le pilote puisse continuer.
 void startup_kept_closed();
 
-// Le pilote dans sa balise <script>, à ajouter après les scripts du panneau ; "" hors banc.
+// Le texte du pilote (sans balise), à ajouter après les scripts du panneau ; "" hors banc.
 std::string page_script();
+// Origines de plus permises aux connexions de la page pendant le banc (faux hôte d'impression local) ; aucune hors banc.
+std::vector<std::string> page_connect_sources();
 
 // Messages du banc (selftest_log, selftest_done, selftest_call). Rend false sans rien faire si le banc est inactif ou si
 // `type` n'est pas un message du banc.

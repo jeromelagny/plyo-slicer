@@ -31,6 +31,11 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoFiles.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoFiles.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoGuard.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoLifetime.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoLifetime.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoLifetimeLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPageLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPageLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJson.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoMemoryLogic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoContextLogic.cpp

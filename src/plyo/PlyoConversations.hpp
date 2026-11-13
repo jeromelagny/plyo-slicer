@@ -20,8 +20,21 @@ bool           valid_id(const std::string& id);
 nlohmann::json list();
 // La conversation, ou null si elle n'existe pas ou est abîmée.
 nlohmann::json load(const std::string& id);
+// Résultat d'un enregistrement (ROB-17) : chaque échec a sa raison, le panneau dit la vraie.
+enum class Saved { Ok, Invalid, TooBig, WriteFailed };
+// « invalid », « too_big », « write_failed » (« » pour Ok) : la raison envoyée au panneau (assistant-logic.js, saveFailedText).
+inline std::string reason(Saved saved)
+{
+    switch (saved) {
+    case Saved::Ok: return std::string();
+    case Saved::TooBig: return "too_big";
+    case Saved::WriteFailed: return "write_failed";
+    case Saved::Invalid: break;
+    }
+    return "invalid";
+}
 // `removed` : noms (pièce, sinon titre) des conversations effacées pour faire de la place.
-bool           save(const std::string& id, const nlohmann::json& conversation, std::vector<std::string>* removed = nullptr);
+Saved          save(const std::string& id, const nlohmann::json& conversation, std::vector<std::string>* removed = nullptr);
 bool           remove(const std::string& id);
 
 }} // namespace Plyo::Conversations

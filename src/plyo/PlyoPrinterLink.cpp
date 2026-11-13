@@ -1,4 +1,5 @@
 #include "PlyoPrinterLink.hpp"
+#include "PlyoLifetime.hpp"
 #include "PlyoCanvasLogic.hpp"
 #include "PlyoDiscovery.hpp"
 #include "PlyoDiscoveryLogic.hpp"
@@ -190,7 +191,7 @@ void test(const nlohmann::json& in, const std::string& access_code, std::functio
         } catch (const std::exception& e) {
             result = {{"ok", false}, {"message", e.what()}};
         }
-        wxGetApp().CallAfter([done, result] { done(result); });
+        Lifetime::post("le test de la liaison", [done, result] { done(result); });
     }).detach();
 }
 
@@ -273,7 +274,7 @@ void recheck(std::function<void(nlohmann::json)> done)
         } catch (const std::exception& e) {
             message = e.what();
         }
-        wxGetApp().CallAfter([ok, message, done] {
+        Lifetime::post("la vérification de la liaison", [ok, message, done] {
             const int http = SendLogic::http_status(message);
             done({{"code", SendLogic::link_code(ok, http)}, {"http", http}, {"text", ok ? std::string() : OrcaMessages::clean_for_panel(message)}});
         });

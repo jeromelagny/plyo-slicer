@@ -345,12 +345,6 @@ std::string label_of(const std::string& key)
     return ConfigRules::label_of(key, [](const std::string& k) { return Catalog::policy().title(k); });
 }
 
-// Réglage nommé dans un refus : « Titre » du catalogue, ou « ce réglage » quand Plyo n'a pas de titre (jamais la clé d'Orca).
-std::string refused_name(const std::string& key)
-{
-    const std::string title = key.empty() ? key : label_of(key);
-    return title.empty() || title == key ? std::string("ce réglage") : "« " + title + " »";
-}
 
 // Valeur à montrer pour un texte d'Orca : typée pour une clé du catalogue (première case d'un tableau), sinon le texte.
 nlohmann::json shown_value(Preset::Type type, const std::string& key, const std::string& serialized)
@@ -936,50 +930,39 @@ nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::s
     const double           nozzle = first_value(edited_configs().printer, "nozzle_diameter").value_or(0);
     struct Planned { std::string key, label, text, kind; Preset::Type type; nlohmann::json value, before; bool confirmed; std::string why; };
     std::vector<Planned>   planned;
-    std::vector<std::string> seen;
 
-    // Contrôle d'un changement (du lot, ou ajouté par une règle d'Orca) : catalogue, bornes, dernière barrière.
-    // Rend un refus, ou null et le changement prévu.
-    const auto check = [&](const std::string& key, const std::string& scope, const nlohmann::json& value, const std::string& label,
-                           bool confirmed_outside, bool confirmed, Planned& out) -> nlohmann::json {
-        const Preset::Type        type   = scope == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
-        const DynamicPrintConfig& config = edited_config(type);
-        const Slic3r::ConfigOptionDef* def = config.def() ? config.def()->get(key) : nullptr;
+    // Ce que la vérification lit d'Orca pour une clé : définition (type, bornes, valeurs permises) et valeurs actuelles.
+    const Catalog::ProbeFn probe = [&policy](const std::string& scope, const std::string& key) -> std::optional<Catalog::Probe> {
+        const Preset::Type             type   = scope == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
+        const DynamicPrintConfig&      config = edited_config(type);
+        const Slic3r::ConfigOptionDef* def    = config.def() ? config.def()->get(key) : nullptr;
         if (def == nullptr || config.option(key) == nullptr)
-            return refused("Refusé : « " + label + " » n'existe pas dans ce profil. Aucune modification appliquée.", "", key);
+            return std::nullopt;
         Catalog::OptionInfo info{policy.kind(scope, key), std::nullopt, std::nullopt, def->enum_values};
         if (def->min > -1e9f) info.min = def->min;
         if (def->max < 1e9f) info.max = def->max;
-        const nlohmann::json   current = snapshot_value(type, key, info.kind);
-        const Catalog::Verdict verdict = Catalog::check_barrier(policy, label, key, info, value, current, nozzle, limits, confirmed_outside, confirmed);
-        if (!verdict.check.ok)
-            return refused(verdict.check.text, verdict.code, key);
-        const std::string text = Catalog::to_serialized(info, value);
-        if (text.empty())
-            return refused("Refusé : valeur illisible pour « " + label + " ». Aucune modification appliquée.", "", key);
-        out = {key, label, text, info.kind, type, value, typed_value_of(config, key, info.kind), confirmed, ""};
+        return Catalog::Probe{info, snapshot_value(type, key, info.kind), typed_value_of(config, key, info.kind)};
+    };
+    const auto to_planned = [](const Catalog::Planned& c) {
+        return Planned{c.key, c.label, c.text, c.kind, c.scope == "print" ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT, c.value, c.before, c.confirmed, ""};
+    };
+    // Contrôle d'un changement ajouté par une règle d'Orca, comme ceux du lot (Catalog::check_planned). Rend un refus, ou null.
+    const auto check = [&](const std::string& key, const std::string& scope, const nlohmann::json& value, const std::string& label,
+                           bool confirmed, Planned& out) -> nlohmann::json {
+        Catalog::Planned c;
+        if (const std::optional<Catalog::Refusal> bad = Catalog::check_planned(policy, probe(scope, key), key, scope, value, label, nozzle, limits, false, confirmed, c))
+            return refused(bad->text, bad->code, bad->key);
+        out = to_planned(c);
         return nullptr;
     };
 
-    // 1. Validation complète avant toute écriture (tout ou rien).
-    for (const nlohmann::json& change : changes) {
-        const std::string key = change.is_object() ? Json::str(change, "key") : std::string();
-        const char*       scope = policy.allows("print", key) ? "print" : policy.allows("filament", key) ? "filament" : "";
-        if (*scope == '\0')
-            return refused("Refusé : " + refused_name(key) + " ne fait pas partie des réglages que l'assistant peut modifier. Aucune modification appliquée.");
-        if (std::find(seen.begin(), seen.end(), key) != seen.end())
-            return refused("Refusé : " + refused_name(key) + " est demandé deux fois. Aucune modification appliquée.");
-        seen.push_back(key);
-        // Sans libellé du panneau : le titre du catalogue (les refus ne montrent jamais la clé d'Orca).
-        const std::string label = Json::str(change, "label").empty() ? label_of(key) : Json::str(change, "label");
-        // `confirmed` : la ligne a été cochée à la main, ou le bouton cliqué annonçait cette valeur. `confirmed_outside_range` :
-        // sortie de la plage du fabricant confirmée de la même façon.
-        Planned p;
-        const nlohmann::json bad = check(key, scope, change.contains("value") ? change["value"] : nlohmann::json(), label,
-                                         Json::boolean(change, "confirmed_outside_range", false), Json::boolean(change, "confirmed", false), p);
-        if (!bad.is_null())
-            return bad;
-        planned.push_back(p);
+    // 1. Validation complète avant toute écriture (tout ou rien) : Catalog::check_lot, testée sans Orca.
+    {
+        std::vector<Catalog::Planned> checked;
+        if (const std::optional<Catalog::Refusal> bad = Catalog::check_lot(policy, changes, probe, label_of, nozzle, limits, checked))
+            return refused(bad->text, bad->code, bad->key);
+        for (const Catalog::Planned& c : checked)
+            planned.push_back(to_planned(c));
     }
 
     // 2. Règles d'Orca sur l'état prévu : refus, ou réglages ajoutés (contrôlés comme les autres, avec la confirmation du
@@ -1003,7 +986,7 @@ nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::s
                                "proposera de tout régler d'un coup. Aucune modification appliquée.",
                            "orca_rule", a.trigger);
         Planned p;
-        const nlohmann::json bad = check(a.key, a.scope, a.value, label_of(a.key), false, trigger != planned.end() && trigger->confirmed, p);
+        const nlohmann::json bad = check(a.key, a.scope, a.value, label_of(a.key), trigger != planned.end() && trigger->confirmed, p);
         if (!bad.is_null())
             return bad;
         p.why = a.why;

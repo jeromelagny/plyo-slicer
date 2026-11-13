@@ -120,8 +120,9 @@ test('Canvas : vues sans bouton plein, fichiers inclus, rappel et relance à l�
   assert.ok(!FULL_BUTTON.test(read('canvas-view.js')), 'canvas-view.js : l’action principale est dans la ligne d’action');
   const page = read('index.html');
   assert.ok(page.includes('<!--plyo-include:canvas-logic.js-->') && page.includes('<!--plyo-include:canvas-view.js-->'));
+  // Lot 12 (ARCH-11) : PlyoAssistant.cpp insère tous les scripts que la page déclare, sans liste à lui.
   const cpp = fs.readFileSync(new URL('../../../../src/plyo/PlyoAssistant.cpp', import.meta.url), 'utf8');
-  assert.ok(cpp.includes('"canvas-logic.js", "canvas-view.js"'), 'chargés par PlyoAssistant.cpp');
+  assert.ok(cpp.includes('PageLogic::assemble') && !cpp.includes('"canvas-logic.js"'), 'chargés d’après les marqueurs de la page');
   const steps = read('journey-steps.js');
   // Le nom du bouton est cité par les messages de refus du C++ (PlyoCC2.cpp, PlyoCC2Logic.cpp) : à changer ensemble.
   assert.ok(steps.includes('Changer les emplacements') && steps.includes('Laisser l’imprimante choisir l’emplacement'));
@@ -494,9 +495,9 @@ test('une découpe lancée depuis une réponse propose ensuite d’imprimer ou d
 });
 
 // ---------- « Quelle bobine ? » (lot 5) ----------
-test('Quelle bobine ? : fichier inclus par la page et par PlyoAssistant.cpp', () => {
+test('Quelle bobine ? : fichier inclus par la page (PlyoAssistant.cpp suit ses marqueurs)', () => {
   assert.ok(read('index.html').includes('<!--plyo-include:spools-logic.js-->'));
-  assert.ok(readCpp('src/plyo/PlyoAssistant.cpp').includes('"spools-logic.js"'), 'chargé par PlyoAssistant.cpp');
+  assert.ok(readCpp('src/plyo/PlyoAssistant.cpp').includes('PageLogic::assemble'), 'chargé d’après les marqueurs de la page');
   assert.ok(read('index.html').indexOf('<!--plyo-include:spools-logic.js-->') < read('index.html').indexOf('<!--plyo-include:project-card.js-->'), 'avant la fiche qui s’en sert');
 });
 
@@ -720,7 +721,8 @@ test('fin d’impression : le panneau la relie au suivi, aux gestes du Résultat
   assert.equal((page.match(/noteSendWatched\(\)/g) || []).length, 3, 'définie, et notée aux deux envois suivis');
   assert.match(cppSrc('PlyoPrinterStatus.cpp'), /ended\["phase"\]\s*= "end"/);
   const status = cppSrc('PlyoPrinterStatus.cpp');
-  assert.match(status, /Bind\(wxEVT_DESTROY[\s\S]*g_closing = true;[^\n]*\n\s*stop\(\);/, 'le suivi s’arrête avec la fenêtre principale, panneau ouvert ou non');
+  assert.match(status, /Bind\(wxEVT_DESTROY[\s\S]*e\.GetEventObject\(\) == frame\) \{\s*stop\(\);/, 'le suivi s’arrête avec la fenêtre principale, panneau ouvert ou non');
+  assert.match(status, /void watch_closing\(\)\s*\{\s*Lifetime::watch_main_frame\(\);/, 'lot 12 (ROB-15) : drapeau « on ferme » commun aux fils de Plyo');
   assert.doesNotMatch(status.slice(status.indexOf('void watch(')), /is_closing\(\)/, 'le fil ne lit jamais l’application');
   assert.match(status, /read\(kind, \*config, true, logged\);\s*if \(!alive\(\)\)\s*return;/, 'rien n’est posté après une fermeture');
   assert.equal((cppSrc('PlyoAssistant.cpp').match(/w\["id"\]\s*= id;/g) || []).length, 1, 'un seul envoi des messages de suivi');
@@ -779,7 +781,8 @@ test('reprise 1 : ids d’envoi, bobine des envois avec emplacements, réussite 
 test('reprise 2 : une fenêtre principale recréée (changement de langue) ne coupe pas les suivis suivants', () => {
   const src = cppSrc('PlyoPrinterStatus.cpp');
   const fn = src.slice(src.indexOf('void watch_closing()'), src.indexOf('void watch_closing()') + 900);
-  assert.match(fn, /if \(Slic3r::GUI::wxGetApp\(\)\.is_closing\(\)\)\s*g_closing = true;/, 'le drapeau ne se lève qu’à la vraie fermeture d’Orca');
+  // Lot 12 (ROB-15) : le drapeau est commun (PlyoLifetime.cpp), levé à la seule vraie fermeture d'Orca.
+  assert.match(cppSrc('PlyoLifetime.cpp'), /if \(Slic3r::GUI::wxGetApp\(\)\.is_closing\(\)\)\s*g_gate\.close\(\);/, 'le drapeau ne se lève qu’à la vraie fermeture d’Orca');
   assert.match(fn, /frame == g_bound_frame\)\s*return;\s*g_bound_frame = frame;/, 'liaison par fenêtre : une nouvelle fenêtre est liée');
   assert.match(fn, /if \(g_bound_frame == frame\)\s*g_bound_frame = nullptr;/, 'la fenêtre détruite libère la liaison');
   assert.doesNotMatch(src, /static bool bound/);

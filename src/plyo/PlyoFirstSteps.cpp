@@ -3,6 +3,7 @@
 #include "PlyoSanitize.hpp"
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoLifetime.hpp"
 #include "PlyoOrcaMessages.hpp"
 #include "PlyoAssistant.hpp"
 #include "PlyoSettingsBridge.hpp"
@@ -21,26 +22,21 @@
 #include "slic3r/GUI/Field.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/GLToolbar.hpp"
-#include "slic3r/GUI/GUI_Factories.hpp"
 #include "slic3r/GUI/I18N.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/PartPlate.hpp"
 #include "slic3r/GUI/Plater.hpp"
 #include "slic3r/GUI/Tab.hpp"
-#include "slic3r/GUI/WebGuideDialog.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/log/trivial.hpp>
 
 #include <wx/stdpaths.h>
 #include <wx/timer.h>
-#include <wx/toplevel.h>
 
-#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <set>
-#include <vector>
 
 namespace Plyo { namespace FirstSteps {
 
@@ -56,14 +52,6 @@ fs::path state_path() { return fs::path(Slic3r::data_dir()) / "plyo" / "premiers
 nlohmann::json load_state() { return Sanitize::first_steps(Store::read(state_path())); }
 
 void store_state(const nlohmann::json& s) { Store::write(state_path(), Sanitize::first_steps(s)); }
-
-Slic3r::GUI::GuideFrame* visible_guide()
-{
-    for (wxWindow* w : wxTopLevelWindows)
-        if (auto* guide = dynamic_cast<Slic3r::GUI::GuideFrame*>(w); guide != nullptr && guide->IsShown())
-            return guide;
-    return nullptr;
-}
 
 // Le panneau s'ouvre à chaque lancement ; le bouton « Assistant » de la barre du haut le ferme d'un clic. Sauf pour qui a
 // répondu « Je connais déjà » à l'accueil (UX-02, décision D5) : il reste à un clic sur « Assistant ».
@@ -152,19 +140,18 @@ bool bind_tabs(std::set<Slic3r::GUI::Tab*>& bound)
     return all;
 }
 
-// Le démarrage d'Orca se poursuit après le constructeur de MainFrame : l'écran de configuration (GuideFrame, modal)
-// s'ouvre plus tard, dans post_init. On l'attend en lisant la liste des fenêtres, sans toucher à Orca.
+// Le démarrage d'Orca se poursuit après le constructeur de MainFrame (post_init, chargement des préréglages) : une minuterie
+// attend que la fenêtre principale soit affichée, puis montre l'accueil au premier lancement (après WELCOME_TICKS, le temps
+// qu'Orca finisse de démarrer avant une fenêtre modale) et ouvre le panneau. Elle relie aussi les onglets de réglages dès
+// qu'ils existent (« Explique-moi ce réglage »), puis s'arrête. L'assistant de configuration d'Orca n'est plus lancé au
+// démarrage (GUI_App::config_wizard_startup) : il n'y a plus à l'attendre (ARCH-20).
 class StartupWatcher : public wxTimer
 {
 public:
-    explicit StartupWatcher(bool first_run) : m_first_run(first_run)
-    {
-        // L'écran de configuration d'Orca va s'ouvrir quand il n'y a encore que les imprimantes par défaut
-        // (même condition que GUI_App::config_wizard_startup).
-        // L'assistant de configuration d'Orca n'est plus lancé au démarrage : l'accueil n'a pas à l'attendre.
-        m_expect_guide = false;
-        Start(300);
-    }
+    static constexpr int TICK_MS       = 300;
+    static constexpr int WELCOME_TICKS = 8; // 2,4 s
+
+    explicit StartupWatcher(bool first_run) : m_first_run(first_run) { Start(TICK_MS); }
 
     void Notify() override
     {
@@ -172,52 +159,25 @@ public:
         if (!m_tabs_bound)
             m_tabs_bound = bind_tabs(m_bound);
         auto* frame = wxGetApp().mainframe;
-        if (frame == nullptr || !frame->IsShown())
-            return;
-        Slic3r::GUI::GuideFrame* guide = visible_guide();
-        if (m_first_run && !m_welcomed) {
-            if (guide != nullptr) {
-                m_welcomed  = true;
-                m_saw_guide = true;
-                wxWindow* parent = guide;
-                wxGetApp().CallAfter([parent] { guarded("l'accueil", [&] { show_welcome(parent, true); }); });
-                return;
-            }
-            // Pas d'écran de configuration en vue (Orca déjà configuré, ou délai dépassé) : accueil sur la fenêtre principale.
-            const int wait_ticks = m_expect_guide ? 60 : 8; // 18 s ou 2,4 s
-            if (m_ticks < wait_ticks)
-                return;
-            m_welcomed = true;
-            wxGetApp().CallAfter([this] {
-                guarded("l'accueil", [] { show_welcome(wxGetApp().mainframe, PrinterSetup::needs_printer()); });
-                finish();
+        if (!m_started && frame != nullptr && frame->IsShown() && (!m_first_run || m_ticks >= WELCOME_TICKS)) {
+            m_started = true;
+            const bool welcome = m_first_run;
+            // L'accueil est modal : le panneau s'ouvre à sa fermeture, selon la réponse (« Je connais déjà » : fermé).
+            wxGetApp().CallAfter([welcome] {
+                if (welcome)
+                    guarded("l'accueil", [] { show_welcome(wxGetApp().mainframe, PrinterSetup::needs_printer()); });
+                guarded("l'ouverture du panneau", [] { open_panel_at_startup(); });
             });
-            return;
         }
-        if (m_saw_guide && guide != nullptr)
-            return; // l'écran de configuration est encore ouvert
-        if (!m_first_run || m_saw_guide || m_done)
-            finish();
-    }
-
-private:
-    void finish()
-    {
-        if (!m_done) {
-            m_done = true;
-            wxGetApp().CallAfter([] { guarded("l'ouverture du panneau", [] { open_panel_at_startup(); }); });
-        }
-        if (m_tabs_bound)
+        if (m_started && m_tabs_bound)
             Stop();
     }
 
-    bool m_first_run    = false;
-    bool m_expect_guide = false;
-    bool m_welcomed     = false;
-    bool m_saw_guide    = false;
-    bool m_done         = false;
-    bool m_tabs_bound   = false;
-    int  m_ticks        = 0;
+private:
+    bool m_first_run  = false;
+    bool m_started    = false;
+    bool m_tabs_bound = false;
+    int  m_ticks      = 0;
     std::set<Slic3r::GUI::Tab*> m_bound;
 };
 
@@ -252,6 +212,8 @@ void on_startup()
         if (frame == nullptr || frame == s_watched_frame || !wxGetApp().is_editor())
             return;
         s_watched_frame = frame;
+        Lifetime::watch_main_frame(); // drapeau commun « on ferme » des fils de Plyo (ROB-15)
+        Store::claim_instance();      // verrou du dossier de données, avant toute écriture (ROB-16)
         // Banc d'essai (PLYO_SELFTEST) : jamais l'accueil modal, le panneau s'ouvre directement ; hors banc, inchangé.
         const bool first_run = !SelfTest::active() && !Json::boolean(load_state(), "seen", false);
         new StartupWatcher(first_run); // s'arrête seul ; vit autant que l'application
@@ -306,19 +268,6 @@ nlohmann::json tour_signals()
     return signals;
 }
 
-nlohmann::json add_benchy()
-{
-    const auto& models = Slic3r::GUI::MenuFactory::handy_models();
-    for (size_t i = 0; i < models.size(); ++i)
-        if (std::string(models[i].key) == "3dbenchy") {
-            if (auto* frame = wxGetApp().mainframe)
-                frame->select_tab(TAB_ID_PREPARE); // le plateau, si Orca est sur l'accueil
-            Slic3r::GUI::MenuFactory::load_handy_model(i);
-            return {{"ok", true}, {"text", "Le petit bateau est sur le plateau."}};
-        }
-    return {{"ok", false}, {"text", "Le petit bateau est introuvable dans Orca."}};
-}
-
 std::string best_filament(const std::string& type)
 {
     if (type.empty() || wxGetApp().preset_bundle == nullptr)
@@ -344,19 +293,6 @@ std::string best_filament(const std::string& type)
         }
     }
     return best != nullptr ? best->name : std::string();
-}
-
-nlohmann::json choose_filament(const std::string& type)
-{
-    static const std::vector<std::string> TYPES = {"PLA", "PETG", "ABS", "ASA", "TPU"};
-    if (std::find(TYPES.begin(), TYPES.end(), type) == TYPES.end())
-        return {{"ok", false}};
-    const std::string name = best_filament(type);
-    if (name.empty())
-        return {{"ok", false}};
-    if (!select_filament(name))
-        return {{"ok", false}, {"cancelled", true}};
-    return {{"ok", true}, {"name", name}};
 }
 
 bool select_filament(const std::string& name, size_t idx)

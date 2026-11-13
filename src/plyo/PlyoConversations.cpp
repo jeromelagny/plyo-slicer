@@ -120,18 +120,21 @@ nlohmann::json load(const std::string& id)
     return well_formed(c) ? c : nlohmann::json();
 }
 
-bool save(const std::string& id, const nlohmann::json& conversation, std::vector<std::string>* removed)
+Saved save(const std::string& id, const nlohmann::json& conversation, std::vector<std::string>* removed)
 {
-    if (!valid_id(id) || !well_formed(conversation) || conversation.dump().size() > MAX_BYTES)
-        return false;
+    if (!valid_id(id) || !well_formed(conversation))
+        return Saved::Invalid;
+    if (conversation.dump().size() > MAX_BYTES)
+        return Saved::TooBig;
     // Le projet est réduit à ses clés connues : ni secret ni chemin de fichier dans la conversation enregistrée.
     nlohmann::json kept = conversation;
     if (kept.contains("project"))
         kept["project"] = ProjectLogic::sanitize(kept["project"]);
+    // Disque plein, dossier protégé, autre instance qui écrit au même instant : l'ancien fichier reste entier.
     if (!Store::write(path_of(id), kept))
-        return false;
+        return Saved::WriteFailed;
     prune(removed);
-    return true;
+    return Saved::Ok;
 }
 
 bool remove(const std::string& id)

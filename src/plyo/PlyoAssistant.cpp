@@ -13,6 +13,8 @@
 #include "PlyoFirstSteps.hpp"
 #include "PlyoHighlight.hpp"
 #include "PlyoJournal.hpp"
+#include "PlyoLifetime.hpp"
+#include "PlyoLifetimeLogic.hpp"
 #include "PlyoLimits.hpp"
 #include "PlyoLoginDialog.hpp"
 #include "PlyoMemory.hpp"
@@ -20,6 +22,7 @@
 #include "PlyoConfig.hpp"
 #include "PlyoContextLogic.hpp"
 #include "PlyoOrcaMessages.hpp"
+#include "PlyoPageLogic.hpp"
 #include "PlyoOrcaWindows.hpp"
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoPlateActions.hpp"
@@ -49,6 +52,7 @@
 #include "slic3r/GUI/Plater.hpp"
 #include "slic3r/GUI/Widgets/SideButton.hpp"
 #include "slic3r/GUI/Widgets/StateColor.hpp"
+#include "slic3r/GUI/Widgets/WebHosting.hpp"
 #include "slic3r/GUI/wxExtensions.hpp"
 
 #include <boost/filesystem/path.hpp>
@@ -61,7 +65,9 @@
 #include <wx/menu.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
+#include <wx/uri.h>
 #include <wx/weakref.h>
+#include <wx/webview.h>
 
 #include <exception>
 #include <fstream>
@@ -121,27 +127,55 @@ std::string read_resource(const std::string& name)
     return content.str();
 }
 
-// La page est chargée comme texte (sans adresse de base dans resources/web/plyo) : les scripts annexes
-// sont insérés à la place de leurs marqueurs « <!--plyo-include:nom.js--> ».
+// La page est chargée comme texte (sans adresse de base dans resources/web/plyo ; WebView2 ignore celle de SetPage) : les
+// scripts annexes sont insérés à la place de leurs marqueurs « <!--plyo-include:nom.js--> », dans l'ordre de la page, qui
+// est la seule liste (ARCH-11). La politique de sécurité du contenu est construite d'après l'adresse réelle du service, et
+// chaque balise <script> porte le jeton de cette page (PageLogic).
 std::string load_page()
 {
-    std::string page = read_resource("index.html");
+    const std::string page = read_resource("index.html");
     if (page.empty())
         return "<h3>Assistant Plyo</h3><p>Page introuvable : resources/web/plyo/index.html</p>";
-    const std::string config_marker = "<!--plyo-config-->";
-    if (const size_t at = page.find(config_marker); at != std::string::npos)
-        page.replace(at, config_marker.size(), "<script>" + Config::api_url_script() + "</script>");
-    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js", "project-logic.js", "journey-logic.js", "machines-logic.js", "machines-view.js", "intent-logic.js", "canvas-logic.js", "canvas-view.js", "journey-view.js", "journey-steps.js", "spools-logic.js", "project-card.js", "retouches-logic.js"}) {
-        const std::string marker = std::string("<!--plyo-include:") + name + "-->";
-        if (const size_t at = page.find(marker); at != std::string::npos)
-            page.replace(at, marker.size(), "<script>\n" + read_resource(name) + "\n</script>");
-    }
+    const std::string nonce = PageLogic::new_nonce();
     // Banc d'essai (PLYO_SELFTEST) : le pilote passe après tous les scripts du panneau. Hors banc, chaîne vide : page inchangée.
-    if (const std::string driver = SelfTest::page_script(); !driver.empty()) {
-        const size_t body_end = page.rfind("</body>");
-        page.insert(body_end == std::string::npos ? page.size() : body_end, driver);
+    return PageLogic::assemble(page, read_resource, Config::api_url_script(), SelfTest::page_script(),
+                               PageLogic::content_security_policy(Config::api_url(), nonce, SelfTest::page_connect_sources()), nonce);
+}
+
+// Garde de navigation (ARCH-17) : la vue du panneau n'affiche que sa page (page d'amorçage, puis la page Plyo chargée par
+// SetPage). Toute autre adresse (lien, redirection, formulaire, script) est refusée : une page distante recevrait sinon le pont
+// window.orca (session, réglages, plateau). Le panneau n'ouvre aucun lien vers l'extérieur ; une nouvelle fenêtre est déjà
+// refusée par DockPanel.
+bool allowed_navigation(const wxString& url)
+{
+    if (Slic3r::GUI::web_hosting::is_content_url(url))
+        return true;
+    if (wxURI::Unescape(url.BeforeFirst('#')) == wxURI::Unescape(Slic3r::GUI::web_hosting::bootstrap_url()))
+        return true;
+#ifdef _WIN32
+    // WebView2 charge SetPage par NavigateToString, qui se présente comme about:blank ou une adresse data:text/html (Chromium
+    // refuse de lui-même qu'une page ouvre une adresse data: en haut de la vue).
+    if (url == "about:blank" || url.StartsWith("data:text/html"))
+        return true;
+#endif
+    return false;
+}
+
+void guard_navigation(DockPanel* panel)
+{
+    for (wxWindow* child : panel->GetChildren()) {
+        auto* view = wxDynamicCast(child, wxWebView);
+        if (view == nullptr)
+            continue;
+        view->Bind(wxEVT_WEBVIEW_NAVIGATING, [](wxWebViewEvent& event) {
+            if (allowed_navigation(event.GetURL())) {
+                event.Skip();
+                return;
+            }
+            BOOST_LOG_TRIVIAL(warning) << "Plyo: navigation refusée dans le panneau : " << event.GetURL().utf8_string().substr(0, 200);
+            event.Veto();
+        });
     }
-    return page;
 }
 
 void send(const nlohmann::json& message)
@@ -214,6 +248,9 @@ void handle_page_message(const nlohmann::json& data)
     try {
         if (type == "ready") {
             send({{"type", "status"}, {"text", "Connecté au slicer."}});
+            // Une autre instance de Plyo tient déjà ce dossier de données (ROB-16) : le panneau le dit, avec quoi faire.
+            if (Store::other_instance())
+                send({{"type", "other_instance"}});
             send_values();
         } else if (type == "get_values")
             send_values();
@@ -457,10 +494,12 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "conv_save") {
             // Enregistrement silencieux : le panneau n'attend pas de réponse, un échec est seulement journalisé. Un ancien
             // projet effacé pour faire de la place est dit au panneau (jamais en silence).
-            std::vector<std::string> removed;
-            if (!Conversations::save(Json::str(data, "id"), Json::any(data, "conversation"), &removed)) {
-                BOOST_LOG_TRIVIAL(warning) << "Plyo: conversation non enregistrée";
-                send({{"type", "conv_save_failed"}, {"id", Json::str(data, "id")}});
+            // `reason` : too_big (conversation trop longue), write_failed (disque plein, dossier protégé), invalid.
+            std::vector<std::string>   removed;
+            const Conversations::Saved saved = Conversations::save(Json::str(data, "id"), Json::any(data, "conversation"), &removed);
+            if (saved != Conversations::Saved::Ok) {
+                BOOST_LOG_TRIVIAL(warning) << "Plyo: conversation non enregistrée (" << Conversations::reason(saved) << ")";
+                send({{"type", "conv_save_failed"}, {"id", Json::str(data, "id")}, {"reason", Conversations::reason(saved)}});
             } else if (!removed.empty())
                 send({{"type", "conv_pruned"}, {"names", removed}});
         } else if (type == "project_resume_get") {
@@ -483,14 +522,15 @@ void handle_page_message(const nlohmann::json& data)
         else if (type == "login") {
             // Fenêtre de connexion modale centrée sur Orca ; le panneau reçoit ensuite la session (ou null).
             // Une seule fenêtre à la fois : un double-clic ne doit pas en ouvrir une seconde imbriquée.
+            // Le drapeau retombe en sortant, exception comprise (ROB-18) : « Se connecter » marche encore après un échec.
             static bool s_login_open = false;
             if (!s_login_open) {
-                s_login_open = true;
+                const LifetimeLogic::FlagReset open(s_login_open);
                 LoginDialog dialog(Slic3r::GUI::wxGetApp().mainframe);
                 dialog.ShowModal();
-                s_login_open = false;
-                send({{"type", "session"}, {"session", Session::load()}});
             }
+            if (!s_login_open)
+                send({{"type", "session"}, {"session", Session::load()}});
         } else if (type == "phone") {
             // Fenêtre du QR code du lien téléphone (créé par le panneau) ; une seule à la fois.
             // Au premier envoi du téléphone elle se ferme, et le panneau va chercher l'envoi aussitôt.
@@ -498,10 +538,12 @@ void handle_page_message(const nlohmann::json& data)
             const nlohmann::json session = Session::load();
             const nlohmann::json link    = Json::any(data, "link");
             if (!s_phone_open && session.is_object() && link.is_object() && link.contains("id") && link["id"].is_string()) {
-                s_phone_open = true;
-                PhoneDialog dialog(Slic3r::GUI::wxGetApp().mainframe, session["access_token"].get<std::string>(), link);
-                const int result = dialog.ShowModal();
-                s_phone_open = false;
+                int result = wxID_CANCEL;
+                {
+                    const LifetimeLogic::FlagReset open(s_phone_open); // retombe même si la fenêtre échoue (ROB-18)
+                    PhoneDialog dialog(Slic3r::GUI::wxGetApp().mainframe, session["access_token"].get<std::string>(), link);
+                    result = dialog.ShowModal();
+                }
                 if (result == wxID_OK)
                     send({{"type", "phone_batch_ready"}});
             }
@@ -534,9 +576,7 @@ void handle_page_message(const nlohmann::json& data)
             signals["type"]        = "tour_signals";
             signals["user_file"]   = !ProjectFiles::attachable(); // un fichier de l'utilisateur n'est jamais attaché à la conversation
             send(signals);
-        } else if (type == "tour_add_benchy")
-            send_result(FirstSteps::add_benchy(), data);
-        else if (type == "model_add") {
+        } else if (type == "model_add") {
             // Modèle 3D joint dans le panneau (trombone ou glisser-déposer). Une nouvelle pièce posée : le plateau devient celui
             // de la conversation, avant l'adaptation des réglages d'un 3MF (qui restent ainsi dans le projet, pas dans le
             // préréglage d'impression partagé). Pièce refusée : le plateau n'est pas attaché.
@@ -655,8 +695,8 @@ void handle_page_message(const nlohmann::json& data)
             if (!hooked) { // un départ avec carte refusé (envoi de Plyo ou d'Orca) est signalé au panneau
                 hooked = true;
                 CC2::on_orca_state(&Canvas::orca_state);
-                CC2::on_refused([](const std::string& text) {
-                    Slic3r::GUI::wxGetApp().CallAfter([text] { send({{"type", "canvas_refused"}, {"text", text}}); });
+                CC2::on_refused([](const std::string& text) { // appelé par le fil d'envoi d'Orca
+                    Lifetime::post("un départ refusé", [text] { send({{"type", "canvas_refused"}, {"text", text}}); });
                 });
             }
             if (Json::boolean(data, "clear", false))
@@ -725,11 +765,6 @@ void handle_page_message(const nlohmann::json& data)
             nlohmann::json r = PrinterLink::open_dialog(data.contains("printer") ? data["printer"] : nlohmann::json());
             r["type"]        = "printer_link_dialog_closed";
             send(r);
-        } else if (type == "filament_choose") {
-            nlohmann::json r = FirstSteps::choose_filament(Json::str(data, "material"));
-            r["type"]        = "filament_chosen";
-            send(r);
-            send_values();
         } else if (type == "spools_get") {
             send({{"type", "spools"}, {"items", Spools::list(Json::str(data, "printer"))}});
         } else if (type == "spool_choose") {
@@ -901,6 +936,7 @@ void toggle_assistant(Plater* plater)
         if (s_topbar_button)
             s_topbar_button->CallAfter([] { refresh_topbar_button(); });
     });
+    guard_navigation(panel);
     s_panel           = panel;
     s_refresh_pending = false; // un rafraîchissement en attente meurt avec l'ancien panneau
     AutoSave::start();         // le préréglage de la bobine s'enregistre tout seul tant que le panneau est là

@@ -2,6 +2,7 @@
 #include "slic3r/Utils/Bonjour.hpp"
 
 #include "PlyoDiscovery.hpp"
+#include "PlyoLifetime.hpp"
 #include "PlyoStore.hpp"
 
 #include "slic3r/GUI/GUI_App.hpp"
@@ -278,9 +279,10 @@ bool start(std::function<void(std::vector<Printer>)> done)
                     s_serials[p.ip] = p.serial;
         }
         BOOST_LOG_TRIVIAL(info) << "Plyo: recherche d'imprimantes terminée, " << printers.size() << " trouvée(s)";
-        Slic3r::GUI::wxGetApp().CallAfter([done, printers]() mutable {
+        // Orca fermé entre-temps : rien n'est rappelé (s_running reste levé, plus personne ne relance de recherche).
+        Lifetime::post("la recherche d'imprimantes", [done, printers]() {
             s_running = false;
-            done(std::move(printers));
+            done(printers);
         });
     }).detach();
     return true;

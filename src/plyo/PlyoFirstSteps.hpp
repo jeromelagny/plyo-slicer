@@ -18,11 +18,6 @@ void set_state(const nlohmann::json& patch);
 
 // Parcours : {objects, sliced, slicing, ready_for_print, time_s, weight_g} pour la plaque en cours (0 si pas encore tranchée).
 nlohmann::json tour_signals();
-// Pose le petit bateau (3DBenchy, fourni par Orca) sur le plateau.
-nlohmann::json add_benchy();
-
-// Choisit le filament générique compatible de cette matière (« PLA », « PETG »…) pour le premier filament. { ok, name }
-nlohmann::json choose_filament(const std::string& type);
 // Profil de filament compatible avec la machine en cours pour ce type exact (« PLA », « PLA-CF »…), le plus générique ; vide si aucun.
 std::string best_filament(const std::string& type);
 // Sélectionne ce profil de filament pour le filament `idx` (0 : le premier) dans Orca, comme un choix dans la liste du

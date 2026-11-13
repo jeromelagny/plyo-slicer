@@ -1,13 +1,18 @@
 #include "PlyoFiles.hpp"
 
 #include <boost/filesystem.hpp>
+#include <boost/interprocess/exceptions.hpp>
+#include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/nowide/cstdio.hpp>
 
+#include <atomic>
 #include <cstdio>
 #include <memory>
+#include <string>
 
 #ifdef _WIN32
 #include <io.h>
+#include <process.h>
 #else
 #include <unistd.h>
 #endif
@@ -56,7 +61,22 @@ bool sync(FILE* f)
 #endif
 }
 
+long process_id()
+{
+#ifdef _WIN32
+    return static_cast<long>(_getpid());
+#else
+    return static_cast<long>(getpid());
+#endif
+}
+
 } // namespace
+
+fs::path temp_path_for(const fs::path& path)
+{
+    static std::atomic<unsigned long> counter{0};
+    return path.string() + ".tmp-" + std::to_string(process_id()) + "-" + std::to_string(++counter);
+}
 
 Loaded read_json(const fs::path& path, unsigned long long max_bytes)
 {
@@ -81,7 +101,7 @@ Loaded read_json(const fs::path& path, unsigned long long max_bytes)
 
 bool write_atomic(const fs::path& path, const std::string& text, bool private_file)
 {
-    const fs::path            tmp = path.string() + ".tmp";
+    const fs::path            tmp = temp_path_for(path);
     boost::system::error_code ec;
     fs::create_directories(path.parent_path(), ec);
     {
@@ -105,6 +125,45 @@ bool write_atomic(const fs::path& path, const std::string& text, bool private_fi
     }
     fs::rename(tmp, path, ec);
     return !ec;
+}
+
+struct InstanceLock::Impl
+{
+    boost::interprocess::file_lock lock;
+};
+
+InstanceLock::InstanceLock(const fs::path& file)
+{
+    boost::system::error_code ec;
+    fs::create_directories(file.parent_path(), ec);
+    {
+        // Le fichier doit exister pour être verrouillé ; son contenu ne sert pas.
+        FilePtr f(boost::nowide::fopen(file.string().c_str(), "ab"));
+        if (!f)
+            return;
+    }
+    try {
+        auto impl = std::make_unique<Impl>();
+        impl->lock = boost::interprocess::file_lock(file.string().c_str());
+        if (impl->lock.try_lock()) {
+            m_impl  = std::move(impl);
+            m_state = State::Owned;
+        } else
+            m_state = State::Taken;
+    } catch (const boost::interprocess::interprocess_exception&) {
+        m_state = State::Unknown;
+    }
+}
+
+InstanceLock::~InstanceLock()
+{
+    if (m_impl) {
+        try {
+            m_impl->lock.unlock();
+        } catch (const boost::interprocess::interprocess_exception&) {
+            // rendu par le système à la fermeture du fichier
+        }
+    }
 }
 
 }} // namespace Plyo::Files

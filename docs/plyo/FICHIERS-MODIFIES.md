@@ -74,6 +74,7 @@ code propre à Plyo vit à part (voir « Fichiers ajoutés ») ; dans les fichie
 | `build_release_macos.sh` | `build_slicer`, juste après `./scripts/run_gettext.sh` | `python3 src/plyo/rebrand_translations.py …` | `run_gettext.sh` recompile les traductions d'Orca après la compilation : sans cette ligne, il écraserait les traductions renommées « Plyo Slicer ». | Remettre la ligne après `run_gettext.sh`. | faible |
 | `.github/workflows/build_orca.yml` | étape « Upload artifacts Win installer », `path:` | `*Slicer_Windows_Installer*.exe` au lieu de `OrcaSlicer*.exe` | L'installateur renommé par CPack doit être récupéré à la fin du run. La build Windows de Plyo se lance par `.github/workflows/plyo_windows.yml`. | Reprendre la ligne d'Orca et y mettre ce motif. | moyen (fichier de CI retouché souvent) |
 | `.github/workflows/plyo_windows.yml` | fichier ajouté | Build Windows x64 lancée à la main, qui réutilise `build_check_cache.yml` d'Orca | Produire l'installateur de Plyo sans modifier les déclencheurs d'Orca. | Rien, sauf si Orca renomme ou change les entrées de `build_check_cache.yml`. | faible |
+| `.github/workflows/plyo_tests.yml` | fichier ajouté | Tests de Plyo (JavaScript, Python, C++ de la logique) sur Ubuntu, quand un fichier de Plyo change ; boost des paquets du système (`PLYO_DEPS=system`), sans compiler Orca ni ses dépendances | Les tests de Plyo tournent à chaque changement, pas seulement à la main. Aucun déclencheur d'Orca n'est touché. | Rien, sauf si Orca ajoute un workflow du même nom. | faible |
 
 ## Marque (icônes et logos)
 
@@ -162,3 +163,4 @@ peuvent pas être vérifiés sur la machine :
   réglages modifiables et politique (exclusions, niveaux de risque).
 - `docs/plyo/` : cette liste.
 - `.github/workflows/plyo_windows.yml` : installateur Windows, lancé à la main (voir le tableau).
+- `.github/workflows/plyo_tests.yml` : tests de Plyo en intégration continue (voir le tableau).

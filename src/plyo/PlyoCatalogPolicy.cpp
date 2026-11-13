@@ -1,4 +1,5 @@
 #include "PlyoCatalogPolicy.hpp"
+#include "PlyoJson.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -353,6 +354,63 @@ Verdict check_barrier(const Policy& policy, const std::string& label, const std:
     if (const CheckResult delta = check_delta(label, key, info, value, current); !delta.ok)
         return {delta, "needs_confirmation"};
     return {};
+}
+
+std::string refused_name(const std::string& key, const LabelFn& label_of)
+{
+    const std::string title = key.empty() ? key : label_of(key);
+    return title.empty() || title == key ? std::string("ce réglage") : "« " + title + " »";
+}
+
+std::optional<Refusal> check_planned(const Policy& policy, const std::optional<Probe>& probe, const std::string& key, const std::string& scope,
+                                     const nlohmann::json& value, const std::string& label, double nozzle_mm, const Limits::Range& limits,
+                                     bool confirmed_outside, bool confirmed, Planned& out)
+{
+    if (!probe)
+        return Refusal{"Refusé : « " + label + " » n'existe pas dans ce profil. Aucune modification appliquée.", "", key};
+    const Verdict verdict = check_barrier(policy, label, key, probe->info, value, probe->current, nozzle_mm, limits, confirmed_outside, confirmed);
+    if (!verdict.check.ok)
+        return Refusal{verdict.check.text, verdict.code, key};
+    const std::string text = to_serialized(probe->info, value);
+    if (text.empty())
+        return Refusal{"Refusé : valeur illisible pour « " + label + " ». Aucune modification appliquée.", "", key};
+    out = Planned{key, scope, label, text, probe->info.kind, value, probe->before, confirmed};
+    return std::nullopt;
+}
+
+std::optional<Refusal> check_lot(const Policy& policy, const nlohmann::json& changes, const ProbeFn& probe, const LabelFn& label_of, double nozzle_mm,
+                                 const Limits::Range& limits, std::vector<Planned>& out)
+{
+    out.clear();
+    if (!changes.is_array() || changes.empty())
+        return Refusal{"Refusé : aucune modification reçue.", "", ""};
+    std::vector<std::string> seen;
+    for (const nlohmann::json& change : changes) {
+        const std::string key   = change.is_object() ? Json::str(change, "key") : std::string();
+        const char*       scope = policy.allows("print", key) ? "print" : policy.allows("filament", key) ? "filament" : "";
+        if (*scope == '\0') {
+            out.clear();
+            return Refusal{"Refusé : " + refused_name(key, label_of) + " ne fait pas partie des réglages que l'assistant peut modifier. Aucune modification appliquée.", "", ""};
+        }
+        if (std::find(seen.begin(), seen.end(), key) != seen.end()) {
+            out.clear();
+            return Refusal{"Refusé : " + refused_name(key, label_of) + " est demandé deux fois. Aucune modification appliquée.", "", ""};
+        }
+        seen.push_back(key);
+        // Sans libellé du panneau : le titre du catalogue (les refus ne montrent jamais la clé d'Orca).
+        const std::string label = Json::str(change, "label").empty() ? label_of(key) : Json::str(change, "label");
+        // `confirmed` : la ligne a été cochée à la main, ou le bouton cliqué annonçait cette valeur. `confirmed_outside_range` :
+        // sortie de la plage du fabricant confirmée de la même façon.
+        Planned p;
+        if (std::optional<Refusal> bad = check_planned(policy, probe(scope, key), key, scope, change.contains("value") ? change["value"] : nlohmann::json(),
+                                                       label, nozzle_mm, limits, Json::boolean(change, "confirmed_outside_range", false),
+                                                       Json::boolean(change, "confirmed", false), p)) {
+            out.clear();
+            return bad;
+        }
+        out.push_back(std::move(p));
+    }
+    return std::nullopt;
 }
 
 }} // namespace Plyo::Catalog

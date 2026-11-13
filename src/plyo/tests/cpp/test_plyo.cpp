@@ -24,12 +24,25 @@
 #include "../../PlyoConfigRulesLogic.hpp"
 #include "../../PlyoMemoryLogic.hpp"
 #include "../../PlyoContextLogic.hpp"
+#include "../../PlyoConversations.hpp"
+#include "../../PlyoLifetimeLogic.hpp"
+#include "../../PlyoPageLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
 
+#include <atomic>
+#include <functional>
+#include <iterator>
 #include <random>
+#include <stdexcept>
 #include <string>
+#include <thread>
+
+#ifndef _WIN32
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 namespace fs = boost::filesystem;
 #include <tuple>
@@ -4469,4 +4482,395 @@ TEST_CASE("ProjectLogic : habitude « comme la dernière fois » et panneau au l
     CHECK(opens_panel_at_startup("skipped"));
     CHECK(opens_panel_at_startup(""));
     CHECK_FALSE(opens_panel_at_startup("expert"));
+}
+
+
+// --- Lot 12 de l'audit : page du panneau (scripts, CSP), durée de vie, écritures entre instances, lot vérifié sans Orca ---
+
+namespace {
+
+fs::path lot12_root() { return fs::path(__FILE__).parent_path() / ".." / ".." / ".." / ".."; }
+
+std::string lot12_read(const fs::path& path)
+{
+    boost::nowide::ifstream in(path.string(), std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+} // namespace
+
+TEST_CASE("Lot 12 · ARCH-11 : les scripts inclus viennent des marqueurs de la page, noms filtrés")
+{
+    using Plyo::PageLogic::include_names;
+    const std::string page = "<!--plyo-include:a.js--><!--plyo-include:../x.js--><!--plyo-include:B.js-->"
+                             "<!--plyo-include:style.css--><!--plyo-include:mod-2.js--><!--plyo-include:c.js";
+    CHECK(include_names(page) == std::vector<std::string>{"a.js", "mod-2.js"});
+    CHECK(include_names("").empty());
+}
+
+TEST_CASE("Lot 12 · ARCH-11 : chaque marqueur de la vraie page désigne un fichier du panneau")
+{
+    const fs::path    web  = lot12_root() / "resources" / "web" / "plyo";
+    const std::string page = lot12_read(web / "index.html");
+    REQUIRE_FALSE(page.empty());
+    const std::vector<std::string> names = Plyo::PageLogic::include_names(page);
+    CHECK(names.size() >= 17);
+    CHECK(names.size() == count_of(page, "<!--plyo-include:")); // aucun marqueur au nom refusé
+    for (const std::string& name : names) {
+        INFO(name);
+        CHECK(fs::is_regular_file(web / name));
+    }
+    // Plus de liste en dur côté C++ : la page est la seule liste.
+    const std::string cpp = lot12_read(lot12_root() / "src" / "plyo" / "PlyoAssistant.cpp");
+    CHECK(cpp.find("\"fiches.js\"") == std::string::npos);
+    CHECK(cpp.find("PageLogic::assemble") != std::string::npos);
+}
+
+TEST_CASE("Lot 12 · CSP : origine du service, sans chemin ni caractère qui casserait la politique")
+{
+    using Plyo::PageLogic::origin_of;
+    CHECK(origin_of("http://localhost:3000") == "http://localhost:3000");
+    CHECK(origin_of("https://api.getplyo.app") == "https://api.getplyo.app");
+    CHECK(origin_of("https://API.getplyo.app/v1/?x#y") == "https://api.getplyo.app");
+    CHECK(origin_of("http://127.0.0.1:9") == "http://127.0.0.1:9");
+    CHECK(origin_of("http://[::1]:3000/api") == "http://[::1]:3000");
+    CHECK(origin_of("javascript:alert(1)").empty());
+    CHECK(origin_of("file:///etc/passwd").empty());
+    CHECK(origin_of("https://").empty());
+    CHECK(origin_of("https://user@evil.example").empty());
+    CHECK(origin_of("https://a.example; script-src *").empty());
+    CHECK(origin_of("https://a.example'").empty());
+}
+
+TEST_CASE("Lot 12 · CSP : seulement ce que la page charge, construite d'après l'adresse du service")
+{
+    using Plyo::PageLogic::content_security_policy;
+    const std::string csp = content_security_policy("http://localhost:3000/", "abc123");
+    CHECK(csp == "default-src 'none'; script-src 'nonce-abc123'; style-src 'unsafe-inline'; img-src data: blob:; "
+                 "connect-src http://localhost:3000; base-uri 'none'; form-action 'none'");
+    CHECK(csp.find("unsafe-eval") == std::string::npos);
+    CHECK(csp.find("script-src 'unsafe-inline'") == std::string::npos);
+    CHECK(csp.find("http:;") == std::string::npos);
+    // Adresse illisible : aucune connexion permise (le panneau le vit comme un service injoignable).
+    CHECK(content_security_policy("pas une adresse", "n").find("connect-src 'none';") != std::string::npos);
+    // Banc d'essai : origines de plus ; une origine qui casserait la directive est ignorée.
+    const std::string bench = content_security_policy("http://127.0.0.1:9", "n", {"http://127.0.0.1:*", "x; script-src *"});
+    CHECK(bench.find("connect-src http://127.0.0.1:9 http://127.0.0.1:*;") != std::string::npos);
+    CHECK(bench.find("script-src *") == std::string::npos);
+}
+
+TEST_CASE("Lot 12 · CSP : jeton aléatoire, 32 caractères hexadécimaux, nouveau à chaque page")
+{
+    const std::string a = Plyo::PageLogic::new_nonce(), b = Plyo::PageLogic::new_nonce();
+    CHECK(a.size() == 32);
+    CHECK(a.find_first_not_of("0123456789abcdef") == std::string::npos);
+    CHECK(a != b);
+}
+
+TEST_CASE("Lot 12 · page assemblée : chaque script porte le jeton, la politique ouvre <head>, rien d'autre ne bouge")
+{
+    using Plyo::PageLogic::assemble;
+    const std::string page = "<!doctype html><html><head><meta charset=\"utf-8\"><style>p{}</style></head><body><p>x</p>"
+                             "<!--plyo-config--><!--plyo-include:a.js--><!--plyo-include:../b.js--><script>main();</script></body></html>";
+    const auto read = [](const std::string& name) {
+        return name == "a.js" ? std::string("var s = '</script>'; // <!--plyo-include:a.js-->") : std::string("?");
+    };
+    const std::string out = assemble(page, read, "window.PLYO_API_URL = \"http://x\";", "B.run();", "CSP", "N1");
+    CHECK(out.find("<head>\n<meta http-equiv=\"Content-Security-Policy\" content=\"CSP\"><meta charset") != std::string::npos);
+    CHECK(count_of(out, "<script nonce=\"N1\">") == 4); // configuration, a.js, la page, le pilote
+    CHECK(count_of(out, "<script>") == 0);
+    CHECK(out.find("window.PLYO_API_URL = \"http://x\";") != std::string::npos);
+    CHECK(out.find("var s = '<\\/script>';") != std::string::npos);            // « </script » neutralisé
+    CHECK(out.find("// <!--plyo-include:a.js-->") != std::string::npos);       // marqueur cité par un module : jamais remplacé
+    CHECK(out.find("<!--plyo-include:../b.js-->") != std::string::npos);       // nom refusé : reste un commentaire
+    CHECK(out.find("/* PLYO_SELFTEST */\nB.run();") < out.find("</body>"));
+    CHECK(out.find("main();") < out.find("PLYO_SELFTEST"));                   // le pilote passe après la page
+    CHECK(out.find("<style>p{}</style>") != std::string::npos);
+    // Hors banc : pas de pilote.
+    CHECK(assemble(page, read, "c", "", "CSP", "N1").find("PLYO_SELFTEST") == std::string::npos);
+}
+
+TEST_CASE("Lot 12 · la vraie page assemblée : aucun script sans jeton, aucun attribut d'événement")
+{
+    const fs::path    web  = lot12_root() / "resources" / "web" / "plyo";
+    const std::string page = lot12_read(web / "index.html");
+    REQUIRE_FALSE(page.empty());
+    const auto        read = [&web](const std::string& name) { return lot12_read(web / name); };
+    const std::string csp  = Plyo::PageLogic::content_security_policy("http://127.0.0.1:9", "N");
+    const std::string out  = Plyo::PageLogic::assemble(page, read, "window.PLYO_API_URL = \"http://127.0.0.1:9\";", "", csp, "N");
+    CHECK(count_of(out, "<script") == count_of(out, "<script nonce=\"N\">"));
+    CHECK(count_of(out, "<script nonce=\"N\">") == Plyo::PageLogic::include_names(page).size() + 2);
+    CHECK(out.find("<!--plyo-include:") == std::string::npos);
+    CHECK(out.find("<!--plyo-config-->") == std::string::npos);
+    // La politique interdit les attributs « onclick=… » : la page n'en a aucun (le DOM est construit par le script).
+    for (const char* attr : {" onclick=", " onload=", " onerror=", " onchange=", " oninput=", " onsubmit="})
+        CHECK(page.find(attr) == std::string::npos);
+}
+
+TEST_CASE("Lot 12 · ROB-15 : la porte « on ferme » ne transmet plus rien, même un rappel déjà en file")
+{
+    Plyo::LifetimeLogic::ClosingGate gate;
+    std::vector<std::function<void()>> queue; // la file du fil principal
+    const auto poster = [&queue](std::function<void()> fn) { queue.push_back(std::move(fn)); };
+    int ran = 0;
+    CHECK(gate.post(poster, [&ran] { ++ran; }));
+    REQUIRE(queue.size() == 1);
+    queue[0]();
+    CHECK(ran == 1);
+    CHECK(gate.post(poster, [&ran] { ++ran; })); // en file…
+    gate.close();                                // …puis Orca se ferme avant qu'il passe
+    queue[1]();
+    CHECK(ran == 1);
+    CHECK_FALSE(gate.post(poster, [&ran] { ++ran; }));
+    CHECK(queue.size() == 2);
+    CHECK(gate.closing());
+}
+
+TEST_CASE("Lot 12 · ROB-15 : un fil qui finit après la fermeture ne rappelle pas l'application")
+{
+    Plyo::LifetimeLogic::ClosingGate gate;
+    std::atomic<int>                 posted{0};
+    const auto                       poster = [&posted](std::function<void()>) { ++posted; };
+    gate.close();
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 8; ++i)
+        threads.emplace_back([&] { gate.post(poster, [] {}); });
+    for (std::thread& t : threads)
+        t.join();
+    CHECK(posted == 0);
+}
+
+TEST_CASE("Lot 12 · ROB-18 : le drapeau « une seule fenêtre » retombe en sortant, exception comprise")
+{
+    bool open = false;
+    {
+        const Plyo::LifetimeLogic::FlagReset guard(open);
+        CHECK(open);
+    }
+    CHECK_FALSE(open);
+    try {
+        const Plyo::LifetimeLogic::FlagReset guard(open);
+        throw std::runtime_error("vue web impossible à créer");
+    } catch (const std::runtime_error&) {
+    }
+    CHECK_FALSE(open); // « Se connecter » rouvre la fenêtre
+}
+
+TEST_CASE("Lot 12 · ROB-17 : un échec d'enregistrement a sa raison, distincte de « trop longue »")
+{
+    using Plyo::Conversations::Saved;
+    using Plyo::Conversations::reason;
+    CHECK(reason(Saved::Ok).empty());
+    CHECK(reason(Saved::TooBig) == "too_big");
+    CHECK(reason(Saved::WriteFailed) == "write_failed");
+    CHECK(reason(Saved::Invalid) == "invalid");
+}
+
+TEST_CASE("Lot 12 · ROB-16 : fichier temporaire unique par processus et par écriture, aucun reste")
+{
+    const fs::path a = Plyo::Files::temp_path_for("/x/memoire.json");
+    const fs::path b = Plyo::Files::temp_path_for("/x/memoire.json");
+    CHECK(a != b);
+    CHECK(a.string().rfind("/x/memoire.json.tmp-", 0) == 0);
+    const fs::path dir  = fresh_dir();
+    const fs::path file = dir / "memoire.json";
+    for (int i = 0; i < 5; ++i)
+        REQUIRE(Plyo::Files::write_atomic(file, "{\"n\":" + std::to_string(i) + "}", true));
+    size_t files = 0;
+    for (const fs::directory_entry& e : fs::directory_iterator(dir)) {
+        (void) e;
+        ++files;
+    }
+    CHECK(files == 1);
+    fs::remove_all(dir);
+}
+
+#ifndef _WIN32
+TEST_CASE("Lot 12 · ROB-16 : deux processus qui écrivent le même fichier ne se font jamais échouer, le fichier reste entier")
+{
+    const fs::path dir  = fresh_dir();
+    const fs::path file = dir / "journal.json";
+    const std::string mine = "{\"from\":\"parent\",\"pad\":\"" + std::string(20000, 'p') + "\"}";
+    const std::string its  = "{\"from\":\"enfant\",\"pad\":\"" + std::string(20000, 'e') + "\"}";
+    const pid_t child = fork();
+    REQUIRE(child >= 0);
+    if (child == 0) { // l'autre instance
+        int failed = 0;
+        for (int i = 0; i < 150; ++i)
+            failed += Plyo::Files::write_atomic(file, its, true) ? 0 : 1;
+        _exit(failed == 0 ? 0 : 1);
+    }
+    int failed = 0;
+    for (int i = 0; i < 150; ++i)
+        failed += Plyo::Files::write_atomic(file, mine, true) ? 0 : 1;
+    int status = 0;
+    waitpid(child, &status, 0);
+    CHECK(failed == 0);
+    CHECK((WIFEXITED(status) && WEXITSTATUS(status) == 0));
+    const Plyo::Files::Loaded loaded = Plyo::Files::read_json(file, 1 << 20);
+    REQUIRE(loaded.status == Plyo::Files::Status::Ok);
+    CHECK((Plyo::Json::str(loaded.value, "from") == "parent" || Plyo::Json::str(loaded.value, "from") == "enfant"));
+    size_t files = 0;
+    for (const fs::directory_entry& e : fs::directory_iterator(dir)) {
+        (void) e;
+        ++files;
+    }
+    CHECK(files == 1); // aucun fichier temporaire laissé
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Lot 12 · ROB-16 : le verrou d'instance dit qu'une autre instance tient le dossier, et se libère avec elle")
+{
+    const fs::path dir  = fresh_dir();
+    const fs::path lock = dir / "plyo" / ".lock";
+    int to_parent[2], to_child[2];
+    REQUIRE(pipe(to_parent) == 0);
+    REQUIRE(pipe(to_child) == 0);
+    const pid_t child = fork();
+    REQUIRE(child >= 0);
+    if (child == 0) { // la première instance : tient le verrou jusqu'au signal
+        Plyo::Files::InstanceLock held(lock);
+        const char state = held.state() == Plyo::Files::InstanceLock::State::Owned ? 'o' : 'x';
+        if (write(to_parent[1], &state, 1) != 1)
+            _exit(2);
+        char go = 0;
+        if (read(to_child[0], &go, 1) != 1)
+            _exit(2);
+        _exit(0);
+    }
+    char state = 0;
+    REQUIRE(read(to_parent[0], &state, 1) == 1);
+    CHECK(state == 'o');
+    {
+        const Plyo::Files::InstanceLock second(lock);
+        CHECK(second.state() == Plyo::Files::InstanceLock::State::Taken);
+    }
+    const char go = 'g';
+    REQUIRE(write(to_child[1], &go, 1) == 1);
+    int status = 0;
+    waitpid(child, &status, 0);
+    {
+        const Plyo::Files::InstanceLock after(lock); // la première s'est arrêtée : le verrou est libre
+        CHECK(after.state() == Plyo::Files::InstanceLock::State::Owned);
+    }
+    for (int fd : {to_parent[0], to_parent[1], to_child[0], to_child[1]})
+        close(fd);
+    fs::remove_all(dir);
+}
+#endif
+
+namespace {
+
+Plyo::Catalog::Policy lot12_policy()
+{
+    const json policy = {{"forbidden_patterns", {"gcode"}}, {"forbidden_keys", json::array()}, {"confirm_patterns", json::array()},
+                         {"confirm_keys", {"filament_flow_ratio"}}};
+    const json keys = {{"print", {{"layer_height", "float"}, {"wall_loops", "int"}, {"seam_position", "enum"}}},
+                       {"filament", {{"nozzle_temperature", "int"}, {"filament_flow_ratio", "float"}}},
+                       {"titles", {{"layer_height", "Hauteur de couche"}, {"wall_loops", "Parois"}, {"nozzle_temperature", "Température de buse"}}}};
+    return Plyo::Catalog::Policy::from_json(policy, keys);
+}
+
+// Profil simulé : ce qu'Orca dirait de chaque clé (absente : l'option n'existe pas dans ce profil).
+std::optional<Plyo::Catalog::Probe> lot12_probe(const std::string& scope, const std::string& key)
+{
+    using Plyo::Catalog::Probe;
+    if (scope == "print" && key == "layer_height")
+        return Probe{{"float", 0, 1000, {}}, json(0.2), json(0.2)};
+    if (scope == "print" && key == "wall_loops")
+        return Probe{{"int", 0, 1000, {}}, json(2), json(2)};
+    if (scope == "filament" && key == "nozzle_temperature")
+        return Probe{{"int", 0, 1500, {}}, json(210), json(210)};
+    if (scope == "filament" && key == "filament_flow_ratio")
+        return Probe{{"float", 0, 2, {}}, json(0.98), json(0.98)};
+    return std::nullopt; // seam_position : au catalogue, mais pas dans ce profil
+}
+
+std::string lot12_label(const std::string& key)
+{
+    const std::string title = lot12_policy().title(key);
+    return title.empty() ? key : title;
+}
+
+} // namespace
+
+TEST_CASE("Lot 12 · ARCH-16 : un lot valide est prévu en entier, valeur lue comme Orca, valeur d'avant gardée")
+{
+    std::vector<Plyo::Catalog::Planned> planned;
+    const json changes = json::array({{{"key", "layer_height"}, {"value", 0.24}}, {{"key", "nozzle_temperature"}, {"value", 215}, {"label", "Buse"}}});
+    const auto bad = Plyo::Catalog::check_lot(lot12_policy(), changes, lot12_probe, lot12_label, 0.4, no_limits, planned);
+    REQUIRE_FALSE(bad.has_value());
+    REQUIRE(planned.size() == 2);
+    CHECK(planned[0].scope == "print");
+    CHECK(planned[0].label == "Hauteur de couche"); // sans libellé du panneau : le titre du catalogue
+    CHECK(planned[0].text == "0.24");
+    CHECK(planned[0].before == json(0.2));
+    CHECK(planned[1].scope == "filament");
+    CHECK(planned[1].label == "Buse");
+    CHECK(planned[1].text == "215");
+    CHECK_FALSE(planned[1].confirmed);
+}
+
+TEST_CASE("Lot 12 · ARCH-16 : tout ou rien, le premier refus arrête le lot et ne prévoit rien")
+{
+    using Plyo::Catalog::check_lot;
+    const auto policy = lot12_policy();
+    std::vector<Plyo::Catalog::Planned> planned;
+    const auto run = [&](const json& changes) { return check_lot(policy, changes, lot12_probe, lot12_label, 0.4, no_limits, planned); };
+
+    auto bad = run(json::array());
+    REQUIRE(bad.has_value());
+    CHECK(bad->text == "Refusé : aucune modification reçue.");
+
+    // Hors catalogue (G-code, imprimante) : refusé sans jamais montrer la clé d'Orca.
+    bad = run(json::array({{{"key", "layer_height"}, {"value", 0.24}}, {{"key", "machine_start_gcode"}, {"value", "G28"}}}));
+    REQUIRE(bad.has_value());
+    CHECK(bad->text == "Refusé : ce réglage ne fait pas partie des réglages que l'assistant peut modifier. Aucune modification appliquée.");
+    CHECK(planned.empty());
+
+    bad = run(json::array({{{"key", "wall_loops"}, {"value", 3}}, {{"key", "wall_loops"}, {"value", 3}}}));
+    REQUIRE(bad.has_value());
+    CHECK(bad->text == "Refusé : « Parois » est demandé deux fois. Aucune modification appliquée.");
+
+    bad = run(json::array({{{"key", "seam_position"}, {"value", "back"}}}));
+    REQUIRE(bad.has_value());
+    CHECK(bad->text == "Refusé : « seam_position » n'existe pas dans ce profil. Aucune modification appliquée.");
+    CHECK(bad->key == "seam_position");
+
+    // Dernière barrière : plafond de température, même confirmé ; type faux.
+    bad = run(json::array({{{"key", "nozzle_temperature"}, {"value", 320}, {"confirmed", true}, {"confirmed_outside_range", true}}}));
+    REQUIRE(bad.has_value());
+    CHECK(bad->key == "nozzle_temperature");
+    CHECK(bad->code.empty());
+    bad = run(json::array({{{"key", "wall_loops"}, {"value", "trois"}}}));
+    REQUIRE(bad.has_value());
+    CHECK(bad->key == "wall_loops");
+    CHECK(planned.empty());
+}
+
+TEST_CASE("Lot 12 · ARCH-16 : réglage sensible ou écart trop grand : une confirmation suffit, et le dit")
+{
+    using Plyo::Catalog::check_lot;
+    const auto policy = lot12_policy();
+    std::vector<Plyo::Catalog::Planned> planned;
+    auto bad = check_lot(policy, json::array({{{"key", "filament_flow_ratio"}, {"value", 0.95}}}), lot12_probe, lot12_label, 0.4, no_limits, planned);
+    REQUIRE(bad.has_value());
+    CHECK(bad->code == "needs_confirmation");
+    bad = check_lot(policy, json::array({{{"key", "filament_flow_ratio"}, {"value", 0.95}, {"confirmed", true}}}), lot12_probe, lot12_label, 0.4, no_limits, planned);
+    CHECK_FALSE(bad.has_value());
+    REQUIRE(planned.size() == 1);
+    CHECK(planned[0].confirmed);
+    // Écart : 2 → 20 parois.
+    bad = check_lot(policy, json::array({{{"key", "wall_loops"}, {"value", 20}}}), lot12_probe, lot12_label, 0.4, no_limits, planned);
+    REQUIRE(bad.has_value());
+    CHECK(bad->code == "needs_confirmation");
+    CHECK(planned.empty());
+}
+
+TEST_CASE("Lot 12 · ARCH-16 : refused_name ne montre jamais la clé d'Orca")
+{
+    using Plyo::Catalog::refused_name;
+    CHECK(refused_name("layer_height", lot12_label) == "« Hauteur de couche »");
+    CHECK(refused_name("seam_position", lot12_label) == "ce réglage");
+    CHECK(refused_name("", lot12_label) == "ce réglage");
 }

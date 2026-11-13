@@ -1,4 +1,5 @@
 #include "PlyoProject.hpp"
+#include "PlyoLifetime.hpp"
 #include "PlyoAutoSave.hpp"
 
 #include "PlyoCanvas.hpp"
@@ -142,7 +143,7 @@ void reachable(const std::string& preset, std::function<void(bool)> done)
         } catch (const std::exception& e) {
             BOOST_LOG_TRIVIAL(info) << "Plyo: imprimante injoignable : " << e.what();
         }
-        wxGetApp().CallAfter([done, ok] { done(ok); });
+        Lifetime::post("le test de l'imprimante du projet", [done, ok] { done(ok); });
     }).detach();
 }
 

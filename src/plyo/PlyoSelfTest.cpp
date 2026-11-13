@@ -272,13 +272,15 @@ void startup_kept_closed()
 
 std::string page_script()
 {
-    if (!active())
-        return std::string();
-    // Une balise </script> dans le texte du pilote fermerait la nôtre : on la neutralise.
-    std::string script = bench().script;
-    for (size_t at = script.find("</script"); at != std::string::npos; at = script.find("</script", at + 2))
-        script.replace(at, 2, "<\\/");
-    return "<script>\n/* PLYO_SELFTEST */\n" + script + "\n</script>\n";
+    // Texte seul : PageLogic::assemble l'insère dans une balise qui porte le jeton de la page (et neutralise « </script »).
+    return active() ? bench().script : std::string();
+}
+
+std::vector<std::string> page_connect_sources()
+{
+    // Le pilote parle au faux hôte d'impression local (PLYO_BANC_HOST, port choisi par la préparation) : 127.0.0.1 seulement,
+    // et seulement pendant le banc. Hors banc, aucune origine de plus.
+    return active() ? std::vector<std::string>{"http://127.0.0.1:*"} : std::vector<std::string>();
 }
 
 bool handle(const std::string& type, const nlohmann::json& data, const std::function<void(const nlohmann::json&)>& send)

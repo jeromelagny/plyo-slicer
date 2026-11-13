@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -112,5 +113,51 @@ struct Verdict
 Verdict check_barrier(const Policy& policy, const std::string& label, const std::string& key, const OptionInfo& info,
                       const nlohmann::json& value, const nlohmann::json& current, double nozzle_mm, const Limits::Range& limits,
                       bool confirmed_outside, bool confirmed);
+
+// --- Lot de changements du catalogue, vérifié en entier avant toute écriture (tout ou rien, ARCH-16) ---
+// Logique de SettingsBridge::apply_catalog_changes sortie du pont : ce qu'elle lit d'Orca lui est passé (ProbeFn), le reste
+// est testable sans Orca.
+
+// Ce que le pont lit d'Orca pour une clé dans le profil édité de sa portée.
+struct Probe
+{
+    OptionInfo     info;    // type (politique), bornes et valeurs permises (définition d'Orca)
+    nlohmann::json current; // valeur du relevé (celle que l'IA a vue) : sert aux bornes strictes et aux écarts
+    nlohmann::json before;  // valeur du profil édité, gardée pour l'annulation et le journal
+};
+
+// Changement accepté, prêt à écrire.
+struct Planned
+{
+    std::string    key, scope, label, text, kind; // text : la valeur comme Orca la relit (to_serialized)
+    nlohmann::json value, before;
+    bool           confirmed = false;
+};
+
+// Refus : la phrase montrée telle quelle, `code` (« needs_confirmation » quand une confirmation suffirait, vide sinon) et le
+// réglage en cause (`key`, vide si aucun : le panneau propose alors « Montre-moi ce réglage » ou non).
+struct Refusal
+{
+    std::string text, code, key;
+};
+
+// Lecture d'une clé dans le profil édité de `scope` (« print », « filament ») ; vide si l'option n'existe pas dans ce profil.
+using ProbeFn = std::function<std::optional<Probe>(const std::string& scope, const std::string& key)>;
+// Nom français d'un réglage (titre du catalogue, ou libellé d'Orca) ; la clé elle-même quand il n'y en a pas.
+using LabelFn = std::function<std::string(const std::string& key)>;
+
+// Réglage nommé dans un refus : « Titre », ou « ce réglage » quand il n'a pas de nom (jamais la clé d'Orca).
+std::string refused_name(const std::string& key, const LabelFn& label_of);
+
+// Un changement (du lot, ou ajouté par une règle d'Orca) : existence dans le profil, dernière barrière (check_barrier), valeur
+// lisible par Orca. Rend le refus, ou rien et `out` rempli.
+std::optional<Refusal> check_planned(const Policy& policy, const std::optional<Probe>& probe, const std::string& key, const std::string& scope,
+                                     const nlohmann::json& value, const std::string& label, double nozzle_mm, const Limits::Range& limits,
+                                     bool confirmed_outside, bool confirmed, Planned& out);
+
+// Le lot reçu du panneau ([{key, value, label?, confirmed?, confirmed_outside_range?}]), dans l'ordre : clé du catalogue
+// (portée impression, sinon filament), pas deux fois la même, puis check_planned. Au premier refus, rien n'est prévu.
+std::optional<Refusal> check_lot(const Policy& policy, const nlohmann::json& changes, const ProbeFn& probe, const LabelFn& label_of, double nozzle_mm,
+                                 const Limits::Range& limits, std::vector<Planned>& out);
 
 }} // namespace Plyo::Catalog

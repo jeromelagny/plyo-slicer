@@ -6074,7 +6074,8 @@
 
   // ---------- Messages du slicer ----------
   var autoOpening = null;     // plus de réouverture d'office au lancement : reste à null
-  var saveFailedShown = false; // « conversation trop longue » : dit une seule fois
+  var saveFailedShown = {};   // projet non enregistré : chaque raison dite une seule fois (trop long, disque, autre)
+  var otherInstanceShown = false; // Plyo ouvert deux fois : dit une seule fois
   window.orca.onMessage(function (msg) {
     if (!msg || !msg.type) return;
     if (msg.type === 'session') {
@@ -6282,7 +6283,10 @@
       // Au lancement, le panneau reste sur son accueil (plus de réouverture d'office) : la liste ne sert qu'au volet.
       fillConversations(msg.items || []);
     } else if (msg.type === 'conv_save_failed') {
-      if (!saveFailedShown) { saveFailedShown = true; noteLine('Ce projet est devenu trop long pour être gardé : commence un nouveau projet depuis le menu « ⋯ ».', 'error', 'alert'); }
+      var why = msg.reason || 'too_big';
+      if (!saveFailedShown[why]) { saveFailedShown[why] = true; noteLine(Logic.saveFailedText(why), 'error', 'alert'); }
+    } else if (msg.type === 'other_instance') {
+      if (!otherInstanceShown) { otherInstanceShown = true; noteLine(Logic.OTHER_INSTANCE_TEXT, 'error', 'alert'); }
     } else if (msg.type === 'project_restored') {
       onProjectRestored(msg);
     } else if (msg.type === 'project_opened') {

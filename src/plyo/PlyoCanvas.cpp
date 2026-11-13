@@ -1,5 +1,6 @@
 // Sous Windows, boost (asio, via PlyoCC2.hpp) doit être inclus avant les en-têtes de wxWidgets.
 #include "PlyoCanvas.hpp"
+#include "PlyoLifetime.hpp"
 
 #include "PlyoCC2.hpp"
 #include "PlyoAutoSave.hpp"
@@ -248,7 +249,7 @@ void read(const std::string& printer_preset, std::function<void(nlohmann::json)>
     std::thread([t, cols, done = std::move(done)]() {
         nlohmann::json out = read_unit(t);
         out["colours"]     = cols;
-        wxGetApp().CallAfter([done, out, host = t.host] {
+        Lifetime::post("la lecture des emplacements", [done, out, host = t.host] {
             g_last_read = {{"host", host}, {"ok", Json::boolean(out, "ok", false)}, {"imposable", Json::boolean(out, "imposable", false)}, {"source", Json::str(out, "source")}};
             done(out);
         });
@@ -329,7 +330,10 @@ bool orca_state(std::vector<int>& sliced_t, std::vector<std::string>& presets)
     using Result = std::pair<std::vector<int>, std::vector<std::string>>;
     auto promise = std::make_shared<std::promise<Result>>();
     auto future  = promise->get_future();
-    wxGetApp().CallAfter([promise, read_now] {
+    // Orca qui se ferme : rien n'est lu (le départ avec carte est refusé, comme après 5 s sans réponse).
+    if (Lifetime::closing())
+        return false;
+    Lifetime::post("la lecture des pièces découpées", [promise, read_now] {
         Result r;
         read_now(r.first, r.second);
         promise->set_value(std::move(r));
@@ -477,7 +481,7 @@ void send_planned(const std::string& printer_preset, std::function<void(nlohmann
     g_send_busy = true;
     std::thread([t, done = std::move(done)]() {
         const nlohmann::json state = read_unit(t);
-        wxGetApp().CallAfter([t, state, done] {
+        Lifetime::post("l'envoi avec emplacements", [t, state, done] {
             g_send_busy = false;
             done(finish_send(t, state));
         });
@@ -495,7 +499,7 @@ void start_plain(const std::string& printer_preset, std::function<void(nlohmann:
         std::string error;
         const bool  ok = CC2::start_again_plain(host, code, error);
         const nlohmann::json out = {{"ok", ok}, {"text", ok ? std::string("L'impression a démarré ; l'imprimante a choisi les emplacements.") : error}};
-        wxGetApp().CallAfter([done, out] { done(out); });
+        Lifetime::post("le départ sans carte", [done, out] { done(out); });
     }).detach();
 }
 
