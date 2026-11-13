@@ -19,7 +19,11 @@
     if (!rows.length) return;
     var card = ui.el('div', 'project' + (ctx.compact ? ' compact' : ''));
     if (ctx.compact) {
-      card.appendChild(ui.button(root.PlyoJourney.ficheSummary(project), h.expand, 'link project-summary'));
+      // Une ligne coupée par des points de suspension (N6) : le texte entier au survol et pour les lecteurs d'écran.
+      var sum = root.PlyoJourney.ficheSummary(project), line = ui.button(sum, h.expand, 'link project-summary');
+      line.title = sum;
+      line.setAttribute('aria-label', sum + ' : afficher le détail');
+      card.appendChild(line);
       slot.appendChild(card);
       return;
     }

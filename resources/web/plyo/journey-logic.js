@@ -84,6 +84,8 @@
     if (step === 'imprimer') {
       if (!c.sliced) return slice;
       if (c.blocked) return { label: '', kind: 'none', enabled: false }; // jamais « Imprimer » sur une plaque qu'Orca juge non imprimable
+      // Fichier exporté (N3) : ce qui fait avancer, c'est de dire que l'impression a démarré ; l'export reste en secondaire.
+      if (c.exported) return { label: 'L’impression a démarré', kind: 'started', enabled: true };
       return c.linked ? { label: 'Envoyer et imprimer', kind: 'send', enabled: !c.sending } : { label: 'Exporter le fichier', kind: 'export', enabled: !c.sending };
     }
     if (step === 'resultat') {
@@ -165,9 +167,12 @@
   }
 
   // Choisir une matière peut changer le profil de filament d'Orca : on le dit, un profil modifié ou de marque n'est plus celui utilisé.
-  function profileChangeNote(before, after) {
+  // `show` (facultatif) : raccourci d'affichage des noms (Logic.shortName, sans « @machine ») ; la comparaison garde les noms entiers.
+  function profileChangeNote(before, after, show) {
     if (!before || !after || baseName(before) === baseName(after)) return '';
-    return 'Profil de filament changé dans Orca : « ' + before + ' » devient « ' + after + ' ».';
+    var b = show ? show(before) || before : before, a = show ? show(after) || after : after;
+    if (b === a) { b = before; a = after; } // raccourcis identiques : les noms entiers, pour que la différence se voie
+    return 'Profil de filament changé dans Orca : « ' + b + ' » devient « ' + a + ' ».';
   }
   function afterPreflight(risks) { return risks === 0 ? 'advance' : 'stay'; }
   // Message au passage à l'impression : « Pas de risque » seulement si la vérification n'a rien trouvé, même ignoré.
@@ -405,10 +410,23 @@
     return '';
   }
 
+  // Ce qui manque encore parmi `missing` (printer, part, filament) une fois la fiche changée : un message qui demandait de les
+  // choisir n'est plus vrai quand cette liste est vide (N2).
+  function stillMissing(project, missing) {
+    var p = project || {}, next = P.nextStep(p);
+    return (Array.isArray(missing) ? missing : []).filter(function (k) {
+      return k === 'printer' ? next === 'printer' : k === 'filament' ? !(p.filament && !p.filament.proposed && p.filament.preset) : k === 'part' ? !(p.part && p.part.name) : false;
+    });
+  }
+  // Phrase dite quand la fiche est complète (N2) : une fiche de réglages encore à appliquer dans la discussion passe avant
+  // l'invitation à montrer la pièce (le diagnostic est déjà fait).
+  var FICHE_WAITS = 'C’est noté. Ta fiche de réglages t’attend dans la discussion : clique sur « Appliquer ».';
+  function completionText(asked, fichePending) { return fichePending ? FICHE_WAITS : asked || FICHE_WAITS; }
+
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;

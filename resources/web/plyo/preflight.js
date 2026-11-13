@@ -194,6 +194,8 @@
   // et identifiants d'Orca, jamais de son texte : c'est lui qui choisit l'explication. Le texte d'Orca n'est que montré (entre
   // guillemets) et passé à l'assistant.
   var ASK_LABEL = 'Demander à l’assistant (utilise ta jauge)';
+  // Sans compte (N7) : le bouton le dit ; la question est gardée et part après la connexion (afterLogin, index.html).
+  var ASK_LOGIN_LABEL = 'Me connecter pour demander à l’assistant';
   var ARRANGE_ACT = { kind: 'plate', action: 'arrange', label: 'Ranger le plateau' };
   var SCOPES = { print: true, filament: true }; // réglages que l'assistant peut changer (catalogue Impression et Filament)
 
@@ -238,8 +240,39 @@
     nozzle_height: function () { return { text: 'Une partie de la plaque est trop haute pour l’une des buses.', actions: [] }; },
     not_printable: function () { return { text: 'Orca a découpé ta plaque, mais ne la juge pas imprimable telle quelle.', actions: [] }; },
     empty_layers: function (i, p, P) { return { text: P + ' a des couches vides à certaines hauteurs : des parties sont trop fines, ou le fichier est abîmé. L’impression risque de rater à cet endroit.', actions: [] }; },
-    exclusion_area: function () { return { text: 'Un trajet de la buse passe dans une zone interdite du plateau.', actions: [ARRANGE_ACT] }; }
+    exclusion_area: function () { return { text: 'Un trajet de la buse passe dans une zone interdite du plateau.', actions: [ARRANGE_ACT] }; },
+    // N7 : avertissements et refus courants d'Orca qui n'avaient pas d'explication (identifiants, jamais le texte d'Orca).
+    filaments_temp: function () { return { text: 'Les filaments de ta plaque demandent des températures de buse trop différentes : imprimés ensemble, l’un risque de boucher la buse ou de mal coller.', actions: [{ kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' }] }; },
+    skirt_brim: function () { return { text: 'Orca n’a pas pu tracer la bordure (rebord collé autour de la pièce) ou la jupe (contour tracé autour d’elle) : la pièce est peut-être trop près du bord du plateau.', actions: [ARRANGE_ACT] }; },
+    precise_seam: function (i, p) { return { text: 'Une zone ajoutée sur ' + p + ' pour placer la couture (l’endroit où chaque tour de paroi commence) n’a pas d’effet : la couture risque d’être ailleurs. Seul l’aspect change, pas la solidité.', actions: [] }; },
+    support_base_pattern: function () { return { text: 'Le motif choisi pour la base des supports ne va pas avec ce type de supports : Orca en prend un autre tout seul.', actions: [] }; },
+    precise_outer_wall: function () { return { text: 'L’option « Parois précises » ne marche pas avec l’ordre des parois choisi : Orca l’ignore et imprime sans elle.', actions: [] }; },
+    adaptive_layer_height: function () { return { text: 'La tour de purge (le petit bloc qui nettoie la buse entre deux couleurs) ne marche pas avec la hauteur de couche adaptative : toutes les pièces doivent avoir la même hauteur de couche.', actions: [] }; },
+    enable_prime_tower: function (i) { return { text: 'La tour de purge (le petit bloc qui nettoie la buse entre deux couleurs) ne va pas avec tes réglages actuels' +
+      (i.level === 'error' ? ' : en impression pièce par pièce, Orca ne sait pas la faire.' : '.'), actions: [] }; }
   };
+  // Ce que le problème change pour l'impression, dit juste après l'explication (N7) : bloquant ou non.
+  function impactOf(i) {
+    if (i.level !== 'error') return 'Ce n’est pas bloquant : tu peux imprimer quand même.';
+    if (i.source === 'gcode_check') return 'C’est bloquant : Orca ne laissera pas imprimer cette plaque tant que ce n’est pas réglé.';
+    return 'C’est bloquant : tant que ce n’est pas réglé, Orca ne découpera pas ta plaque, et rien ne peut partir à l’imprimante.';
+  }
+  // Au moins une suite gratuite et sans compte, adaptée (N7). Avertissement : voir l'aperçu, ou continuer (il n'est pas
+  // bloquant : « Continuer quand même » ferme la carte, sans contourner aucun refus). Erreur : annuler les derniers réglages
+  // appliqués s'il y en a, sinon découper à nouveau ; contrôle du G-code : l'aperçu montre où.
+  var FREE = { fix: true, plate: true, slice: true, import: true, export: true, show_me: true, show_setting: true, preview: true };
+  var PREVIEW_ACT = { kind: 'preview', label: 'Voir l’aperçu' };
+  var UNDO_LAST_ACT = { kind: 'undo_last', label: 'Annuler les derniers réglages de l’assistant' };
+  function freeActions(i, actions, ctx) {
+    var repairs = actions.some(function (a) { return a.kind === 'fix' || a.kind === 'plate'; });
+    var free = actions.some(function (a) { return FREE[a.kind]; });
+    var out = [];
+    if (!repairs && ctx.canUndo) out.push(UNDO_LAST_ACT);
+    if (i.level !== 'error') return out.concat([PREVIEW_ACT, { kind: 'dismiss', label: 'Continuer quand même' }]);
+    if (i.source === 'gcode_check') out.push(PREVIEW_ACT);
+    else if (!free && !out.length) out.push({ kind: 'slice', label: 'Découper à nouveau' });
+    return out;
+  }
   // « Pièce flottante » : déjà dans la carte « Avant d'imprimer » (risque « support »), avec ses corrections.
   var LEFT_TO_PREFLIGHT = { need_support: true };
 
@@ -265,25 +298,29 @@
     return said + ' Explique-moi simplement ce qui se passe et comment le corriger.';
   }
 
-  // Carte d'un problème : { tone, title, text, quote, actions: [{ kind: fix|show_setting|show_me|plate|slice|import|ask, label, … }] }.
-  // Réglage de l'imprimante ou G-code : expliqué, montré, jamais modifié.
-  function orcaIssueView(issue) {
-    var i = issue || {}, p = pieceOf(i, false), P = pieceOf(i, true);
+  // Carte d'un problème : { tone, title, text, impact, quote, quoteMain, actions: [{ kind: fix|show_setting|show_me|plate|slice|import|
+  // preview|undo_last|dismiss|ask, label, … }] }. D'abord ce qui se passe, puis ce que ça change (bloquant ou non) ; le texte d'Orca
+  // n'est qu'une citation secondaire. Toujours une suite gratuite. Réglage de l'imprimante ou G-code : expliqué, montré, jamais modifié.
+  // ctx : { canUndo } (un lot appliqué peut être annulé).
+  function orcaIssueView(issue, ctx) {
+    var i = issue || {}, c = ctx || {}, p = pieceOf(i, false), P = pieceOf(i, true);
     var known = EXPLAIN[i.code] ? EXPLAIN[i.code](i, p, P) : null;
     var warn = i.level !== 'error';
-    var view = { tone: warn ? 'warn' : 'error', title: TITLES[i.source] || (warn ? 'Orca prévient' : 'Orca a un souci'), text: '', quote: i.text || '', actions: [] };
+    var view = { tone: warn ? 'warn' : 'error', title: TITLES[i.source] || (warn ? 'Orca prévient' : 'Orca a un souci'), text: '', impact: impactOf(i), quote: i.text || '', quoteMain: false, actions: [] };
     if (known) {
       view.text = known.text;
       view.actions = known.actions.filter(function (a) { return a.kind !== 'fix' || a.changes.every(function (c) { return c.key; }); });
     } else {
-      // Pas d'explication Plyo : le texte d'Orca est montré comme tel, et l'assistant peut l'expliquer.
-      view.text = i.text ? (warn ? 'Orca prévient' : 'Orca dit') + (i.object_name ? ' à propos de ' + p : '') + ' :' : 'Orca signale un problème' + (i.object_name ? ' sur ' + p : '') + ', sans me donner de détail.';
-      view.quoteMain = !!i.text;
+      // Pas d'explication Plyo : on le dit simplement ; le texte d'Orca (parfois en anglais) reste un détail cité.
+      var on = i.object_name ? ' sur ' + p : '';
+      view.text = (warn ? 'Orca signale un point à surveiller' + on : 'Orca a trouvé un problème' + on) +
+        (i.text ? ', que je ne sais pas encore expliquer.' : ', sans me donner de détail.');
     }
     if (i.opt_key && !view.actions.some(function (a) { return a.kind === 'fix'; })) {
       view.actions.push({ kind: 'show_setting', key: i.opt_key, label: 'Montre-moi ce réglage' });
       if (i.scope === 'printer') view.note = 'Ce réglage fait partie du profil de l’imprimante : je ne le modifie pas, je te montre où il est.';
     }
+    view.actions = view.actions.concat(freeActions(i, view.actions, c));
     if (!(known && known.noAsk)) view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: askPrompt(i, known ? known.text.replace(/[.:]$/, '') : '') });
     return view;
   }
@@ -342,8 +379,8 @@
     interrupted: function (n) { return 'La liaison avec ' + n + ' s’est coupée pendant l’envoi : le fichier n’est pas arrivé en entier. Vérifie son Wi-Fi, puis réessaie.'; },
     // Erreur sans code après « 100 % » (Elegoo CC2, par exemple) : le fichier est arrivé, c'est le démarrage qui n'est pas confirmé.
     no_confirmation: function (n) { return 'Le fichier est bien arrivé sur ' + n + ', mais elle n’a pas confirmé le démarrage de l’impression. Regarde son écran : si elle imprime, dis-le-moi ; sinon, lance le fichier depuis son écran, ou réessaie l’envoi.'; },
-    before_send: function () { return 'Orca a refusé de lancer l’envoi. Voici ce qu’il dit :'; },
-    unknown: function () { return 'Orca n’a pas pu envoyer le fichier, et je ne reconnais pas la raison. Voici ce qu’il dit :'; }
+    before_send: function () { return 'Orca a refusé de lancer l’envoi, sans une raison que je sache expliquer. Rien n’est parti : réessaie, ou exporte le fichier pour une carte SD ou une clé USB.'; },
+    unknown: function () { return 'Orca n’a pas pu envoyer le fichier, et je ne reconnais pas la raison. Rien n’est parti : réessaie, ou exporte le fichier pour une carte SD ou une clé USB.'; }
   };
   // Suites proposées, dans l'ordre : la plus utile d'abord.
   var UPLOAD_ACTIONS = {
@@ -362,9 +399,9 @@
     var quote = typeof f.text === 'string' ? f.text : '';
     // Fichier arrivé, démarrage non confirmé : le titre ne dit pas « n'a pas abouti » (le texte dit que le fichier est là).
     var title = code === 'no_confirmation' ? 'Démarrage non confirmé sur ' + n : 'L’envoi à ' + n + ' n’a pas abouti';
+    // Le texte d'Orca (souvent en anglais pour un échec réseau) n'est qu'un détail cité sous la phrase de Plyo (N7).
     var view = { tone: code === 'no_confirmation' ? 'warn' : 'error', title: title, text: UPLOAD_TEXTS[code](n), quote: quote,
-      quoteMain: code === 'unknown' || code === 'before_send', actions: acts(UPLOAD_ACTIONS[code]) };
-    if ((code === 'unknown' || code === 'before_send') && !quote) view.text = view.text.replace(/ Voici ce qu’il dit :$/, '');
+      quoteMain: false, actions: acts(UPLOAD_ACTIONS[code]) };
     view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: (code === 'no_confirmation' ? 'Mon fichier est arrivé sur mon imprimante, mais elle n’a pas confirmé le démarrage de l’impression.' : 'L’envoi de mon fichier à mon imprimante n’a pas abouti.') +
       (quote ? ' Orca dit : « ' + quote + ' ».' : '') + ' Explique-moi simplement ce qui se passe et quoi faire.' });
     return view;
@@ -396,8 +433,11 @@
   function dialogView(d) {
     var x = d || {}, quote = typeof x.text === 'string' ? x.text : '';
     var addModel = x.during === 'model_add';
+    // N7 : ce qui se passe et la suite d'abord, gratuite ; le texte de la fenêtre n'est qu'une citation.
     var view = { tone: 'error', title: addModel ? 'Orca n’a pas pu ajouter ta pièce' : 'Orca a affiché une erreur',
-      text: quote ? 'Voici ce qu’il dit :' : 'Il ne m’a pas donné de détail.', quote: quote, quoteMain: !!quote, actions: addModel ? acts(['import']) : [] };
+      text: addModel ? 'Orca n’a pas pu ouvrir ce fichier, pour une raison que je ne sais pas encore expliquer. Rien n’a été ajouté au plateau : essaie un autre fichier (STL ou 3MF).'
+        : 'Orca a affiché une erreur que je ne sais pas encore expliquer. Refais ce que tu étais en train de faire ; si c’était une découpe, découpe à nouveau ta plaque.',
+      quote: quote, quoteMain: false, actions: addModel ? acts(['import']) : [{ kind: 'slice', label: 'Découper à nouveau' }] };
     view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: (quote ? 'Orca m’a affiché ce message d’erreur : « ' + quote + ' ».' : 'Orca m’a affiché une erreur sans détail.') +
       (addModel ? ' C’était en ajoutant un fichier 3D.' : '') + ' Explique-moi simplement ce qui se passe et comment le corriger.' });
     return view;
@@ -415,7 +455,7 @@
   var api = { preflightRisks: preflightRisks, riskKey: riskKey, preflightPlan: preflightPlan, fixChanges: fixChanges, fixBatch: fixBatch, undoText: undoText,
     leftoverNames: leftoverNames, SLICE_NOT_STARTED_AFTER_CHANGE: SLICE_NOT_STARTED_AFTER_CHANGE,
     orcaCards: orcaCards, orcaIssueView: orcaIssueView, issueKey: issueKey, askPrompt: askPrompt, exportErrorView: exportErrorView,
-    SLICE_SLOW: SLICE_SLOW, SLICE_STOPPED: SLICE_STOPPED, SLICE_NOT_STARTED: SLICE_NOT_STARTED, ASK_LABEL: ASK_LABEL,
+    SLICE_SLOW: SLICE_SLOW, SLICE_STOPPED: SLICE_STOPPED, SLICE_NOT_STARTED: SLICE_NOT_STARTED, ASK_LABEL: ASK_LABEL, ASK_LOGIN_LABEL: ASK_LOGIN_LABEL, impactOf: impactOf,
     SEND_TEXTS: SEND_TEXTS, uploadFailureView: uploadFailureView, linkRecheckView: linkRecheckView, dialogWaitText: dialogWaitText,
     dialogCardWanted: dialogCardWanted, dialogView: dialogView, modelDialogQuoted: modelDialogQuoted, modelFailPrompt: modelFailPrompt };
   root.PlyoPreflight = api;

@@ -172,7 +172,10 @@
   .journey { flex: none; background: var(--surface); border-bottom: 1px solid var(--border); padding: var(--s2) var(--s3) var(--s2); display: flex; flex-direction: column; gap: var(--s2); }
   .journey .project { border: 0; background: transparent; padding: 0; margin: 0; gap: var(--s1); }
   .journey .project.compact { flex-direction: row; }
-  .project-summary { font-weight: 600; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  /* N6 : un bouton .link est une boîte flex, où text-overflow ne coupe pas le texte : bloc, avec points de suspension à la fin ;
+     le texte complet est dans le titre (survol) et la fiche dépliée (clic). */
+  .project-summary { display: block; min-width: 0; flex: 1 1 auto; font-weight: 600; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .orca-impact { font-weight: 600; }
   .journey-bar { display: flex; gap: 3px; }
   #journey-bar { margin-bottom: var(--s3); }
   #journey-bar:empty { display: none; }
@@ -424,7 +427,8 @@
     <h1>Assistant Plyo</h1>
     <button class="linked hidden push" id="phone-linked" type="button" title="Téléphone relié à ce projet : clique pour revoir le QR code"></button>
     <button class="gauge hidden push" id="gauge" type="button" title="Jauge IA : ton utilisation ce mois-ci. Clique pour le détail." aria-label="Jauge IA du mois"><span class="gauge-name">Jauge IA</span><span class="bar"><i id="gauge-fill"></i></span><span id="gauge-label">…</span></button>
-    <button class="btn sm hidden push" id="btn-login" type="button" title="Connexion par un code envoyé par e-mail, sans mot de passe">Me connecter</button>
+    <!-- N8 : discret (contour) : le bouton plein de chaque écran est l'action de l'étape ; quand une action a besoin du compte, sa carte porte un « Me connecter » plein. -->
+    <button class="btn ghost sm hidden push" id="btn-login" type="button" title="Connexion par un code envoyé par e-mail, sans mot de passe">Me connecter</button>
     <button class="icon-btn" id="btn-more" type="button" title="Plus d’options" aria-haspopup="menu" aria-label="Plus d’options"></button>
     <!-- Menu en trois groupes ; chaque entrée a son icône, une entrée indisponible reste visible mais grisée. -->
     <div class="menu hidden" id="menu" role="menu">
@@ -1386,6 +1390,7 @@
       importModel(file);
     }
     if (projectUI.completing) followCompletion(); // « Choisir ma machine et ma bobine » : l'étape suivante à faire
+    settleMissing();
   }
   // Zone fixe (fiche, barre, ligne d'action) + contenu de l'étape en cours (premier bloc du corps qui défile).
   var journeyUI = { ficheOpen: false, lastStep: null };
@@ -1400,6 +1405,8 @@
     // Orca a refusé la découpe (carte d'Orca affichée), ou juge la plaque découpée non imprimable : pas de « Continuer » ni d'« Imprimer ».
     ctx.sliceFailed = !ctx.sliced && orcaUI.failedConv === conv && !!conv;
     ctx.blocked = ctx.sliced && !!(tourSignals && tourSignals.ready_for_print === false);
+    // Export réussi pour ce projet (N3) : la ligne d'action passe à « L'impression a démarré ».
+    ctx.exported = !!conv && !!projectUI.exported && projectUI.exported.conv === conv && projectUI.sentConv === conv && !ctx.blocked;
     var endQ = conv && PlyoJourney.currentStep(conv.project) === 'resultat' ? endQuestionNow() : null;
     ctx.failed = !!(sendOf() && sendOf().failed); // « raté » dit pour l'envoi de cette conversation
     ctx.endAsk = !!endQ;
@@ -1483,7 +1490,7 @@
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()), spoolAsk: spoolAsk(), spoolNo: !!(sendOf() && sendOf().failed), endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
-      machine: conv.project.printer ? { name: conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
+      machine: conv.project.printer ? { name: PlyoJourney.shortMachine(conv.project.printer) || conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     $('hello-spool').textContent = '';
     if (spoolMissing()) $('hello-spool').appendChild(chooseSpoolButton());
@@ -1534,6 +1541,7 @@
     if (!(p.filament && !p.filament.proposed && p.filament.preset)) missing.push('filament');
     var go = completeProjectButton(missing, 'C’est noté. Montre-moi ta pièce dans la discussion : je te dirai quoi corriger.');
     if (go) tip.appendChild(go);
+    watchMissing(missing, function () { tip.remove(); });
   }
   var stepHandlers = {
     changeSlots: function () { projectHandlers.change('filament'); canvasUI.preset = null; canvasUI.useList = false; renderProject(); },
@@ -1744,7 +1752,7 @@
   function sendActions(actions, card, closable) {
     var acts = el('div', 'printer-actions');
     actions.forEach(function (a) {
-      acts.appendChild(button(a.label, function () { sendAction(a, card); }, 'btn ghost sm',
+      acts.appendChild(button(actionLabel(a), function () { sendAction(a, card); }, 'btn ghost sm',
         a.kind === 'link' || a.kind === 'retest' || a.kind === 'search' ? 'wifi' : a.kind === 'export' ? 'folder' : a.kind === 'printing' ? 'check' : ''));
     });
     if (closable) acts.appendChild(button('Fermer', function () { card.box.remove(); }, 'link'));
@@ -1804,7 +1812,7 @@
     f.quotes.push(text);
     f.line.insertBefore(el('span', 'muted small orca-said', ' Message d’Orca : « ' + text + ' »'), f.ask);
     if (!f.ask) {
-      f.ask = button(window.PlyoPreflight.ASK_LABEL, function () { send(window.PlyoPreflight.modelFailPrompt(f.quotes)); }, 'link');
+      f.ask = button(actionLabel({ kind: 'ask', label: window.PlyoPreflight.ASK_LABEL }), function () { send(window.PlyoPreflight.modelFailPrompt(f.quotes)); }, 'link');
       f.line.appendChild(f.ask);
     }
   }
@@ -1839,8 +1847,8 @@
     box.classList.add('orca-dialog');
     box.body.appendChild(el('b', '', fr(v.title)));
     box.body.appendChild(el('p', '', fr(v.text)));
-    if (v.quote) box.body.appendChild(el('p', 'orca-quote', '« ' + v.quote + ' »'));
-    box.body.appendChild(orcaActions(v.actions, box));
+    if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message d’Orca : ') + '« ' + v.quote + ' »'));
+    box.body.appendChild(orcaActions(conv ? v.actions : v.actions.filter(function (a) { return a.kind !== 'slice'; }), box));
     if (conv) { $('project-alert').appendChild(box); if (viewUI.tab === 'guide') box.scrollIntoView({ block: 'nearest' }); }
     else placeInOpenTab(box);
   }
@@ -1897,6 +1905,7 @@
     else if (kind === 'manualSave') saveManual();
     else if (kind === 'export') { canvasUI.refused = ''; if (!lockSend('export')) return; waitForExport(); window.orca.postMessage({ type: 'print_start', export: true }); }
     else if (kind === 'advance') setTourStep('print');
+    else if (kind === 'started') { if (conv) stepHandlers.started(); }
     else if (kind === 'keepTemps') confirmTemps();
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
     else if (kind === 'applyIntent') applyIntent(false);
@@ -2165,9 +2174,15 @@
   }
   // « Annuler » du lot de l'intention : réglages d'avant remis, puis retour au résumé (« Appliquer et préparer ») de l'étape Préparer.
   function intentUndoButton(undoId, mine) {
-    var b = undoButton('Annuler', function () {
+    function undoNow() {
       pendingSheet = { kind: 'undo', onResult: function (ok, text) { if (!ok) { b.disabled = false; noteLine(text, 'error', 'alert', 'guide'); } } };
       postRequest({ type: 'undo', undo_id: undoId });
+    }
+    var b = undoButton('Annuler', function () {
+      // Après « Oui, c'est réussi » (N4) : ces réglages ont donné une impression réussie. On demande d'abord, en disant ce que
+      // ça défait ; l'annulation reste possible.
+      if (conv === mine && conv.project.success) { confirmIntentUndo(b, undoNow); return; }
+      undoNow();
     });
     undoneListeners[undoId] = function () {
       if (intentUI.doneLine) { intentUI.doneLine.remove(); intentUI.doneLine = null; }
@@ -2179,6 +2194,20 @@
       noteLine('Réglages d’avant remis.', '', 'undo', 'guide'); // après le changement d'étape, qui efface les messages
     };
     return b;
+  }
+  function confirmIntentUndo(b, undoNow) {
+    var line = b.parentNode;
+    b.classList.add('hidden');
+    var box = el('div', 'conv-confirm');
+    box.appendChild(el('p', '', fr(Logic.UNDO_AFTER_SUCCESS)));
+    var acts = el('div', 'printer-actions');
+    var yes = button('Remettre les réglages d’avant', function () { yes.disabled = true; box.remove(); undoNow(); }, 'btn ghost sm', 'undo');
+    var keep = button('Garder ces réglages', function () { box.remove(); b.disabled = false; b.classList.remove('hidden'); }, 'link');
+    acts.appendChild(yes);
+    acts.appendChild(keep);
+    box.appendChild(acts);
+    line.after(box);
+    keep.focus();
   }
   // Machine ou filament changé après avoir appliqué une intention : les mêmes réponses sont réappliquées en revenant à Préparer.
   function maybeReapplyIntent(before) {
@@ -2351,7 +2380,7 @@
       projectUI.editing = null;
       var wanted = projectUI.keepTemps;
       projectUI.keepTemps = null;
-      var profileNote = PlyoJourney.profileChangeNote(pend.profileBefore, msg.filament_preset);
+      var profileNote = PlyoJourney.profileChangeNote(pend.profileBefore, msg.filament_preset, function (n) { return Logic.shortName(n, false); });
       if (wanted && (wanted.nozzle !== msg.nozzle_temp || wanted.bed !== msg.bed_temp)) { projectChanged(); if (profileNote) noteLine(profileNote, '', 'info', 'guide'); projectHandlers.setTemps(wanted.nozzle, wanted.bed); return; }
       projectChanged(); // d'abord : le changement d'étape efface les messages de l'étape
       if (pend.note) noteLine(pend.note, 'ok', 'check', 'guide'); // bobine rattachée depuis la carte « Orca est passé sur … »
@@ -2526,7 +2555,7 @@
     var mine = conv;
     return button(label, function () {
       if (conv !== mine) return;
-      projectUI.completing = { conv: conv, missing: missing.slice(), done: doneText || 'C’est noté. Ta fiche de réglages t’attend dans la discussion : clique sur « Appliquer ».' };
+      projectUI.completing = { conv: conv, missing: missing.slice(), done: doneText || PlyoJourney.FICHE_WAITS };
       applyTab('show-guide');
       followCompletion();
       $('project-card').scrollIntoView({ block: 'nearest' });
@@ -2538,7 +2567,7 @@
     var c = projectUI.completing;
     if (!c || c.conv !== conv) { projectUI.completing = null; return; }
     var p = conv.project, next = PlyoProject.nextStep(p);
-    var still = c.missing.filter(function (k) { return k === 'printer' ? next === 'printer' : k === 'filament' ? !(p.filament && !p.filament.proposed && p.filament.preset) : !(p.part && p.part.name); });
+    var still = PlyoJourney.stillMissing(p, c.missing);
     if (next === 'printer' || projectUI.pending) return; // la machine se choisit à l'étape Machine
     if (still.indexOf('filament') >= 0) {
       // Une seule fois : « Annuler » dans le choix de la bobine n'y ramène pas de force.
@@ -2547,8 +2576,21 @@
     }
     if (still.length) return; // la pièce : l'étape Pièce est celle en cours
     projectUI.completing = null;
-    var tip = noteLine(c.done, 'ok', 'check', 'guide');
+    // Une fiche de réglages attend encore « Appliquer » : c'est elle qu'on annonce, pas « Montre-moi ta pièce » (N2).
+    var tip = noteLine(PlyoJourney.completionText(c.done, !!document.querySelector('.sheet > footer.inline:not(.undo-row)')), 'ok', 'check', 'guide');
     tip.appendChild(button('Revenir à la discussion', function () { applyTab('show-chat'); }, 'link'));
+  }
+  // Messages qui demandent de choisir la machine ou la bobine (refus d'une fiche, invitation à la photo) : ils partent dès que
+  // ce qui manquait est choisi (N2), au lieu de rester faux sous la fiche. { conv, missing, clear }.
+  var missingNotes = [];
+  function watchMissing(missing, clear) { if (conv && Array.isArray(missing) && missing.length) missingNotes.push({ conv: conv, missing: missing.slice(), clear: clear }); }
+  function settleMissing() {
+    missingNotes = missingNotes.filter(function (w) {
+      if (w.conv !== conv) return true; // un autre projet : son message attend qu'on y revienne
+      if (PlyoJourney.stillMissing(conv.project, w.missing).length) return true;
+      w.clear();
+      return false;
+    });
   }
   // Mode écrit : sans bobine, l'accueil et une question de l'assistant sur le filament mènent au même choix.
   function spoolMissing() { return !!conv && PlyoSpools.needsSpool(conv.project); }
@@ -3759,7 +3801,9 @@
     delete plateCounts[msg.request];
     if (plateQuiet[msg.request]) { delete plateQuiet[msg.request]; if (after) after(msg.ok, msg); return; }
     var line = noteLine(text, msg.ok ? 'ok' : 'error', msg.ok ? 'check' : 'alert', 'guide');
-    if (msg.ok && msg.kind !== 'undo') plateUndoLinks.forEach(function (b) { b.remove(); });
+    // Un seul « Annuler » : une nouvelle action annulable remplace le précédent. Une découpe n'en a pas : elle ne retire pas celui
+    // d'un ordre de l'IA (« Fait sur le plateau »), qui reste le moyen de revenir en arrière si la découpe échoue (s21).
+    if (msg.ok && msg.kind !== 'undo' && msg.undo_token !== undefined) plateUndoLinks.forEach(function (b) { b.remove(); });
     if (msg.ok && msg.undo_token !== undefined) {
       var undo = undoButton('Annuler', function (b) {
         plateAction('undo', function (ok) { if (ok) b.remove(); else b.disabled = false; }, { undo_token: msg.undo_token });
@@ -3796,24 +3840,31 @@
     return list.length;
   }
   function orcaCard(issue) {
-    var v = window.PlyoPreflight.orcaIssueView(issue);
+    var v = window.PlyoPreflight.orcaIssueView(issue, { canUndo: !!(lastValues && lastValues.can_undo) });
     var box = alertBox(v.tone, '', 'alert');
     box.classList.add('orca-issue');
     box.body.appendChild(el('b', '', fr(v.title)));
     box.body.appendChild(el('p', '', fr(v.text)));
+    if (v.impact) box.body.appendChild(el('p', 'orca-impact', fr(v.impact))); // bloquant ou non, dit avant la citation d'Orca
     if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message d’Orca : ') + '« ' + v.quote + ' »'));
     if (v.note) box.body.appendChild(el('p', 'muted small', fr(v.note)));
     box.body.appendChild(orcaActions(v.actions, box));
     return box;
   }
+  // Libellé d'un bouton : sans compte, « Demander à l'assistant » dit qu'il faut se connecter (la question part après, afterLogin).
+  function actionLabel(a) { return a.kind === 'ask' && !session ? window.PlyoPreflight.ASK_LOGIN_LABEL : a.label; }
+  // Avec « Continuer quand même » (avertissement non bloquant), « Fermer » ferait la même chose : il n'est pas ajouté.
   function orcaActions(actions, box) {
     var acts = el('div', 'printer-actions');
     actions.forEach(function (a) {
-      var b = button(a.label, function () {
+      var b = button(actionLabel(a), function () {
         if (a.kind === 'show_setting') showSetting(a.key);
         else if (a.kind === 'show_me') showMe(a.target);
         else if (a.kind === 'import') projectHandlers.importPart();
         else if (a.kind === 'ask') send(a.prompt);
+        else if (a.kind === 'preview') showPreview(b);
+        else if (a.kind === 'dismiss') box.remove(); // un simple avertissement : la carte se ferme, rien n'est contourné
+        else if (a.kind === 'undo_last') undoLastFromCard(b, box);
         else if (a.kind === 'export') { box.remove(); runAction('export'); }
         else if (a.kind === 'slice') { box.remove(); plateAction('slice'); }
         else if (a.kind === 'plate') {
@@ -3821,11 +3872,24 @@
           // Le plateau change : la découpe repart, et dit à son tour si Orca est d'accord.
           plateAction(a.action, function (ok) { if (!ok) { b.disabled = false; return; } box.remove(); plateAction('slice'); });
         } else if (a.kind === 'fix') { b.disabled = true; applyOrcaFix(a, box, function (ok) { if (!ok) b.disabled = false; }); }
-      }, 'btn ghost sm', a.kind === 'fix' || a.kind === 'plate' ? 'wand' : a.kind === 'show_setting' || a.kind === 'show_me' ? 'eye' : '');
+      }, 'btn ghost sm', a.kind === 'fix' || a.kind === 'plate' ? 'wand' : a.kind === 'show_setting' || a.kind === 'show_me' || a.kind === 'preview' ? 'eye' : a.kind === 'undo_last' ? 'undo' : '');
       acts.appendChild(b);
     });
-    acts.appendChild(button('Fermer', function () { box.remove(); }, 'link'));
+    if (!actions.some(function (a) { return a.kind === 'dismiss'; })) acts.appendChild(button('Fermer', function () { box.remove(); }, 'link'));
     return acts;
+  }
+  // « Annuler les derniers réglages de l'assistant » depuis une carte d'Orca : le dernier lot appliqué (comme le menu « ⋯ »),
+  // puis la découpe repart et dit à son tour si Orca est d'accord.
+  function undoLastFromCard(b, box) {
+    b.disabled = true;
+    var mine = conv;
+    pendingSheet = { kind: 'undo', onResult: function (ok, text) {
+      if (!ok) { b.disabled = false; noteLine(text || 'Je n’ai pas pu annuler.', 'error', 'alert', 'guide'); return; }
+      box.remove();
+      noteLine('Réglages d’avant remis : je découpe à nouveau ta plaque.', '', 'undo', 'guide');
+      if (conv && conv === mine) plateAction('slice');
+    } };
+    postRequest({ type: 'undo' });
   }
   // Correction d'un clic : par le chemin d'application habituel (vérifiée par le slicer, annulable), puis la découpe repart.
   function applyOrcaFix(a, box, done) {
@@ -3863,7 +3927,7 @@
   function orcaNote(view, tone) {
     var line = noteLine(view.text, tone, 'alert', 'guide');
     view.actions.forEach(function (a) {
-      line.appendChild(button(a.label, function () {
+      line.appendChild(button(actionLabel(a), function () {
         if (a.kind === 'slice') { line.remove(); plateAction('slice'); }
         else if (a.kind === 'export') { line.remove(); runAction('export'); }
         else if (a.kind === 'show_me') showMe(a.target);
@@ -3956,7 +4020,7 @@
     wrap.appendChild(list);
     function show(result) {
       list.textContent = '';
-      result.done.forEach(function (d) { list.appendChild(commandLine(d, 'ok', 'check')); });
+      result.done.forEach(function (d) { list.appendChild(commandLine(d || 'Fait sur le plateau', 'ok', 'check')); }); // jamais une coche sans texte (N1)
       if (result.text) list.appendChild(commandLine(result.text, 'error', 'alert'));
       result.skipped.forEach(function (t) { if (t) list.appendChild(commandLine(t, '', 'info')); });
       if (result.undone) list.appendChild(commandLine('Annulé : le plateau est revenu comme avant.', '', 'undo'));
@@ -3987,8 +4051,12 @@
         row.appendChild(undo);
         plateUndoLinks = [row];
         list.after(row);
+        // Le récapitulatif et son « Annuler » doivent se voir (N1), pas rester sous le bord de la discussion ni sous le badge
+        // « Voir la suite » : au milieu de la zone, comme le compte rendu d'une fiche appliquée.
+        if (viewUI.tab === 'chat' && row.isConnected) { row.scrollIntoView({ block: 'center' }); updateMoreBadge(); }
       };
-      window.orca.postMessage({ type: 'commands', commands: a.commands, request: id });
+      // Chaque ordre part avec son texte (celui de l'IA, sinon celui de Plyo) : le slicer le rend pour chaque ordre fait.
+      window.orca.postMessage({ type: 'commands', commands: (a.commands || []).map(function (c) { return c && typeof c === 'object' && !Array.isArray(c) ? Object.assign({}, c, { summary: Logic.commandSummary(c) }) : c; }), request: id });
     }
     if (a.how_to) {
       var how = el('div', 'howto hidden');
@@ -5370,7 +5438,8 @@
     var requestId = opts.requestId || (lastAsked && Logic.sameQuestion(lastAsked, { note: note, photos: photos }) ? lastAsked.id : Logic.newRequestId(window.crypto));
     lastAsked = null;
     var again = { photos: photos, fromPhone: opts.fromPhone, shown: true, me: me, requestId: requestId };
-    if (requireLogin('Pour te répondre, j’envoie ta demande à l’IA.', function () { send(note, again); })) return;
+    // Sans compte : la question reste affichée, et repart toute seule après la connexion (afterLogin).
+    if (requireLogin('Pour te répondre, j’envoie ta demande à l’IA : connecte-toi, sans mot de passe (tu reçois un code par e-mail). Ta question est gardée : elle partira dès que tu seras connecté.', function () { send(note, again); }, true)) return;
     ask(note, photos, { id: requestId, me: me });
   }
   // ROB-12 : la demande revient dans le champ (texte et photos) sans repartir, jamais par-dessus ce que tu as commencé.
@@ -5877,7 +5946,12 @@
           // La fiche reste applicable : une fois la machine et la bobine choisies, « Appliquer » marche depuis ici.
           var complete = completeProjectButton(result && result.missing);
           completeSlot.textContent = '';
-          if (complete) { completeSlot.appendChild(complete); completeSlot.classList.remove('hidden'); }
+          if (complete) {
+            completeSlot.appendChild(complete); completeSlot.classList.remove('hidden');
+            // Machine et bobine choisies ensuite : le refus et son bouton partent, la fiche reste applicable (N2).
+            var refusal = fail.textContent;
+            watchMissing(result.missing, function () { if (fail.textContent === refusal) { fail.classList.add('hidden'); completeSlot.textContent = ''; completeSlot.classList.add('hidden'); } });
+          }
           // Refus de la dernière barrière ou d'Orca : réessayer, confirmer ce réglage, ou le montrer.
           var fixes = refusalButtons(result, function (confirmKey) {
             if (confirmKey && confirmedKeys.indexOf(confirmKey) < 0) confirmedKeys.push(confirmKey);

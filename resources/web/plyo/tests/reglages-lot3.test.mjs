@@ -16,7 +16,8 @@ test('valeurs montrées : oui/non, virgule, « 15 % », °C pour une températur
   assert.equal(L.valueText(215, 'nozzle_temperature'), '215 °C');
   assert.equal(L.valueText(55, 'hot_plate_temp_initial_layer'), '55 °C');
   assert.equal(L.valueText('15%', 'sparse_infill_density'), '15 %');
-  assert.equal(L.valueText('arachne', 'wall_generator'), 'arachne');
+  assert.equal(L.valueText('arachne', 'wall_generator'), 'Arachné', 'valeur à choix : libellé français du catalogue (N5)');
+  assert.equal(L.valueText('inconnue', 'wall_generator'), 'inconnue');
   assert.equal(L.valueText(null), '—');
 });
 

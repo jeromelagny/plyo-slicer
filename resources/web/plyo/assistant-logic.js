@@ -540,6 +540,9 @@
         .concat(more > 0 ? [more + ' autre' + (more > 1 ? 's' : '')] : [])) + '.';
   }
 
+  // « Annuler » des réglages de préparation après « Oui, c'est réussi » (N4) : ce que le clic défait, dit avant.
+  var UNDO_AFTER_SUCCESS = 'Ces réglages ont donné une impression réussie. Les annuler remet ceux d’avant : il faudra découper à nouveau avant de réimprimer. Tu veux vraiment les annuler ?';
+
   // Ordres exécutés par le slicer : l'outil d'Orca qui fait la même chose (« Comment le faire moi-même »).
   var COMMAND_TOOLS = { rotate: 'rotate', reset_rotation: 'rotate', lay_flat: 'lay_flat', move: 'move', center: 'move', drop: 'move',
     scale: 'scale', scale_to_size: 'scale', cut_height: 'cut' };
@@ -547,10 +550,44 @@
     var first = (commands || [])[0];
     return (first && COMMAND_TOOLS[first.op]) || null;
   }
+  // Texte d'un ordre sur le plateau (N1) : la phrase de l'IA (`summary`), sinon une phrase de Plyo d'après l'ordre et sa valeur.
+  // Le slicer rend ce texte pour chaque ordre fait : une coche n'est jamais sans texte.
+  function num(v) { var n = Number(v); return isFinite(n) ? String(Math.round(n * 100) / 100).replace('.', ',') : ''; }
+  var COMMAND_TEXTS = {
+    scale: function (c) { return num(c.amount) ? 'Pièce mise à ' + num(c.amount) + ' % de sa taille' : 'Pièce redimensionnée'; },
+    scale_to_size: function (c) { return num(c.amount) ? 'Pièce redimensionnée à ' + num(c.amount) + ' mm' : 'Pièce redimensionnée'; },
+    rotate: function (c) { return num(c.amount) ? 'Pièce tournée de ' + num(c.amount) + '°' : 'Pièce tournée'; },
+    lay_flat: function () { return 'Pièce posée à plat'; },
+    reset_rotation: function () { return 'Rotation de la pièce remise à zéro'; },
+    move: function (c) { return num(c.amount) ? 'Pièce déplacée de ' + num(c.amount) + ' mm' : 'Pièce déplacée'; },
+    center: function () { return 'Pièce centrée sur le plateau'; },
+    drop: function () { return 'Pièce reposée sur le plateau'; },
+    mirror: function () { return 'Pièce retournée en miroir'; },
+    set_copies: function (c) { return num(c.amount) ? num(c.amount) + ' exemplaire' + (Number(c.amount) > 1 ? 's' : '') + ' sur le plateau' : 'Nombre d’exemplaires changé'; },
+    fill_bed: function () { return 'Plateau rempli d’exemplaires'; },
+    delete: function () { return 'Pièce retirée du plateau'; },
+    rename: function (c) { return typeof c.text === 'string' && c.text ? 'Pièce renommée « ' + c.text + ' »' : 'Pièce renommée'; },
+    printable: function (c) { return Number(c.amount) >= 0.5 ? 'Pièce remise à imprimer' : 'Pièce mise de côté : elle ne sera pas imprimée'; },
+    split: function () { return 'Pièce séparée en morceaux'; },
+    inch_to_mm: function () { return 'Taille convertie de pouces en millimètres'; },
+    cut_height: function (c) { return num(c.amount) ? 'Pièce coupée à ' + num(c.amount) + ' mm de hauteur' : 'Pièce coupée'; },
+    object_setting: function () { return 'Réglage changé pour cette pièce'; },
+    range_setting: function () { return 'Réglage changé pour une partie de la pièce'; },
+    select: function () { return 'Pièce sélectionnée'; },
+    orient: function () { return 'Plaque orientée automatiquement'; },
+    arrange: function () { return 'Plateau rangé'; },
+    scale_to_fit: function () { return 'Pièce réduite pour tenir sur le plateau'; },
+    slice: function () { return 'Découpe lancée'; }
+  };
+  function commandSummary(c) {
+    var x = c || {};
+    if (typeof x.summary === 'string' && x.summary.trim()) return x.summary;
+    return COMMAND_TEXTS[x.op] ? COMMAND_TEXTS[x.op](x) : 'Changement fait sur le plateau';
+  }
   // Ce que l'historique de la conversation dit des ordres : faits, refusés, ou seulement demandés (non exécutés).
   function commandsForHistory(a, result) {
     if (!a.commands || !a.commands.length) return '';
-    if (!result) return 'demandé : ' + a.commands.map(function (c) { return c.summary; }).join(' ');
+    if (!result) return 'demandé : ' + a.commands.map(commandSummary).join(' ');
     var lines = (result.done || []).map(function (d) { return 'fait : ' + d; });
     if (result.text) lines.push('non fait : ' + result.text);
     return lines.join('\n');
@@ -563,7 +600,15 @@
     'no ironing': 'Pas de lissage', top: 'Surfaces supérieures', topmost: 'Surface la plus élevée', solid: 'Toutes les couches pleines',
     auto_brim: 'Auto', outer_only: 'Bordure extérieure uniquement', no_brim: 'Sans bord'
   };
-  function choiceLabel(value) { return Object.prototype.hasOwnProperty.call(CHOICE_LABELS, value) ? CHOICE_LABELS[value] : value; }
+  // Libellés français des valeurs à choix, par réglage (N5) : extraits du catalogue des réglages Filament et Impression
+  // (src/plyo/catalog/generate_catalog.py, champs `values` et `values_fr`), pour ne plus montrer « aligned → back ».
+  var ENUM_LABELS = {"seam_position":{"nearest":"La plus proche","aligned":"Alignée","aligned_back":"Aligné à l'arrière","back":"Arrière","random":"Aléatoire"},"seam_slope_type":{"none":"Aucun","external":"Contour","all":"Contour et trou"},"enable_arc_fitting":{"disabled":"Désactivé","enabled":"Activé","sparse_infill":"Sparse infill only"},"ironing_type":{"no ironing":"Pas de lissage","top":"Surfaces supérieures","topmost":"Surface la plus élevée","solid":"Toutes les couches pleines"},"ironing_pattern":{"rectilinear":"Rectiligne","concentric":"Concentrique"},"wall_generator":{"classic":"Classique","arachne":"Arachné"},"wall_sequence":{"inner wall/outer wall":"Intérieur/Extérieur","outer wall/inner wall":"Extérieur/Intérieur","inner-outer-inner wall":"Intérieur/Extérieur/Intérieur"},"wall_direction":{"ccw":"Sens inverse des aiguilles d’une montre","cw":"Dans le sens des aiguilles d’une montre"},"enable_extra_bridge_layer":{"disabled":"Désactivé","external_bridge_only":"Pont externe uniquement","internal_bridge_only":"Pont interne uniquement","apply_to_all":"Appliquer à tous"},"dont_filter_internal_bridges":{"disabled":"Filtrer","limited":"Filtrage limité","nofilter":"Pas de filtrage"},"top_surface_pattern":{"monotonic":"Monotone","monotonicline":"Ligne monotone","rectilinear":"Rectiligne","alignedrectilinear":"Rectiligne Aligné","concentric":"Concentrique","spiralinset":"Spirale décalée","hilbertcurve":"Courbe de Hilbert","archimedeanchords":"Spirale d'Archimède","octagramspiral":"Spirale Octagramme"},"top_surface_fill_order":{"default":"Défaut","outward":"Vers l'extérieur","inward":"Vers l'intérieur"},"top_surface_expansion_direction":{"inward_and_outward":"Vers l'intérieur et l'extérieur","inward":"Vers l'intérieur","outward":"Vers l'extérieur"},"center_of_surface_pattern":{"each_surface":"Chaque surface","each_model":"Chaque modèle","each_assembly":"Chaque assemblage"},"sparse_infill_pattern":{"rectilinear":"Rectiligne","alignedrectilinear":"Rectiligne Aligné","zigzag":"Zig Zag","crosszag":"Zig Zag croisé","lockedzag":"Zig Zag verrouillé","line":"Ligne","grid":"Grille","triangles":"Triangles","tri-hexagon":"Tri-hexagone","cubic":"Cubique","adaptivecubic":"Cubique adaptatif","quartercubic":"Quartier Cubique","supportcubic":"Support Cubique","lightning":"Lightning","honeycomb":"Nid d'abeille","3dhoneycomb":"Nid d'abeille 3D","lateral-honeycomb":"Nid d'abeille latéral","lateral-lattice":"Treillis 2D","crosshatch":"Quadrillage","tpmsd":"TPMS-D","tpmsfk":"TPMS-FK","gyroid":"Gyroïde","concentric":"Concentrique","hilbertcurve":"Courbe de Hilbert","archimedeanchords":"Spirale d'Archimède","octagramspiral":"Spirale Octagramme"},"adaptive_infill_mode":{"disabled":"Désactivé","distance_warp":"Déformation selon la distance","smooth_blend":"Fondu lisse","stepped_shells":"Coques étagées","lobes":"Lobes","normal_z":"Normale Z","normal_y":"Normale Y","normal_x":"Normale X"},"adaptive_infill_gradient":{"linear":"Linéaire","quadratic":"Quadratique","exponential":"Exponentiel"},"gap_fill_target":{"everywhere":"Partout","topbottom":"Surfaces supérieure et inférieure","nowhere":"Nulle part"},"ensure_vertical_shell_thickness":{"none":"Aucun","ensure_critical_only":"Critique seulement","ensure_moderate":"Modéré","ensure_all":"Tous"},"support_type":{"normal(auto)":"Normal (auto)","tree(auto)":"Arbre (auto)","normal(manual)":"Normal (manuel)","tree(manual)":"Arbre (manuel)"},"support_style":{"default":"Défaut (Grille/Organique)","grid":"Grille","snug":"Ajusté","organic":"Organique","tree_slim":"Arborescent Fin","tree_strong":"Arborescent Fort","tree_hybrid":"Arborescent Hybride"},"support_ironing_pattern":{"rectilinear":"Rectiligne","concentric":"Concentrique"},"support_base_pattern":{"default":"Défaut","rectilinear":"Rectiligne","rectilinear-grid":"Grille rectiligne","honeycomb":"Nid d'abeille","lightning":"Lightning","hollow":"Creux"},"support_interface_pattern":{"auto":"Défaut","rectilinear":"Rectiligne","concentric":"Concentrique","spiralinset":"Spirale décalée","rectilinear_interlaced":"Rectiligne Entrelacé","grid":"Grille"},"skirt_type":{"combined":"Combiné","perobject":"Par objet"},"draft_shield":{"disabled":"Désactivé","enabled":"Activé"},"brim_type":{"auto_brim":"Auto","outer_only":"Bordure extérieure uniquement","no_brim":"Sans bord"},"slicing_mode":{"regular":"Standard","even_odd":"Pair-impair","close_holes":"Combler les trous"},"print_sequence":{"by layer":"Par couche","by object":"Par objet"},"print_order":{"default":"Défaut","as_obj_list":"En tant que liste d’objets","best_of":"Meilleur de tous (trajet le plus court)","snake":"Serpentin"},"fuzzy_skin":{"none":"Peint uniquement","external":"Contour","hole":"Trou","all":"Contour et trou","allwalls":"Toutes les parois","disabled_fuzzy":"Désactivé"},"fuzzy_skin_mode":{"displacement":"Déplacement","extrusion":"Extrusion","combined":"Combiné"},"fuzzy_skin_noise_type":{"classic":"Classique","perlin":"Perlin","billow":"Billow","ridgedmulti":"Multifractal strié","voronoi":"Voronoi","ripple":"Ripple"},"filament_z_hop_types":{"Auto Lift":"Auto","Normal Lift":"Normal","Slope Lift":"Pente","Spiral Lift":"Spirale"},"filament_retract_lift_enforce":{"All Surfaces":"Toutes les surfaces","Top Only":"Supérieures","Bottom Only":"Inférieures","Top and Bottom":"Supérieures et Inférieures"}};
+  var has = function (o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); };
+  // `key` (facultatif) : le réglage, pour prendre le libellé de sa liste de choix ; sinon la table commune ci-dessus.
+  function choiceLabel(value, key) {
+    if (key && has(ENUM_LABELS, key) && has(ENUM_LABELS[key], value)) return ENUM_LABELS[key][value];
+    return has(CHOICE_LABELS, value) ? CHOICE_LABELS[value] : value;
+  }
 
   // Typographie française de tout texte affiché : sans espaces insécables, « ? » et « : » partent seuls en début
   // de ligne. Fine (U+202F) avant ? ! ; ; normale (U+00A0) avant : et dans « ». Heures (18:00) et adresses
@@ -773,6 +818,7 @@
     if (typeof v === 'boolean') return v ? 'oui' : 'non';
     if (v === null || v === undefined || v === '') return '—';
     if (typeof v === 'number') return String(Math.round(v * 1000) / 1000).replace('.', ',') + (/temp/.test(String(key || '')) ? ' °C' : '');
+    if (key && has(ENUM_LABELS, key) && has(ENUM_LABELS[key], v)) return ENUM_LABELS[key][v]; // valeur à choix : son libellé français (N5)
     return String(v).replace(/^(-?\d+(?:\.\d+)?)%$/, '$1 %').replace(/^(-?\d+)\.(\d+)/, '$1,$2');
   }
   function listOf(items) {
@@ -969,7 +1015,7 @@
   // Une autre instance de Plyo utilise déjà le même dossier de données (message other_instance du slicer).
   var OTHER_INSTANCE_TEXT = 'Plyo Slicer est ouvert deux fois sur cet ordinateur. Ferme l’une des deux fenêtres : sinon, ce que tu enregistres ici (projets, réglages notés) peut effacer ce que tu fais dans l’autre.';
 
-  var api = { saveFailedText: saveFailedText, OTHER_INSTANCE_TEXT: OTHER_INSTANCE_TEXT, diagnoseParams: diagnoseParams, aiContext: aiContext, historyForAI: historyForAI, CAPABILITIES: CAPABILITIES, actionSupported: actionSupported, rawTestText: rawTestText, rawTestResult: rawTestResult, previewText: previewText,
+  var api = { shortName: shortName, ENUM_LABELS: ENUM_LABELS, UNDO_AFTER_SUCCESS: UNDO_AFTER_SUCCESS, commandSummary: commandSummary, saveFailedText: saveFailedText, OTHER_INSTANCE_TEXT: OTHER_INSTANCE_TEXT, diagnoseParams: diagnoseParams, aiContext: aiContext, historyForAI: historyForAI, CAPABILITIES: CAPABILITIES, actionSupported: actionSupported, rawTestText: rawTestText, rawTestResult: rawTestResult, previewText: previewText,
     changeLine: changeLine, sameSetting: sameSetting, revertPlan: revertPlan, revertText: revertText, batchesOf: batchesOf, mergeCorrections: mergeCorrections, outcomeCard: outcomeCard, reliablePreview: reliablePreview, valueText: valueText, alsoChangedText: alsoChangedText, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, manualEditsNote: manualEditsNote, splitManualEdits: splitManualEdits, noteWritten: noteWritten, forgetBatch: forgetBatch, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, projectEntry: projectEntry, resumeCandidate: resumeCandidate, RESUME_MS: RESUME_MS, deleteQuestion: deleteQuestion, prunedText: prunedText, allAnswered: allAnswered, combineAnswers: combineAnswers,
     newRequestId: newRequestId, formatUuid: formatUuid, resendRequestId: resendRequestId, sameQuestion: sameQuestion, inProgressDelay: inProgressDelay, waitingText: waitingText,
     utf8Bytes: utf8Bytes, sizePlan: sizePlan, limitFrom413: limitFrom413, MAX_SEND_BYTES: MAX_SEND_BYTES, SHRINK_STEPS: SHRINK_STEPS, unansweredView: unansweredView, projectSwitchText: projectSwitchText, STALE_PROJECT_TEXT: STALE_PROJECT_TEXT,

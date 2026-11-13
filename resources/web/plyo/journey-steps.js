@@ -130,9 +130,12 @@
       body.appendChild(ui.el('p', 'muted small', 'Vérifie que le plateau est vide et propre, et que le filament est chargé.'));
       var acts = ui.el('div', 'printer-actions');
       // Plaque qu'Orca juge non imprimable (c.blocked) : ni envoi ni export, la carte d'Orca dit quoi corriger.
-      if (c.linked && !c.blocked) { var ex = ui.button('Exporter le fichier plutôt', h.exportFile, 'btn ghost sm', 'folder'); ex.disabled = !!c.sending; acts.appendChild(ex); }
+      if (c.exported) {
+        // Fichier exporté (N3) : « L'impression a démarré » est le bouton plein de la ligne d'action ; l'export reste possible ici.
+        var again = ui.button('Exporter à nouveau', h.exportFile, 'btn ghost sm', 'folder'); again.disabled = !!c.sending; acts.appendChild(again);
+      } else if (c.linked && !c.blocked) { var ex = ui.button('Exporter le fichier plutôt', h.exportFile, 'btn ghost sm', 'folder'); ex.disabled = !!c.sending; acts.appendChild(ex); }
       // sentArmed : Orca a seulement pris l'envoi (CFS, IFS) ; c'est l'utilisateur qui voit si elle imprime.
-      if (opts.sent) acts.appendChild(ui.button(opts.sentArmed ? 'Oui, elle imprime' : 'L’impression a démarré', h.started, 'btn ghost sm', 'check'));
+      if (opts.sent && !c.exported) acts.appendChild(ui.button(opts.sentArmed ? 'Oui, elle imprime' : 'L’impression a démarré', h.started, 'btn ghost sm', 'check'));
       body.appendChild(acts);
     } else if (opts.step === 'resultat') {
       var after = ui.el('div', 'printer-actions'), J = root.PlyoJourney || (typeof require !== 'undefined' ? require('./journey-logic.js') : null);

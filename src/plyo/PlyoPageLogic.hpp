@@ -1,7 +1,9 @@
 #pragma once
 
+#include <deque>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Page du panneau assemblée par load_page() (PlyoAssistant.cpp) : scripts insérés à la place de leurs marqueurs, politique de
@@ -38,5 +40,27 @@ std::string content_security_policy(const std::string& api_url, const std::strin
 // texte du script seul, sans balise.
 std::string assemble(std::string page, const std::function<std::string(const std::string&)>& read_script, const std::string& config_script,
                      const std::string& driver, const std::string& csp, const std::string& nonce);
+
+// Nœuds retenus par `match` dans un arbre (fenêtres d'un panneau), jusqu'à `max_depth` niveaux sous `root` (1 = enfants
+// directs), en largeur, sans récursion : la vue web du panneau est trouvée même si wx l'enveloppe dans une fenêtre de plus,
+// et une hiérarchie anormale ne fait pas boucler. `children(n)` rend les enfants de n (un conteneur itérable).
+template<class Node, class Children, class Match>
+std::vector<Node> find_bounded(Node root, const Children& children, const Match& match, int max_depth)
+{
+    std::vector<Node>                found;
+    std::deque<std::pair<Node, int>> todo{{root, 0}};
+    while (!todo.empty()) {
+        auto [node, depth] = todo.front();
+        todo.pop_front();
+        if (depth >= max_depth)
+            continue;
+        for (Node child : children(node)) {
+            if (match(child))
+                found.push_back(child);
+            todo.emplace_back(child, depth + 1);
+        }
+    }
+    return found;
+}
 
 }} // namespace Plyo::PageLogic

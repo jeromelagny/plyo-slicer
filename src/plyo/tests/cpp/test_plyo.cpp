@@ -4607,6 +4607,27 @@ TEST_CASE("Lot 12 · la vraie page assemblée : aucun script sans jeton, aucun a
         CHECK(page.find(attr) == std::string::npos);
 }
 
+TEST_CASE("Lot 15 · ARCH-17 : la vue web du panneau est cherchée en profondeur, bornée, et son absence est dite")
+{
+    // Arbre factice : 0 → {1, 2}, 1 → {3}, 3 → {4}, 4 → {5} ; « vues » : 2, 4 et 5.
+    const std::map<int, std::vector<int>> tree{{0, {1, 2}}, {1, {3}}, {3, {4}}, {4, {5}}};
+    const std::vector<int> none;
+    const auto children = [&](int n) -> const std::vector<int>& { auto it = tree.find(n); return it == tree.end() ? none : it->second; };
+    const auto view     = [](int n) { return n == 2 || n == 4 || n == 5; };
+    using Plyo::PageLogic::find_bounded;
+    CHECK(find_bounded(0, children, view, 1) == std::vector<int>{2});          // enfants directs seulement (avant ARCH-17)
+    CHECK(find_bounded(0, children, view, 3) == std::vector<int>{2, 4});       // enveloppée deux fois : trouvée
+    CHECK(find_bounded(0, children, view, 4) == std::vector<int>{2, 4, 5});
+    CHECK(find_bounded(0, children, view, 0).empty());
+    // Une hiérarchie qui boucle ne fait pas tourner la recherche sans fin.
+    const std::map<int, std::vector<int>> loop{{0, {1}}, {1, {0}}};
+    const auto loop_children = [&](int n) -> const std::vector<int>& { return loop.at(n); };
+    CHECK(find_bounded(0, loop_children, [](int) { return false; }, 50).empty());
+    const std::string cpp = read_file(repo_root() / "src" / "plyo" / "PlyoAssistant.cpp");
+    CHECK(cpp.find("PageLogic::find_bounded<wxWindow*>(") != std::string::npos);
+    CHECK(cpp.find("BOOST_LOG_TRIVIAL(error) << \"Plyo: aucune vue web trouvée sous le panneau") != std::string::npos);
+}
+
 TEST_CASE("Lot 12 · ROB-15 : la porte « on ferme » ne transmet plus rien, même un rappel déjà en file")
 {
     Plyo::LifetimeLogic::ClosingGate gate;

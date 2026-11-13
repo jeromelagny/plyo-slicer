@@ -2,10 +2,13 @@
 // la liste d'Orca (UX-35) et calibration directe d'une bobine (UX-34). Sans DOM : index.html construit les cartes.
 // Chargée par index.html (window.PlyoRetouches) et testée par node (tests/confirme-lot11.test.mjs).
 (function (root) {
-  // Valeur montrée : virgule décimale, oui / non, « vide » pour une valeur absente.
-  function fmt(v) {
+  var L = root.PlyoLogic || (typeof require !== 'undefined' ? require('./assistant-logic.js') : null);
+  // Valeur montrée : virgule décimale, oui / non, « vide » pour une valeur absente ; une valeur à choix d'Orca (« aligned »)
+  // par son libellé français du catalogue quand on connaît le réglage (`key`, N5).
+  function fmt(v, key) {
     if (v === null || v === undefined || v === '') return 'vide';
     if (typeof v === 'boolean') return v ? 'oui' : 'non';
+    if (key && typeof v === 'string' && L) { var label = L.choiceLabel(v, key); if (label !== v) return label; }
     return String(v).replace(/(\d)\.(\d)/g, '$1,$2');
   }
   function lowerFirst(t) { var s = String(t || ''); return s ? s.charAt(0).toLowerCase() + s.slice(1) : s; }
@@ -16,7 +19,7 @@
   function changeList(changes, onlyAfter) {
     var list = cleanChanges(changes), shown = list.slice(0, 3).map(function (c) {
       var name = lowerFirst(c.label || 'un réglage');
-      return onlyAfter ? name + ' ' + fmt(c.after) : name + ' ' + fmt(c.before) + ' → ' + fmt(c.after);
+      return onlyAfter ? name + ' ' + fmt(c.after, c.key) : name + ' ' + fmt(c.before, c.key) + ' → ' + fmt(c.after, c.key);
     });
     var rest = list.length - shown.length;
     if (rest > 0) shown.push('et ' + rest + (rest > 1 ? ' autres réglages' : ' autre réglage'));
@@ -33,7 +36,7 @@
     var p = pending || {}, list = cleanChanges(p.changes);
     if (!p.preset || !list.length) return '';
     var where = p.project ? 'le projet « ' + p.project + ' »' : 'ton projet d’avant';
-    return 'Tu as retouché ton profil d’impression « ' + p.preset + ' » (' + labels(list) + ') pendant ' + where + '. Ces retouches restent avec ce projet. ' +
+    return 'Tu as retouché ton profil d’impression « ' + (L ? L.shortName(p.preset, false) : p.preset) + ' » (' + labels(list) + ') pendant ' + where + '. Ces retouches restent avec ce projet. ' +
       'Les garder aussi dans ton profil, pour tes prochains projets ?';
   }
   function printDetail(pending) { return 'Ce que tu as changé : ' + changeList((pending || {}).changes) + '.'; }

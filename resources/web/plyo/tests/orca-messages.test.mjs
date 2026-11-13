@@ -26,10 +26,14 @@ test('cas fréquents : une explication Plyo par code, la pièce nommée, et touj
   assert.match(v.text, /« Clé »/);
   assert.match(v.text, /trop petite ou trop fine/);
   assert.equal(v.quote, 'No layers were detected.', 'le texte d’Orca reste visible en détail');
-  assert.deepEqual(kinds(v), ['ask']);
-  assert.equal(v.actions[0].label, ASK);
-  assert.match(v.actions[0].prompt, /« No layers were detected\. »/);
-  assert.match(v.actions[0].prompt, /pour « Clé »/);
+  assert.deepEqual(kinds(v), ['slice', 'ask'], 'N7 : une suite gratuite avant « Demander »');
+  assert.match(v.impact, /^C’est bloquant/);
+  const ask = v.actions[1];
+  assert.equal(ask.label, ASK);
+  assert.match(ask.prompt, /« No layers were detected\. »/);
+  assert.match(ask.prompt, /pour « Clé »/);
+  // Un lot de l'assistant peut être annulé : c'est la suite proposée (sans compte), au lieu de redécouper tel quel.
+  assert.deepEqual(kinds(PF.orcaIssueView({ source: 'slicing_error', code: 'no_layers', level: 'error', text: 'x' }, { canUndo: true })), ['undo_last', 'ask']);
 });
 
 test('hauteur de couche plus grande que la buse : la correction sûre en un clic, sur le réglage du catalogue', () => {
@@ -58,27 +62,62 @@ test('réglage de l’imprimante ou G-code : expliqué et montré, jamais modifi
   assert.ok(!kinds(v).includes('fix'));
   assert.deepEqual(kinds(v), ['show_setting', 'ask']);
   assert.match(v.note, /profil de l’imprimante : je ne le modifie pas/);
-  assert.ok(v.quoteMain, 'pas d’explication Plyo : le texte d’Orca est montré comme tel');
+  assert.ok(!v.quoteMain, 'N7 : sans explication Plyo, le texte d’Orca reste une citation secondaire');
+  assert.match(v.text, /que je ne sais pas encore expliquer/);
   const g = PF.orcaIssueView({ source: 'slicing_error', code: 'PlaceholderParserError', level: 'error', text: 'Parsing error at line 3' });
   assert.ok(!kinds(g).includes('fix'));
   assert.match(g.text, /Je ne modifie jamais ces commandes/);
   assert.deepEqual(g.actions[0], { kind: 'show_me', target: 'printer', label: 'Montre-moi l’imprimante' });
 });
 
-test('problème inconnu : le texte d’Orca entre guillemets, présenté comme tel, et « Demander à l’assistant »', () => {
+test('N7 : problème inconnu, d’abord ce qui se passe et ce que ça change, le texte d’Orca en citation, une suite gratuite', () => {
   const v = PF.orcaIssueView({ source: 'slicing_error', code: 'RuntimeError', level: 'error', text: 'Wipe tower generation failed.', object_name: 'Tour' });
-  assert.ok(v.quoteMain);
+  assert.ok(!v.quoteMain);
   assert.equal(v.quote, 'Wipe tower generation failed.');
-  assert.match(v.text, /^Orca dit à propos de « Tour » :$/);
-  assert.deepEqual(kinds(v), ['ask']);
-  assert.equal(v.actions[0].prompt, 'Orca m’affiche ce message pour « Tour » : « Wipe tower generation failed. ». Explique-moi simplement ce qui se passe et comment le corriger.');
-  const w = PF.orcaIssueView({ source: 'validate_warning', code: 'support_base_pattern', level: 'warning', text: 'Rectilinear will be used instead.', opt_key: 'support_base_pattern', scope: 'print' });
+  assert.equal(v.text, 'Orca a trouvé un problème sur « Tour », que je ne sais pas encore expliquer.');
+  assert.equal(v.impact, 'C’est bloquant : tant que ce n’est pas réglé, Orca ne découpera pas ta plaque, et rien ne peut partir à l’imprimante.');
+  assert.deepEqual(kinds(v), ['slice', 'ask']);
+  assert.equal(v.actions[1].prompt, 'Orca m’affiche ce message pour « Tour » : « Wipe tower generation failed. ». Explique-moi simplement ce qui se passe et comment le corriger.');
+  const w = PF.orcaIssueView({ source: 'validate_warning', code: 'mystere', level: 'warning', text: 'Something odd.', opt_key: 'mystere', scope: 'print' });
   assert.equal(w.tone, 'warn');
   assert.equal(w.title, 'Orca prévient');
-  assert.deepEqual(kinds(w), ['show_setting', 'ask']);
+  assert.equal(w.text, 'Orca signale un point à surveiller, que je ne sais pas encore expliquer.');
+  assert.equal(w.impact, 'Ce n’est pas bloquant : tu peux imprimer quand même.');
+  assert.deepEqual(kinds(w), ['show_setting', 'preview', 'dismiss', 'ask']);
+  assert.equal(w.actions.find((a) => a.kind === 'dismiss').label, 'Continuer quand même');
   const blank = PF.orcaIssueView({ source: 'validate_error', code: 'unknown', level: 'error', text: '' });
   assert.match(blank.text, /sans me donner de détail/);
-  assert.match(blank.actions[0].prompt, /^Orca signale un problème sur ma plaque\./);
+  assert.match(blank.actions.find((a) => a.kind === 'ask').prompt, /^Orca signale un problème sur ma plaque\./);
+  // Contrôle du G-code (plaque non imprimable) : bloquant, l'aperçu montre où ; jamais « Continuer quand même ».
+  const g = PF.orcaIssueView({ source: 'gcode_check', code: 'not_printable', level: 'error', text: '' });
+  assert.match(g.impact, /Orca ne laissera pas imprimer cette plaque/);
+  assert.deepEqual(kinds(g), ['preview', 'ask']);
+  assert.ok(!kinds(PF.orcaIssueView({ source: 'validate_error', code: 'collision', level: 'error', text: '' })).includes('dismiss'), 'un refus ne se contourne jamais');
+});
+
+test('N7 : couches vides, avertissement sans correction connue : aperçu, annuler les réglages de l’assistant, continuer', () => {
+  const v = PF.orcaIssueView({ source: 'step_warning', code: 'empty_layers', level: 'warning', text: 'The object has empty layers.', object_name: 'Benchy' }, { canUndo: true });
+  assert.match(v.text, /^« Benchy » a des couches vides/);
+  assert.match(v.impact, /pas bloquant/);
+  assert.deepEqual(kinds(v), ['undo_last', 'preview', 'dismiss', 'ask']);
+  assert.equal(v.actions[0].label, 'Annuler les derniers réglages de l’assistant');
+  assert.equal(PF.ASK_LOGIN_LABEL, 'Me connecter pour demander à l’assistant');
+});
+
+test('N7 : avertissements courants d’Orca expliqués par leur identifiant', () => {
+  const issues = [
+    { source: 'validate_warning', code: 'filaments_temp', re: /températures de buse trop différentes/ },
+    { source: 'slicing_error', code: 'skirt_brim', re: /bordure .* ou la jupe/ },
+    { source: 'step_warning', code: 'precise_seam', re: /la couture risque d’être ailleurs/ },
+    { source: 'validate_warning', code: 'support_base_pattern', re: /base des supports/ },
+    { source: 'validate_warning', code: 'precise_outer_wall', re: /« Parois précises »/ },
+    { source: 'validate_error', code: 'adaptive_layer_height', re: /hauteur de couche adaptative/ },
+    { source: 'validate_error', code: 'enable_prime_tower', re: /pièce par pièce/ }];
+  for (const i of issues) {
+    const v = PF.orcaIssueView({ ...i, level: /warning/.test(i.source) ? 'warning' : 'error', text: 'Some English text.' });
+    assert.match(v.text, i.re, i.code);
+    assert.ok(v.actions.some((a) => a.kind !== 'ask'), i.code + ' : une suite gratuite');
+  }
 });
 
 test('cartes : erreurs d’abord, trois au plus, « pièce flottante » laissée à la vérification avant impression', () => {

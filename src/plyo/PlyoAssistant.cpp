@@ -161,12 +161,20 @@ bool allowed_navigation(const wxString& url)
     return false;
 }
 
+// Profondeur de recherche de la vue web sous le panneau : elle en est un enfant direct aujourd'hui, mais wx (ou une version
+// d'Orca) peut l'envelopper ; au-delà, ce n'est plus notre panneau.
+constexpr int WEBVIEW_SEARCH_DEPTH = 4;
+
 void guard_navigation(DockPanel* panel)
 {
-    for (wxWindow* child : panel->GetChildren()) {
+    const std::vector<wxWindow*> views = PageLogic::find_bounded<wxWindow*>(
+        panel, [](wxWindow* w) -> const wxWindowList& { return w->GetChildren(); },
+        [](wxWindow* w) { return wxDynamicCast(w, wxWebView) != nullptr; }, WEBVIEW_SEARCH_DEPTH);
+    // Sans vue trouvée, le panneau resterait sans garde : on le dit dans le journal plutôt que de le taire.
+    if (views.empty())
+        BOOST_LOG_TRIVIAL(error) << "Plyo: aucune vue web trouvée sous le panneau, la navigation n'y est pas gardée.";
+    for (wxWindow* child : views) {
         auto* view = wxDynamicCast(child, wxWebView);
-        if (view == nullptr)
-            continue;
         view->Bind(wxEVT_WEBVIEW_NAVIGATING, [](wxWebViewEvent& event) {
             if (allowed_navigation(event.GetURL())) {
                 event.Skip();

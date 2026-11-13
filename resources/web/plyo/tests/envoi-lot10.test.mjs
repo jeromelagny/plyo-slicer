@@ -34,16 +34,17 @@ test('échec d’envoi : chaque famille a sa phrase, son titre et ses suites, ja
   assert.deepEqual(labels, ['Réessayer l’envoi', 'Vérifier la liaison de mon imprimante', 'Exporter le fichier pour une carte SD ou une clé USB', 'Demander à l’assistant (utilise ta jauge)']);
 });
 
-test('échec inconnu ou refus avant l’envoi : le texte d’Orca est cité en premier, et part (nettoyé) dans la question', () => {
+test('échec inconnu ou refus avant l’envoi : la phrase de Plyo d’abord, le texte d’Orca cité en détail, et part (nettoyé) dans la question', () => {
   const v = PF.uploadFailureView({ code: 'quelque_chose', text: 'Unable to log in to the Flashforge printer.' }, 'AD5X');
-  assert.match(v.text, /je ne reconnais pas la raison\. Voici ce qu’il dit :$/);
-  assert.equal(v.quoteMain, true);
+  assert.match(v.text, /je ne reconnais pas la raison\. Rien n’est parti : réessaie, ou exporte le fichier pour une carte SD ou une clé USB\.$/);
+  assert.equal(v.quoteMain, false, 'N7 : le texte d’Orca (souvent en anglais) n’est qu’une citation secondaire');
+  assert.deepEqual(v.actions.slice(0, 3).map((a) => a.kind), ['retry', 'link', 'export'], 'des suites gratuites avant « Demander »');
   assert.equal(v.quote, 'Unable to log in to the Flashforge printer.');
   const ask = v.actions.find((a) => a.kind === 'ask');
   assert.match(ask.prompt, /Orca dit : « Unable to log in to the Flashforge printer\. »/);
   assert.doesNotMatch(ask.prompt, /AD5X/, 'le nom de l’imprimante ne part pas dans la question');
   const before = PF.uploadFailureView({ code: 'before_send', text: '' }, 'AD5X');
-  assert.equal(before.text, 'Orca a refusé de lancer l’envoi.');
+  assert.match(before.text, /^Orca a refusé de lancer l’envoi, sans une raison que je sache expliquer\. Rien n’est parti/);
   assert.equal(PF.uploadFailureView({}, '').title, 'L’envoi à ton imprimante n’a pas abouti');
 });
 
@@ -70,7 +71,11 @@ test('fenêtres d’Orca : ligne d’attente, carte seulement pour une erreur fe
   assert.equal(v.quote, 'Loading of a model file failed.');
   assert.deepEqual(kinds(v), ['import', 'ask']);
   assert.match(v.actions[1].prompt, /« Loading of a model file failed\. »/);
-  assert.deepEqual(kinds(PF.dialogView({ kind: 'error', text: '' })), ['ask']);
+  assert.equal(v.quoteMain, false, 'N7 : la fenêtre d’Orca citée en détail');
+  assert.match(v.text, /^Orca n’a pas pu ouvrir ce fichier, pour une raison que je ne sais pas encore expliquer\. Rien n’a été ajouté au plateau/);
+  const other = PF.dialogView({ kind: 'error', text: '' });
+  assert.deepEqual(kinds(other), ['slice', 'ask'], 'N7 : une suite gratuite, « Découper à nouveau »');
+  assert.match(other.text, /^Orca a affiché une erreur que je ne sais pas encore expliquer\./);
 });
 
 test('panneau : « parti » seulement quand Orca a pris l’envoi, jamais « démarré » sur la foi de l’envoi', () => {

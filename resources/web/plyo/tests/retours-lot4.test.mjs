@@ -53,7 +53,7 @@ test('ROB-06 : une retouche manuelle n’est pas écrasée, et elle est nommée'
 test('ROB-06 : « Tes réglages ont déjà changé depuis » seulement si c’est vrai, en nommant lesquels', () => {
   const all = L.revertPlan(CATALOG, PARAMS, { nozzle_temperature: 225, sparse_infill_density: '15%', enable_support: false, brim_type: 'auto_brim' });
   assert.equal(all.changes.length, 0);
-  assert.match(L.revertText(all), /Tes réglages ont déjà changé depuis : Température de buse \(225 °C\), Taux de remplissage \(15 %\), Supports activés \(non\) et Type de bordure \(auto_brim\)\. On peut chercher une autre piste\./);
+  assert.match(L.revertText(all), /Tes réglages ont déjà changé depuis : Température de buse \(225 °C\), Taux de remplissage \(15 %\), Supports activés \(non\) et Type de bordure \(Auto\)\. On peut chercher une autre piste\./);
   // Relevé illisible : on ne prétend rien, on ne remet rien sans vérifier.
   const unread = L.revertPlan(CATALOG, PARAMS, null);
   assert.equal(unread.changes.length, 0);
