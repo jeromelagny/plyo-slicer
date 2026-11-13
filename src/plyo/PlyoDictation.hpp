@@ -12,8 +12,9 @@ bool available();
 // écoute : si elle est désactivée, le système propose lui-même de l'activer.
 bool start();
 
-// Demande au système d'arrêter sa dictée (second appui sur le bouton micro). Faux si la demande n'a pas pu partir.
-// Sans dictée en cours, la demande est sans effet sur macOS.
+// Arrête la dictée du système (second appui sur le bouton micro). Faux si rien n'a pu être fait. Sur macOS, le champ
+// perd le curseur un instant puis le retrouve (seul moyen fiable, voir PlyoDictationMac.mm) ; l'écoute se coupe environ
+// 2 s plus tard.
 bool stop();
 
 // « mac », « windows » ou « other » : le panneau choisit son texte d'aide.
