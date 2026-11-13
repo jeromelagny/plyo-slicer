@@ -1,5 +1,6 @@
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoAutoSave.hpp"
+#include "PlyoBedLogic.hpp"
 #include "PlyoCatalog.hpp"
 #include "PlyoConfigRulesLogic.hpp"
 #include "PlyoContextLogic.hpp"
@@ -26,6 +27,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Plyo { namespace SettingsBridge {
@@ -158,6 +160,47 @@ Slic3r::BedType current_bed_type()
         if (auto* opt = bundle().project_config.option<Slic3r::ConfigOptionEnum<Slic3r::BedType>>("curr_bed_type"))
             type = opt->value;
     return type;
+}
+
+// Type de plateau du projet (celui de la liste déroulante d'Orca), en valeur d'Orca (« Textured PEI Plate ») ; vide si absent.
+std::string project_bed_value()
+{
+    if (auto* opt = bundle().project_config.option<Slic3r::ConfigOptionEnum<Slic3r::BedType>>("curr_bed_type"))
+        return Slic3r::ConfigOptionEnum<Slic3r::BedType>(opt->value).serialize();
+    return std::string();
+}
+
+// Orca ne montre sa liste des types de plateau que pour Bambu Lab ou un profil qui le déclare (Sidebar::update_presets,
+// Plater::normalize_bed_types : même condition).
+bool bed_choice_shown()
+{
+    const auto* multi = bundle().printers.get_edited_preset().config.option<Slic3r::ConfigOptionBool>("support_multi_bed_types");
+    return bundle().is_bbl_vendor() || (multi != nullptr && multi->value);
+}
+
+// Les types de la liste déroulante d'Orca pour l'imprimante en cours (Sidebar::get_cur_combox_bed_types, déjà filtrée par
+// not_support_bed_types du modèle), dans son ordre, avec leur libellé d'Orca.
+std::vector<std::pair<Slic3r::BedType, BedLogic::Offer>> bed_combo()
+{
+    std::vector<std::pair<Slic3r::BedType, BedLogic::Offer>> out;
+    Slic3r::GUI::Plater* plater = Slic3r::GUI::wxGetApp().plater();
+    if (plater == nullptr)
+        return out;
+    const Slic3r::ConfigOptionDef* def = Slic3r::print_config_def.get("curr_bed_type");
+    for (const Slic3r::BedType type : plater->sidebar().get_cur_combox_bed_types()) {
+        const int   index = static_cast<int>(type) - 1; // enum_labels commence à btPC (= 1), comme la liste d'Orca
+        std::string label = def != nullptr && index >= 0 && index < static_cast<int>(def->enum_labels.size()) ? def->enum_labels[index] : std::string();
+        out.emplace_back(type, BedLogic::Offer{Slic3r::ConfigOptionEnum<Slic3r::BedType>(type).serialize(), label});
+    }
+    return out;
+}
+
+std::vector<BedLogic::Offer> bed_offers(const std::vector<std::pair<Slic3r::BedType, BedLogic::Offer>>& combo)
+{
+    std::vector<BedLogic::Offer> list;
+    for (const auto& item : combo)
+        list.push_back(item.second);
+    return BedLogic::offered(bed_choice_shown(), list);
 }
 
 // Les clés de température de plateau dépendent du type de plateau en cours.
@@ -650,6 +693,49 @@ nlohmann::json ai_context()
     raw.extruder_type     = first_text(configs.printer, "extruder_type");
     raw.printer_structure = first_text(configs.printer, "printer_structure");
     return ContextLogic::context_extras(raw);
+}
+
+nlohmann::json bed_info()
+{
+    nlohmann::json types = nlohmann::json::array();
+    for (const BedLogic::Offer& o : bed_offers(bed_combo()))
+        types.push_back({{"value", o.value}, {"label", o.label}});
+    nlohmann::json out{{"types", types}, {"current", project_bed_value()}};
+    // La plaque en cours a son propre type (réglages de la plaque dans Orca) : c'est lui qui compte pour elle.
+    if (Slic3r::GUI::Plater* plater = Slic3r::GUI::wxGetApp().plater())
+        if (const Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate())
+            if (plate->get_bed_type() != Slic3r::btDefault)
+                out["plate"] = Slic3r::ConfigOptionEnum<Slic3r::BedType>(plate->get_bed_type()).serialize();
+    return out;
+}
+
+nlohmann::json set_bed_type(const std::string& value, const std::string& printer)
+{
+    if (const nlohmann::json busy = orca_dialog_refusal(); !busy.is_null())
+        return busy;
+    if (printer != bundle().printers.get_edited_preset().name)
+        return {{"ok", false}, {"text", "Plyo Slicer n'est plus sur cette imprimante : je n'ai pas changé le plateau."}};
+    const auto        combo  = bed_combo();
+    const std::string why    = BedLogic::refusal(bed_offers(combo), value);
+    if (!why.empty())
+        return {{"ok", false}, {"text", why}};
+    const std::string before = project_bed_value();
+    if (before == value)
+        return {{"ok", true}, {"value", value}, {"before", before}, {"changed", false}};
+    const auto wanted = std::find_if(combo.begin(), combo.end(), [&value](const auto& item) { return item.second.value == value; });
+    Slic3r::GUI::Plater* plater = Slic3r::GUI::wxGetApp().plater();
+    if (wanted == combo.end() || plater == nullptr) // refusal() l'a déjà écarté ; garde au cas où la liste aurait changé entre-temps
+        return {{"ok", false}, {"text", "Ce type de plateau n'est pas proposé pour ton imprimante : je n'ai rien changé."}};
+    // Même chemin qu'un choix dans la liste déroulante d'Orca : SelectAndNotify envoie wxEVT_COMBOBOX, que reçoit
+    // Plater::priv::on_select_bed_type (configuration du projet, plaques, avertissements, type retenu pour cette imprimante).
+    plater->sidebar().set_bed_type_accord_combox(wanted->first);
+    const std::string after = project_bed_value();
+    if (after != value) {
+        BOOST_LOG_TRIVIAL(warning) << "Plyo: type de plateau « " << value << " » demandé, Orca est resté sur « " << after << " »";
+        return {{"ok", false}, {"text", "Plyo Slicer n'a pas pris ce type de plateau : rien n'a changé."}, {"value", after}};
+    }
+    BOOST_LOG_TRIVIAL(info) << "Plyo: type de plateau choisi dans le panneau : « " << before << " » → « " << value << " »";
+    return {{"ok", true}, {"value", value}, {"before", before}, {"changed", true}};
 }
 
 nlohmann::json apply_changes(const nlohmann::json& changes)

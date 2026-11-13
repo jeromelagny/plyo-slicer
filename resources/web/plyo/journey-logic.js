@@ -219,10 +219,21 @@
     return n.length <= 28 ? n : n.slice(0, 18) + '…' + n.slice(-8);
   }
 
-  function ficheSummary(project) {
-    var p = project || {}, parts = [];
-    // Tenir sur une ligne : ni buse, ni mot « emplacement » coupé, ni températures en chiffres (elles sont dans la fiche dépliée).
-    if (p.printer && (p.printer.name || p.printer.preset)) parts.push(String(p.printer.name || p.printer.preset).replace(/\s+\d+(\.\d+)?\s*nozzle$/i, ''));
+  // Nom de la machine suivi de la buse que lit le slicer (« Creality Ender-3 V3 · buse 0,4 mm ») ; sans buse connue, le nom
+  // sans la mention anglaise du profil (« … 0.4 nozzle »). `nozzleMm` : context.nozzle_mm du slicer, seulement quand il lit
+  // l'imprimante du projet (jamais une supposition).
+  function nozzleMmText(mm) { return typeof mm === 'number' && isFinite(mm) && mm > 0 ? String(Math.round(mm * 1000) / 1000).replace('.', ',') + ' mm' : ''; }
+  function machineText(printer, nozzleMm) {
+    var name = String(printer && (printer.name || printer.preset) || '').replace(/\s+\d+(\.\d+)?\s*nozzle$/i, ''), n = nozzleMmText(nozzleMm);
+    return n ? name + ' · buse ' + n : name;
+  }
+
+  // `extra` (facultatif) : { nozzleMm } (voir machineText).
+  function ficheSummary(project, extra) {
+    var p = project || {}, parts = [], x = extra || {};
+    // Tenir sur une ligne : ni mot « emplacement » coupé, ni températures en chiffres (elles sont dans la fiche dépliée). La buse,
+    // quand le slicer la lit sur la machine du projet.
+    if (p.printer && (p.printer.name || p.printer.preset)) parts.push(machineText(p.printer, x.nozzleMm));
     if (p.part && p.part.name) parts.push(shortName(p.part.name));
     if (p.filament && p.filament.type && Array.isArray(p.canvas) && p.canvas.length) parts.push(filamentRow(p).text.replace(/ · emplacement /, ' · n° ').replace(/ · (\d+) emplacements$/, ' · $1 bobines'));
     else if (p.filament && p.filament.spool && p.filament.spool.name) parts.push(shortName(p.filament.spool.name));
@@ -245,9 +256,10 @@
   }
 
   // Les lignes de la fiche déjà choisies (une valeur seulement proposée n'est pas choisie) : { line, text }.
-  function filledRows(project) {
-    var p = project || {}, rows = [];
-    if (p.printer && !p.printer.proposed && (p.printer.name || p.printer.preset)) rows.push({ line: 'printer', text: p.printer.name || p.printer.preset });
+  // `extra` (facultatif) : { nozzleMm } : la ligne de la machine dit la buse que lit le slicer.
+  function filledRows(project, extra) {
+    var p = project || {}, rows = [], n = extra && extra.nozzleMm;
+    if (p.printer && !p.printer.proposed && (p.printer.name || p.printer.preset)) rows.push({ line: 'printer', text: nozzleMmText(n) ? machineText(p.printer, n) : p.printer.name || p.printer.preset });
     if (p.part && p.part.name) rows.push({ line: 'part', text: p.part.name });
     if (p.filament && !p.filament.proposed && p.filament.type) rows.push(filamentRow(p));
     return rows;
@@ -426,7 +438,7 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;

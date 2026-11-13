@@ -1,5 +1,6 @@
 #include "PlyoProjectLogic.hpp"
 
+#include "PlyoBedLogic.hpp"
 #include "PlyoCatalogPolicy.hpp"
 #include "PlyoJson.hpp"
 
@@ -363,6 +364,16 @@ nlohmann::json sanitize_habits(const nlohmann::json& habits)
                 list.push_back(p);
         if (!list.empty())
             out["spool_declined"] = list;
+    }
+    // Plateau posé sur chaque imprimante (question de l'étape Machine) : une valeur d'Orca connue, ou « unknown » (« Je ne sais
+    // pas »). Retenu pour ne pas reposer la question à chaque projet ; ce n'est jamais appliqué sans un clic.
+    if (const nlohmann::json* beds = Json::field(habits, "beds"); beds != nullptr && beds->is_object()) {
+        nlohmann::json kept = nlohmann::json::object();
+        for (auto it = beds->begin(); it != beds->end() && kept.size() < 50; ++it)
+            if (!it.key().empty() && it.key().size() <= 200 && it.value().is_string() && BedLogic::is_answer(it.value().get<std::string>()))
+                kept[it.key()] = it.value();
+        if (!kept.empty())
+            out["beds"] = kept;
     }
     return out;
 }

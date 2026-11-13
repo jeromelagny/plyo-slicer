@@ -15,6 +15,11 @@ bool needs_printer();
 // Catalogue des imprimantes FFF fournies : [{ vendor, model, nozzles: ["0.4", …] }], trié par modèle.
 nlohmann::json catalog();
 
+// Le modèle du catalogue de l'imprimante en cours (printer_model de son profil) : { vendor, model, nozzles, nozzle (variante
+// en cours, « 0.4 »), system (profil fourni, pas un profil à soi) }, ou null si le modèle n'est pas reconnu. Lecture seule ; un
+// changement de buse repasse par install() avec la même marque et le même modèle.
+nlohmann::json current_model();
+
 // Le modèle du catalogue qui correspond à une imprimante trouvée ({ name, … }) : { vendor, model, nozzles } ou null.
 nlohmann::json identify(const nlohmann::json& printer);
 

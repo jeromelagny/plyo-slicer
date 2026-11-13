@@ -199,6 +199,10 @@ void send_values()
     message["type"]        = "values";
     // Langue de l'interface d'Orca (ex. « fr_FR ») : l'assistant répond dans cette langue.
     message["locale"]      = Slic3r::GUI::wxGetApp().current_language_code().utf8_string();
+    // Hors de `context` (que le panneau transmet au service) : ce qui sert à la fiche et aux questions de l'étape Machine. Types de
+    // plateau proposés pour l'imprimante en cours et type du projet ; modèle de l'imprimante et ses tailles de buse.
+    message["bed"]         = SettingsBridge::bed_info();
+    message["machine"]     = PrinterSetup::current_model();
     send(message);
 }
 
@@ -888,6 +892,15 @@ void handle_page_message(const nlohmann::json& data)
         } else if (type == "setup_install") {
             nlohmann::json r = PrinterSetup::install(Json::str(data, "vendor"), Json::str(data, "model"), Json::str(data, "nozzle"));
             r["type"]        = "setup_installed";
+            send(r);
+            send_values();
+        } else if (type == "bed_type_set") {
+            // Type de plateau choisi d'un clic dans le panneau (question de l'étape Machine, « Changer » de la fiche). Jamais un
+            // ordre de l'IA : ce message n'est envoyé que par ces boutons, et ni Commands, ni apply, ni le catalogue n'y mènent.
+            nlohmann::json r = ProjectFiles::edits_blocked() ? nlohmann::json{{"ok", false}, {"text", ProjectFiles::busy_text()}}
+                                                             : SettingsBridge::set_bed_type(Json::str(data, "value", 40), Json::str(data, "printer", 200));
+            r["type"]        = "bed_type_set";
+            r["token"]       = Json::integer(data, "token", 0);
             send(r);
             send_values();
         } else if (type == "printer_wizard") {

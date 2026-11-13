@@ -13,14 +13,18 @@
   function projectOf(ctx) { return ctx.project || root.PlyoProject.emptyProject(); }
 
   // La fiche : seulement ce qui est déjà choisi (rien au tout début), ou une seule ligne quand `compact`.
+  // ctx.nozzleMm : buse lue par le slicer sur la machine du projet ; ctx.bed : ligne du plateau (PlyoMachines.bedRow) ou null ;
+  // ctx.nozzleChange : « Changer de buse » est possible (h.changeNozzle) ; h.changeBed rouvre la question du plateau.
   function renderFiche(slot, ui, ctx) {
-    var project = projectOf(ctx), h = ctx.handlers, rows = root.PlyoJourney.filledRows(project);
+    var project = projectOf(ctx), h = ctx.handlers, extra = { nozzleMm: ctx.nozzleMm }, rows = root.PlyoJourney.filledRows(project, extra);
     slot.textContent = '';
     if (!rows.length) return;
     var card = ui.el('div', 'project' + (ctx.compact ? ' compact' : ''));
     if (ctx.compact) {
       // Une ligne coupée par des points de suspension (N6) : le texte entier au survol et pour les lecteurs d'écran.
-      var sum = root.PlyoJourney.ficheSummary(project), line = ui.button(sum, h.expand, 'link project-summary');
+      // Avec la typographie du bouton (« 0,4 mm » insécable) : le texte au survol est exactement celui affiché.
+      var typo = root.PlyoLogic && root.PlyoLogic.fr ? root.PlyoLogic.fr : String;
+      var sum = typo(root.PlyoJourney.ficheSummary(project, extra)), line = ui.button(sum, h.expand, 'link project-summary');
       line.title = sum;
       line.setAttribute('aria-label', sum + ' : afficher le détail');
       card.appendChild(line);
@@ -39,6 +43,21 @@
       r.appendChild(left);
       if (row.line !== 'part') r.appendChild(ui.button('changer', function () { h.change(row.line); }, 'link'));
       card.appendChild(r);
+      // Sous la machine : changer de buse (profil fourni à plusieurs tailles) et le plateau posé dessus (imprimante à plusieurs types).
+      if (row.line === 'printer' && ctx.nozzleChange && h.changeNozzle) {
+        var nz = ui.el('div', 'project-row project-sub');
+        nz.appendChild(ui.button('Changer de buse', h.changeNozzle, 'link'));
+        card.appendChild(nz);
+      }
+      if (row.line === 'printer' && ctx.bed) {
+        var bed = ui.el('div', 'project-row project-sub');
+        var bl = ui.el('div', 'project-label');
+        bl.appendChild(ui.el('span', 'muted small', ctx.bed.text));
+        bed.appendChild(bl);
+        if (h.changeBed) bed.appendChild(ui.button('changer', h.changeBed, 'link'));
+        card.appendChild(bed);
+        if (ctx.bed.note) card.appendChild(ui.el('p', 'muted small', ctx.bed.note));
+      }
       // Températures modifiables à la main : réservées aux confirmés (un débutant les change sans le vouloir).
       if (row.line === 'filament' && !ctx.beginner) {
         var fi = project.filament, temps = ui.el('div', 'temp-row project-temps');
@@ -261,6 +280,37 @@
     slot.appendChild(body);
   }
 
-  root.PlyoProjectCard = { renderFiche: renderFiche, renderChoices: renderChoices, renderSpoolEditor: renderSpoolEditor, MATERIALS: MATERIALS, LABEL_LINK: LABEL_LINK };
+  // Question de l'étape Machine, une fois l'imprimante choisie : « Quel plateau est posé sur ton imprimante ? ». Pas une fenêtre :
+  // une carte dans l'étape, qu'on peut laisser. ctx : { question (PlyoMachines.bedQuestion) ou null, editing, waiting, handlers :
+  // { pickBed(value), unknownBed(), cancelBed() } }. Le type d'aujourd'hui est signalé ; aucun bouton plein (une seule action
+  // pleine par étape, dans la ligne d'action).
+  function renderBedQuestion(slot, ui, ctx) {
+    slot.textContent = '';
+    var q = ctx && ctx.question, h = ctx && ctx.handlers;
+    if (!q || !q.choices || !q.choices.length) return;
+    var box = ui.el('div', 'card bed-ask');
+    box.appendChild(ui.el('p', 'intent-q', q.title));
+    box.appendChild(ui.el('p', 'small', q.text));
+    box.appendChild(ui.el('p', 'muted small', q.help));
+    var list = ui.el('div', 'bed-choices');
+    q.choices.forEach(function (c) {
+      var item = ui.el('div', 'bed-choice');
+      var b = ui.button(c.name + (c.current ? ' · réglé aujourd’hui' : ''), function () { h.pickBed(c.value); }, 'btn ghost sm' + (c.current ? ' on' : ''));
+      b.disabled = !!ctx.waiting;
+      item.appendChild(b);
+      if (c.look) item.appendChild(ui.el('span', 'muted small', c.look));
+      list.appendChild(item);
+    });
+    box.appendChild(list);
+    var acts = ui.el('div', 'printer-actions');
+    var unknown = ui.button(q.unknown, h.unknownBed, 'link');
+    unknown.disabled = !!ctx.waiting;
+    acts.appendChild(unknown);
+    if (ctx.editing) acts.appendChild(ui.button('Annuler', h.cancelBed, 'link'));
+    box.appendChild(acts);
+    slot.appendChild(box);
+  }
+
+  root.PlyoProjectCard = { renderBedQuestion: renderBedQuestion, renderFiche: renderFiche, renderChoices: renderChoices, renderSpoolEditor: renderSpoolEditor, MATERIALS: MATERIALS, LABEL_LINK: LABEL_LINK };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.PlyoProjectCard;
 })(typeof window !== 'undefined' ? window : globalThis);

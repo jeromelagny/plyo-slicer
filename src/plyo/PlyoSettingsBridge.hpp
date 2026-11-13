@@ -20,6 +20,16 @@ nlohmann::json read_values();
 // plateau et clés de température qu'il lit vraiment, matière et marque du filament, faits de l'imprimante.
 nlohmann::json ai_context();
 
+// Types de plateau que Plyo Slicer propose pour l'imprimante en cours, lus dans sa liste déroulante (barre latérale) :
+// {types: [{value, label}], current, plate?}. `types` est vide quand l'imprimante n'a pas ce choix (même condition qu'Orca,
+// ou un seul type) ; `current` : type du projet ; `plate` : type propre à la plaque en cours, s'il y en a un. Lecture seule.
+nlohmann::json bed_info();
+
+// Change le type de plateau du projet, sur un clic de l'utilisateur dans le panneau seulement (jamais sur un ordre de l'IA) :
+// `value` doit faire partie de bed_info().types et `printer` être l'imprimante en cours, sinon refus. Passe par la liste
+// déroulante d'Orca (Sidebar::set_bed_type_accord_combox), comme un choix fait à la main. {ok, text?, value, before, changed}.
+nlohmann::json set_bed_type(const std::string& value, const std::string& printer);
+
 // Pourquoi un lot n'est plus annulable : le refus d'annulation le dit (projet ouvert dans Orca, autre projet de l'assistant,
 // fichier ouvert, calibration, imprimante ou filament changés).
 enum class DropReason { Project, Conversation, Import, Calibration, Profile };

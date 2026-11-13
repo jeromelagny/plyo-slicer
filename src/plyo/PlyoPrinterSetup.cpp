@@ -105,6 +105,33 @@ nlohmann::json catalog()
     return out;
 }
 
+nlohmann::json current_model()
+{
+    if (wxGetApp().preset_bundle == nullptr)
+        return nullptr;
+    const Slic3r::Preset& preset  = wxGetApp().preset_bundle->printers.get_edited_preset();
+    const auto*           model   = preset.config.option<Slic3r::ConfigOptionString>("printer_model");
+    const auto*           variant = preset.config.option<Slic3r::ConfigOptionString>("printer_variant");
+    if (model == nullptr || model->value.empty())
+        return nullptr;
+    // Le modèle du catalogue, s'il est seul à porter ce nom (sinon on ne sait pas lequel installer : rien n'est proposé).
+    const Model* found = nullptr;
+    for (const Model& m : models())
+        if (m.name == model->value) {
+            if (found != nullptr)
+                return nullptr;
+            found = &m;
+        }
+    if (found == nullptr)
+        return nullptr;
+    nlohmann::json out = to_json(*found);
+    out["nozzle"]      = variant != nullptr ? variant->value : std::string();
+    // Seul un profil fourni avec Plyo Slicer change de buse en choisissant une autre variante du même modèle. Un profil à soi
+    // (« Ma K1C », connexion de la machine) ne le peut pas sans en créer un autre : `system` est alors faux.
+    out["system"]      = preset.is_system;
+    return out;
+}
+
 nlohmann::json identify(const nlohmann::json& printer)
 {
     Discovery::Printer p;

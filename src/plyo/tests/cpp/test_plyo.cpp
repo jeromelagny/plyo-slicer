@@ -2,6 +2,7 @@
 // nettoyage des données enregistrées. Lancés par src/plyo/tests/cpp/run.sh.
 #include <catch_amalgamated.hpp>
 
+#include "../../PlyoBedLogic.hpp"
 #include "../../PlyoFiles.hpp"
 #include "../../PlyoJson.hpp"
 #include "../../PlyoSanitize.hpp"
@@ -1092,6 +1093,51 @@ TEST_CASE("Habits: niveau d'explication et questions d'intention")
     // Lot 6 : le retour aux explications détaillées après une question de définition est gardé.
     CHECK(sanitize_habits({{"level", "detailed"}, {"level_hold", true}})["level_hold"] == true);
     CHECK_FALSE(sanitize_habits({{"level_hold", "oui"}}).contains("level_hold"));
+}
+
+TEST_CASE("Habits: le plateau posé sur chaque imprimante est gardé, seulement s'il est un type connu ou « unknown »")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json clean = sanitize_habits({{"beds", {{"Ma K1C", "Textured PEI Plate"}, {"Creality Ender-3 V3 0.4 nozzle", "unknown"},
+                                                            {"x", "Plaque inventée"}, {"y", 3}, {"", "Cool Plate"}}}});
+    CHECK(clean["beds"] == nlohmann::json({{"Ma K1C", "Textured PEI Plate"}, {"Creality Ender-3 V3 0.4 nozzle", "unknown"}}));
+    CHECK_FALSE(sanitize_habits({{"beds", {{"x", "Plaque inventée"}}}}).contains("beds"));
+    CHECK_FALSE(sanitize_habits({{"beds", "Cool Plate"}}).contains("beds"));
+    nlohmann::json many = nlohmann::json::object();
+    for (int i = 0; i < 80; ++i)
+        many["p" + std::to_string(i)] = "Cool Plate";
+    CHECK(sanitize_habits({{"beds", many}})["beds"].size() == 50);
+    CHECK_FALSE(sanitize_habits({{"beds", {{std::string(201, 'a'), "Cool Plate"}}}}).contains("beds"));
+}
+
+TEST_CASE("BedLogic: liste montrée seulement quand Orca montre la sienne et qu'il y a un vrai choix")
+{
+    using Plyo::BedLogic::Offer;
+    const std::vector<Offer> two = {{"Cool Plate", "Smooth Cool Plate"}, {"Textured PEI Plate", "Textured PEI Plate"}};
+    CHECK(Plyo::BedLogic::offered(true, two).size() == 2);
+    CHECK(Plyo::BedLogic::offered(false, two).empty()); // ni Bambu Lab ni support_multi_bed_types : Orca cache sa liste
+    CHECK(Plyo::BedLogic::offered(true, {{"Textured PEI Plate", "Textured PEI Plate"}}).empty());
+    CHECK(Plyo::BedLogic::offered(true, {}).empty());
+}
+
+TEST_CASE("BedLogic: une demande hors des types proposés est refusée avec un message clair")
+{
+    using Plyo::BedLogic::Offer;
+    const std::vector<Offer> two = {{"Cool Plate", "Smooth Cool Plate"}, {"Textured PEI Plate", "Textured PEI Plate"}};
+    CHECK(Plyo::BedLogic::refusal(two, "Cool Plate").empty());
+    CHECK(Plyo::BedLogic::refusal(two, "Textured PEI Plate").empty());
+    CHECK(Plyo::BedLogic::refusal(two, "High Temp Plate").find("pas proposé pour ton imprimante") != std::string::npos);
+    CHECK(Plyo::BedLogic::refusal(two, "").find("pas proposé") != std::string::npos);
+    CHECK(Plyo::BedLogic::refusal(two, "cool plate").find("pas proposé") != std::string::npos); // valeur exacte d'Orca seulement
+    CHECK(Plyo::BedLogic::refusal({}, "Cool Plate").find("qu'un type de plateau") != std::string::npos);
+    for (const std::string& v : Plyo::BedLogic::known_values())
+        CHECK(Plyo::BedLogic::is_answer(v));
+    CHECK(Plyo::BedLogic::is_answer("unknown"));
+    CHECK_FALSE(Plyo::BedLogic::is_answer("Default Plate")); // « par défaut » n'est pas une réponse de l'utilisateur
+    CHECK_FALSE(Plyo::BedLogic::is_answer(""));
+    // Aucun texte ne parle d'Orca : l'utilisateur lit « Plyo Slicer ».
+    for (const std::string& t : {Plyo::BedLogic::refusal(two, "x"), Plyo::BedLogic::refusal({}, "x")})
+        CHECK(t.find("Orca") == std::string::npos);
 }
 
 TEST_CASE("Project: les réponses d'intention sont gardées, et rien d'autre")

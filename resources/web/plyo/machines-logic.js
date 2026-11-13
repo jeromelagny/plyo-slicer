@@ -15,6 +15,10 @@
     if (src.level_hold === true) out.level_hold = true;
     out.intent_skips = typeof src.intent_skips === 'number' ? src.intent_skips : 0;
     if (src.ask_intent === false) out.ask_intent = false;
+    // Gardés tels quels (le slicer les vérifie à l'enregistrement : ProjectLogic::sanitize_habits) : sans eux, une habitude
+    // notée ensuite (filament, niveau…) effacerait la réponse aux questions sur la pièce, les bobines refusées et les plateaux.
+    ['last_intent', 'beds'].forEach(function (k) { if (src[k] && typeof src[k] === 'object' && !Array.isArray(src[k])) out[k] = JSON.parse(JSON.stringify(src[k])); });
+    if (Array.isArray(src.spool_declined)) out.spool_declined = src.spool_declined.slice();
     return out;
   }
 
@@ -129,7 +133,116 @@
       : 'Après un envoi, regarde son écran : je ne sais pas encore vérifier qu’elle démarre.';
   }
 
-  var api = { levelOf: levelOf, guessLevel: guessLevel, levelChange: levelChange, chooseLevel: chooseLevel, askIntent: askIntent, noteIntent: noteIntent,
+  // ---------- Taille de buse (installation d'une imprimante, « Changer de buse » de la fiche) ----------
+  // « 0.4 » ou 0.4 → « 0,4 mm » ; '' si ce n'est pas une taille.
+  function nozzleText(n) {
+    var v = typeof n === 'number' ? n : parseFloat(String(n == null ? '' : n));
+    return isFinite(v) && v > 0 ? String(Math.round(v * 1000) / 1000).replace('.', ',') + ' mm' : '';
+  }
+  // Tailles proposées par le profil du modèle (« 0.4 », « 0.6 »…). Une seule : installée sans question (`auto`). Plusieurs : la
+  // question, 0,4 mm d'abord et marquée comme la plus courante, puis les autres de la plus fine à la plus grosse.
+  // `current` (« Changer de buse ») : la buse du profil en cours, signalée dans la liste.
+  function nozzleChoice(nozzles, current) {
+    var list = (Array.isArray(nozzles) ? nozzles : []).map(String).filter(function (n, i, all) { return nozzleText(n) && all.indexOf(n) === i; });
+    if (list.length <= 1) return { auto: list[0] || '' };
+    var common = list.indexOf('0.4') >= 0;
+    var rest = list.filter(function (n) { return n !== '0.4'; }).sort(function (a, b) { return parseFloat(a) - parseFloat(b); });
+    var order = common ? ['0.4'].concat(rest) : rest;
+    var changing = typeof current === 'string' && current !== '';
+    return {
+      title: changing ? 'Quelle buse est montée sur ton imprimante ?' : 'Quelle taille de buse ?',
+      text: 'La buse est la petite pièce en métal d’où sort le fil fondu. ' + (common
+        ? 'Si tu n’as jamais changé la buse de ton imprimante, garde 0,4 mm : c’est celle livrée avec presque toutes les imprimantes.'
+        : 'Si tu ne sais pas, garde celle livrée avec ton imprimante : sa notice l’indique.'),
+      help: changing ? 'Changer de buse refait la préparation : filament, vérification et découpe.'
+        : 'Pas sûr ? La taille est souvent gravée sur la buse elle-même, par exemple « 0.4 ». Tu pourras la changer plus tard.',
+      choices: order.map(function (n) {
+        return { value: n, common: n === '0.4', current: changing && n === current,
+          label: nozzleText(n) + (n === '0.4' ? ' (la plus courante)' : '') + (changing && n === current ? ' · en place aujourd’hui' : '') };
+      })
+    };
+  }
+  // « Changer de buse » dans la fiche : seulement pour un profil fourni avec le slicer (une autre buse = une autre variante du même
+  // modèle, installée comme à l'installation), d'un modèle à plusieurs tailles, et qui est bien l'imprimante du projet.
+  // `machine` : message « values » du slicer (PrinterSetup::current_model). Un profil à soi (« Ma K1C », relié) : non.
+  function nozzleChangeOffer(machine, projectPreset, orcaPrinter) {
+    var m = machine && typeof machine === 'object' ? machine : null;
+    if (!m || m.system !== true || !projectPreset || projectPreset !== orcaPrinter) return null;
+    if (!Array.isArray(m.nozzles) || m.nozzles.length < 2 || !m.vendor || !m.model) return null;
+    return { vendor: m.vendor, model: m.model, nozzles: m.nozzles.slice(), current: typeof m.nozzle === 'string' ? m.nozzle : '' };
+  }
+
+  // ---------- Type de plateau (question de l'étape Machine) ----------
+  // Noms simples et de quoi reconnaître chaque plaque, pour les valeurs d'Orca (curr_bed_type). Les noms partent de la traduction
+  // française du slicer (« Plaque PEI texturée », « Plaque lisse haute température »…).
+  var BEDS = {
+    'Cool Plate': { name: 'Plaque lisse basse température (Cool Plate)', look: 'Lisse au toucher. « Cool Plate » est écrit dessus.' },
+    'Engineering Plate': { name: 'Plaque Engineering', look: 'Lisse au toucher. « Engineering Plate » est écrit dessus.' },
+    'High Temp Plate': { name: 'Plaque lisse haute température', look: 'Lisse et brillante au toucher. On l’appelle souvent « PEI lisse ».' },
+    'Textured PEI Plate': { name: 'Plaque PEI texturée', look: 'Rugueuse au toucher, comme un papier de verre très fin. Le dessous de tes pièces en sort granuleux.' },
+    'Textured Cool Plate': { name: 'Plaque Cool Plate texturée', look: 'Rugueuse au toucher. « Textured Cool Plate » est écrit dessus.' },
+    'Supertack Plate': { name: 'Plaque Cool Plate SuperTack', look: '« SuperTack » est écrit dessus.' }
+  };
+  var BED_UNKNOWN = 'unknown';
+  function bedName(value, label) { return BEDS[value] ? BEDS[value].name : String(label || value || ''); }
+  // Les types proposés par le slicer pour l'imprimante en cours (`bed` du message « values ») ; [] s'il n'y a pas de choix.
+  function bedTypes(bed) {
+    var t = bed && Array.isArray(bed.types) ? bed.types.filter(function (x) { return x && typeof x.value === 'string' && x.value; }) : [];
+    return t.length >= 2 ? t : [];
+  }
+  function bedAnswer(habits, preset) {
+    var b = habits && habits.beds && typeof habits.beds === 'object' ? habits.beds[preset] : '';
+    return typeof b === 'string' ? b : '';
+  }
+  // Réponse retenue pour une imprimante : un type d'Orca, ou « unknown » (« Je ne sais pas »). Rien n'est appliqué ici.
+  function rememberBed(habits, preset, value) {
+    var h = clone(habits);
+    if (!preset || !(value === BED_UNKNOWN || BEDS[value])) return h;
+    h.beds = h.beds && typeof h.beds === 'object' ? h.beds : {};
+    h.beds[preset] = value;
+    return h;
+  }
+  // Faut-il poser la question ? ctx : { preset (imprimante du projet, choisie), orcaPrinter (celle que lit le slicer), habits,
+  // editing (« Changer » de la fiche), shown (déjà montrée pendant cette session) }. Jamais pour une imprimante à un seul type.
+  function bedAsks(bed, ctx) {
+    var c = ctx || {};
+    if (!bedTypes(bed).length || !c.preset || c.preset !== c.orcaPrinter) return false;
+    return !!c.editing || !!c.shown || !bedAnswer(c.habits, c.preset);
+  }
+  function bedQuestion(bed) {
+    var current = bed && bed.current;
+    return {
+      title: 'Quel plateau est posé sur ton imprimante ?',
+      text: 'C’est la plaque sur laquelle ta pièce s’imprime. Je règle sa température d’après ta réponse.',
+      help: 'Son nom est souvent écrit dessus, dans un coin ou au dos. Passe la main dessus : lisse ou rugueuse, ça aide à la reconnaître.',
+      choices: bedTypes(bed).map(function (t) {
+        return { value: t.value, name: bedName(t.value, t.label), look: BEDS[t.value] ? BEDS[t.value].look : '', current: t.value === current };
+      }),
+      unknown: 'Je ne sais pas'
+    };
+  }
+  function bedUnknownText(bed) {
+    return 'D’accord, je garde « ' + bedName(bed && bed.current) + ' », le réglage actuel. Pour vérifier : retire la plaque (elle est souvent aimantée et se soulève par un coin), '
+      + 'regarde le nom écrit dessus ou au dos, et passe la main dessus : rugueuse, elle est texturée ; lisse, elle est lisse. Tu pourras changer depuis ta fiche, en haut.';
+  }
+  function bedChosenText(value, before, changed) {
+    return changed ? 'C’est noté : ton plateau est « ' + bedName(value) + ' ». Je l’ai réglé dans Plyo Slicer, la température du plateau suit.'
+      : 'C’est noté : ton plateau est « ' + bedName(value) + ' ». C’était déjà le réglage de Plyo Slicer.';
+  }
+  function bedRevertLabel(before) { return 'Remettre « ' + bedName(before) + ' »'; }
+  // Ligne de la fiche ({ text: « Plateau : Plaque PEI texturée », note? }), null sans choix ; `note` : la plaque en cours a son
+  // propre type.
+  function bedRow(bed) {
+    if (!bedTypes(bed).length || !bed.current) return null;
+    var row = { text: 'Plateau : ' + bedName(bed.current) };
+    if (bed.plate && bed.plate !== bed.current)
+      row.note = 'Cette plaque a son propre type de plateau dans Plyo Slicer, « ' + bedName(bed.plate) + ' » : c’est lui qui compte pour elle.';
+    return row;
+  }
+
+  var api = { nozzleText: nozzleText, nozzleChoice: nozzleChoice, nozzleChangeOffer: nozzleChangeOffer, BEDS: BEDS, BED_UNKNOWN: BED_UNKNOWN, bedName: bedName, bedTypes: bedTypes,
+    bedAnswer: bedAnswer, rememberBed: rememberBed, bedAsks: bedAsks, bedQuestion: bedQuestion, bedUnknownText: bedUnknownText, bedChosenText: bedChosenText,
+    bedRevertLabel: bedRevertLabel, bedRow: bedRow, levelOf: levelOf, guessLevel: guessLevel, levelChange: levelChange, chooseLevel: chooseLevel, askIntent: askIntent, noteIntent: noteIntent,
     offerStopAsking: offerStopAsking, stopAsking: stopAsking, machineThatFits: machineThatFits, visiblePrinters: visiblePrinters, isKnownHost: isKnownHost, machineQuestion: machineQuestion, habitFor: habitFor, rememberFilament: rememberFilament, replaceMachine: replaceMachine,
     hideMachine: hideMachine, unhideMachine: unhideMachine, emptyHabits: emptyHabits, searchModels: searchModels, linkSummary: linkSummary };
   root.PlyoMachines = api;

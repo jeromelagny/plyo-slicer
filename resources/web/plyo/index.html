@@ -343,6 +343,13 @@
   .project-label { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .project-missing { color: var(--warn-text); font-style: italic; }
   .project-ok { color: var(--accent-text); font-size: var(--fs-sm); margin-left: var(--s1); }
+  /* Sous la machine : buse et plateau (question de l'étape Machine) */
+  .project-sub { padding-left: 20px; padding-top: 0; }
+  .bed-ask { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s3); }
+  .bed-ask p { margin: 0; }
+  .bed-choices { display: flex; flex-direction: column; gap: var(--s2); }
+  .bed-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  .bed-choice .muted { padding-left: 2px; }
   .project-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s1); }
   .project-body p, .project-hint { margin: 0; }
   .project-error { color: var(--danger-text); margin: 0; }
@@ -464,7 +471,7 @@
     <!-- Premiers pas : étape du parcours en cours -->
     <div class="view" id="view-guide" role="tabpanel" aria-labelledby="tab-guide">
     <div id="journey-bar"></div>
-    <section class="step-card"><div id="resume-slot"></div><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="project-card"></div></div></section>
+    <section class="step-card"><div id="resume-slot"></div><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="bed-slot"></div><div id="project-card"></div></div></section>
     <div id="spool-slot"></div>
     <div id="tour-slot"></div>
     <div id="outcome-slot"></div>
@@ -989,6 +996,67 @@
   var canvasUI = { preset: null, state: null, loading: false, mapping: null, useList: false, error: '', applying: null, applyingConv: null, sendPending: false, refused: '', refusedConv: null, planKey: null, readId: 0,
     // Saisie manuelle : `state` lu dans slots.json, `confirmed` après le « Oui » du rappel, `form` : écran de saisie ouvert.
     manual: { preset: null, state: null, loading: false, confirmed: false, form: false, draft: null, count: 2, error: '' } };
+  // Plateau posé sur l'imprimante (question de l'étape Machine) : `editing` (« changer » de la fiche), `token` de la demande en
+  // attente (0 sinon), `shown` : imprimantes dont la carte est montrée pendant cette session (elle reste jusqu'à la réponse).
+  // Le type ne change que sur un clic ici : jamais sur une réponse de l'IA (aucun autre chemin n'envoie bed_type_set).
+  var bedUI = { editing: false, token: 0, next: 0, shown: {} };
+  function orcaPrinterName() { return lastValues && lastValues.context ? lastValues.context.printer : ''; }
+  function projectPrinterPreset() { var p = conv && conv.project.printer; return p && !p.proposed ? p.preset : ''; }
+  // La buse lue par le slicer, seulement quand il est sur la machine du projet.
+  function projectNozzleMm() {
+    var preset = projectPrinterPreset(), ctx = lastValues && lastValues.context;
+    return preset && ctx && ctx.printer === preset && typeof ctx.nozzle_mm === 'number' ? ctx.nozzle_mm : null;
+  }
+  function bedInfo() { return projectPrinterPreset() && projectPrinterPreset() === orcaPrinterName() && lastValues ? lastValues.bed || null : null; }
+  function bedAsking(step) {
+    var preset = projectPrinterPreset(), bed = bedInfo();
+    var choiceStep = step === 'machine' || step === 'piece' || step === 'filament';
+    if (!bed || !(bedUI.editing || choiceStep)) return null;
+    if (!PlyoMachines.bedAsks(bed, { preset: preset, orcaPrinter: orcaPrinterName(), habits: habits, editing: bedUI.editing, shown: !!bedUI.shown[preset] })) return null;
+    // Vue une fois dans « Étapes » (pas cachée derrière « Poser une question ») : elle reste jusqu'à la réponse, le temps de la session.
+    if (!bedUI.shown[preset] && viewUI.tab !== 'chat') {
+      bedUI.shown[preset] = true;
+      // « Je connais déjà » : posée une seule fois par imprimante, même sans réponse ; « changer » de la fiche la ramène.
+      if (fsState.level === 'expert' && !PlyoMachines.bedAnswer(habits, preset)) { habits = PlyoMachines.rememberBed(habits, preset, PlyoMachines.BED_UNKNOWN); saveHabits(); }
+    }
+    return PlyoMachines.bedQuestion(bed);
+  }
+  function closeBedQuestion() { var preset = projectPrinterPreset(); bedUI.editing = false; if (preset) delete bedUI.shown[preset]; }
+  function chooseBed(value) {
+    var preset = projectPrinterPreset();
+    if (!preset || bedUI.token) return;
+    bedUI.token = ++bedUI.next;
+    window.orca.postMessage({ type: 'bed_type_set', value: value, printer: preset, token: bedUI.token });
+    renderProject();
+  }
+  var bedHandlers = {
+    pickBed: function (value) { chooseBed(value); },
+    unknownBed: function () {
+      var preset = projectPrinterPreset(), bed = bedInfo();
+      if (!preset) return;
+      // Le réglage d'aujourd'hui reste ; une réponse déjà donnée (« changer » de la fiche) n'est pas effacée.
+      if (!PlyoMachines.bedAnswer(habits, preset) || PlyoMachines.bedAnswer(habits, preset) === PlyoMachines.BED_UNKNOWN) { habits = PlyoMachines.rememberBed(habits, preset, PlyoMachines.BED_UNKNOWN); saveHabits(); }
+      closeBedQuestion();
+      renderProject();
+      noteLine(PlyoMachines.bedUnknownText(bed), '', 'info', 'guide');
+    },
+    cancelBed: function () { closeBedQuestion(); renderProject(); }
+  };
+  // « Changer de buse » : le modèle de la machine du projet, lu par le slicer (profil fourni à plusieurs tailles), sinon null.
+  function nozzleChangeOffer() { return PlyoMachines.nozzleChangeOffer(lastValues && lastValues.machine, projectPrinterPreset(), orcaPrinterName()); }
+  function onBedTypeSet(msg) {
+    if (!msg.token || msg.token !== bedUI.token) return;
+    bedUI.token = 0;
+    var preset = projectPrinterPreset();
+    if (!msg.ok) { renderProject(); noteLine(msg.text || 'Je n’ai pas pu changer le plateau.', 'error', 'alert', 'guide'); return; }
+    if (preset) { habits = PlyoMachines.rememberBed(habits, preset, msg.value); saveHabits(); }
+    closeBedQuestion();
+    renderProject();
+    var line = noteLine(PlyoMachines.bedChosenText(msg.value, msg.before, !!msg.changed), 'ok', 'check', 'guide');
+    // Se défait d'un clic : le même choix, avec le type d'avant.
+    if (msg.changed && msg.before) line.appendChild(button(PlyoMachines.bedRevertLabel(msg.before), function () { line.remove(); chooseBed(msg.before); }, 'link'));
+  }
+
   // La machine du projet dans la liste du slicer ; `slots` : son traducteur (canvas, cfs, ifs, u1), absent si on ne sait pas la lire.
   function knownPrinter() {
     var pr = conv && conv.project.printer, list = projectUI.printers || [];
@@ -1469,7 +1537,9 @@
     if (step !== journeyUI.lastStep) { clearStepNotes(); journeyUI.lastStep = step; if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; } }
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
-    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, spoolLinkInStep: step === 'filament', handlers: projectHandlers });
+    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, spoolLinkInStep: step === 'filament', handlers: projectHandlers,
+      nozzleMm: projectNozzleMm(), bed: PlyoMachines.bedRow(bedInfo()), nozzleChange: !!nozzleChangeOffer() });
+    PlyoProjectCard.renderBedQuestion($('bed-slot'), ui, { question: bedAsking(step), editing: bedUI.editing, waiting: !!bedUI.token, handlers: bedHandlers });
     PlyoProjectCard.renderSpoolEditor($('spool-slot'), ui, { spool: projectUI.spool, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth, onRevisit: barBusy() ? null : revisitStep });
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
@@ -2252,6 +2322,10 @@
     },
     keepProposed: function () { var p = conv.project.printer; if (p) projectHandlers.pickPrinter(p.preset, p.name); },
     setupPrinter: function () { startSetup(); renderSetupFlow(); },
+    // Sous la machine de la fiche : le plateau (la question revient, avec le type d'aujourd'hui) et la buse (même choix qu'à
+    // l'installation, pour un profil fourni).
+    changeBed: function () { bedUI.editing = true; applyTab('show-guide'); renderProject(); $('bed-slot').scrollIntoView({ block: 'nearest' }); },
+    changeNozzle: function () { var offer = nozzleChangeOffer(); if (offer) startNozzleChange(offer); },
     openManual: function () { openManual(); },
     // « Quelle bobine ? » : une bobine de la liste, ou une nouvelle (matière, puis nom obligatoire).
     pickSpool: function (row) { chooseSpool(row.name, row.material); },
@@ -2372,6 +2446,7 @@
       conv.project.printer = { preset: msg.printer_preset, name: msg.printer_preset };
       conv.project.filament = null;
       projectChanged();
+      if (projectUI.adoptNote) { noteLine(projectUI.adoptNote, 'ok', 'check', 'guide'); projectUI.adoptNote = null; }
       // La bobine du projet est rechoisie pour la nouvelle machine (son préréglage part de la matière de celle-ci), avec les
       // mêmes températures. Sans bobine, l'étape Filament la demande.
       if (kept && kept.spool && kept.type) { projectUI.keepTemps = { nozzle: kept.nozzle_temp, bed: kept.bed_temp }; chooseSpool(kept.spool.name, kept.type); }
@@ -3211,7 +3286,8 @@
     if (!setup.catalog) window.orca.postMessage({ type: 'setup_catalog' });
     setupPhase('search');
   }
-  // Choix d'un modèle (trouvé ou cherché) : la buse 0,4 mm (livrée avec presque toutes les imprimantes) d'office.
+  // Choix d'un modèle (trouvé ou cherché) : une seule taille de buse, installée d'office ; plusieurs, la question (0,4 mm
+  // d'abord, la plus courante : PlyoMachines.nozzleChoice). Personne ne reçoit un profil 0,4 mm sans l'avoir vu.
   // Modèle choisi pour une imprimante au code inconnu (Creality « F003 »…) : gardé sur cet ordinateur et, avec un compte,
   // partagé anonymement (le serveur ne garde qu'une empreinte et ne publie qu'un code confirmé par deux personnes).
   function learnModel(printer, model) {
@@ -3231,9 +3307,19 @@
     setup.pick = match;
     setup.found = printer || null;
     setup.linkBox = null;
-    var nozzles = match.nozzles || [];
-    if (nozzles.length === 1 || nozzles.indexOf('0.4') >= 0) installModel(nozzles.indexOf('0.4') >= 0 ? '0.4' : nozzles[0]);
+    setup.change = null;
+    var choice = PlyoMachines.nozzleChoice(match.nozzles);
+    if (choice.auto) installModel(choice.auto);
     else setupPhase('nozzle');
+  }
+  // « Changer de buse » (fiche) : la même question pour la machine du projet, puis la même installation (une autre variante du
+  // même modèle, sélectionnée dans Plyo Slicer comme à l'installation ; aucun profil n'est modifié). La machine du projet suit.
+  function startNozzleChange(offer) {
+    if (setup.phase) return;
+    projectUI.adopt = true;
+    setup = { phase: null, offered: setup.offered, printers: [], catalog: setup.catalog, query: '', pick: { vendor: offer.vendor, model: offer.model, nozzles: offer.nozzles }, found: null, change: { from: offer.current } };
+    applyTab('show-guide');
+    setupPhase('nozzle');
   }
   function installModel(nozzle) {
     setup.nozzle = nozzle;
@@ -3241,11 +3327,19 @@
     window.orca.postMessage({ type: 'setup_install', vendor: setup.pick.vendor, model: setup.pick.model, nozzle: nozzle });
   }
   function onSetupInstalled(msg) {
-    if (msg.cancelled) { setupPhase(setup.found ? 'found' : 'search'); return; }
-    if (!msg.ok) { setup.error = true; setupPhase(setup.found ? 'found' : 'search'); return; }
+    var change = setup.change;
+    if (msg.cancelled) { setupPhase(change ? 'nozzle' : setup.found ? 'found' : 'search'); return; }
+    if (!msg.ok) { setup.error = true; setupPhase(change ? 'nozzle' : setup.found ? 'found' : 'search'); return; }
     setup.error = false;
     setup.preset = msg.preset;
     window.orca.postMessage({ type: 'get_values' });
+    if (change) {
+      // Buse changée : la machine du projet devient ce profil (endSetup), et la préparation est à refaire.
+      // La phrase est dite une fois la machine du projet changée (onProjectState) : le changement d'étape effacerait celle-ci.
+      projectUI.adoptNote = 'C’est noté : buse de ' + PlyoMachines.nozzleText(setup.nozzle) + ' sur ta machine. Plyo Slicer est passé sur le profil « ' + msg.preset + ' ». Changer de buse refait la préparation : filament, vérification et découpe.';
+      endSetup();
+      return;
+    }
     setupPhase(setup.found ? 'link' : 'done');
   }
   function renderSetup(slot) {
@@ -3319,12 +3413,20 @@
       setTimeout(function () { input.focus(); }, 0);
       acts.appendChild(button('Chercher sur le Wi-Fi', function () { startSetup(); renderSetupFlow(); }, 'btn ghost sm', 'wifi'));
     } else if (setup.phase === 'nozzle') {
-      box.appendChild(el('h3', '', 'Quelle taille de buse ?'));
-      box.appendChild(el('p', '', 'Si tu ne sais pas, garde celle livrée avec l’imprimante. Tu pourras la changer plus tard.'));
-      (setup.pick.nozzles || []).forEach(function (n) { acts.appendChild(button(n.replace('.', ',') + ' mm', function () { installModel(n); }, 'btn ghost sm')); });
+      var nq = PlyoMachines.nozzleChoice(setup.pick.nozzles, setup.change ? setup.change.from : '');
+      box.appendChild(el('h3', '', nq.title || 'Quelle taille de buse ?'));
+      if (setup.error && setup.change) box.appendChild(alertBox('error', 'Je n’ai pas pu installer ce profil. Réessaie, ou garde ta buse d’aujourd’hui.'));
+      box.appendChild(el('p', '', nq.text || ''));
+      // 0,4 mm d'abord, marquée comme la plus courante ; la buse d'aujourd'hui (changement) ne se réinstalle pas.
+      (nq.choices || [{ value: nq.auto, label: PlyoMachines.nozzleText(nq.auto) }]).forEach(function (c) {
+        var b = button(c.label, function () { if (c.current) endSetup(); else installModel(c.value); }, 'btn ghost sm' + ((setup.change ? c.current : c.common) ? ' on' : ''));
+        acts.appendChild(b);
+      });
+      if (nq.help) box.appendChild(el('p', 'muted small', nq.help));
+      if (setup.change) later = button('Annuler', endSetup, 'link');
     } else if (setup.phase === 'installing') {
-      box.appendChild(el('h3', '', 'J’installe ' + setup.pick.model + '…'));
-      box.appendChild(el('p', '', 'Profil de l’imprimante, qualités d’impression et filaments conseillés.'));
+      box.appendChild(el('h3', '', setup.change ? 'Je passe sur la buse de ' + PlyoMachines.nozzleText(setup.nozzle) + '…' : 'J’installe ' + setup.pick.model + '…'));
+      box.appendChild(el('p', '', setup.change ? 'Profil de ' + setup.pick.model + ' pour cette buse, qualités d’impression et filaments conseillés.' : 'Profil de l’imprimante, qualités d’impression et filaments conseillés.'));
       later = null;
     } else if (setup.phase === 'link') {
       box.appendChild(el('h3', '', setup.pick.model + ' est installée'));
@@ -6225,6 +6327,7 @@
   var autoOpening = null;     // plus de réouverture d'office au lancement : reste à null
   var saveFailedShown = {};   // projet non enregistré : chaque raison dite une seule fois (trop long, disque, autre)
   var otherInstanceShown = false; // Plyo ouvert deux fois : dit une seule fois
+  var valuesMachineSig = '';       // plateau, buse et modèle du dernier « values » (la fiche est redessinée s'ils changent)
   window.orca.onMessage(function (msg) {
     if (!msg || !msg.type) return;
     if (msg.type === 'session') {
@@ -6237,7 +6340,10 @@
       }
     } else if (msg.type === 'values') {
       var firstValues = !lastValues;
+      // Plateau, buse et modèle lus pour la machine en cours : la fiche et la question de l'étape Machine suivent.
+      var machineSig = JSON.stringify([msg.bed || null, msg.machine || null, msg.context ? [msg.context.printer, msg.context.nozzle_mm] : null]);
       renderValues(msg);
+      if (machineSig !== valuesMachineSig) { valuesMachineSig = machineSig; if (conv && !firstValues) renderProject(); }
       checkDivergence();
       checkAdoptOffer();
       if (firstValues) { askOutcome(); applyMachineQuestion(); } // au démarrage, une fois les libellés des réglages et la machine d'Orca connus
@@ -6396,6 +6502,8 @@
       onSetupCatalog(Array.isArray(msg.catalog) ? msg.catalog : []);
     } else if (msg.type === 'setup_installed') {
       onSetupInstalled(msg);
+    } else if (msg.type === 'bed_type_set') {
+      onBedTypeSet(msg);
     } else if (msg.type === 'printer_link_state') {
       onLinkState(msg);
     } else if (msg.type === 'printer_profile_selected') {
