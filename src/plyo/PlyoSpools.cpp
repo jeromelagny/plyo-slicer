@@ -287,6 +287,20 @@ nlohmann::json current_full()
     return {{"id", id}, {"name", SpoolsLogic::spool_name(reg, id)}, {"printer", current_printer()}, {"preset", filament}};
 }
 
+nlohmann::json about_current()
+{
+    if (bundle() == nullptr)
+        return {{"preset", ""}, {"material", ""}, {"spool", nullptr}, {"adoptable", false}};
+    const std::string    preset = first_filament();
+    const Preset*        p      = bundle()->filaments.find_preset(preset, false);
+    const auto*          type   = p != nullptr ? p->config.option<Slic3r::ConfigOptionStrings>("filament_type") : nullptr;
+    const nlohmann::json spool  = current();
+    return {{"preset", preset},
+            {"material", type != nullptr && !type->values.empty() ? type->values.front() : std::string()},
+            {"spool", spool.empty() ? nlohmann::json() : spool},
+            {"adoptable", !adoptable_material(preset).empty()}};
+}
+
 nlohmann::json preset_values(const std::string& preset)
 {
     nlohmann::json out = nlohmann::json::object();

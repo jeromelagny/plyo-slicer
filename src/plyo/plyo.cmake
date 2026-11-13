@@ -127,6 +127,10 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterLink.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterSetup.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterSetup.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRetouches.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRetouches.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRetouchesLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRetouchesLogic.hpp
 )
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
 

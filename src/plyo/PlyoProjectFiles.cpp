@@ -6,6 +6,7 @@
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoProjectFilesLogic.hpp"
+#include "PlyoRetouches.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoSpools.hpp"
 #include "PlyoStore.hpp"
@@ -226,8 +227,10 @@ void discard(bool print, bool filament, SettingsBridge::DropReason reason)
 // Réglages d'impression de la pièce quittée : ils sont dans son 3MF (ou n'y tenaient pas) et ne suivent pas la suite.
 void forget_print_edits()
 {
-    if (s_owns_edits && bundle().prints.current_is_dirty())
+    if (s_owns_edits && bundle().prints.current_is_dirty()) {
+        Retouches::capture_print(s_edits_conv); // UX-31 : tes retouches à la main, proposées au profil dans le panneau
         discard(true, false, SettingsBridge::DropReason::Conversation);
+    }
     s_owns_edits = false;
 }
 
@@ -448,6 +451,8 @@ nlohmann::json open_now(const std::string& conv)
     struct Done { ~Done() { s_opening = false; } } done; // même si Orca lève une exception
     const ProjectNotificationsPause quiet;              // pour le panneau, la conversation continue
     if (plyo_plate) {
+        if (s_owns_edits && bundle().prints.current_is_dirty())
+            Retouches::capture_print(s_edits_conv); // UX-31 : retouches à la main du projet quitté, proposées au profil
         bundle().printers.discard_current_changes();
         bundle().prints.discard_current_changes();
         bundle().filaments.discard_current_changes();
@@ -531,6 +536,8 @@ bool take_preset_changes(const wxString& caption)
     // profils, déconnexion, installation d'une imprimante), le 3MF garde les réglages d'impression qui vont être oubliés
     // au lieu d'être réécrit sans eux, et le panneau est prévenu (tick) pour rouvrir la conversation.
     s_notice = {true, s_conv, s_project, bundle().printers.get_selected_preset_name()};
+    if (bundle().prints.current_is_dirty())
+        Retouches::capture_print(s_conv); // UX-31 : au lieu de la question d'Orca, celle du panneau au projet suivant
     clear_attachment(true);
     if (bundle().prints.current_is_dirty() || bundle().filaments.current_is_dirty())
         discard(true, true, SettingsBridge::DropReason::Project);
@@ -559,6 +566,7 @@ void on_project_changed(bool paused)
                                                            Spools::is_spool_preset(bundle().filaments.get_selected_preset_name()))) {
             BOOST_LOG_TRIVIAL(info) << "Plyo: fichier ouvert : les valeurs de filament du fichier ne remplacent pas celles de la bobine « "
                                     << bundle().filaments.get_selected_preset_name() << " »";
+            Retouches::capture_file_filament(); // UX-36 : le panneau le dit, avec « Prendre ceux du fichier »
             discard(false, true, SettingsBridge::DropReason::Import);
         }
     }

@@ -14,6 +14,11 @@ namespace Plyo { namespace SelfTest {
 // Vrai si PLYO_SELFTEST est renseignée ET que son fichier a pu être lu (lu une seule fois, au premier appel).
 bool active();
 
+// Le panneau est resté fermé au lancement (« Je connais déjà », UX-02). Banc seulement (sans effet hors PLYO_SELFTEST) : le
+// relève (hooks : startup_kept_closed, startup_panel_shown), puis ouvre le panneau par l'entrée de menu, comme un clic, pour que
+// le pilote puisse continuer.
+void startup_kept_closed();
+
 // Le pilote dans sa balise <script>, à ajouter après les scripts du panneau ; "" hors banc.
 std::string page_script();
 

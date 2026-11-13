@@ -73,6 +73,7 @@
     if (step === 'preparer') {
       // Questions d'intention : on répond avec les choix ; au résumé, un seul bouton applique et prépare.
       if (!c.sliced && c.intent === 'asking') return { label: '', kind: 'none', enabled: false };
+      if (!c.sliced && c.intent === 'repeat') return { label: 'Préparer', kind: 'repeatIntent', enabled: true };
       if (!c.sliced && c.intent === 'ready') return { label: 'Appliquer et préparer', kind: 'applyIntent', enabled: true };
       if (!c.sliced) return slice;
       // Découpée mais refusée par Orca pour l'impression (`blocked`) : la carte d'Orca porte les corrections, pas de « Continuer ».
@@ -144,6 +145,7 @@
       case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : 'Quelle bobine ?';
       case 'piece': return 'Ajoute la pièce à imprimer';
       case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
+        if (!c.sliced && c.intent === 'repeat') return 'Même usage que ta dernière pièce ?';
         if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';
         if (!c.sliced && c.slicing) return 'Je découpe ta plaque…';
         if (!c.sliced && c.sliceFailed) return 'Orca n’a pas pu découper ta plaque : je t’explique ci-dessous';
@@ -352,16 +354,31 @@
 
   // Onglets Guide / Discussion : { tab: 'guide'|'chat', unread }. `send` ouvre la Discussion ; `answer` (une réponse arrive)
   // allume le point rouge si on est sur le Guide ; `show-chat` l'éteint ; `reset` (nouvelle conversation) revient au Guide.
+  // `home: 'chat'` (UX-02) : le confirmé (« Je connais déjà ») commence sur « Poser une question » ('start-chat'), et un nouveau
+  // projet l'y laisse ('reset'), jusqu'à ce qu'il ouvre lui-même « Étapes » ('show-guide' : on revient au comportement habituel).
   function tabAfter(state, event) {
+    var home = !!(state && state.home === 'chat');
     var st = { tab: state && state.tab === 'chat' ? 'chat' : 'guide', unread: !!(state && state.unread) };
+    var keep = function (o) { if (home) o.home = 'chat'; return o; };
     switch (event) {
-      case 'send': return { tab: 'chat', unread: false };
-      case 'answer': return { tab: st.tab, unread: st.tab === 'guide' ? true : st.unread };
-      case 'show-chat': return { tab: 'chat', unread: false };
+      case 'send': return keep({ tab: 'chat', unread: false });
+      case 'answer': return keep({ tab: st.tab, unread: st.tab === 'guide' ? true : st.unread });
+      case 'show-chat': return keep({ tab: 'chat', unread: false });
       case 'show-guide': return { tab: 'guide', unread: st.unread };
-      case 'reset': return { tab: 'guide', unread: false };
-      default: return st;
+      case 'reset': return keep({ tab: home ? 'chat' : 'guide', unread: false });
+      case 'start-chat': return { tab: 'chat', unread: false, home: 'chat' };
+      default: return keep(st);
     }
+  }
+
+  // Entrée du menu « ⋯ » qui change d'avis sur l'ouverture au lancement (UX-02) : elle dit ce que le clic va faire.
+  function startMenuLabel(level) {
+    return level === 'expert' ? 'Me guider pas à pas, panneau ouvert au lancement' : 'Je connais déjà : panneau fermé au lancement';
+  }
+  function startChangeNote(level) {
+    return level === 'expert'
+      ? 'C’est noté : au prochain lancement, le panneau reste fermé. Il est à un clic sur « Assistant », en haut, et s’ouvre sur « Poser une question ». L’onglet « Étapes » garde le parcours guidé.'
+      : 'C’est noté : au prochain lancement, le panneau s’ouvre sur le parcours en étapes.';
   }
 
   // Texte d'accueil de l'onglet « Poser une question » (conversation vide). Sans projet complet, il renvoie vers « Étapes ».
@@ -391,7 +408,7 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
   root.PlyoJourney = api;

@@ -12,9 +12,20 @@
   }
 
   // Questions d'intention (étape Préparer, avant la découpe). opts.intent : { mode: 'asking'|'ready', question, answers, total,
-  // idk, guess, summary, changes, kept, level } ; handlers : { answer(qid, id), idk(), intentSkip(), reset() }.
+  // idk, guess, summary, changes, kept, level } ou { mode: 'repeat', text } ; handlers : { answer(qid, id), idk(), intentSkip(), reset(),
+  // intentChange() }.
   function renderIntent(body, ui, it, h) {
     var I = root.PlyoIntent;
+    if (it.mode === 'repeat') {
+      // Confirmé, deuxième pièce et suivantes (UX-33) : « Préparer » (ligne d'action) reprend ces réponses ; « Changer » repose les questions.
+      body.appendChild(ui.el('p', 'intent-q', it.text));
+      body.appendChild(ui.el('p', 'muted small', 'Mêmes parois, même remplissage, même hauteur de couche que pour ta dernière pièce.'));
+      var row = ui.el('div', 'printer-actions');
+      row.appendChild(ui.button('Changer', h.intentChange, 'link'));
+      row.appendChild(ui.button('Je règle moi-même', h.intentSkip, 'link'));
+      body.appendChild(row);
+      return;
+    }
     if (it.mode === 'asking') {
       var q = it.question, done = Object.keys(it.answers || {}).length;
       body.appendChild(ui.el('p', 'muted small', 'Question ' + (done + 1) + ' sur ' + it.total));

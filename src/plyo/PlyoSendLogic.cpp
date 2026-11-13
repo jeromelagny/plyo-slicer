@@ -88,7 +88,10 @@ std::string failure_code(int http, const std::string& step)
         return "server_error";
     if (http != 0)
         return "unknown";
-    return step == "connect" ? "unreachable" : "interrupted";
+    if (step == "connect")
+        return "unreachable";
+    // Après « 100 % », le fichier est arrivé : c'est le démarrage qui n'a pas été confirmé (Elegoo CC2, par exemple).
+    return step == "sent" ? "no_confirmation" : "interrupted";
 }
 
 std::string verdict(bool handed, bool error_dialog, bool send_dialog_seen, bool plate_error)

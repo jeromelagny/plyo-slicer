@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <map>
 #include <string>
 
 namespace Slic3r { class DynamicPrintConfig; }
@@ -57,6 +58,11 @@ nlohmann::json check_profiles(const std::string& printer_name, const std::string
 // Valeur d'une option du catalogue, typée (première valeur des options « tableau », null pour « nil »).
 nlohmann::json typed_value_of(const Slic3r::DynamicPrintConfig& config, const std::string& key, const std::string& kind);
 
+// Valeurs que Plyo a écrites et qui sont encore annulables, pour le préréglage édité de cette portée (impression ou
+// filament) : {clé: texte d'Orca laissé par le lot}. Une retouche faite à la main depuis a un autre texte : elle n'y est pas
+// comptée comme « de Plyo » (Retouches::diff).
+std::map<std::string, std::string> written_values(bool print);
+
 // Valeurs actuelles du catalogue, en texte d'Orca : { "print": {clé: texte}, "filament": {...} } (version fiable).
 nlohmann::json snapshot_raw();
 
@@ -65,6 +71,10 @@ nlohmann::json preview_values(const nlohmann::json& values);
 
 // Remet ces valeurs (clés du catalogue seulement, celles qui diffèrent), comme un lot annulable et relu. {ok, text, undo_id?}
 nlohmann::json restore_values(const nlohmann::json& values);
+
+// Retire le lot `undo_id` de la pile sans rien remettre : ses valeurs viennent d'être enregistrées dans le profil, à la
+// demande de l'utilisateur (Retouches : « Les garder dans mon profil », « Annuler » d'une retouche de la bobine).
+void discard_entry(int undo_id);
 
 // Après l'enregistrement d'un profil sous un autre nom (copie d'un profil d'Orca) : l'annulation vise le nouveau nom.
 void retarget_undo(bool print, const std::string& from, const std::string& to);

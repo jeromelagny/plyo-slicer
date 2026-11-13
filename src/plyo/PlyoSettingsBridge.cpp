@@ -820,6 +820,24 @@ nlohmann::json check_profiles(const std::string& printer_name, const std::string
             {"text", "Tu as changé d'imprimante ou de profil depuis la proposition : redemande-moi, je regarde les réglages d'aujourd'hui. Aucune modification appliquée."}};
 }
 
+void discard_entry(int undo_id)
+{
+    s_undo_stack.erase(std::remove_if(s_undo_stack.begin(), s_undo_stack.end(), [undo_id](const UndoEntry& e) { return e.id == undo_id; }),
+                       s_undo_stack.end());
+}
+
+std::map<std::string, std::string> written_values(bool print)
+{
+    const Preset::Type                 type = print ? Preset::TYPE_PRINT : Preset::TYPE_FILAMENT;
+    const std::string                  name = edited_name(type);
+    std::map<std::string, std::string> out;
+    for (const UndoEntry& e : s_undo_stack)
+        for (const SavedValue& v : e.saved)
+            if (v.preset == type && v.preset_name == name)
+                out[v.key] = v.after; // le lot le plus récent l'emporte (la pile va du plus ancien au plus récent)
+    return out;
+}
+
 nlohmann::json snapshot_raw()
 {
     const Catalog::Policy& policy = Catalog::policy();

@@ -4269,7 +4269,7 @@ TEST_CASE("Lot 10 · étape atteinte et famille d'un échec d'envoi")
     CHECK(failure_code(418, "sent") == "unknown");
     CHECK(failure_code(0, "connect") == "unreachable");
     CHECK(failure_code(0, "upload") == "interrupted");
-    CHECK(failure_code(0, "sent") == "interrupted");
+    CHECK(failure_code(0, "sent") == "no_confirmation");
 }
 
 TEST_CASE("Lot 10 · verdict d'un envoi du panneau et arrivée du fichier")
@@ -4392,4 +4392,81 @@ TEST_CASE("Lot 10 · sentinelle : fenêtres de message d'Orca lues par l'observa
                    {"wxGetApp().CallAfter([=] {", "ErrorDialog msg(parent, message, has_code_excerpts);", "msg.ShowModal();"});
     const std::string mine = read_source("../../PlyoOrcaWindows.cpp");
     CHECK(mine.find("dynamic_cast<GUI::PrintHostSendDialog*>(top) != nullptr") != std::string::npos); // la fenêtre d'envoi n'est jamais lue
+}
+
+// ---------- Lot 11 : utilisateur confirmé ----------
+#include "../../PlyoRetouchesLogic.hpp"
+
+TEST_CASE("RetouchesLogic::manual_keys : seulement les retouches à la main, pas celles de Plyo non retouchées")
+{
+    using Plyo::RetouchesLogic::manual_keys;
+    const Plyo::RetouchesLogic::Values saved  = {{"wall_loops", "2"}, {"outer_wall_speed", "200"}, {"seam_position", "aligned"}};
+    const Plyo::RetouchesLogic::Values edited = {{"wall_loops", "3"}, {"outer_wall_speed", "150"}, {"seam_position", "aligned"}, {"new_key", "1"}};
+    // outer_wall_speed : écrit par Plyo et pas retouché depuis ; wall_loops : Plyo avait mis 4, retouché ensuite à 3.
+    const Plyo::RetouchesLogic::Values plyo = {{"outer_wall_speed", "150"}, {"wall_loops", "4"}};
+    CHECK(manual_keys(saved, edited, plyo) == std::vector<std::string>{"new_key", "wall_loops"});
+    CHECK(manual_keys(saved, saved, {}).empty());
+    CHECK(manual_keys({}, {}, {}).empty());
+}
+
+TEST_CASE("RetouchesLogic::sanitize_pending : champs connus, bornés ; rien sans préréglage ni valeur")
+{
+    using Plyo::RetouchesLogic::sanitize_pending;
+    CHECK(sanitize_pending(nlohmann::json()).empty());
+    CHECK(sanitize_pending({{"preset", "0.20mm Standard"}}).empty());
+    CHECK(sanitize_pending({{"values", {{"wall_loops", "3"}}}}).empty());
+    const nlohmann::json p = sanitize_pending({{"preset", "0.20mm Standard"},
+                                               {"project", "crochet"},
+                                               {"conv", "abc"},
+                                               {"extra", "x"},
+                                               {"values", {{"wall_loops", "3"}, {"bad", 4}, {"", "1"}}},
+                                               {"before", {{"wall_loops", "2"}}},
+                                               {"changes", {{{"key", "wall_loops"}, {"label", "Parois"}, {"before", 2}, {"after", 3}},
+                                                            {{"key", "inconnue"}, {"label", "?"}},
+                                                            "pas un objet"}}});
+    REQUIRE_FALSE(p.empty());
+    CHECK(p["preset"] == "0.20mm Standard");
+    CHECK(p["project"] == "crochet");
+    CHECK_FALSE(p.contains("extra"));
+    CHECK(p["values"] == nlohmann::json{{"wall_loops", "3"}});
+    REQUIRE(p["changes"].size() == 1);
+    CHECK(p["changes"][0]["label"] == "Parois");
+    CHECK(p["changes"][0]["after"] == 3);
+}
+
+TEST_CASE("RetouchesLogic::keep_refusal et keep_name : même profil, sans autre retouche ; copie d'un profil d'Orca")
+{
+    using namespace Plyo::RetouchesLogic;
+    const nlohmann::json p = {{"preset", "0.20mm Standard"}, {"values", {{"wall_loops", "3"}}}};
+    CHECK(keep_refusal(p, "0.20mm Standard", false) == "");
+    CHECK(keep_refusal(p, "0.16mm Optimal", false) == "other_preset");
+    CHECK(keep_refusal(p, "0.20mm Standard", true) == "dirty");
+    CHECK(keep_refusal(nlohmann::json::object(), "0.20mm Standard", false) == "empty");
+    CHECK(keep_name("Mon profil", true, {}) == "Mon profil");
+    CHECK(keep_name("0.20mm Standard @K1C", false, {}) == "0.20mm Standard @K1C (Plyo)");
+    CHECK(keep_name("0.20mm Standard @K1C", false, {"0.20mm Standard @K1C (Plyo)"}) == "0.20mm Standard @K1C (Plyo 2)");
+}
+
+TEST_CASE("RetouchesLogic::spool_undo_refusal : même bobine, rien retouché depuis")
+{
+    using Plyo::RetouchesLogic::spool_undo_refusal;
+    const nlohmann::json kept = {{"preset", "Sunlu PLA+ noir"}, {"values", {{"filament_flow_ratio", "0.95"}}}};
+    CHECK(spool_undo_refusal(kept, "Sunlu PLA+ noir", false, {{"filament_flow_ratio", "0.95"}}) == "");
+    CHECK(spool_undo_refusal(kept, "Autre", false, {{"filament_flow_ratio", "0.95"}}) == "other_spool");
+    CHECK(spool_undo_refusal(kept, "Sunlu PLA+ noir", true, {{"filament_flow_ratio", "0.95"}}) == "dirty");
+    CHECK(spool_undo_refusal(kept, "Sunlu PLA+ noir", false, {{"filament_flow_ratio", "0.9"}}) == "changed");
+    CHECK(spool_undo_refusal(nlohmann::json(), "Sunlu PLA+ noir", false, {}) == "other_spool");
+}
+
+TEST_CASE("ProjectLogic : habitude « comme la dernière fois » et panneau au lancement selon le niveau")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json h = sanitize_habits({{"last_intent", {{"use", "everyday"}, {"pref", "balanced"}, {"speed", "normal"}, {"x", "y"}}}});
+    CHECK(h["last_intent"] == nlohmann::json{{"use", "everyday"}, {"pref", "balanced"}, {"speed", "normal"}});
+    CHECK_FALSE(sanitize_habits({{"last_intent", {{"pref", "balanced"}}}}).contains("last_intent")); // sans usage : rien
+    CHECK(sanitize_habits({{"last_intent", {{"use", "<script>"}, {"speed", "fast"}}}}).contains("last_intent") == false);
+    CHECK(opens_panel_at_startup("beginner"));
+    CHECK(opens_panel_at_startup("skipped"));
+    CHECK(opens_panel_at_startup(""));
+    CHECK_FALSE(opens_panel_at_startup("expert"));
 }

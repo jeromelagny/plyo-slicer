@@ -8,6 +8,7 @@
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoWelcomeDialog.hpp"
 #include "PlyoPrinterSetup.hpp"
+#include "PlyoProjectLogic.hpp"
 #include "PlyoSelfTest.hpp"
 #include "PlyoSend.hpp"
 
@@ -64,12 +65,18 @@ Slic3r::GUI::GuideFrame* visible_guide()
     return nullptr;
 }
 
-// Le panneau s'ouvre à chaque lancement ; le bouton « Assistant » de la barre du haut le ferme d'un clic.
+// Le panneau s'ouvre à chaque lancement ; le bouton « Assistant » de la barre du haut le ferme d'un clic. Sauf pour qui a
+// répondu « Je connais déjà » à l'accueil (UX-02, décision D5) : il reste à un clic sur « Assistant ».
 void open_panel_at_startup()
 {
     auto* frame = wxGetApp().mainframe;
     if (frame == nullptr || is_assistant_shown())
         return;
+    if (!ProjectLogic::opens_panel_at_startup(Json::str(load_state(), "level"))) {
+        BOOST_LOG_TRIVIAL(info) << "Plyo: « Je connais déjà » : le panneau reste fermé au lancement";
+        SelfTest::startup_kept_closed(); // banc d'essai seulement : le relève, puis ouvre le panneau comme un clic
+        return;
+    }
     // Le panneau vit dans le plateau : Orca démarre sur l'Accueil, où il resterait caché. On passe sur « Préparer ».
     if (!frame->is_prepare_or_preview_tab())
         frame->select_tab(TAB_ID_PREPARE);

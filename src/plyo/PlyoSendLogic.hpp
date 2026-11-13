@@ -20,7 +20,8 @@ std::string step_of(int last_progress, int hundreds);
 
 // Famille d'un échec d'envoi : auth (401, 403), no_space (413, 507), file_refused (400, 409, 415, 422), not_printer (404,
 // 405), server_error (5xx), autre code : unknown ; sans code : unreachable si rien n'est parti (étape « connect »),
-// interrupted sinon.
+// interrupted pendant l'envoi (étape « upload »), no_confirmation après « 100 % » (étape « sent » : le fichier est arrivé,
+// mais l'imprimante n'a pas confirmé le démarrage).
 std::string failure_code(int http, const std::string& step);
 
 // Verdict d'un envoi demandé par le panneau, une fois la fenêtre d'envoi d'Orca fermée et ses messages éventuels ouverts :

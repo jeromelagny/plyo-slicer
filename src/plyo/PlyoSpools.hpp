@@ -37,6 +37,10 @@ nlohmann::json current();
 // Bobine du premier filament en cours, avec l'imprimante et le préréglage : { id, name, printer, preset }, ou {}.
 nlohmann::json current_full();
 
+// Le premier filament d'Orca, pour la carte « Orca est passé sur … » (UX-35) : {preset, material (filament_type), spool
+// ({id, name} ou null si ce n'est pas une bobine), adoptable (il peut devenir une bobine : adopt)}.
+nlohmann::json about_current();
+
 // Valeurs filament du catalogue de ce préréglage, en texte d'Orca ({clé: texte}) : celles de l'onglet (modifications
 // comprises) s'il est le filament en cours de l'onglet, sinon celles enregistrées. {} s'il n'existe pas.
 nlohmann::json preset_values(const std::string& preset);

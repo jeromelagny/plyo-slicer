@@ -4,6 +4,7 @@
 #include "PlyoJson.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 namespace Plyo { namespace ProjectLogic {
@@ -342,6 +343,18 @@ nlohmann::json sanitize_habits(const nlohmann::json& habits)
         out["intent_skips"] = std::max<long long>(0, std::min<long long>(100, n->get<long long>()));
     if (const nlohmann::json* a = Json::field(habits, "ask_intent"); a != nullptr && a->is_boolean())
         out["ask_intent"] = a->get<bool>();
+    // Réponses aux questions sur la pièce du dernier projet préparé (« Comme la dernière fois », UX-33) : des identifiants
+    // courts (lettres, chiffres, « _ »), jamais de texte libre.
+    if (const nlohmann::json* li = Json::field(habits, "last_intent"); li != nullptr && li->is_object()) {
+        nlohmann::json kept = nlohmann::json::object();
+        for (const char* key : {"use", "pref", "speed"}) {
+            const std::string v = Json::str(*li, key, 30);
+            if (!v.empty() && std::all_of(v.begin(), v.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; }))
+                kept[key] = v;
+        }
+        if (kept.contains("use"))
+            out["last_intent"] = kept;
+    }
     // Préréglages d'Orca que l'utilisateur ne veut pas comme bobines : la question n'est plus jamais posée pour eux.
     if (const nlohmann::json* d = Json::field(habits, "spool_declined"); d != nullptr && d->is_array()) {
         nlohmann::json list = nlohmann::json::array();
@@ -391,5 +404,7 @@ Adaptation adapt_3mf(const nlohmann::json& file_values, const nlohmann::json& pr
     }
     return out;
 }
+
+bool opens_panel_at_startup(const std::string& level) { return level != "expert"; }
 
 }} // namespace Plyo::ProjectLogic

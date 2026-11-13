@@ -3,6 +3,7 @@
 #include "PlyoGuard.hpp"
 #include "PlyoProfiles.hpp"
 #include "PlyoProjectFiles.hpp"
+#include "PlyoRetouches.hpp"
 #include "PlyoSpools.hpp"
 #include "PlyoSpoolsLogic.hpp"
 
@@ -103,6 +104,9 @@ bool calibrating_impl(Slic3r::GUI::Plater* plater)
     return false;
 }
 
+// Premier réglage « première couche » dont l'écart avec les couches suivantes dépasse ce qu'Orca accepte ("" : aucun).
+std::string bad_temperature_key(const Slic3r::DynamicPrintConfig& config);
+
 void skip(const std::string& name)
 {
     s_has_skip  = true;
@@ -154,19 +158,23 @@ void tick()
         BOOST_LOG_TRIVIAL(warning) << "Plyo: préréglage de bobine « " << name
                                    << " » non enregistré automatiquement : écart de températures refusé par Orca";
         skip(name);
+        Retouches::spool_not_saved("temperatures", bad_temperature_key(filaments.get_edited_preset().config)); // UX-32 : le panneau le dit
         return;
     }
 
+    const nlohmann::json        before = Retouches::diff(false); // tes retouches à la main, pour la note « Gardé dans ta bobine »
     s_saving                          = true;
     const Profiles::SaveOutcome saved = Profiles::save_current_as(false, name);
     s_saving                          = false;
     if (saved != Profiles::SaveOutcome::Ok) {
         skip(name); // déjà noté dans le journal ; nouvel essai au prochain changement
+        Retouches::spool_not_saved("write", std::string());
         return;
     }
     s_has_skip = false;
     s_dirty_name.clear();
     BOOST_LOG_TRIVIAL(info) << "Plyo: préréglage de bobine enregistré automatiquement « " << name << " »";
+    Retouches::spool_saved(before);
 }
 
 } // namespace
@@ -195,6 +203,21 @@ std::vector<SpoolsLogic::TempPair> temperature_pairs(const Slic3r::DynamicPrintC
     }
     return pairs;
 }
+
+namespace {
+std::string bad_temperature_key(const Slic3r::DynamicPrintConfig& config)
+{
+    for (const ConfigRules::PairKeys& k : temperature_pair_keys()) {
+        const auto* first = config.option<Slic3r::ConfigOptionInts>(k.first);
+        const auto* other = config.option<Slic3r::ConfigOptionInts>(k.other);
+        if (first == nullptr || other == nullptr || first->values.empty() || other->values.empty())
+            continue;
+        if (!SpoolsLogic::temperature_pairs_ok({{first->get_at(0), other->get_at(0), k.max_delta}}))
+            return k.first;
+    }
+    return std::string();
+}
+} // namespace
 
 bool temperatures_ok(const Slic3r::DynamicPrintConfig& config) { return SpoolsLogic::temperature_pairs_ok(temperature_pairs(config)); }
 
@@ -228,6 +251,7 @@ SpoolsLogic::Flush flush_spool()
     const Flush       step  = SpoolsLogic::flush_before_switch(dirty, spool, calib, temps);
     if (step != Flush::Save)
         return step;
+    const nlohmann::json        before = Retouches::diff(false);
     s_saving                          = true;
     const Profiles::SaveOutcome saved = Profiles::save_current_as(false, name);
     s_saving                          = false;
@@ -236,6 +260,7 @@ SpoolsLogic::Flush flush_spool()
     s_has_skip = false;
     s_dirty_name.clear();
     BOOST_LOG_TRIVIAL(info) << "Plyo: préréglage de bobine enregistré (avant un changement de filament ou de projet) « " << name << " »";
+    Retouches::spool_saved(before);
     return Flush::Clean;
 }
 

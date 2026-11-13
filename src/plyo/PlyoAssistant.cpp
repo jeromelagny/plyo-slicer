@@ -23,6 +23,7 @@
 #include "PlyoOrcaWindows.hpp"
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoPlateActions.hpp"
+#include "PlyoRetouches.hpp"
 #include "PlyoPreflight.hpp"
 #include "PlyoProfiles.hpp"
 #include "PlyoPrinterLink.hpp"
@@ -130,7 +131,7 @@ std::string load_page()
     const std::string config_marker = "<!--plyo-config-->";
     if (const size_t at = page.find(config_marker); at != std::string::npos)
         page.replace(at, config_marker.size(), "<script>" + Config::api_url_script() + "</script>");
-    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js", "project-logic.js", "journey-logic.js", "machines-logic.js", "machines-view.js", "intent-logic.js", "canvas-logic.js", "canvas-view.js", "journey-view.js", "journey-steps.js", "spools-logic.js", "project-card.js"}) {
+    for (const char* name : {"fiches.js", "premiers-pas.js", "rich-text.js", "assistant-logic.js", "preflight.js", "project-logic.js", "journey-logic.js", "machines-logic.js", "machines-view.js", "intent-logic.js", "canvas-logic.js", "canvas-view.js", "journey-view.js", "journey-steps.js", "spools-logic.js", "project-card.js", "retouches-logic.js"}) {
         const std::string marker = std::string("<!--plyo-include:") + name + "-->";
         if (const size_t at = page.find(marker); at != std::string::npos)
             page.replace(at, marker.size(), "<script>\n" + read_resource(name) + "\n</script>");
@@ -505,7 +506,7 @@ void handle_page_message(const nlohmann::json& data)
                     send({{"type", "phone_batch_ready"}});
             }
         } else if (type == "calib_start") {
-            // Calibration guidée : lancé seulement par le bouton « Lancer le test » du panneau.
+            // Calibration guidée : lancée seulement par un bouton du panneau (« Lancer le test » d'une proposition, ou « Calibrer cette bobine »).
             nlohmann::json started = Calibration::start_test(Json::str(data, "test"), Json::integer(data, "pass", 1), Json::num(data, "base_value", 0.0));
             if (Json::boolean(started, "ok", false)) {
                 started["type"]    = "calib_started";
@@ -749,6 +750,42 @@ void handle_page_message(const nlohmann::json& data)
             nlohmann::json r = Spools::adopt_offer(Json::str(data, "preset"));
             r["type"]        = "spool_adopt_offer";
             send(r);
+        } else if (type == "spool_about_current") {
+            // Carte « Orca est passé sur … » du filament (UX-35) : ce filament est-il une bobine, ou peut-il le devenir ?
+            nlohmann::json r = Spools::about_current();
+            r["type"]        = "spool_current";
+            send(r);
+        } else if (type == "retouches_get") {
+            // UX-31 : retouches de l'onglet Impression laissées avec le projet d'avant, en attente de ta réponse.
+            send({{"type", "print_retouches"}, {"pending", Retouches::print_pending()}});
+        } else if (type == "retouches_keep" || type == "retouches_undo") {
+            nlohmann::json r;
+            if (ProjectFiles::edits_blocked())
+                r = {{"ok", false}, {"text", ProjectFiles::busy_text()}};
+            else
+                r = type == "retouches_keep" ? Retouches::keep_print() : Retouches::undo_keep_print();
+            r["type"] = type == "retouches_keep" ? "print_retouches_kept" : "print_retouches_undone";
+            send(r);
+            send_values();
+        } else if (type == "retouches_dismiss") {
+            Retouches::dismiss_print();
+        } else if (type == "spool_kept_undo") {
+            // UX-32 : « Annuler » de la note « Gardé dans ta bobine ».
+            nlohmann::json r = ProjectFiles::edits_blocked() ? nlohmann::json{{"ok", false}, {"text", ProjectFiles::busy_text()}}
+                                                             : Retouches::undo_spool(static_cast<int>(Json::integer(data, "token", 0)));
+            r["type"]  = "spool_kept_undone";
+            r["token"] = Json::integer(data, "token", 0);
+            send(r);
+            send_values();
+        } else if (type == "file_filament_get") {
+            // UX-36 : valeurs du filament d'un fichier ouvert, non reprises (une fois).
+            send({{"type", "file_filament"}, {"info", Retouches::file_filament()}});
+        } else if (type == "file_filament_take") {
+            nlohmann::json r = ProjectFiles::edits_blocked() ? nlohmann::json{{"ok", false}, {"text", ProjectFiles::busy_text()}}
+                                                             : Retouches::take_file_filament();
+            r["type"] = "file_filament_taken";
+            send(r);
+            send_values();
         } else if (type == "spool_adopt") {
             nlohmann::json r = Spools::adopt(Json::str(data, "preset"), Json::str(data, "name"));
             r["type"]        = "spool_adopted";
@@ -839,6 +876,7 @@ void toggle_assistant(Plater* plater)
         return;
 
     ProjectFiles::set_listener([](const nlohmann::json& message) { send(message); });
+    Retouches::set_listener([](const nlohmann::json& message) { send(message); }); // retouches gardées dans la bobine (lot 11)
     OrcaMessages::set_listener([](const nlohmann::json& message) { send(message); }); // fin de chaque découpe (slice_result)
     Send::set_listener([](const nlohmann::json& message) { send(message); });        // envoi suivi dans la file d'Orca (lot 10)
     OrcaWindows::set_listener([](const nlohmann::json& message) { send(message); }); // fenêtres de message d'Orca (lot 10)

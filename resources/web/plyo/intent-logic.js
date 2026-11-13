@@ -162,7 +162,32 @@
     return { answers: out, labels: labels };
   }
 
-  var api = { mergeAnswers: mergeAnswers, detectLevel: detectLevel, asksDefinition: asksDefinition, QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
+  // « Comme la dernière fois » (UX-33) : les réponses du dernier projet préparé, seulement si elles sont toutes valides
+  // aujourd'hui (usage connu, préférence de cet usage, vitesse) ; sinon null.
+  function validLast(last) {
+    var a = last || {};
+    var use = USE.choices.filter(function (c) { return c.id === a.use; })[0];
+    if (!use) return null;
+    if (a.use === 'test') return { use: 'test' };
+    var pref = PREF[a.use] && PREF[a.use].choices.filter(function (c) { return c.id === a.pref; })[0];
+    var speed = SPEED.choices.filter(function (c) { return c.id === a.speed; })[0];
+    return pref && speed ? { use: a.use, pref: a.pref, speed: a.speed } : null;
+  }
+  // Ligne proposée au confirmé (niveau « expert ») qui n'a encore répondu à aucune question pour cette pièce.
+  function offersRepeat(level, last, answers) {
+    return level === 'expert' && !!validLast(last) && !Object.keys(answers || {}).length;
+  }
+  // « Comme la dernière fois : objet du quotidien, équilibrée, normal ».
+  function repeatText(last) {
+    var a = validLast(last);
+    if (!a) return '';
+    var find = function (q, id) { return q.choices.filter(function (c) { return c.id === id; })[0].label.toLowerCase(); };
+    var parts = [find(USE, a.use)];
+    if (a.use !== 'test') parts.push(find(PREF[a.use], a.pref), find(SPEED, a.speed));
+    return 'Comme la dernière fois : ' + parts.join(', ');
+  }
+
+  var api = { validLast: validLast, offersRepeat: offersRepeat, repeatText: repeatText, mergeAnswers: mergeAnswers, detectLevel: detectLevel, asksDefinition: asksDefinition, QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
     settingsFor: settingsFor, displayValue: displayValue, keepManual: keepManual, summary: summary, MANAGED_KEYS: Object.keys(LABELS) };
   root.PlyoIntent = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -340,6 +340,8 @@
     not_printer: function (n) { return 'À l’adresse enregistrée, ce n’est pas ' + n + ' qui répond, ou pas comme prévu : son adresse a peut-être changé.'; },
     server_error: function (n) { return cap(n) + ' a reçu la demande, mais a répondu par une erreur. Réessaie ; si ça recommence, redémarre-la.'; },
     interrupted: function (n) { return 'La liaison avec ' + n + ' s’est coupée pendant l’envoi : le fichier n’est pas arrivé en entier. Vérifie son Wi-Fi, puis réessaie.'; },
+    // Erreur sans code après « 100 % » (Elegoo CC2, par exemple) : le fichier est arrivé, c'est le démarrage qui n'est pas confirmé.
+    no_confirmation: function (n) { return 'Le fichier est bien arrivé sur ' + n + ', mais elle n’a pas confirmé le démarrage de l’impression. Regarde son écran : si elle imprime, dis-le-moi ; sinon, lance le fichier depuis son écran, ou réessaie l’envoi.'; },
     before_send: function () { return 'Orca a refusé de lancer l’envoi. Voici ce qu’il dit :'; },
     unknown: function () { return 'Orca n’a pas pu envoyer le fichier, et je ne reconnais pas la raison. Voici ce qu’il dit :'; }
   };
@@ -347,9 +349,9 @@
   var UPLOAD_ACTIONS = {
     unreachable: ['retry', 'link', 'export'], auth: ['link', 'retry', 'export'], no_space: ['export', 'retry'],
     file_refused: ['export', 'retry'], not_printer: ['link', 'export'], server_error: ['retry', 'export'],
-    interrupted: ['retry', 'link', 'export'], before_send: ['retry', 'link', 'export'], unknown: ['retry', 'link', 'export']
+    interrupted: ['retry', 'link', 'export'], no_confirmation: ['printing', 'retry', 'link'], before_send: ['retry', 'link', 'export'], unknown: ['retry', 'link', 'export']
   };
-  var SEND_LABELS = { retry: 'Réessayer l’envoi', link: 'Vérifier la liaison de mon imprimante', export: 'Exporter le fichier pour une carte SD ou une clé USB',
+  var SEND_LABELS = { printing: 'Elle imprime', retry: 'Réessayer l’envoi', link: 'Vérifier la liaison de mon imprimante', export: 'Exporter le fichier pour une carte SD ou une clé USB',
     connexion: 'Ouvrir la fenêtre Connexion', retest: 'Tester à nouveau', search: 'Chercher mon imprimante sur le Wi-Fi', import: 'Choisir un autre fichier' };
   function acts(keys) { return keys.map(function (k) { return { kind: k, label: SEND_LABELS[k] }; }); }
 
@@ -358,10 +360,12 @@
     var f = failure || {}, n = printerName || 'ton imprimante';
     var code = UPLOAD_TEXTS[f.code] ? f.code : 'unknown';
     var quote = typeof f.text === 'string' ? f.text : '';
-    var view = { tone: 'error', title: 'L’envoi à ' + n + ' n’a pas abouti', text: UPLOAD_TEXTS[code](n), quote: quote,
+    // Fichier arrivé, démarrage non confirmé : le titre ne dit pas « n'a pas abouti » (le texte dit que le fichier est là).
+    var title = code === 'no_confirmation' ? 'Démarrage non confirmé sur ' + n : 'L’envoi à ' + n + ' n’a pas abouti';
+    var view = { tone: code === 'no_confirmation' ? 'warn' : 'error', title: title, text: UPLOAD_TEXTS[code](n), quote: quote,
       quoteMain: code === 'unknown' || code === 'before_send', actions: acts(UPLOAD_ACTIONS[code]) };
     if ((code === 'unknown' || code === 'before_send') && !quote) view.text = view.text.replace(/ Voici ce qu’il dit :$/, '');
-    view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: 'L’envoi de mon fichier à mon imprimante n’a pas abouti.' +
+    view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: (code === 'no_confirmation' ? 'Mon fichier est arrivé sur mon imprimante, mais elle n’a pas confirmé le démarrage de l’impression.' : 'L’envoi de mon fichier à mon imprimante n’a pas abouti.') +
       (quote ? ' Orca dit : « ' + quote + ' ».' : '') + ' Explique-moi simplement ce qui se passe et quoi faire.' });
     return view;
   }

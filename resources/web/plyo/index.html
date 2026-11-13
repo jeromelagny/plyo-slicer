@@ -434,6 +434,7 @@
       <button type="button" id="m-parts" role="menuitem" data-icon="cube">Mes pièces</button>
       <button type="button" id="m-intent" role="menuitem" data-icon="help" class="hidden">Reposer les questions sur ma pièce</button>
       <button type="button" id="m-level" role="menuitem" data-icon="chat">Réponses plus courtes</button>
+      <button type="button" id="m-start" role="menuitem" data-icon="help">Je connais déjà : panneau fermé au lancement</button>
       <button type="button" id="m-undo" role="menuitem" data-icon="undo" disabled title="Rien à annuler pour l’instant">Annuler les derniers réglages appliqués</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
@@ -474,6 +475,7 @@
       <div class="hello">
         <h2>Bonjour !</h2>
         <p id="hello-text">Pose-moi ta question ici : un réglage, un problème d’impression, une photo de défaut à analyser.</p>
+        <button class="link hidden" id="hello-guide" type="button">Me guider pas à pas (onglet « Étapes »)</button>
         <div id="hello-spool"></div>
       </div>
       <div class="home-more hidden" id="goals-wrap">
@@ -529,6 +531,7 @@
 <!--plyo-include:journey-steps.js-->
 <!--plyo-include:spools-logic.js-->
 <!--plyo-include:project-card.js-->
+<!--plyo-include:retouches-logic.js-->
 <script>
 (function () {
   // Adresse du service Plyo, donnée par le slicer (Plyo::Config, variable d'environnement PLYO_API_URL en développement).
@@ -876,6 +879,8 @@
     projectUI.oldPart = previousPart();
     // Nouveau projet : imprimante et filament du précédent proposés, jamais appliqués sans confirmation.
     startConversation(conv && PlyoProject.nextStep(conv.project) !== 'printer' ? PlyoProject.proposeFrom(conv.project) : null);
+    // Retouches d'impression faites à la main dans le projet quitté (UX-31) : la question vient une fois le plateau détaché.
+    if (typeof askRetouches === 'function') askRetouches(1500);
   }
   // Pièce de la conversation quittée, encore sur le plateau : proposée à la reprise, jamais reprise en silence.
   function previousPart() {
@@ -1558,7 +1563,8 @@
     changeMachine: function () { projectHandlers.change('printer'); },
     recheck: function () { recheckMachine(); },
     answer: function (q, id) { intentHandlers.answer(q, id); }, idk: function () { intentHandlers.idk(); },
-    intentSkip: function () { intentHandlers.skip(); }, reset: function () { intentHandlers.reset(); }
+    intentSkip: function () { intentHandlers.skip(); }, reset: function () { intentHandlers.reset(); },
+    intentChange: function () { intentHandlers.change(); }
   };
   // Machine qui ne répond pas : « Vérifier à nouveau » et revérification automatique toutes les 8 s à l'étape Imprimer.
   var recheckTimer = null;
@@ -1739,7 +1745,7 @@
     var acts = el('div', 'printer-actions');
     actions.forEach(function (a) {
       acts.appendChild(button(a.label, function () { sendAction(a, card); }, 'btn ghost sm',
-        a.kind === 'link' || a.kind === 'retest' || a.kind === 'search' ? 'wifi' : a.kind === 'export' ? 'folder' : ''));
+        a.kind === 'link' || a.kind === 'retest' || a.kind === 'search' ? 'wifi' : a.kind === 'export' ? 'folder' : a.kind === 'printing' ? 'check' : ''));
     });
     if (closable) acts.appendChild(button('Fermer', function () { card.box.remove(); }, 'link'));
     return acts;
@@ -1748,6 +1754,7 @@
   function sendAction(a, card) {
     if (a.kind === 'retry') { card.box.remove(); runAction('send'); }
     else if (a.kind === 'export') { card.box.remove(); runAction('export'); }
+    else if (a.kind === 'printing') { card.box.remove(); if (conv) stepHandlers.started(); } // fichier arrivé, démarrage vu sur l'écran : c'est toi qui le dis
     else if (a.kind === 'ask') send(a.prompt);
     else if (a.kind === 'search') { card.box.remove(); startSetup(); renderSetupFlow(); }
     else if (a.kind === 'link' || a.kind === 'retest') {
@@ -1893,6 +1900,7 @@
     else if (kind === 'keepTemps') confirmTemps();
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
     else if (kind === 'applyIntent') applyIntent(false);
+    else if (kind === 'repeatIntent') intentHandlers.repeat();
     else if (kind === 'confirmFilament') projectHandlers.confirmFilament();
     else if (kind === 'fix') { if (!(preflightFix && preflightFix())) noteLine('Coche d’abord au moins une correction dans la carte, ou ignore-la.', '', 'info', 'guide'); }
   }
@@ -1940,11 +1948,105 @@
     var p = conv && conv.project, orca = lastValues && lastValues.context ? lastValues.context.printer : '';
     var alert = $('project-alert');
     if (!p || !p.printer || p.printer.proposed || !orca || projectUI.pending || Date.now() < (projectUI.restoringUntil || 0)) return;
-    if (orca === p.printer.preset) { if (alert.dataset.kind === 'divergence') { alert.textContent = ''; alert.dataset.kind = ''; } return; }
+    if (orca === p.printer.preset) {
+      if (alert.dataset.kind === 'divergence') { alert.textContent = ''; alert.dataset.kind = ''; }
+      checkFilamentDivergence(p, alert);
+      return;
+    }
     alert.dataset.kind = 'divergence';
     var names = PlyoJourney.divergenceNames(p.printer, orca);
     PlyoMachinesView.renderDivergence(alert, { el: el, button: button, icon: icon, alertBox: alertBox }, { from: names.from, to: names.to,
       handlers: { useNew: function () { alert.textContent = ''; alert.dataset.kind = ''; projectHandlers.pickPrinter(orca, PlyoJourney.machineLabel({ name: orca })); }, restore: function () { alert.textContent = ''; alert.dataset.kind = ''; restoreProjectInOrca(false); } } });
+  }
+
+  // Filament changé dans la liste d'Orca (UX-35) : une carte qui propose de l'adopter pour ce projet, ou de remettre celui du projet.
+  var fdivUI = { preset: '', waiting: '' };
+  function filamentDiverges(p) {
+    var of = lastValues && lastValues.context ? lastValues.context.filament : '';
+    var f = p && p.filament;
+    if (!of || !f || f.proposed || !f.preset || (Array.isArray(p.canvas) && p.canvas.length)) return '';
+    return PlyoRetouches.sameFilament(f.preset, of) ? '' : of;
+  }
+  function clearFilamentCard(alert) { if (alert.dataset.kind === 'fdivergence') { alert.textContent = ''; alert.dataset.kind = ''; fdivUI.preset = ''; } }
+  function checkFilamentDivergence(p, alert) {
+    var of = filamentDiverges(p);
+    if (!of) { clearFilamentCard(alert); return; }
+    if (alert.dataset.kind === 'fdivergence' && fdivUI.preset === of) return; // déjà affichée (et peut-être en train de demander un nom)
+    if (alert.dataset.kind && alert.dataset.kind !== 'fdivergence') return; // une autre carte est là : elle passe d'abord
+    renderFilamentCard(alert, of, p.filament);
+  }
+  function renderFilamentCard(alert, of, f) {
+    alert.textContent = '';
+    alert.dataset.kind = 'fdivergence';
+    fdivUI.preset = of;
+    var t = PlyoRetouches.filamentDivergence(of, f);
+    var box = alertBox('warn', t.text, 'alert');
+    box.body.appendChild(el('p', 'muted small', t.note));
+    var acts = el('div', 'printer-actions');
+    var use = button(t.use, function () { use.disabled = true; fdivUI.waiting = of; window.orca.postMessage({ type: 'spool_about_current' }); }, 'btn ghost sm', 'check');
+    acts.appendChild(use);
+    acts.appendChild(button(t.restore, function () { clearFilamentCard(alert); restoreProjectInOrca(false); }, 'btn ghost sm', 'undo'));
+    box.body.appendChild(acts);
+    alert.appendChild(box);
+  }
+  // Réponse à « Utiliser … pour ce projet » : c'est une bobine (rattachée), ou elle peut le devenir (son nom d'abord), ou non.
+  function onSpoolCurrent(msg) {
+    var alert = $('project-alert'), of = fdivUI.waiting;
+    fdivUI.waiting = '';
+    if (!of || !conv || msg.preset !== of) { if (of) noteLine('Orca a encore changé de filament : regarde la carte au-dessus.', '', 'info', 'guide'); return; }
+    var path = PlyoRetouches.adoptionPath(msg);
+    if (path === 'attach') { clearFilamentCard(alert); attachSpoolToProject(msg.spool, msg.material); return; }
+    alert.textContent = '';
+    alert.dataset.kind = 'fdivergence';
+    if (path === 'none') {
+      var box = alertBox('warn', PlyoRetouches.ADOPT_NONE, 'alert');
+      var acts = el('div', 'printer-actions');
+      acts.appendChild(chooseSpoolButton());
+      acts.appendChild(button(PlyoRetouches.filamentDivergence(of, conv.project.filament).restore, function () { clearFilamentCard(alert); restoreProjectInOrca(false); }, 'btn ghost sm', 'undo'));
+      box.body.appendChild(acts);
+      alert.appendChild(box);
+      return;
+    }
+    var nameBox = alertBox('tip', 'Faire de « ' + of + ' » une bobine que je retiens, pour ce projet et les suivants. Quel est son nom ?', 'palette');
+    renderAdoptName(nameBox.body, of, function () { clearFilamentCard(alert); renderFilamentCard(alert, of, conv.project.filament); });
+    adoptUI.attach = { preset: of, material: msg.material };
+    alert.appendChild(nameBox);
+    var input = nameBox.querySelector('input');
+    if (input) setTimeout(function () { input.focus(); }, 0);
+  }
+  // Nom d'une bobine adoptée : prérempli avec le nom du profil, modifiable, avec l'aide de l'étiquette (comme une nouvelle bobine).
+  var adoptUI = { attach: null };
+  function renderAdoptName(body, preset, onCancel) {
+    var lab = el('label', 'temp-field spool-name');
+    lab.appendChild(el('span', 'muted small', 'Nom de ta bobine'));
+    var input = el('input', 'field');
+    input.type = 'text';
+    input.maxLength = 60;
+    input.value = PlyoSpools.cleanName(preset);
+    input.setAttribute('aria-label', 'Nom de ta bobine');
+    lab.appendChild(input);
+    body.appendChild(lab);
+    body.appendChild(el('p', 'muted small', PlyoSpools.NAME_HELP));
+    var err = el('p', 'project-error hidden');
+    body.appendChild(err);
+    var acts = el('div', 'printer-actions');
+    var ok = button('C’est ma bobine', function () {
+      var code = PlyoSpools.nameError(input.value);
+      if (code) { err.textContent = fr(PlyoSpools.nameErrorText(code)); err.classList.remove('hidden'); input.focus(); return; }
+      ok.disabled = true;
+      window.orca.postMessage({ type: 'spool_adopt', preset: preset, name: PlyoSpools.cleanName(input.value) });
+    }, 'btn ghost sm', 'check');
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ok.click(); } });
+    acts.appendChild(ok);
+    if (onCancel) acts.appendChild(button('Annuler', onCancel, 'link'));
+    body.appendChild(acts);
+  }
+  // La bobine devient celle du projet : même chemin que « C'est ma bobine » (le slicer relit le préréglage et ses températures).
+  function attachSpoolToProject(spool, material) {
+    if (!conv || !spool || !spool.id) return;
+    projectUI.pending = { kind: 'filament', type: material || (conv.project.filament && conv.project.filament.type) || '', spool: { id: spool.id, name: spool.name },
+      fresh: false, success: null, profileBefore: '', note: 'Ton projet utilise maintenant ta bobine « ' + spool.name + ' ».' };
+    window.orca.postMessage({ type: 'project_state' });
   }
 
   // ---------- Questions d'intention (étape Préparer, avant la découpe) ----------
@@ -1957,6 +2059,9 @@
     var i = p.intent || {};
     if (i.applied || i.skipped || !PlyoMachines.askIntent(habits) && !i.use) return null;
     var answers = intentAnswers(p), q = PlyoIntent.nextQuestion(answers);
+    // Confirmé, deuxième pièce et suivantes (UX-33) : une ligne « Comme la dernière fois » au lieu des trois questions.
+    if (q && !i.reask && intentUI.changing !== conv && PlyoIntent.offersRepeat(fsState.level, habits.last_intent, answers))
+      return { mode: 'repeat', text: PlyoIntent.repeatText(habits.last_intent) };
     if (q) return { mode: 'asking', question: q, answers: answers, total: answers.use === 'test' ? 1 : 3, idk: intentUI.idk,
       guess: PlyoIntent.guessUse(p.part && p.part.name) };
     if (intentUI.manual === null) fetchManualKeys(function () { renderProject(); });
@@ -1974,12 +2079,26 @@
     answer: function (qid, id) { var p = conv.project; p.intent = p.intent || {}; p.intent[qid] = id; intentUI.idk = false; projectChanged(); },
     idk: function () { intentUI.idk = true; renderProject(); },
     reset: function () { conv.project.intent = conv.project.intent && conv.project.intent.reask ? { reask: true } : {}; intentUI.idk = false; intentUI.manual = null; projectChanged(); },
+    // « Comme la dernière fois » : les réponses du dernier projet, puis le même chemin que « Appliquer et préparer ».
+    repeat: function () {
+      var last = PlyoIntent.validLast(habits.last_intent);
+      if (!last) { intentUI.changing = conv; renderProject(); return; }
+      conv.project.intent = Object.assign({}, last);
+      projectChanged();
+      applyIntent(false);
+    },
+    change: function () { intentUI.changing = conv; renderProject(); },
     skip: function () {
       conv.project.intent = { skipped: true };
       habits = PlyoMachines.noteIntent(habits, true);
       saveHabits();
       projectChanged();
       noteLine('D’accord, je garde les réglages d’impression actuels.', '', 'info', 'guide');
+      // Le confirmé peut arrêter les questions dès la première fois (UX-33) ; le débutant, après trois projets passés.
+      if (fsState.level === 'expert' && PlyoMachines.askIntent(habits) && !PlyoMachines.offerStopAsking(habits)) {
+        var stop = noteLine('Tu préfères régler toi-même à chaque fois ?', '', 'info', 'guide');
+        stop.appendChild(button('Ne plus me les poser', function () { habits = PlyoMachines.stopAsking(habits, true); saveHabits(); stop.remove(); updateIntentMenu(); noteLine('C’est noté : je ne te pose plus ces questions. « Reposer les questions sur ma pièce », dans le menu ⋯, les ramène.', 'ok', 'check', 'guide'); }, 'link'));
+      }
       if (PlyoMachines.offerStopAsking(habits)) {
         var offer = noteLine('Tu passes souvent ces questions.', '', 'info', 'guide');
         offer.appendChild(button('Ne plus me les poser', function () { habits = PlyoMachines.stopAsking(habits, true); saveHabits(); offer.remove(); }, 'link'));
@@ -2025,6 +2144,9 @@
       delete p.intent.reapply;
       delete p.intent.reask;
       habits = PlyoMachines.noteIntent(habits, false);
+      // Les réponses de cette pièce deviennent « Comme la dernière fois » pour la suivante (UX-33).
+      var lastAnswers = PlyoIntent.validLast(intentAnswers(p));
+      if (lastAnswers) habits.last_intent = lastAnswers;
       saveHabits();
       projectChanged();
       // Une seule ligne, même si le filament change plusieurs fois de suite.
@@ -2158,6 +2280,7 @@
     },
     expand: function () { journeyUI.ficheOpen = true; renderProject(); },
     cancelEdit: function () { projectUI.editing = null; renderProject(); },
+    calibrate: function () { openCalibChooser(); },
     toggleOthers: function () { projectUI.showOthers = !projectUI.showOthers; renderProject(); },
     openMachines: function () { openMachinesDrawer(); },
     toggleList: function () { projectUI.showList = !projectUI.showList; renderProject(); },
@@ -2188,6 +2311,9 @@
   // Une modification refusée parce qu'Orca n'est plus sur le projet : un bouton pour l'y remettre.
   function offerRestore() {
     var slot = $('project-alert');
+    // Seul le filament a changé dans Orca (UX-35) : la carte qui propose de l'adopter, pas seulement de le défaire.
+    var p = conv && conv.project, orcaPrinter = lastValues && lastValues.context ? lastValues.context.printer : '';
+    if (p && p.printer && p.printer.preset === orcaPrinter && filamentDiverges(p)) { slot.textContent = ''; slot.dataset.kind = ''; renderFilamentCard(slot, filamentDiverges(p), p.filament); return; }
     slot.textContent = '';
     var box = alertBox('warn', 'Orca n’est plus sur l’imprimante ou le filament de ce projet.', 'alert');
     var acts = el('div', 'printer-actions');
@@ -2228,7 +2354,13 @@
       var profileNote = PlyoJourney.profileChangeNote(pend.profileBefore, msg.filament_preset);
       if (wanted && (wanted.nozzle !== msg.nozzle_temp || wanted.bed !== msg.bed_temp)) { projectChanged(); if (profileNote) noteLine(profileNote, '', 'info', 'guide'); projectHandlers.setTemps(wanted.nozzle, wanted.bed); return; }
       projectChanged(); // d'abord : le changement d'étape efface les messages de l'étape
+      if (pend.note) noteLine(pend.note, 'ok', 'check', 'guide'); // bobine rattachée depuis la carte « Orca est passé sur … »
       if (pend.spool) announceSpool(pend); // le nom de la bobine vaut mieux que celui du préréglage
+      // Nouvelle bobine, pour le confirmé (UX-34) : la calibration directe, à un clic.
+      if (pend.spool && pend.fresh && fsState.level === 'expert') {
+        var cal = noteLine('Nouvelle bobine : tu peux la calibrer (débit, température, rétraction).', '', 'target', 'guide');
+        cal.appendChild(button(PlyoRetouches.CALIB_LINK, openCalibChooser, 'link'));
+      }
       else if (profileNote) noteLine(profileNote, '', 'info', 'guide');
       return;
     } else if (pend.kind === 'temps' && conv.project.filament) {
@@ -2432,6 +2564,7 @@
     var p = conv && conv.project, ctx = lastValues && lastValues.context, f = ctx && ctx.filament;
     if (!p || !p.printer || p.printer.proposed || !ctx || ctx.printer !== p.printer.preset || !f || projectUI.pending || setup.phase) return;
     if (projectUI.adoptAsked[f] || !PlyoSpools.offersAdopt(habits, f)) return;
+    if (filamentDiverges(p)) return; // la carte « Orca est passé sur … » propose déjà de l'adopter pour ce projet
     projectUI.adoptAsked[f] = true;
     window.orca.postMessage({ type: 'spool_adopt_check', preset: f });
   }
@@ -2440,18 +2573,122 @@
     if (!msg.offer || !ctx || ctx.filament !== msg.preset) return;
     var tip = noteLine(PlyoSpools.adoptQuestion(msg.preset), '', 'help', 'guide');
     var acts = el('div', 'printer-actions');
-    acts.appendChild(button('Oui, retiens-la', function () { tip.remove(); window.orca.postMessage({ type: 'spool_adopt', preset: msg.preset, name: msg.preset }); }, 'btn ghost sm', 'check'));
+    // Le nom est demandé, prérempli et modifiable, avec l'aide de l'étiquette (UX-35).
+    acts.appendChild(button('Oui, retiens-la', function () { acts.remove(); renderAdoptName(tip, msg.preset, function () { tip.remove(); }); var i = tip.querySelector('input'); if (i) i.focus(); }, 'btn ghost sm', 'check'));
     acts.appendChild(button('Non merci', function () { tip.remove(); habits = PlyoSpools.declineAdopt(habits, msg.preset); saveHabits(); }, 'link'));
     tip.appendChild(el('span', 'muted small', ' Je garderai ses réglages qui marchent et je te la proposerai à l’étape Filament.'));
     tip.appendChild(acts);
   }
   function onSpoolAdopted(msg) {
-    if (!msg.ok) { noteLine(msg.text || 'Je n’ai pas pu retenir cette bobine.', 'error', 'alert', 'guide'); return; }
+    var attach = adoptUI.attach && adoptUI.attach.preset === msg.preset ? adoptUI.attach : null;
+    if (!msg.ok) {
+      // Le formulaire du nom reste ouvert : on peut corriger le nom et réessayer.
+      document.querySelectorAll('.spool-name + p + .project-error').forEach(function (e) { e.textContent = fr(msg.text || 'Je n’ai pas pu retenir cette bobine.'); e.classList.remove('hidden'); });
+      document.querySelectorAll('#project-alert button:disabled, #guide-notes button:disabled, #thread button:disabled').forEach(function (b) { if (b.textContent.indexOf('C’est ma bobine') >= 0) b.disabled = false; });
+      noteLine(msg.text || 'Je n’ai pas pu retenir cette bobine.', 'error', 'alert', 'guide');
+      return;
+    }
+    adoptUI.attach = null;
     projectUI.spools.printer = null;
+    document.querySelectorAll('.spool-name').forEach(function (l) { var tip = l.closest('.note-line'); if (tip) tip.remove(); });
     var f = conv && conv.project.filament;
-    if (f && f.preset === msg.preset) { f.spool = { id: msg.id, name: msg.name }; projectChanged(); }
     noteLine('C’est noté : « ' + msg.name + ' » fait partie de tes bobines.', 'ok', 'check', 'guide');
+    if (attach) { clearFilamentCard($('project-alert')); attachSpoolToProject({ id: msg.id, name: msg.name }, attach.material); return; } // et devient celle du projet
+    if (f && f.preset === msg.preset) { f.spool = { id: msg.id, name: msg.name }; projectChanged(); }
   }
+  // ---------- Retouches faites à la main dans Orca (lot 11) ----------
+  // UX-31 : retouches de l'onglet Impression laissées avec le projet d'avant : les garder dans le profil, ou seulement là-bas.
+  var retouchUI = { card: null, spoolNote: null, spoolUndo: null, spoolToken: 0 };
+  function askRetouches(delay) { setTimeout(function () { window.orca.postMessage({ type: 'retouches_get' }); }, delay || 0); }
+  function onPrintRetouches(msg) {
+    var p = msg.pending || {}, text = PlyoRetouches.printQuestion(p);
+    if (retouchUI.card) { retouchUI.card.remove(); retouchUI.card = null; }
+    if (!text) return;
+    var box = alertBox('tip', text, 'info');
+    box.classList.add('retouches-card');
+    box.body.appendChild(el('p', 'muted small', PlyoRetouches.printDetail(p)));
+    var err = el('p', 'project-error hidden');
+    box.body.appendChild(err);
+    var acts = el('div', 'printer-actions');
+    var keep = button(PlyoRetouches.KEEP_LABEL, function () { keep.disabled = only.disabled = true; err.classList.add('hidden'); window.orca.postMessage({ type: 'retouches_keep' }); }, 'btn sm', 'check');
+    var only = button(PlyoRetouches.ONLY_LABEL, function () {
+      window.orca.postMessage({ type: 'retouches_dismiss' });
+      box.remove(); retouchUI.card = null;
+      noteLine(PlyoRetouches.ONLY_NOTE, '', 'info');
+    }, 'btn ghost sm');
+    acts.appendChild(keep);
+    acts.appendChild(only);
+    box.body.appendChild(acts);
+    box.keep = keep; box.only = only; box.err = err;
+    retouchUI.card = box;
+    placeInOpenTab(box);
+  }
+  function onPrintRetouchesKept(msg) {
+    var box = retouchUI.card;
+    if (!msg.ok) {
+      if (msg.gone && box) { box.remove(); retouchUI.card = null; noteLine(msg.text, '', 'info'); return; }
+      if (box) { box.keep.disabled = box.only.disabled = false; box.err.textContent = fr(msg.text || 'Je n’ai pas pu garder ces retouches.'); box.err.classList.remove('hidden'); }
+      else noteLine(msg.text || 'Je n’ai pas pu garder ces retouches.', 'error', 'alert');
+      return;
+    }
+    if (box) { box.remove(); retouchUI.card = null; }
+    var line = noteLine(msg.text, 'ok', 'check');
+    if (/a déjà ces réglages/.test(msg.text || '')) return; // rien d'écrit : rien à annuler
+    var undo = undoButton('Annuler', function () { window.orca.postMessage({ type: 'retouches_undo' }); });
+    line.appendChild(undo);
+    retouchUI.printUndo = undo;
+  }
+  function onPrintRetouchesUndone(msg) {
+    if (!msg.ok) { if (retouchUI.printUndo) retouchUI.printUndo.disabled = false; noteLine(msg.text || 'Je n’ai pas pu annuler.', 'error', 'alert'); return; }
+    if (retouchUI.printUndo) retouchUI.printUndo.remove();
+    retouchUI.printUndo = null;
+    noteLine(msg.text, '', 'undo');
+  }
+  // UX-32 : retouche du filament gardée dans la bobine (enregistrement automatique) : dite, avec « Annuler » (la dernière seulement).
+  function onSpoolKept(msg) {
+    var text = PlyoRetouches.spoolKeptText(msg.spool, msg.changes);
+    if (!text) return;
+    if (retouchUI.spoolUndo) retouchUI.spoolUndo.remove(); // une seule « Annuler » : la plus récente
+    var line = noteLine(text, '', 'palette');
+    var token = msg.token;
+    var undo = undoButton('Annuler', function () { window.orca.postMessage({ type: 'spool_kept_undo', token: token }); });
+    line.appendChild(undo);
+    retouchUI.spoolNote = line; retouchUI.spoolUndo = undo; retouchUI.spoolToken = token;
+  }
+  function onSpoolKeptUndone(msg) {
+    var undo = msg.token === retouchUI.spoolToken ? retouchUI.spoolUndo : null;
+    if (!msg.ok) { if (undo) undo.disabled = false; noteLine(msg.text || 'Je n’ai pas pu annuler.', 'error', 'alert'); return; }
+    if (undo) undo.remove();
+    retouchUI.spoolUndo = null;
+    noteLine(msg.text, '', 'undo');
+  }
+  function onSpoolKeepFailed(msg) {
+    var line = noteLine(PlyoRetouches.spoolFailText(msg.reason, msg.label, msg.spool), 'warn', 'alert');
+    if (msg.key) line.appendChild(button('Montre-moi où il est', function () { showSetting(msg.key); }, 'link'));
+  }
+  // UX-36 : fichier ouvert dont les valeurs du filament ne sont pas reprises : dit, avec « Prendre ceux du fichier » (un lot annulable).
+  function onFileFilament(msg) {
+    var text = PlyoRetouches.fileFilamentText(msg.info);
+    if (!text) return;
+    var line = noteLine(text, '', 'info');
+    var take = button(PlyoRetouches.TAKE_FILE_LABEL, function () { take.disabled = true; retouchUI.fileTake = take; window.orca.postMessage({ type: 'file_filament_take' }); }, 'link');
+    line.appendChild(take);
+  }
+  function onFileFilamentTaken(msg) {
+    var take = retouchUI.fileTake;
+    if (!msg.ok) { if (take) take.disabled = false; noteLine(msg.text || 'Je n’ai pas pu reprendre ces réglages.', 'error', 'alert'); return; }
+    if (take) take.remove();
+    var line = noteLine(msg.text, 'ok', 'check');
+    if (!msg.undo_id) return;
+    var undoId = msg.undo_id;
+    var b = undoButton('Annuler', function () {
+      pendingSheet = { kind: 'undo', onResult: function (ok, text) { if (!ok) { b.disabled = false; noteLine(text, 'error', 'alert'); } } };
+      postRequest({ type: 'undo', undo_id: undoId });
+    });
+    undoneListeners[undoId] = function () { b.remove(); noteLine('Réglages de ta bobine remis.', '', 'undo'); };
+    line.appendChild(b);
+  }
+
   function openConversation(id) {
     if (blockedWhileBusy()) return;
     flushSave();
@@ -3176,7 +3413,7 @@
       body.appendChild(soon);
       body.appendChild(el('h3', '', 'Comment la jauge se remplit'));
       body.appendChild(rich('Chaque demande à l’IA remplit un peu ta jauge : un peu plus avec des photos, rien quand la demande sort de l’impression 3D. Une réponse commencée va toujours jusqu’au bout.'));
-      body.appendChild(rich('Toujours gratuit : l’accueil, le parcours en étapes, les explications des réglages (le « ? » à côté d’un réglage, ou « c’est quoi la rétraction ? »), « Montre-moi où il est » et la pose d’un modèle sur le plateau.'));
+      body.appendChild(rich('Toujours gratuit : l’accueil, le parcours en étapes, les explications des réglages (le « ? » à côté d’un réglage, ou « c’est quoi la rétraction ? »), « Montre-moi où il est », la pose d’un modèle sur le plateau et le lancement des tests de calibration.'));
       function show(g) {
         var v = Logic.gaugeView(g);
         if (!v) return;
@@ -3205,8 +3442,8 @@
     openDrawer('Aide', function (body) {
       [
         ['Une IA qui te guide', 'L’assistant est une IA : il peut se tromper. Il propose, et **tu valides chaque réglage** avant qu’il soit appliqué. Les réglages restent toujours dans des plages sûres, vérifiées par Plyo, et tout s’annule d’un clic.'],
-        ['Ce que je sais faire', '- Regarder la photo d’une impression ratée et te dire ce qui cloche\n- Proposer des réglages : tu choisis ce qu’on applique, et tout s’annule d’un clic\n- Répondre à tes questions d’impression 3D, avec tes mots\n- Te montrer où se trouve un bouton ou un réglage dans la fenêtre de Plyo\n- Orienter, ranger, réduire ou découper tes pièces quand tu me le demandes\n- Te guider pour calibrer ton filament, photo à l’appui'],
-        ['Gratuit, sans compte', 'Le parcours en étapes, les explications des réglages (le « ? » à côté d’un réglage, ou « c’est quoi la rétraction ? »), « Montre-moi où il est » et la pose d’un modèle sur le plateau.'],
+        ['Ce que je sais faire', '- Regarder la photo d’une impression ratée et te dire ce qui cloche\n- Proposer des réglages : tu choisis ce qu’on applique, et tout s’annule d’un clic\n- Répondre à tes questions d’impression 3D, avec tes mots\n- Te montrer où se trouve un bouton ou un réglage dans la fenêtre de Plyo\n- Orienter, ranger, réduire ou découper tes pièces quand tu me le demandes\n- Te guider pour calibrer ta bobine : « Calibrer cette bobine », dans la fiche du projet, pose le test (gratuit) ; seule la lecture de la photo du test utilise ta jauge'],
+        ['Gratuit, sans compte', 'Le parcours en étapes, les explications des réglages (le « ? » à côté d’un réglage, ou « c’est quoi la rétraction ? »), « Montre-moi où il est », la pose d’un modèle sur le plateau et le lancement des tests de calibration.'],
         ['Avec ton compte', 'Les réponses de l’IA et la lecture des photos remplissent ta jauge du mois, en haut à droite. Elle se recharge chaque mois.'],
         ['Astuces', '- **Entrée** envoie, **Maj + Entrée** va à la ligne\n- Clique dans un réglage des onglets de Plyo : je te propose de l’expliquer\n- Glisse une photo ou le fichier 3D de ta pièce (STL, 3MF…) directement dans ce panneau'],
         ['Tes données', 'Tes projets et tes discussions avec moi restent sur cet ordinateur. Tes photos servent seulement à répondre à ta demande. Une réponse te semble fausse ? Clique sur « Signaler » sous la réponse : ça nous aide à corriger l’assistant.']
@@ -3228,6 +3465,7 @@
     habits = PlyoMachines.stopAsking(habits, false);
     saveHabits();
     if (conv) {
+      intentUI.changing = conv; // les questions elles-mêmes, pas « Comme la dernière fois »
       var redo = PlyoProject.nextStep(conv.project) === 'ready';
       // Plaque déjà découpée : retour à Préparer avec les questions ; la découpe sera refaite avec les nouvelles réponses.
       conv.project.intent = redo && tourSignals && tourSignals.sliced ? { reask: true } : {};
@@ -3243,6 +3481,17 @@
     updateLevelLabel();
     noteLine(PlyoMachines.levelOf(habits) === 'short' ? 'Je te répondrai de façon courte et technique.' : 'Je t’expliquerai les choses en détail.', '', 'info');
   });
+  // Changer d'avis sur « Je connais déjà » (UX-02) : panneau fermé ou ouvert au prochain lancement.
+  $('m-start').addEventListener('click', function () {
+    menu.classList.add('hidden');
+    var level = fsState.level === 'expert' ? 'beginner' : 'expert';
+    fsState.level = level;
+    window.orca.postMessage({ type: 'firststeps_set', patch: { level: level } });
+    updateStartMenu();
+    if (conv) renderProject(); // la fiche montre ou cache les températures modifiables
+    noteLine(PlyoJourney.startChangeNote(level), 'ok', 'check');
+  });
+  $('hello-guide').addEventListener('click', function () { applyTab('show-guide'); });
   $('m-help').addEventListener('click', openHelp);
   $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
   $('m-login').addEventListener('click', function () { menu.classList.add('hidden'); openLogin(); });
@@ -4195,6 +4444,30 @@
     return box;
   }
 
+  // « Calibrer cette bobine » (UX-34) : les tests guidés, en direct et sans passer par l'IA. Lancer est gratuit ; seule la lecture
+  // de la photo du test utilise la jauge.
+  var calibChooser = null;
+  function openCalibChooser() {
+    if (calibChooser) calibChooser.remove();
+    var f = conv && conv.project.filament;
+    var box = alertBox('tip', PlyoRetouches.calibIntro(f && f.spool ? f.spool.name : ''), 'target');
+    var acts = el('div', 'printer-actions');
+    PlyoRetouches.CALIB_CHOICES.forEach(function (c) {
+      var b = button(c.label, function () {
+        acts.querySelectorAll('button').forEach(function (x) { x.disabled = true; });
+        pendingSheet = { kind: 'calib', onResult: function (ok, t) { if (!ok) { var n = noteLine(t, 'error', 'alert'); n.appendChild(button('Choisir un autre test', openCalibChooser, 'link')); } } };
+        box.remove(); calibChooser = null;
+        applyTab('show-chat'); // le test et son choix vivent dans la discussion, comme ceux que propose l'assistant
+        postRequest({ type: 'calib_start', test: c.test, pass: 1 });
+      }, 'btn ghost sm', 'target');
+      acts.appendChild(b);
+    });
+    acts.appendChild(button('Fermer', function () { box.remove(); calibChooser = null; }, 'link'));
+    box.body.appendChild(acts);
+    calibChooser = box;
+    placeInOpenTab(box);
+  }
+
   function onCalibStarted(msg) {
     delete pendingResults[msg.request];
     if (calibCard) calibCard.box.remove();
@@ -4985,6 +5258,14 @@
     if (state.needs_printer && !setup.phase && !setup.offered) startSetup();
     renderSetupFlow();
     if (first && state.level === 'expert' && !state.greeted) window.orca.postMessage({ type: 'firststeps_set', patch: { greeted: true } });
+    // « Je connais déjà » (UX-02) : le panneau s'ouvre sur « Poser une question » ; le parcours guidé reste dans « Étapes ».
+    if (first && state.level === 'expert') applyTab('start-chat');
+    updateStartMenu();
+  }
+  function updateStartMenu() {
+    var item = $('m-start'), label = fr(PlyoJourney.startMenuLabel(fsState.level));
+    if (item.lastChild && item.lastChild.nodeType === 3) item.lastChild.nodeValue = label; else item.appendChild(txt(label));
+    $('hello-guide').classList.toggle('hidden', fsState.level !== 'expert');
   }
 
   function explain(key) { window.orca.postMessage({ type: 'explain', key: key }); }
@@ -5916,6 +6197,9 @@
       // Pendant une réponse : retenu, appliqué à sa fin (ask, finish) ; d'ici là, rien ne s'applique (refuseStale).
       if (!busy) { closeDrawer(); newConversation(); }
       else projectSwitched = true;
+      // Ce qu'Orca a laissé de côté en changeant de projet : retouches d'impression (UX-31), filament du fichier (UX-36).
+      window.orca.postMessage({ type: 'file_filament_get' });
+      askRetouches(300);
     } else if (msg.type === 'spools') {
       onSpools(msg);
     } else if (msg.type === 'spool_chosen') {
@@ -5928,6 +6212,24 @@
       onAdoptOffer(msg);
     } else if (msg.type === 'spool_adopted') {
       onSpoolAdopted(msg);
+    } else if (msg.type === 'spool_current') {
+      onSpoolCurrent(msg);
+    } else if (msg.type === 'print_retouches') {
+      onPrintRetouches(msg);
+    } else if (msg.type === 'print_retouches_kept') {
+      onPrintRetouchesKept(msg);
+    } else if (msg.type === 'print_retouches_undone') {
+      onPrintRetouchesUndone(msg);
+    } else if (msg.type === 'spool_kept') {
+      onSpoolKept(msg);
+    } else if (msg.type === 'spool_kept_undone') {
+      onSpoolKeptUndone(msg);
+    } else if (msg.type === 'spool_keep_failed') {
+      onSpoolKeepFailed(msg);
+    } else if (msg.type === 'file_filament') {
+      onFileFilament(msg);
+    } else if (msg.type === 'file_filament_taken') {
+      onFileFilamentTaken(msg);
     } else if (msg.type === 'print_started') {
       onPrintStarted(msg);
     } else if (msg.type === 'print_send_waiting') {
@@ -6062,6 +6364,7 @@
   window.orca.postMessage({ type: 'session_load' });
   loadSharedModels();
   window.orca.postMessage({ type: 'firststeps_state' });
+  askRetouches(2500); // retouches d'impression laissées à la dernière fermeture d'Orca (UX-31)
 })();
 </script>
 </body>

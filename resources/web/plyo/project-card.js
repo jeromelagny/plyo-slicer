@@ -71,6 +71,8 @@
     if (ctx.beginner && (fi.nozzle_temp != null || fi.bed_temp != null))
       wrap.appendChild(ui.el('p', 'muted small', 'Buse ' + (fi.nozzle_temp != null ? fi.nozzle_temp + ' °C' : '?') + ' · plateau ' + (fi.bed_temp != null ? fi.bed_temp + ' °C' : '?')));
     if (!sp.open && !ctx.spoolLinkInStep) wrap.appendChild(ui.button('Températures de l’étiquette', h.toggleSpool, 'link'));
+    // Tests guidés de cette bobine (UX-34), lancés directement : seule la lecture de la photo utilise la jauge.
+    if (fi.spool && fi.spool.id && h.calibrate) wrap.appendChild(ui.button('Calibrer cette bobine', h.calibrate, 'link'));
     card.appendChild(wrap);
   }
 

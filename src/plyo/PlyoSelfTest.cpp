@@ -1,5 +1,6 @@
 #include "PlyoSelfTest.hpp"
 #include "PlyoAssistant.hpp"
+#include "PlyoCatalog.hpp"
 #include "PlyoGuard.hpp"
 #include "PlyoHighlight.hpp"
 #include "PlyoJson.hpp"
@@ -15,6 +16,8 @@
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/GUI/Tab.hpp"
+#include "libslic3r/PresetBundle.hpp"
 #include "slic3r/GUI/Widgets/SideButton.hpp"
 
 #include <boost/log/trivial.hpp>
@@ -151,6 +154,9 @@ void plan_tick()
 // Entrée « Assistant Plyo » actionnée par le banc (selftest_menu_toggle) : nombre d'actions, et panneau vu fermé entre deux.
 int  s_menu_toggles     = 0;
 bool s_menu_closed_seen = false;
+// Panneau resté fermé au lancement (UX-02), et son état vu 3 s plus tard, juste avant que le banc l'ouvre.
+bool s_startup_kept_closed  = false;
+bool s_startup_panel_shown = false;
 
 // Le banc actionne l'entrée de menu comme un clic (wxMenu::SendEvent, même chemin que le menu natif).
 bool send_menu_item()
@@ -189,6 +195,8 @@ nlohmann::json hooks()
     nlohmann::json out = {{"menu", menu},
                           {"menu_toggles", s_menu_toggles},
                           {"menu_closed_seen", s_menu_closed_seen},
+                          {"startup_kept_closed", s_startup_kept_closed},
+                          {"startup_panel_shown", s_startup_panel_shown},
                           {"panel_shown", is_assistant_shown()},
                           {"prepare_or_preview", frame != nullptr && frame->is_prepare_or_preview_tab()}};
     if (frame != nullptr) {
@@ -237,6 +245,31 @@ nlohmann::json call(const std::string& fn)
 
 bool active() { return bench().active; }
 
+void startup_kept_closed()
+{
+    if (!active())
+        return;
+    s_startup_kept_closed = true;
+    append_line(".log", {{"startup", "panel_kept_closed"}});
+    static wxTimer* s_open = nullptr;
+    if (s_open == nullptr) {
+        s_open = new wxTimer();
+        s_open->Bind(wxEVT_TIMER, [](wxTimerEvent&) {
+            guarded("le banc d'essai (ouverture du panneau)", [] {
+                s_startup_panel_shown = is_assistant_shown(); // toujours fermé 3 s après le lancement ?
+                append_line(".log", {{"startup", "panel_shown_after_3s"}, {"shown", s_startup_panel_shown}});
+                // Comme le bouton « Assistant » : depuis l'Accueil d'Orca, on passe d'abord sur « Préparer ».
+                Slic3r::GUI::MainFrame* frame = Slic3r::GUI::wxGetApp().mainframe;
+                if (!s_startup_panel_shown && frame != nullptr && !frame->is_prepare_or_preview_tab())
+                    frame->select_tab(TAB_ID_PREPARE);
+                if (!s_startup_panel_shown && !send_menu_item())
+                    BOOST_LOG_TRIVIAL(error) << "Plyo: banc d'essai : entrée de menu « Assistant Plyo » introuvable";
+            });
+        });
+    }
+    s_open->StartOnce(3000);
+}
+
 std::string page_script()
 {
     if (!active())
@@ -259,11 +292,32 @@ bool handle(const std::string& type, const nlohmann::json& data, const std::func
         append_line(".log", {{"step", "verdict"}, {"verdict", verdict}});
         append_line(".verdict", verdict);
         // Même chemin que « Quitter » (MainFrame::Close), forcé : aucune fenêtre de confirmation (projet ou préréglages
-        // modifiés) ne peut bloquer la fin du banc.
-        Slic3r::GUI::wxGetApp().CallAfter([] {
-            if (Slic3r::GUI::MainFrame* frame = Slic3r::GUI::wxGetApp().mainframe)
-                frame->Close(true);
-        });
+        // modifiés) ne peut bloquer la fin du banc. Fermer la fenêtre principale pendant qu'une fenêtre modale d'Orca tourne
+        // encore (sa boucle d'événements) fait avorter l'application : le banc ferme d'abord ces fenêtres (« Annuler »), une
+        // par tour (la boucle de la fenêtre ne se termine qu'au retour au tour d'événements), au plus MAX_MODAL_CLOSES fois,
+        // puis quitte au tour suivant.
+        static wxTimer* s_quit         = nullptr;
+        static int      s_quit_closes  = 0;
+        constexpr int   MAX_MODAL_CLOSES = 10;
+        if (s_quit == nullptr) {
+            s_quit = new wxTimer();
+            s_quit->Bind(wxEVT_TIMER, [](wxTimerEvent&) {
+                guarded("la fin du banc d'essai", [] {
+                    if (!OrcaWindows::top_modal_kind().empty() && s_quit_closes < MAX_MODAL_CLOSES) {
+                        ++s_quit_closes;
+                        append_line(".log", {{"quit_modal", OrcaWindows::answer_top_modal("cancel")}});
+                        return; // la fenêtre se ferme au retour au tour d'événements : on revient au prochain tic
+                    }
+                    s_quit->Stop();
+                    Slic3r::GUI::wxGetApp().CallAfter([] {
+                        if (Slic3r::GUI::MainFrame* frame = Slic3r::GUI::wxGetApp().mainframe)
+                            frame->Close(true);
+                    });
+                });
+            });
+        }
+        if (!s_quit->IsRunning())
+            s_quit->Start(250);
     } else if (type == "selftest_reopen_panel") {
         // Comme « × » puis « Assistant » : le panneau est fermé (après ce message), puis rouvert dès qu'il est détruit. Le
         // pilote est réinséré dans la nouvelle page et reprend du début (le scénario sait où il en est par l'état du slicer).
@@ -321,6 +375,28 @@ bool handle(const std::string& type, const nlohmann::json& data, const std::func
         if (!s_plan_timer->IsRunning())
             s_plan_timer->Start(200);
         append_line(".log", {{"modal_plan", {{"answer", plan.answer}, {"kind", plan.kind}, {"after_ms", plan.after_ms}}}});
+    } else if (type == "selftest_edit") {
+        // Lot 11 : {scope: "print" | "filament", key, value (texte d'Orca)} : comme une retouche à la main dans l'onglet d'Orca
+        // (le préréglage édité change par l'onglet, sans passer par le pont ni la pile d'annulation de Plyo). Clés du catalogue
+        // seulement. → selftest_edit_done {ok}.
+        const bool        print = Json::str(data, "scope", 10) == "print";
+        const std::string key   = Json::str(data, "key", 80);
+        const std::string value = Json::str(data, "value", 200);
+        nlohmann::json    done  = {{"type", "selftest_edit_done"}, {"ok", false}, {"key", key}};
+        Slic3r::GUI::GUI_App& app = Slic3r::GUI::wxGetApp();
+        Slic3r::GUI::Tab*     tab = app.get_tab(print ? Slic3r::Preset::TYPE_PRINT : Slic3r::Preset::TYPE_FILAMENT);
+        if (app.preset_bundle != nullptr && tab != nullptr && Catalog::policy().allows(print ? "print" : "filament", key)) {
+            Slic3r::DynamicPrintConfig config = (print ? app.preset_bundle->prints : app.preset_bundle->filaments).get_edited_preset().config;
+            try {
+                config.set_deserialize_strict(key, value);
+                tab->load_config(config);
+                done["ok"] = true;
+            } catch (const std::exception& e) {
+                done["text"] = e.what();
+            }
+        }
+        append_line(".log", {{"edit", done}});
+        send(done);
     } else if (type == "selftest_call") {
         const std::string fn = Json::str(data, "fn", 40);
         send({{"type", "selftest_result"}, {"request", Json::integer(data, "request", 0)}, {"fn", fn}, {"result", call(fn)}});
