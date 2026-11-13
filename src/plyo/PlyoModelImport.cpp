@@ -1,6 +1,7 @@
 #include "PlyoModelImport.hpp"
 #include "PlyoFiles.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoOrcaWindows.hpp"
 #include "PlyoPlateActions.hpp"
 #include "PlyoProject.hpp"
 
@@ -63,16 +64,32 @@ nlohmann::json place(const fs::path& path, const std::string& shown_name, const 
     const size_t      replaced      = replace ? plater->model().objects.size() : 0;
     const std::string replaced_name = replaced > 0 ? plater->model().objects.front()->name : std::string();
     std::vector<size_t> added;
-    if (replaced > 0) {
-        Slic3r::GUI::Plater::TakeSnapshot snapshot(plater, "Plyo: nouvelle pièce");
-        plater->delete_all_objects_from_model();
-        added = plater->load_files({path}, Slic3r::LoadStrategy::LoadModel);
-    } else
-        added = plater->load_files({path}, Slic3r::LoadStrategy::LoadModel);
+    {
+        // Lot 10 (ERR-14) : une question d'Orca pendant l'ajout (pièce en plusieurs parties…) est vue par le panneau, qui dit
+        // de répondre dans sa fenêtre.
+        OrcaWindows::Scope windows("model_add");
+        if (replaced > 0) {
+            Slic3r::GUI::Plater::TakeSnapshot snapshot(plater, "Plyo: nouvelle pièce");
+            plater->delete_all_objects_from_model();
+            added = plater->load_files({path}, Slic3r::LoadStrategy::LoadModel);
+        } else
+            added = plater->load_files({path}, Slic3r::LoadStrategy::LoadModel);
+    }
     if (added.empty()) {
         if (replaced > 0)
             plater->undo(); // le fichier ne s'ouvre pas : l'ancienne pièce revient
-        return {{"ok", false}, {"text", "Orca n'a pas pu ouvrir « " + shown_name + " »."}};
+        // Orca dit pourquoi dans sa fenêtre d'erreur, ouverte juste après (show_error) : le panneau la cite sous ce message.
+        OrcaWindows::expect("model_add", 3000);
+        const std::string ext  = boost::algorithm::to_lower_copy(path.extension().string());
+        const bool        step = ext == ".step" || ext == ".stp";
+        return {{"ok", false},
+                {"reason", "orca_refused"},
+                {"step_file", step},
+                {"text", "Orca n'a pas pu ouvrir « " + shown_name + " »" +
+                             (step ? std::string(". Les fichiers STEP sont parfois mal lus : exporte-le plutôt en STL ou en 3MF depuis ton "
+                                                 "logiciel de dessin, puis réessaie.")
+                                   : std::string(" : le fichier est peut-être abîmé ou incomplet (téléchargement interrompu), ou ce "
+                                                 "n'est pas un modèle 3D."))}};
     }
 
     Slic3r::BoundingBoxf3 box;

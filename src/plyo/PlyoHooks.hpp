@@ -82,6 +82,10 @@ bool fill_armed_upload(Slic3r::PrintHostUpload& upload, const std::string& file_
 
 // --- Utils/ElegooLink.cpp ---
 
+namespace Send {
+void on_upload_handed();
+} // namespace Send
+
 namespace CC2 {
 // ElegooLink::loopUploadCC2, après l'envoi : démarre l'impression sur une Elegoo Centauri Carbon 2 (canal MQTT local).
 // `host` : adresse de l'imprimante (IP ou nom) ; `serial` : son numéro de série ; `filename` : nom du fichier envoyé.

@@ -9,6 +9,7 @@
 #include "PlyoIfs.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoPrinterLink.hpp"
+#include "PlyoSend.hpp"
 #include "PlyoSlotsLogic.hpp"
 #include "PlyoSpoolsLogic.hpp"
 #include "PlyoU1.hpp"
@@ -447,9 +448,11 @@ nlohmann::json finish_send(const Target& t, const nlohmann::json& state)
     BOOST_LOG_TRIVIAL(info) << "Plyo: envoi avec répartition (" << t.kind << ", " << decision.map.size() << " couleur(s)), marque non validée sur machine";
     bool taken = false;
     try {
-        ArmedSend armed(std::move(info));
+        Send::Scope scope; // lot 10 : l'envoi pris par Orca est suivi dans sa file (progression, arrivée, échec)
+        ArmedSend   armed(std::move(info));
         plater->send_gcode_legacy(PLATE_CURRENT_IDX, nullptr);
-        taken = armed.taken();
+        // Rempli par Plyo, puis réellement confié à la file d'Orca (et pas arrêté avant par une erreur d'Orca).
+        taken = armed.taken() && scope.handed();
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(error) << "Plyo: envoi avec répartition en échec : " << e.what();
     }

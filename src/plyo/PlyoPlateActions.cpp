@@ -4,6 +4,8 @@
 #include "PlyoGuard.hpp"
 #include "PlyoOrcaMessages.hpp"
 #include "PlyoOrcaMessagesLogic.hpp"
+#include "PlyoOrcaWindows.hpp"
+#include "PlyoSend.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Model.hpp"
@@ -194,8 +196,14 @@ nlohmann::json context()
         objects.push_back(item);
     }
     // Ce qu'Orca dit de la plaque (refus, avertissements, contrôles du G-code), 10 au plus, textes nettoyés : l'IA l'explique.
+    // Lot 10 : avec, en tête, le dernier échec d'envoi et les dernières fenêtres d'erreur d'Orca (sans adresse ni chemin).
+    nlohmann::json issues = Send::recent_issues();
+    for (const nlohmann::json& i : OrcaWindows::recent_issues())
+        issues.push_back(i);
+    for (const nlohmann::json& i : OrcaMessages::report()["issues"])
+        issues.push_back(i);
     return {{"objects", objects}, {"bed_mm", size_json(bed_size())}, {"sliced", Json::boolean(signals, "sliced", false)},
-            {"time_s", Json::num(signals, "time_s", 0.0)}, {"weight_g", Json::num(signals, "weight_g", 0.0)}, {"issues", OrcaMessages::report()["issues"]}};
+            {"time_s", Json::num(signals, "time_s", 0.0)}, {"weight_g", Json::num(signals, "weight_g", 0.0)}, {"issues", issues}};
 }
 
 nlohmann::json run(const std::string& kind)

@@ -9,6 +9,7 @@
 #include "PlyoWelcomeDialog.hpp"
 #include "PlyoPrinterSetup.hpp"
 #include "PlyoSelfTest.hpp"
+#include "PlyoSend.hpp"
 
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/Print.hpp"
@@ -454,21 +455,36 @@ void on_export_done(bool finished, const std::string& error, const std::string& 
              {"file", fs::exists(written, ec) ? written.filename().string() : std::string()}});
 }
 
-nlohmann::json start_print()
+void start_print(std::function<void(nlohmann::json)> done)
 {
     auto* frame  = wxGetApp().mainframe;
     auto* plater = wxGetApp().plater();
-    if (frame == nullptr || plater == nullptr)
-        return {{"ok", false}};
+    if (frame == nullptr || plater == nullptr) {
+        done({{"ok", false}});
+        return;
+    }
     Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
-    if (plate == nullptr || !plate->is_slice_result_valid())
-        return {{"ok", false}, {"reason", "not_sliced"}};
+    if (plate == nullptr || !plate->is_slice_result_valid()) {
+        done({{"ok", false}, {"reason", "not_sliced"}});
+        return;
+    }
     // Même chemin que le bouton « Imprimer la plaque » (MainFrame) : Orca vérifie la plaque et ouvre sa confirmation.
     plater->apply_background_progress();
-    if (!frame->get_enable_print_status())
-        return {{"ok", false}, {"reason", "not_ready"}};
-    wxPostEvent(plater, Slic3r::GUI::SimpleEvent(Slic3r::GUI::EVT_GLTOOLBAR_PRINT_PLATE));
-    return {{"ok", true}};
+    if (!frame->get_enable_print_status()) {
+        // Pourquoi Orca ne laisse pas imprimer : ce qu'il dit de la plaque (ERR-10), expliqué par le panneau.
+        const nlohmann::json report = OrcaMessages::report();
+        done({{"ok", false}, {"reason", "not_ready"}, {"issues", report.contains("issues") ? report["issues"] : nlohmann::json::array()}});
+        return;
+    }
+    // Même choix que Plater::priv::on_action_print_plate (sentinelle dans test_plyo.cpp) : Bambu Lab et agents d'imprimante
+    // ouvrent la fenêtre de leur module, dont Plyo ne lit rien ; les autres passent par la file d'envoi d'Orca, suivie.
+    Slic3r::PresetBundle& bundle = *wxGetApp().preset_bundle;
+    if (bundle.use_bbl_network() || wxGetApp().app_config->get_bool("use_printer_agents")) {
+        wxPostEvent(plater, Slic3r::GUI::SimpleEvent(Slic3r::GUI::EVT_GLTOOLBAR_PRINT_PLATE));
+        done({{"ok", true}, {"route", "device"}});
+        return;
+    }
+    Send::from_panel(std::move(done));
 }
 
 nlohmann::json explain(const std::string& key)

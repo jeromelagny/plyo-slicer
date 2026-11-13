@@ -316,10 +316,104 @@
   var SLICE_STOPPED = { text: 'La découpe s’est arrêtée avant la fin : un réglage a changé pendant qu’Orca découpait, ou elle a été annulée.',
     actions: [{ kind: 'slice', label: 'Découper à nouveau' }] };
 
+  // ---------- Envoi à l'imprimante et fenêtres d'Orca (PlyoSend.cpp, PlyoOrcaWindows.cpp, lot 10) ----------
+  // La phrase vient du code de l'échec (code HTTP, étape atteinte : jamais le texte d'Orca) ; le texte d'Orca, déjà sans
+  // adresse ni chemin, n'est que cité et passé à l'assistant. `n` : le nom de l'imprimante du projet.
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  var SEND_TEXTS = {
+    waiting: 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.',
+    device: 'Orca ouvre la fenêtre d’envoi de ton imprimante : choisis-la, puis valide. Dis-moi ensuite quand l’impression a démarré.',
+    closed: 'Tu as fermé la fenêtre d’envoi : rien n’est parti.',
+    notStarted: 'Orca n’a pas lancé l’envoi, sans me dire pourquoi : rien n’est parti. Découpe à nouveau la plaque, puis réessaie.',
+    notReady: 'Orca ne laisse pas encore envoyer cette plaque, sans me dire pourquoi : découpe-la à nouveau, puis réessaie.',
+    sending: function (n) { return 'J’envoie le fichier à ' + n + '…'; },
+    progress: function (n, p) { return 'J’envoie le fichier à ' + n + '… ' + p + ' %'; },
+    arrived: function (n) { return 'Le fichier est arrivé sur ' + n + '.'; },
+    cancelled: function (n) { return 'L’envoi a été annulé dans la file d’Orca : le fichier n’est pas arrivé sur ' + n + '.'; },
+    silent: function (n) { return cap(n) + ' ne répond pas encore. Si elle est éteinte ou hors du Wi-Fi, l’envoi va échouer : vérifie-la.'; }
+  };
+  var UPLOAD_TEXTS = {
+    unreachable: function (n) { return 'Je n’arrive pas à joindre ' + n + ' : elle est peut-être éteinte, en veille, ou plus sur le même Wi-Fi que cet ordinateur. Rien n’est parti.'; },
+    auth: function (n) { return cap(n) + ' refuse la connexion : le code d’accès (ou la clé d’API) enregistré dans Plyo n’est plus le bon. Rien n’est parti.'; },
+    no_space: function (n) { return cap(n) + ' a refusé le fichier : sa mémoire ou sa carte est sans doute pleine, ou le fichier est trop gros. Fais de la place sur l’imprimante, ou passe par une carte SD ou une clé USB.'; },
+    file_refused: function (n) { return cap(n) + ' a refusé le fichier : elle n’accepte peut-être pas ce type de fichier, ou un fichier du même nom est en cours d’impression.'; },
+    not_printer: function (n) { return 'À l’adresse enregistrée, ce n’est pas ' + n + ' qui répond, ou pas comme prévu : son adresse a peut-être changé.'; },
+    server_error: function (n) { return cap(n) + ' a reçu la demande, mais a répondu par une erreur. Réessaie ; si ça recommence, redémarre-la.'; },
+    interrupted: function (n) { return 'La liaison avec ' + n + ' s’est coupée pendant l’envoi : le fichier n’est pas arrivé en entier. Vérifie son Wi-Fi, puis réessaie.'; },
+    before_send: function () { return 'Orca a refusé de lancer l’envoi. Voici ce qu’il dit :'; },
+    unknown: function () { return 'Orca n’a pas pu envoyer le fichier, et je ne reconnais pas la raison. Voici ce qu’il dit :'; }
+  };
+  // Suites proposées, dans l'ordre : la plus utile d'abord.
+  var UPLOAD_ACTIONS = {
+    unreachable: ['retry', 'link', 'export'], auth: ['link', 'retry', 'export'], no_space: ['export', 'retry'],
+    file_refused: ['export', 'retry'], not_printer: ['link', 'export'], server_error: ['retry', 'export'],
+    interrupted: ['retry', 'link', 'export'], before_send: ['retry', 'link', 'export'], unknown: ['retry', 'link', 'export']
+  };
+  var SEND_LABELS = { retry: 'Réessayer l’envoi', link: 'Vérifier la liaison de mon imprimante', export: 'Exporter le fichier pour une carte SD ou une clé USB',
+    connexion: 'Ouvrir la fenêtre Connexion', retest: 'Tester à nouveau', search: 'Chercher mon imprimante sur le Wi-Fi', import: 'Choisir un autre fichier' };
+  function acts(keys) { return keys.map(function (k) { return { kind: k, label: SEND_LABELS[k] }; }); }
+
+  // Carte « L'envoi à … n'a pas abouti ». failure : { code, step, http, host_type, text }. { tone, title, text, quote, quoteMain, actions }.
+  function uploadFailureView(failure, printerName) {
+    var f = failure || {}, n = printerName || 'ton imprimante';
+    var code = UPLOAD_TEXTS[f.code] ? f.code : 'unknown';
+    var quote = typeof f.text === 'string' ? f.text : '';
+    var view = { tone: 'error', title: 'L’envoi à ' + n + ' n’a pas abouti', text: UPLOAD_TEXTS[code](n), quote: quote,
+      quoteMain: code === 'unknown' || code === 'before_send', actions: acts(UPLOAD_ACTIONS[code]) };
+    if ((code === 'unknown' || code === 'before_send') && !quote) view.text = view.text.replace(/ Voici ce qu’il dit :$/, '');
+    view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: 'L’envoi de mon fichier à mon imprimante n’a pas abouti.' +
+      (quote ? ' Orca dit : « ' + quote + ' ».' : '') + ' Explique-moi simplement ce qui se passe et quoi faire.' });
+    return view;
+  }
+
+  // Résultat de « Vérifier la liaison » (printer_link_rechecked : { code, http, text }). { tone, text, quote, actions }.
+  var RECHECK = {
+    ok: function (n) { return { tone: 'ok', text: cap(n) + ' répond, et la liaison enregistrée fonctionne : réessaie l’envoi.', actions: ['retry'] }; },
+    auth: function (n) { return { tone: 'warn', text: cap(n) + ' répond, mais refuse le code d’accès (ou la clé d’API) enregistré. Corrige-le dans la fenêtre « Connexion » d’Orca, puis réessaie.', actions: ['connexion', 'retry'] }; },
+    unreachable: function (n) { return { tone: 'warn', text: 'Je n’arrive toujours pas à joindre ' + n + '. Vérifie qu’elle est allumée, que son écran est actif, et qu’elle est sur le même Wi-Fi que cet ordinateur.', actions: ['retest', 'search'] }; },
+    not_printer: function (n) { return { tone: 'warn', text: 'À l’adresse enregistrée, ce n’est pas ' + n + ' qui répond : cherche-la à nouveau sur le Wi-Fi pour la relier.', actions: ['search', 'connexion'] }; },
+    error: function (n) { return { tone: 'warn', text: cap(n) + ' répond, mais pas comme prévu. Vérifie sa connexion dans la fenêtre « Connexion » d’Orca.', actions: ['connexion', 'retry'] }; },
+    not_local: function () { return { tone: 'warn', text: 'L’adresse enregistrée n’est pas sur ton réseau local : je ne la teste pas d’ici. Vérifie-la dans la fenêtre « Connexion » d’Orca.', actions: ['connexion'] }; },
+    none: function () { return { tone: 'warn', text: 'Ton imprimante n’est plus reliée à Plyo : cherche-la sur le Wi-Fi pour la relier à nouveau.', actions: ['search'] }; }
+  };
+  function linkRecheckView(result, printerName) {
+    var r = result || {}, n = printerName || 'ton imprimante';
+    var v = (RECHECK[r.code] || RECHECK.error)(n);
+    return { tone: v.tone, text: v.text, quote: r.code === 'error' && typeof r.text === 'string' ? r.text : '', actions: acts(v.actions) };
+  }
+
+  // Fenêtre de message d'Orca (orca_dialog : { phase, kind, title, text, during, covered }). Pendant qu'elle est ouverte : une
+  // ligne discrète. Une erreur fermée, qu'aucune autre carte n'explique (covered), devient une carte qui cite son texte.
+  function dialogWaitText(d) {
+    return d && d.during === 'model_add' && d.kind === 'question' ? 'Orca te demande comment ouvrir ce fichier : réponds dans sa fenêtre.'
+      : 'Orca attend ta réponse dans sa fenêtre.';
+  }
+  function dialogCardWanted(d) { return !!d && d.phase === 'closed' && d.kind === 'error' && !d.covered; }
+  function dialogView(d) {
+    var x = d || {}, quote = typeof x.text === 'string' ? x.text : '';
+    var addModel = x.during === 'model_add';
+    var view = { tone: 'error', title: addModel ? 'Orca n’a pas pu ajouter ta pièce' : 'Orca a affiché une erreur',
+      text: quote ? 'Voici ce qu’il dit :' : 'Il ne m’a pas donné de détail.', quote: quote, quoteMain: !!quote, actions: addModel ? acts(['import']) : [] };
+    view.actions.push({ kind: 'ask', label: ASK_LABEL, prompt: (quote ? 'Orca m’a affiché ce message d’erreur : « ' + quote + ' ».' : 'Orca m’a affiché une erreur sans détail.') +
+      (addModel ? ' C’était en ajoutant un fichier 3D.' : '') + ' Explique-moi simplement ce qui se passe et comment le corriger.' });
+    return view;
+  }
+
+  // Ajout d'une pièce refusé (ERR-14) : les messages qu'Orca a montrés pendant l'ajout, cités sous « Orca n'a pas pu ouvrir … »,
+  // et la question préremplie pour l'assistant (sans le nom du fichier).
+  function modelDialogQuoted(d) { return !!d && d.phase === 'closed' && d.during === 'model_add' && !!d.text && d.kind !== 'question'; }
+  function modelFailPrompt(quotes) {
+    var q = (quotes || []).filter(Boolean);
+    return 'Orca n’a pas pu ouvrir mon fichier 3D.' + (q.length ? ' Il m’a affiché : ' + q.map(function (t) { return '« ' + t + ' »'; }).join(' ') + '.' : '') +
+      ' Explique-moi simplement pourquoi et comment obtenir un fichier qui marche.';
+  }
+
   var api = { preflightRisks: preflightRisks, riskKey: riskKey, preflightPlan: preflightPlan, fixChanges: fixChanges, fixBatch: fixBatch, undoText: undoText,
     leftoverNames: leftoverNames, SLICE_NOT_STARTED_AFTER_CHANGE: SLICE_NOT_STARTED_AFTER_CHANGE,
     orcaCards: orcaCards, orcaIssueView: orcaIssueView, issueKey: issueKey, askPrompt: askPrompt, exportErrorView: exportErrorView,
-    SLICE_SLOW: SLICE_SLOW, SLICE_STOPPED: SLICE_STOPPED, SLICE_NOT_STARTED: SLICE_NOT_STARTED, ASK_LABEL: ASK_LABEL };
+    SLICE_SLOW: SLICE_SLOW, SLICE_STOPPED: SLICE_STOPPED, SLICE_NOT_STARTED: SLICE_NOT_STARTED, ASK_LABEL: ASK_LABEL,
+    SEND_TEXTS: SEND_TEXTS, uploadFailureView: uploadFailureView, linkRecheckView: linkRecheckView, dialogWaitText: dialogWaitText,
+    dialogCardWanted: dialogCardWanted, dialogView: dialogView, modelDialogQuoted: modelDialogQuoted, modelFailPrompt: modelFailPrompt };
   root.PlyoPreflight = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

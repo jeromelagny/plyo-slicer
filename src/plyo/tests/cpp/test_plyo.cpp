@@ -4048,8 +4048,9 @@ TEST_CASE("Lot 9 · sentinelle ARCH-06 : branche d'Orca voisine de l'envoi armé
     const std::string plater = read_file(repo_root() / "src/slic3r/GUI/Plater.cpp");
     const std::string body   = between(plater, "void Plater::send_gcode_legacy(", "int Plater::send_gcode(");
     REQUIRE_FALSE(body.empty());
-    // L'accroche : une ligne, juste avant le bloc d'Orca qui ouvre la fenêtre ; c'est le seul appel à Plyo de la fonction.
-    CHECK(count_of(body, "Plyo::") == 1);
+    // L'accroche : une ligne, juste avant le bloc d'Orca qui ouvre la fenêtre ; avec celle du lot 10 (envoi pris par Orca,
+    // sentinelle plus bas), ce sont les seuls appels à Plyo de la fonction.
+    CHECK(count_of(body, "Plyo::") == 2);
     CHECK(body.find("    if (!Plyo::Canvas::fill_armed_upload(upload_job.upload_data, default_output_file.filename().string(), use_3mf, "
                     "resolved_plate_idx)) // PLYO: ") != std::string::npos);
     CHECK(between(body, "Plyo::Canvas::fill_armed_upload(", "auto        preset_bundle = wxGetApp().preset_bundle;").find(" // PLYO: ") !=
@@ -4227,4 +4228,168 @@ TEST_CASE("Lot 9 · sentinelle ARCH-04 : « Montre-moi » vise les membres publi
     const std::string mine = read_source("../../PlyoHighlight.cpp");
     CHECK(mine.find("frame->m_slice_btn : frame->m_print_btn") != std::string::npos);
     CHECK(mine.find("GetLabel() ==") == std::string::npos); // plus aucun bouton reconnu par son libellé
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Lot 10 · envoi à l'imprimante et fenêtres d'Orca (PlyoSendLogic, sentinelles de la file d'envoi et des fenêtres)
+// ---------------------------------------------------------------------------------------------------------------------
+
+#include "../../PlyoSendLogic.hpp"
+
+TEST_CASE("Lot 10 · code HTTP lu dans le format d'Orca (« HTTP <code>: »), jamais dans une phrase")
+{
+    using Plyo::SendLogic::http_status;
+    CHECK(http_status("HTTP 403: Forbidden") == 403);
+    CHECK(http_status("  HTTP 500: Internal Server Error") == 500);
+    CHECK(http_status("Error uploading to print host:\nHTTP 401: {\"error\": \"Invalid API key\"}") == 401);
+    CHECK(http_status("Erreur lors de l'envoi :\nHTTP 507: Insufficient Storage") == 507);
+    CHECK(http_status("Connection timed out. Please check if the printer and computer network are functioning properly") == 0);
+    CHECK(http_status("curl:Couldn't connect to server") == 0);
+    CHECK(http_status("La réponse HTTP 404 est arrivée") == 0); // pas en tête de ligne : pas le format d'Orca
+    CHECK(http_status("HTTP 99: x") == 0);
+    CHECK(http_status("") == 0);
+}
+
+TEST_CASE("Lot 10 · étape atteinte et famille d'un échec d'envoi")
+{
+    using namespace Plyo::SendLogic;
+    CHECK(step_of(-1, 0) == "connect");
+    CHECK(step_of(0, 0) == "connect");
+    CHECK(step_of(37, 0) == "upload");
+    CHECK(step_of(100, 1) == "sent");
+    CHECK(failure_code(401, "connect") == "auth");
+    CHECK(failure_code(403, "sent") == "auth");
+    CHECK(failure_code(413, "sent") == "no_space");
+    CHECK(failure_code(507, "sent") == "no_space");
+    CHECK(failure_code(409, "sent") == "file_refused");
+    CHECK(failure_code(415, "sent") == "file_refused");
+    CHECK(failure_code(404, "connect") == "not_printer");
+    CHECK(failure_code(500, "sent") == "server_error");
+    CHECK(failure_code(503, "connect") == "server_error");
+    CHECK(failure_code(418, "sent") == "unknown");
+    CHECK(failure_code(0, "connect") == "unreachable");
+    CHECK(failure_code(0, "upload") == "interrupted");
+    CHECK(failure_code(0, "sent") == "interrupted");
+}
+
+TEST_CASE("Lot 10 · verdict d'un envoi du panneau et arrivée du fichier")
+{
+    using namespace Plyo::SendLogic;
+    CHECK(verdict(true, true, true, true) == "taken"); // Orca a pris l'envoi : rien d'autre ne compte
+    CHECK(verdict(false, true, true, false) == "refused");
+    CHECK(verdict(false, false, true, true) == "closed"); // fenêtre d'envoi vue puis fermée
+    CHECK(verdict(false, false, false, true) == "not_ready");
+    CHECK(verdict(false, false, false, false) == "not_started");
+    CHECK_FALSE(arrived_now(0));
+    CHECK_FALSE(arrived_now(1)); // un seul « 100 % » : on attend ARRIVED_QUIET_MS sans erreur
+    CHECK(arrived_now(2));
+    CHECK(ARRIVED_QUIET_MS >= 1000);
+}
+
+TEST_CASE("Lot 10 · aucune adresse du réseau ni code d'accès dans un texte d'Orca montré ou envoyé à l'IA")
+{
+    using Plyo::SendLogic::scrub_network;
+    CHECK(scrub_network("Could not connect to http://192.168.1.42:5000/api/version", {}, {}) == "Could not connect to [adresse]");
+    CHECK(scrub_network("Host 10.0.0.7:7125 refused", {}, {}) == "Host [adresse] refused");
+    CHECK(scrub_network("Échec vers [fe80::1]:80.", {}, {}) == "Échec vers [adresse].");
+    CHECK(scrub_network("octopi.local ne répond pas", {}, {}) == "[adresse] ne répond pas");
+    CHECK(scrub_network("Mon-K1C.local:4408 ne répond pas", {}, {}) == "[adresse] ne répond pas");
+    CHECK(scrub_network("Printer octopi unreachable, key ABCD1234EF", {"octopi"}, {"ABCD1234EF"}) == "Printer [adresse] unreachable, key [code]");
+    CHECK(scrub_network("HTTP 403: Forbidden", {"x"}, {""}) == "HTTP 403: Forbidden"); // valeurs trop courtes ignorées
+    CHECK(scrub_network("Tout va bien.", {"192.168.1.42"}, {"secret"}) == "Tout va bien.");
+}
+
+TEST_CASE("Lot 10 · la liaison n'est testée que sur le réseau local")
+{
+    using namespace Plyo::SendLogic;
+    for (const char* host : {"192.168.1.20", "http://192.168.1.20:5000", "10.0.0.3:7125", "172.20.1.1", "127.0.0.1:8765", "localhost",
+                             "http://octopi.local/", "octopi", "user:mdp@192.168.0.2", "[fe80::1]:80", "169.254.3.4"}) {
+        INFO(host);
+        CHECK(local_host(host));
+    }
+    for (const char* host : {"", "8.8.8.8", "https://monimprimante.example.com", "172.32.0.1", "printer.home.net:80", "[2001:db8::1]:80",
+                             "http://1.2.3.4/"}) {
+        INFO(host);
+        CHECK_FALSE(local_host(host));
+    }
+    CHECK(link_code(true, 0) == "ok");
+    CHECK(link_code(false, 401) == "auth");
+    CHECK(link_code(false, 404) == "not_printer");
+    CHECK(link_code(false, 0) == "unreachable");
+    CHECK(link_code(false, 500) == "error");
+}
+
+TEST_CASE("Lot 10 · sentinelle : envoi pris par Orca (send_gcode_legacy) et choix Bambu Lab / file d'envoi")
+{
+    // Si ce test échoue, Orca a changé la fin de send_gcode_legacy ou le choix du bouton « Imprimer la plaque » : reprendre
+    // l'accroche Plyo::Send::on_upload_handed (docs/plyo/FICHIERS-MODIFIES.md) ou FirstSteps::start_print.
+    const std::string plater = read_file(repo_root() / "src/slic3r/GUI/Plater.cpp");
+    const std::string body   = between(plater, "void Plater::send_gcode_legacy(", "int Plater::send_gcode(");
+    REQUIRE_FALSE(body.empty());
+    CHECK(body.find("    Plyo::Send::on_upload_handed(); // PLYO: ") != std::string::npos);
+    // La ligne est la dernière avant l'envoi confié à Orca, après la fenêtre, PrusaConnect et le .gcode.3mf.
+    check_in_order("send_gcode_legacy : fin", body,
+                   {"if (pDlg->ShowModal() != wxID_OK) {", "Is the printer ready? Is the print sheet in place, empty and clean?",
+                    "upload_job.upload_data.source_path = p->m_print_job_data._3mf_path;", "Plyo::Send::on_upload_handed();",
+                    "p->export_gcode(fs::path(), false, std::move(upload_job));"});
+    const std::string tail = body.substr(body.find("Plyo::Send::on_upload_handed();"));
+    CHECK(code_lines(tail).size() == 3); // l'accroche, l'appel à export_gcode, l'accolade de fin
+    // Le bouton d'Orca : Bambu Lab ou agents → fenêtre de leur module ; sinon send_gcode_legacy (repris par start_print).
+    check_in_order("Plater::priv::on_action_print_plate", between(plater, "void Plater::priv::on_action_print_plate(SimpleEvent&)", "\n}\n"),
+                   {"if (preset_bundle.use_bbl_network() || wxGetApp().app_config->get_bool(\"use_printer_agents\")) {",
+                    "open_machine_select_dialog(partplate_list.get_curr_plate_index());", "} else {",
+                    "q->send_gcode_legacy(PLATE_CURRENT_IDX, nullptr);"});
+    check_in_order("FirstSteps::start_print", read_source("../../PlyoFirstSteps.cpp"),
+                   {"if (bundle.use_bbl_network() || wxGetApp().app_config->get_bool(\"use_printer_agents\")) {",
+                    "wxPostEvent(plater, Slic3r::GUI::SimpleEvent(Slic3r::GUI::EVT_GLTOOLBAR_PRINT_PLATE));", "Send::from_panel(std::move(done));"});
+    check_in_order("Send::from_panel", read_source("../../PlyoSend.cpp"), {"plater->send_gcode_legacy(PLATE_CURRENT_IDX, nullptr);"});
+}
+
+TEST_CASE("Lot 10 · sentinelle : file d'envoi d'Orca (événements publics, rang des envois, format des erreurs)")
+{
+    // Si ce test échoue, Orca a changé sa file d'envoi : reprendre src/plyo/PlyoSend.cpp (rang de l'envoi suivi, arrivée,
+    // classement des échecs par code HTTP).
+    const fs::path    root  = repo_root();
+    const std::string hpp   = read_file(root / "src/slic3r/GUI/PrintHostDialogs.hpp");
+    for (const char* decl : {"wxDECLARE_EVENT(EVT_PRINTHOST_PROGRESS, PrintHostQueueDialog::Event);",
+                             "wxDECLARE_EVENT(EVT_PRINTHOST_ERROR, PrintHostQueueDialog::Event);",
+                             "wxDECLARE_EVENT(EVT_PRINTHOST_CANCEL, PrintHostQueueDialog::Event);", "size_t job_id;", "int progress = 0;",
+                             "wxString status;", "class PrintHostSendDialog : public GUI::MsgDialog"}) {
+        INFO(decl);
+        CHECK(hpp.find(decl) != std::string::npos);
+    }
+    const std::string dlg = read_file(root / "src/slic3r/GUI/PrintHostDialogs.cpp");
+    // Une ligne de tableau par envoi, dans l'ordre : le rang d'un envoi est le nombre de lignes avant lui.
+    check_in_order("PrintHostQueueDialog", dlg,
+                   {"job_list = new wxDataViewListCtrl(this, wxID_ANY);", "void PrintHostQueueDialog::append_job(const PrintHostJob &job)",
+                    "job_list->AppendItem(fields, static_cast<wxUIntPtr>(ST_NEW));", "void PrintHostQueueDialog::on_error(Event &evt)",
+                    "GUI::show_error(nullptr, errormsg);"});
+    const std::string host = read_file(root / "src/slic3r/Utils/PrintHost.cpp");
+    CHECK(host.find("return wxString::Format(\"HTTP %u: %s\", status, wxbody);") != std::string::npos);
+    check_in_order("PrintHostJobQueue::priv::perform_job", between(host, "void PrintHostJobQueue::priv::perform_job(PrintHostJob the_job)", "\n}\n"),
+                   {"emit_progress(0);", "PrintHostJobQueue::upload_job(the_job,", "if (success) {", "emit_progress(100);"});
+    check_in_order("PrintHostJobQueue::priv::bg_thread_main", host, {"perform_job(std::move(job));", "remove_source();", "job_id++;"});
+    CHECK(host.find("wxQueueEvent(queue_dialog, evt);") != std::string::npos); // posté au fil de l'interface
+}
+
+TEST_CASE("Lot 10 · sentinelle : fenêtres de message d'Orca lues par l'observateur")
+{
+    // Si ce test échoue, Orca a changé ses fenêtres de message : reprendre OrcaWindows (message_kind, dialog_text).
+    const fs::path    gui = repo_root() / "src/slic3r/GUI";
+    const std::string hpp = read_file(gui / "MsgDialog.hpp");
+    for (const char* cls : {"class ErrorDialog : public MsgDialog", "class WarningDialog : public MsgDialog", "class MessageDialog : public MsgDialog",
+                            "class RichMessageDialog : public MsgDialog", "class InfoDialog : public MsgDialog"}) {
+        INFO(cls);
+        CHECK(hpp.find(cls) != std::string::npos);
+    }
+    const std::string cpp = read_file(gui / "MsgDialog.cpp");
+    check_in_order("add_msg_content", between(cpp, "static void add_msg_content(", "\n}\n"),
+                   {"wxHtmlWindow* html = new wxHtmlWindow(parent", "wxScrolledWindow *scrolledWindow = new wxScrolledWindow(parent",
+                    "Label *wrapped_text = new Label(scrolledWindow", "html->SetPage("});
+    CHECK(cpp.find("btn->Bind(wxEVT_BUTTON, [this, btn_id](wxCommandEvent&) { EndModal(btn_id); });") != std::string::npos);
+    // show_error ouvre sa fenêtre après coup (CallAfter) : le verdict d'un envoi refusé attend qu'elle s'ouvre.
+    check_in_order("show_error", between(read_file(gui / "GUI.cpp"), "void show_error(wxWindow* parent, const wxString& message, bool has_code_excerpts)", "\n}\n"),
+                   {"wxGetApp().CallAfter([=] {", "ErrorDialog msg(parent, message, has_code_excerpts);", "msg.ShowModal();"});
+    const std::string mine = read_source("../../PlyoOrcaWindows.cpp");
+    CHECK(mine.find("dynamic_cast<GUI::PrintHostSendDialog*>(top) != nullptr") != std::string::npos); // la fenêtre d'envoi n'est jamais lue
 }

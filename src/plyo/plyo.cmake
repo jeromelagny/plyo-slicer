@@ -117,6 +117,12 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaMessages.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaMessagesLogic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaMessagesLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaWindows.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaWindows.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSend.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSend.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSendLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSendLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterLink.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterLink.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterSetup.cpp

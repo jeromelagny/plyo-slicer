@@ -3,7 +3,9 @@
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoOrcaMessagesLogic.hpp"
+#include "PlyoOrcaWindows.hpp"
 #include "PlyoPlateActions.hpp"
+#include "PlyoSendLogic.hpp"
 #include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/Exception.hpp"
@@ -478,6 +480,29 @@ nlohmann::json export_failure(const std::string& error, const std::string& path)
     return {{"kind", OML::export_kind(s_last_error_type)}, {"text", OML::clean_text(error, private_paths(paths))}};
 }
 
+std::string clean_for_panel(const std::string& text)
+{
+    std::vector<std::string> hosts, secrets;
+    if (const Slic3r::PresetBundle* bundle = wxGetApp().preset_bundle) {
+        const Slic3r::DynamicPrintConfig& printer = bundle->printers.get_edited_preset().config;
+        const auto value = [&printer](const char* key) { return printer.has(key) ? printer.opt_string(key) : std::string(); };
+        for (const char* key : {"print_host", "print_host_webui"}) {
+            std::string host = value(key);
+            if (host.empty())
+                continue;
+            hosts.push_back(host);
+            // Le nom ou l'adresse seuls, sans schéma, port ni chemin (« octopi » dans « http://octopi:5000/ »).
+            if (const size_t scheme = host.find("://"); scheme != std::string::npos)
+                host = host.substr(scheme + 3);
+            host = host.substr(0, host.find_first_of("/:"));
+            hosts.push_back(host);
+        }
+        for (const char* key : {"printhost_apikey", "flashforge_serial_number", "printhost_user", "printhost_password"})
+            secrets.push_back(value(key));
+    }
+    return OML::clean_text(SendLogic::scrub_network(text, hosts, secrets), private_paths());
+}
+
 void on_slicing_done(const Slic3r::SlicingProcessCompletedEvent& evt)
 {
     guarded("la fin de la découpe", [&] {
@@ -489,6 +514,9 @@ void on_slicing_done(const Slic3r::SlicingProcessCompletedEvent& evt)
         const bool exporting = plater->background_process().is_export_scheduled();
         if (evt.error()) {
             s_last_error_type = exception_type(evt);
+            // Orca montre aussi cette erreur dans sa fenêtre (show_error, juste après) : le panneau l'explique déjà (lot 10).
+            if (evt.critical_error())
+                OrcaWindows::cover(exporting ? "export" : "slice_result", 5000);
             if (exporting)
                 return;
             // Lu tout de suite : l'événement et l'état du Print ne valent que maintenant.

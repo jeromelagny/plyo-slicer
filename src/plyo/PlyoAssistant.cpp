@@ -20,6 +20,7 @@
 #include "PlyoConfig.hpp"
 #include "PlyoContextLogic.hpp"
 #include "PlyoOrcaMessages.hpp"
+#include "PlyoOrcaWindows.hpp"
 #include "PlyoPhoneDialog.hpp"
 #include "PlyoPlateActions.hpp"
 #include "PlyoPreflight.hpp"
@@ -35,6 +36,7 @@
 #include "PlyoRawTests.hpp"
 #include "PlyoPrinterSetup.hpp"
 #include "PlyoSelfTest.hpp"
+#include "PlyoSend.hpp"
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoSpools.hpp"
@@ -762,17 +764,34 @@ void handle_page_message(const nlohmann::json& data)
                     r["export"] = true;
                     send(r);
                 });
-            else {
-                nlohmann::json r = FirstSteps::start_print();
-                // Parti à l'imprimante : ces réglages de bobine sont ceux à retenir si l'impression réussit.
-                if (Json::boolean(r, "ok", false))
-                    Profiles::note_sent();
-                r["type"]        = "print_started";
+            else
+                // La réponse ne part qu'une fois Orca décidé : sa fenêtre d'envoi fermée (et ses messages ouverts), comme l'export.
+                FirstSteps::start_print([preset = Json::str(data, "preset"), watch_id = Json::str(data, "watch_id")](nlohmann::json r) {
+                    // Pris par Orca (sa file d'envoi) : ces réglages de bobine sont ceux à retenir si l'impression réussit. Fenêtre
+                    // du module Bambu Lab : on ne sait pas si l'envoi part, la bobine est notée quand tu dis qu'elle imprime.
+                    const bool taken = Json::boolean(r, "ok", false) && Json::str(r, "route") == "host";
+                    if (taken)
+                        Profiles::note_sent();
+                    r["type"] = "print_started";
+                    send(r);
+                    // Le démarrage est vérifié sur l'imprimante elle-même (état avant l'envoi, puis relu jusqu'au verdict).
+                    if (Json::boolean(r, "ok", false) && !preset.empty())
+                        PrinterStatus::watch(preset, [id = watch_id](nlohmann::json w) { send_watch(w, id); });
+                });
+        } else if (type == "print_declared") {
+            // « L'impression a démarré » après la fenêtre du module Bambu Lab : c'est toi qui le dis, la bobine est notée ici.
+            Profiles::note_sent();
+        } else if (type == "printer_link_recheck") {
+            // « Vérifier la liaison de mon imprimante » après un envoi en échec : la connexion enregistrée, testée telle quelle.
+            PrinterLink::recheck([](nlohmann::json r) {
+                r["type"] = "printer_link_rechecked";
                 send(r);
-                // Le démarrage est vérifié sur l'imprimante elle-même (état avant l'envoi, puis relu jusqu'au verdict).
-                if (Json::boolean(r, "ok", false) && !Json::str(data, "preset").empty())
-                    PrinterStatus::watch(Json::str(data, "preset"), [id = Json::str(data, "watch_id")](nlohmann::json w) { send_watch(w, id); });
-            }
+            });
+        } else if (type == "printer_link_dialog_current") {
+            // Fenêtre « Connexion » d'Orca pour l'imprimante en cours (code d'accès ou clé d'API à corriger).
+            nlohmann::json r = PrinterLink::open_dialog_current();
+            r["type"]        = "printer_link_current_closed";
+            send(r);
         } else if (type == "setup_catalog") {
             send({{"type", "setup_catalog"}, {"catalog", PrinterSetup::catalog()}});
         } else if (type == "setup_install") {
@@ -821,6 +840,9 @@ void toggle_assistant(Plater* plater)
 
     ProjectFiles::set_listener([](const nlohmann::json& message) { send(message); });
     OrcaMessages::set_listener([](const nlohmann::json& message) { send(message); }); // fin de chaque découpe (slice_result)
+    Send::set_listener([](const nlohmann::json& message) { send(message); });        // envoi suivi dans la file d'Orca (lot 10)
+    OrcaWindows::set_listener([](const nlohmann::json& message) { send(message); }); // fenêtres de message d'Orca (lot 10)
+    Send::attach();
     FirstSteps::set_focus_listener([](const nlohmann::json& focus) {
         nlohmann::json message = focus;
         message["type"]        = "focus_setting";
@@ -831,6 +853,7 @@ void toggle_assistant(Plater* plater)
         // retirer (le panneau le renvoie à sa réouverture) ; le bouton du haut repasse à « fermé ».
         Canvas::clear_plan();
         AutoSave::stop();
+        OrcaWindows::stop();
         // Fermeture d'Orca : la minuterie part avec lui. Sinon le plateau reste attaché (derniers changements écrits) ;
         // le panneau rouvert, qui commence une conversation neuve, le détache.
         if (Slic3r::GUI::wxGetApp().is_closing())
@@ -843,6 +866,7 @@ void toggle_assistant(Plater* plater)
     s_panel           = panel;
     s_refresh_pending = false; // un rafraîchissement en attente meurt avec l'ancien panneau
     AutoSave::start();         // le préréglage de la bobine s'enregistre tout seul tant que le panneau est là
+    OrcaWindows::start();      // les fenêtres de message d'Orca sont vues tant que le panneau est là
     plater->add_dock_pane(panel, PANE_NAME, "Assistant Plyo", "right", wxSize(380, 600), [panel]() { panel->fire_close(); });
     // La disposition enregistrée par Orca peut garder une largeur minuscule (18 px vu) : le panneau serait
     // à peine visible. On lui impose une largeur minimale, et sa largeur normale si la sienne est trop petite.

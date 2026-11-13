@@ -32,8 +32,12 @@ std::string best_filament(const std::string& type);
 bool select_filament(const std::string& name, size_t idx = 0);
 
 // Bouton « Imprimer » du panneau : exactement comme « Imprimer la plaque » d'Orca (envoi à l'imprimante reliée, avec
-// la fenêtre de confirmation d'Orca). { ok, reason: "not_sliced" }
-nlohmann::json start_print();
+// la fenêtre de confirmation d'Orca). `done` ne reçoit la réponse qu'une fois Orca décidé (lot 10, UX-03) :
+// { ok: true, route: "host" } Orca a pris l'envoi (suivi ensuite par Send) ; { ok: true, route: "device" } fenêtre d'envoi
+// du module Bambu Lab (ou des agents d'imprimante) ouverte, dont le résultat n'est pas lisible ; { ok: false, reason:
+// "not_sliced" | "not_ready" (issues : ce qu'Orca dit de la plaque) | "refused" (failure) | "not_started" | "busy" } ;
+// { ok: false, cancelled: true } fenêtre d'envoi fermée sans envoi.
+void start_print(std::function<void(nlohmann::json)> done);
 // Bouton « Exporter » : la fenêtre d'enregistrement d'Orca s'ouvre (dans cet appel), `done` n'est appelé qu'à la fin réelle :
 // { ok: true, path } fichier écrit ; { ok: false, cancelled: true } rien n'a été choisi ; { ok: false, reason, text } refus ;
 // { ok: false, reason: "error", kind, text } erreur (kind : OrcaMessagesLogic::export_kind, texte sans le dossier).

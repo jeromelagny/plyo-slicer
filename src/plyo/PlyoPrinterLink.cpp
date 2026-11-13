@@ -3,7 +3,9 @@
 #include "PlyoDiscovery.hpp"
 #include "PlyoDiscoveryLogic.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoOrcaMessages.hpp"
 #include "PlyoProfilesLogic.hpp"
+#include "PlyoSendLogic.hpp"
 
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -246,6 +248,46 @@ nlohmann::json open_dialog(const nlohmann::json& in)
         tab->load_config(before);
     BOOST_LOG_TRIVIAL(info) << "Plyo: connexion de l'imprimante " << (saved ? "enregistrée" : "annulée");
     return {{"ok", true}, {"saved", saved}};
+}
+
+void recheck(std::function<void(nlohmann::json)> done)
+{
+    auto              config = std::make_shared<Slic3r::DynamicPrintConfig>(edited_printer());
+    const std::string host   = config->has("print_host") ? config->opt_string("print_host") : std::string();
+    if (host.empty()) {
+        done({{"code", "none"}});
+        return;
+    }
+    if (!SendLogic::local_host(host)) { // jamais d'appel vers internet depuis le panneau
+        done({{"code", "not_local"}});
+        return;
+    }
+    std::thread([config, done = std::move(done)]() {
+        bool        ok = false;
+        std::string message;
+        try {
+            std::unique_ptr<Slic3r::PrintHost> printhost(Slic3r::PrintHost::get_print_host(config.get()));
+            wxString                           msg;
+            ok      = printhost != nullptr && printhost->test(msg);
+            message = msg.utf8_string();
+        } catch (const std::exception& e) {
+            message = e.what();
+        }
+        wxGetApp().CallAfter([ok, message, done] {
+            const int http = SendLogic::http_status(message);
+            done({{"code", SendLogic::link_code(ok, http)}, {"http", http}, {"text", ok ? std::string() : OrcaMessages::clean_for_panel(message)}});
+        });
+    }).detach();
+}
+
+nlohmann::json open_dialog_current()
+{
+    if (edited_printer().opt_string("print_host").empty())
+        return {{"saved", false}};
+    Slic3r::GUI::PhysicalPrinterDialog dialog(wxGetApp().mainframe);
+    const bool                          saved = dialog.ShowModal() == wxID_OK;
+    BOOST_LOG_TRIVIAL(info) << "Plyo: fenêtre Connexion (imprimante en cours) " << (saved ? "enregistrée" : "fermée");
+    return {{"saved", saved}};
 }
 
 SlotsLogic::PrinterFacts facts_of(const Slic3r::DynamicPrintConfig& config)

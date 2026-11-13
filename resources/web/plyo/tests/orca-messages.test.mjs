@@ -156,7 +156,8 @@ test('slicer : une seule ligne dans Orca, à côté du crochet d’export, et au
   assert.match(cpp, /is_background_process_slicing\(\)/, 'pas de lecture pendant une découpe');
   const actions = read('../../../../src/plyo/PlyoPlateActions.cpp');
   assert.ok(!/dépasse sans doute du plateau/.test(actions), 'plus de cause devinée');
-  assert.match(actions, /\{"issues", OrcaMessages::report\(\)\["issues"\]\}/);
+  // Lot 10 : le dernier échec d'envoi et les dernières fenêtres d'erreur d'Orca viennent en tête, puis ce qu'Orca dit de la plaque.
+  assert.match(actions, /nlohmann::json issues = Send::recent_issues\(\);[\s\S]*OrcaWindows::recent_issues\(\)[\s\S]*OrcaMessages::report\(\)\["issues"\][\s\S]*\{"issues", issues\}/);
   const docs = read('../../../../docs/plyo/FICHIERS-MODIFIES.md');
   assert.match(docs, /Plyo::OrcaMessages::on_slicing_done\(evt\)/);
 });

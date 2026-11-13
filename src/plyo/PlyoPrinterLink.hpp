@@ -35,6 +35,15 @@ nlohmann::json save(const nlohmann::json& printer, const std::string& webui, con
 // enregistre lui-même par OK. Annulée, la connexion d'avant est remise. { ok, saved }
 nlohmann::json open_dialog(const nlohmann::json& printer);
 
+// Lot 10 · « Vérifier la liaison de mon imprimante » après un envoi en échec : la connexion enregistrée dans le profil en
+// cours, testée telle quelle en arrière-plan (comme le bouton « Test » de la fenêtre Connexion d'Orca), seulement si son
+// adresse est sur le réseau local (SendLogic::local_host). `done` reçoit sur le fil de l'interface { code: ok | auth |
+// not_printer | unreachable | error | not_local | none, http, text } (texte d'Orca sans adresse ni code).
+void recheck(std::function<void(nlohmann::json)> done);
+
+// Fenêtre « Connexion » d'Orca pour le profil en cours, sans rien préremplir (corriger le code d'accès ou la clé). { saved }
+nlohmann::json open_dialog_current();
+
 // Ce que le choix du traducteur doit savoir d'un profil d'imprimante (voir SlotsLogic::detect).
 SlotsLogic::PrinterFacts facts_of(const Slic3r::DynamicPrintConfig& config);
 

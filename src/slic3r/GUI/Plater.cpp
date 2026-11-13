@@ -21158,6 +21158,7 @@ void Plater::send_gcode_legacy(int plate_idx, Export3mfProgressFn proFn)
         upload_job.upload_data.source_path = p->m_print_job_data._3mf_path;
     }
 
+    Plyo::Send::on_upload_handed(); // PLYO: le panneau Assistant ne dit « parti » qu'ici, quand Orca prend vraiment l'envoi
     p->export_gcode(fs::path(), false, std::move(upload_job));
 }
 int Plater::send_gcode(int plate_idx, Export3mfProgressFn proFn)

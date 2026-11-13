@@ -76,7 +76,7 @@ test('le panneau a deux onglets, et les messages d’étape vont dans le Guide',
   assert.ok(page.includes('id="view-guide"') && page.includes('id="view-chat"'), 'deux vues');
   assert.ok(page.includes('id="guide-notes"'), 'messages d’étape');
   assert.ok(/function noteLine\(text, tone, iconName, where\)/.test(page), 'noteLine accepte une destination');
-  for (const text of ['Je pose « \' + file.name', 'advance.text', 'Orca te demande de confirmer'])
+  for (const text of ['Je pose « \' + file.name', 'advance.text', 'SEND_TEXTS.waiting']) // lot 10 : « Orca te demande de confirmer » vient de preflight.js
     assert.ok(new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^\\n]*\'guide\'').test(page), text + ' dans le Guide');
 });
 
@@ -161,7 +161,9 @@ test('envoi armé : la retouche de send_gcode_legacy est en place et marquée', 
   // Lot 9 : une seule ligne côté Orca, le remplissage vit dans PlyoCanvas.cpp (fill_armed_upload).
   const armed = body.indexOf('if (!Plyo::Canvas::fill_armed_upload(upload_job.upload_data, default_output_file.filename().string(), use_3mf, resolved_plate_idx)) // PLYO:');
   assert.ok(armed >= 0, 'fill_armed_upload dans send_gcode_legacy, marqué PLYO: sur la même ligne');
-  assert.equal(body.split('Plyo::').length - 1, 1, 'un seul appel à Plyo dans send_gcode_legacy');
+  // Lot 10 : une seconde ligne, juste avant que l'envoi parte dans la file d'Orca (Plyo::Send::on_upload_handed).
+  assert.equal(body.split('Plyo::').length - 1, 2, 'deux appels à Plyo dans send_gcode_legacy (envoi armé, envoi pris)');
+  assert.ok(/\n    Plyo::Send::on_upload_handed\(\); \/\/ PLYO:[^\n]*\n    p->export_gcode\(fs::path\(\), false, std::move\(upload_job\)\);/.test(body), 'envoi pris : juste avant export_gcode, marqué PLYO:');
   // L'appel passe avant la création de la fenêtre, et la fenêtre reste dans le bloc d'Orca qui le suit.
   const dialog = body.indexOf('pDlg->ShowModal()');
   assert.ok(armed < dialog, 'avant la fenêtre');

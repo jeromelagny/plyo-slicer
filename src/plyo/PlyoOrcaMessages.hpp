@@ -61,4 +61,8 @@ std::vector<StepWarning> step_warnings(const Slic3r::Print& print);
 // (le dossier de l'utilisateur réduit au nom du fichier `path`).
 nlohmann::json export_failure(const std::string& error, const std::string& path);
 
+// Texte d'Orca prêt pour le panneau et l'IA : adresses du réseau (dont l'adresse, le code d'accès et le numéro de série de
+// l'imprimante en cours) puis chemins privés retirés (SendLogic::scrub_network, OrcaMessagesLogic::clean_text). Lot 10.
+std::string clean_for_panel(const std::string& text);
+
 }} // namespace Plyo::OrcaMessages

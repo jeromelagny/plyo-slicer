@@ -1258,14 +1258,13 @@
       if (conv) renderProject();
       return;
     }
-    // Orca a pris l'envoi, rien de plus : la machine ne répond pas à la répartition.
+    // Orca a pris l'envoi, rien de plus : la machine ne répond pas à la répartition. Sa file dit ensuite si le fichier est
+    // arrivé (lot 10) ; « Oui, elle imprime » attend l'arrivée.
     canvasUI.refused = '';
-    projectUI.sentConv = conv;
     projectUI.sentArmed = conv;
-    noteLine(msg.text || 'J’envoie le fichier : la répartition part avec. Regarde l’écran de ton imprimante.', '', 'info', 'guide');
     noteSpoolSent(); // envoi avec emplacements : pas de bobine suivie (null), plus l'ancienne
     if (conv && conv.project.printer) { newWatchId(); noteSendWatched(); window.orca.postMessage({ type: 'print_watch_start', preset: conv.project.printer.preset, id: projectUI.watchId }); }
-    unlockSendSoon();
+    startUpload(msg.text || 'J’envoie le fichier : la répartition part avec. Regarde l’écran de ton imprimante.');
     if (conv) renderProject();
   }
   function onCanvasState(msg) {
@@ -1289,7 +1288,7 @@
       canvasUI.refused = '';
       rememberHabit();
       if (route === 'armed') { waitLongerForSend(); window.orca.postMessage({ type: 'canvas_send', preset: conv.project.printer.preset }); }
-      else window.orca.postMessage({ type: 'print_start', export: false, preset: conv.project.printer.preset, watch_id: newWatchId() });
+      else { waitForExport(); window.orca.postMessage({ type: 'print_start', export: false, preset: conv.project.printer.preset, watch_id: newWatchId() }); }
       return;
     }
     if (canvasUI.rereading) {
@@ -1549,7 +1548,7 @@
     skip: function () { $('preflight-slot').textContent = ''; preflightFix = null; plateChecked = 'ignored'; setTourStep('print'); },
     exportFile: function () { runAction('export'); },
     // L'étape Résultat commence : les corrections en attente de ce projet sont celles de cette impression (sa question les couvre).
-    started: function () { rememberHabit(); journalPart(''); delete conv.project.success; setTourStep('after'); window.orca.postMessage({ type: 'outcome_printed', conv: conv.id }); },
+    started: function () { rememberHabit(); journalPart(''); delete conv.project.success; declareSent(); setTourStep('after'); window.orca.postMessage({ type: 'outcome_printed', conv: conv.id }); },
     photo: function () { pickFiles(); },
     success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; spoolSuccess(); markCorrections('ok'); markSendAnswered(); projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
     failed: function () { spoolFailure(); markCorrections('bad'); markSendAnswered(); renderProject(); },
@@ -1606,20 +1605,237 @@
     clearTimeout(sendLock.timer);
     if (sendLock.on) sendLock.timer = setTimeout(unlockSend, Math.max(0, SEND_LOCK_MS - (Date.now() - sendLock.since)));
   }
+  // Réponse à « Envoyer et imprimer », une fois Orca décidé (lot 10, UX-03) : sa fenêtre d'envoi fermée sans envoi, un refus
+  // (avec sa raison), la fenêtre du module Bambu Lab ouverte (route « device »), ou l'envoi pris par sa file (route « host »).
+  // Rien n'est dit « parti », ni la bobine notée, ni le suivi lancé, avant qu'Orca ait pris l'envoi.
   function onPrintStarted(msg) {
     repaintPanel(); // retour d'une fenêtre native : WebKit peut garder une image décalée du défilement
     if (msg.export) { onExportDone(msg); return; }
+    dropSendConfirm();
+    var S = window.PlyoPreflight.SEND_TEXTS;
     if (!msg.ok) {
       unlockSend();
-      noteLine(msg.reason === 'not_sliced' ? 'Découpe d’abord la plaque : clique sur « Découper ».' : 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
+      projectUI.sentConv = null;
+      if (msg.cancelled) { noteLine(S.closed, '', 'info', 'guide'); renderProject(); return; }
+      if (msg.reason === 'refused') { showUploadFailure(msg.failure, printerName()); return; }
+      if (msg.reason === 'not_sliced') { noteLine('Découpe d’abord la plaque : clique sur « Découper ».', 'error', 'alert', 'guide'); return; }
+      if (msg.reason === 'not_ready') {
+        // Pourquoi Orca ne laisse pas envoyer : ses raisons, expliquées par les cartes d'Orca (ERR-10), sinon la suite.
+        rememberIssues(msg.issues);
+        if (showOrcaIssues(msg.issues, {})) { renderProject(); return; }
+        orcaNote({ text: S.notReady, actions: [{ kind: 'slice', label: 'Découper à nouveau' }] }, 'error');
+        return;
+      }
+      if (msg.reason === 'not_started') { orcaNote({ text: S.notStarted, actions: [{ kind: 'slice', label: 'Découper à nouveau' }] }, 'error'); return; }
+      noteLine(msg.text || 'Orca ne peut pas encore imprimer cette plaque : vérifie qu’elle est découpée et que l’imprimante est reliée.', 'error', 'alert', 'guide');
       return;
     }
-    projectUI.sentConv = conv;
     noteSpoolSent();
     noteSendWatched(); // le slicer suit cet envoi sur la machine (print_watch) jusqu'à la fin de l'impression
-    noteLine(PlyoCanvas.orcaConfirm(conv && conv.project.canvas) || 'Orca te demande de confirmer : vérifie le nom de ton imprimante, puis valide.', '', 'info', 'guide');
-    unlockSendSoon();
+    if (msg.route === 'device') {
+      // Fenêtre du module Bambu Lab : Plyo ne sait pas si l'envoi part. C'est toi qui diras qu'elle imprime (la bobine est
+      // notée à ce moment-là, print_declared).
+      var s = sendOf();
+      if (s) { s.route = 'device'; scheduleSave(); }
+      projectUI.sentConv = conv;
+      noteLine(S.device, '', 'info', 'guide');
+      unlockSendSoon();
+      renderProject();
+      return;
+    }
+    // Orca a pris l'envoi : sa file dit la suite. « L'impression a démarré » attend que le fichier soit arrivé.
+    startUpload('');
     renderProject();
+  }
+  // ---------- Envoi suivi dans la file d'Orca (PlyoSend.cpp, lot 10) ----------
+  // Une seule ligne « J'envoie le fichier à … » mise à jour (progression), puis « Le fichier est arrivé » ou la carte d'échec.
+  // `confirm` : la ligne « Orca te demande de confirmer », dite juste avant que sa fenêtre d'envoi s'ouvre.
+  var UPLOAD_SILENT_MS = 45000, UPLOAD_WAIT_MS = 600000;
+  var uploadUI = { conv: null, line: null, name: '', timer: null, confirm: null };
+  function printerName() { return conv && conv.project.printer ? PlyoJourney.machineLabel(conv.project.printer) : 'ton imprimante'; }
+  function onSendWaiting() {
+    dropSendConfirm();
+    uploadUI.confirm = noteLine(PlyoCanvas.orcaConfirm(conv && conv.project.canvas) || window.PlyoPreflight.SEND_TEXTS.waiting, '', 'info', 'guide');
+  }
+  function dropSendConfirm() { if (uploadUI.confirm) { uploadUI.confirm.remove(); uploadUI.confirm = null; } }
+  function startUpload(text) {
+    clearTimeout(uploadUI.timer);
+    if (uploadUI.line) uploadUI.line.remove();
+    uploadUI = { conv: conv, line: null, name: printerName(), timer: null, confirm: null };
+    uploadUI.line = noteLine(text || window.PlyoPreflight.SEND_TEXTS.sending(uploadUI.name), '', 'wifi', 'guide');
+    clearTimeout(sendLock.timer);
+    if (sendLock.on) sendLock.timer = setTimeout(unlockSend, UPLOAD_WAIT_MS); // un envoi à la fois, jusqu'à sa fin
+    armUploadSilence();
+  }
+  function armUploadSilence() {
+    clearTimeout(uploadUI.timer);
+    uploadUI.timer = setTimeout(function () {
+      if (!uploadUI.conv || !uploadUI.line || !uploadUI.line.isConnected) return;
+      uploadUI.line.querySelector('.note-text').textContent = window.PlyoPreflight.SEND_TEXTS.silent(uploadUI.name);
+      uploadUI.line.classList.add('warn');
+    }, UPLOAD_SILENT_MS);
+  }
+  function onPrintUpload(msg) {
+    var u = uploadUI, S = window.PlyoPreflight.SEND_TEXTS;
+    if (!u.conv) return; // envoi qui n'est pas suivi par le panneau
+    if (msg.phase === 'progress') {
+      if (u.line && u.line.isConnected) { u.line.querySelector('.note-text').textContent = S.progress(u.name, msg.percent); u.line.classList.remove('warn'); }
+      armUploadSilence();
+      return;
+    }
+    clearTimeout(u.timer);
+    uploadUI = { conv: null, line: null, name: '', timer: null, confirm: null };
+    if (u.line) u.line.remove();
+    unlockSend();
+    if (u.conv !== conv) return; // autre projet ouvert entre-temps : son envoi garde son état
+    if (msg.phase === 'arrived') {
+      // Arrivé n'est pas démarré : le démarrage reste vérifié par le suivi, ou dit par toi (« L'impression a démarré »).
+      projectUI.sentConv = conv;
+      noteLine(S.arrived(u.name), 'ok', 'check', 'guide');
+    } else if (msg.phase === 'cancelled') {
+      uploadStopped();
+      noteLine(S.cancelled(u.name), 'warn', 'alert', 'guide');
+    } else if (msg.phase === 'failed') {
+      showUploadFailure(msg.failure, u.name);
+      return;
+    }
+    renderProject();
+  }
+  // « L'impression a démarré » après la fenêtre du module Bambu Lab : Plyo n'a rien vu partir, la bobine est notée maintenant
+  // que tu le dis (une fois par envoi).
+  function declareSent() {
+    var s = sendOf();
+    if (!s || s.route !== 'device' || s.declared) return;
+    s.declared = true;
+    scheduleSave();
+    window.orca.postMessage({ type: 'print_declared' });
+  }
+  // L'envoi n'a pas abouti : ni « L'impression a démarré », ni suivi (le slicer l'a arrêté) ; « Envoyer et imprimer » revient.
+  function uploadStopped() {
+    projectUI.sentConv = null;
+    projectUI.sentArmed = null;
+    var s = sendOf();
+    if (s && s.watch) { s.watch = ''; scheduleSave(); }
+  }
+  function showUploadFailure(failure, name) {
+    var v = window.PlyoPreflight.uploadFailureView(failure, name || printerName());
+    uploadStopped();
+    $('project-alert').querySelectorAll('.upload-failure').forEach(function (b) { b.remove(); });
+    var box = alertBox(v.tone, '', 'alert');
+    box.classList.add('upload-failure'); // pas « orca-issue » : une nouvelle découpe (fin de l'envoi comprise) ne l'efface pas
+    box.body.appendChild(el('b', '', fr(v.title)));
+    box.body.appendChild(el('p', '', fr(v.text)));
+    if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message d’Orca : ') + '« ' + v.quote + ' »'));
+    var status = el('div', 'printer-status hidden');
+    box.body.appendChild(status);
+    box.body.appendChild(sendActions(v.actions, { box: box, status: status, name: name || printerName() }, true));
+    if (conv) $('project-alert').appendChild(box); else placeInOpenTab(box);
+    if (viewUI.tab === 'guide') box.scrollIntoView({ block: 'nearest' });
+    if (conv) record({ kind: 'note', text: v.title + ' : ' + v.text, tone: 'error', icon: 'alert' });
+    renderProject();
+  }
+  // Boutons d'une carte d'envoi (et du résultat de « Vérifier la liaison », sans « Fermer »).
+  function sendActions(actions, card, closable) {
+    var acts = el('div', 'printer-actions');
+    actions.forEach(function (a) {
+      acts.appendChild(button(a.label, function () { sendAction(a, card); }, 'btn ghost sm',
+        a.kind === 'link' || a.kind === 'retest' || a.kind === 'search' ? 'wifi' : a.kind === 'export' ? 'folder' : ''));
+    });
+    if (closable) acts.appendChild(button('Fermer', function () { card.box.remove(); }, 'link'));
+    return acts;
+  }
+  var linkCheck = null; // { box, status, name } : la carte dont « Vérifier la liaison » attend sa réponse
+  function sendAction(a, card) {
+    if (a.kind === 'retry') { card.box.remove(); runAction('send'); }
+    else if (a.kind === 'export') { card.box.remove(); runAction('export'); }
+    else if (a.kind === 'ask') send(a.prompt);
+    else if (a.kind === 'search') { card.box.remove(); startSetup(); renderSetupFlow(); }
+    else if (a.kind === 'link' || a.kind === 'retest') {
+      linkCheck = card;
+      linkStatus(card, 'Je teste la liaison avec ' + card.name + '…', '', 'search', []);
+      window.orca.postMessage({ type: 'printer_link_recheck' });
+    } else if (a.kind === 'connexion') {
+      linkCheck = card;
+      window.orca.postMessage({ type: 'printer_link_dialog_current' });
+    }
+  }
+  function linkStatus(card, text, tone, iconName, actions, quote) {
+    var st = card.status;
+    st.textContent = '';
+    st.classList.remove('hidden');
+    var line = el('div', 'printer-step' + (tone ? ' ' + tone : ''));
+    line.appendChild(icon(iconName, 14));
+    line.appendChild(rich(text));
+    st.appendChild(line);
+    if (quote) st.appendChild(el('p', 'muted small', 'Message d’Orca : « ' + quote + ' »'));
+    if (actions.length) st.appendChild(sendActions(actions, card, false));
+  }
+  function onLinkRechecked(msg) {
+    var c = linkCheck;
+    if (!c || !c.box.isConnected) return;
+    var v = window.PlyoPreflight.linkRecheckView(msg, c.name);
+    // « Réessayer l'envoi » est déjà dans la carte : pas de second bouton identique.
+    linkStatus(c, v.text, v.tone, v.tone === 'ok' ? 'check' : 'alert', v.actions.filter(function (a) { return a.kind !== 'retry'; }), v.quote);
+  }
+  function onLinkCurrentClosed(msg) {
+    var c = linkCheck;
+    if (!c || !c.box.isConnected) return;
+    linkStatus(c, msg.saved ? 'C’est enregistré : réessaie l’envoi.' : 'Rien n’a été changé dans la connexion.', msg.saved ? 'ok' : '', msg.saved ? 'check' : 'info', []);
+  }
+
+  // ---------- Fenêtres de message d'Orca (PlyoOrcaWindows.cpp, lot 10, ERR-09) ----------
+  // Ouverte : une ligne discrète (le panneau ne répond plus aux clics tant qu'elle est là). Fermée, une erreur qu'aucune autre
+  // carte n'explique (covered : découpe, export, envoi) devient une carte qui cite son texte. Le texte n'est que montré.
+  var dialogUI = { id: 0, line: null };
+  // Ajout d'une pièce (ERR-14) : les messages d'Orca vus pendant l'ajout sont cités sous « Orca n'a pas pu ouvrir … » ; ils
+  // arrivent avant ou après ce message selon Orca (fenêtres ouvertes pendant l'ajout, ou juste après) : `pending` les garde.
+  var modelFail = { line: null, at: 0, quotes: [], ask: null };
+  var modelDialogs = { pending: [], timer: null };
+  function dropDialogLine() { if (dialogUI.line) dialogUI.line.remove(); dialogUI = { id: 0, line: null }; }
+  function quoteUnderModelFail(text) {
+    var f = modelFail;
+    f.quotes.push(text);
+    f.line.insertBefore(el('span', 'muted small orca-said', ' Message d’Orca : « ' + text + ' »'), f.ask);
+    if (!f.ask) {
+      f.ask = button(window.PlyoPreflight.ASK_LABEL, function () { send(window.PlyoPreflight.modelFailPrompt(f.quotes)); }, 'link');
+      f.line.appendChild(f.ask);
+    }
+  }
+  // Messages d'ajout gardés sans « Orca n'a pas pu ouvrir » (ajout réussi malgré tout, ou réponse perdue) : les erreurs en carte.
+  function flushModelDialogs() {
+    clearTimeout(modelDialogs.timer);
+    var left = modelDialogs.pending;
+    modelDialogs = { pending: [], timer: null };
+    left.forEach(function (d) { if (window.PlyoPreflight.dialogCardWanted(d)) showDialogCard(d); });
+  }
+  function onOrcaDialog(msg) {
+    var PF = window.PlyoPreflight;
+    if (msg.phase === 'open') {
+      dropDialogLine();
+      dialogUI = { id: msg.id, line: noteLine(PF.dialogWaitText(msg), '', 'info', viewUI.tab === 'chat' ? 'chat' : 'guide') };
+      dialogUI.line.classList.add('orca-wait');
+      return;
+    }
+    if (dialogUI.id === msg.id) dropDialogLine();
+    if (PF.modelDialogQuoted(msg)) {
+      if (modelFail.line && modelFail.line.isConnected && Date.now() - modelFail.at < 30000) { quoteUnderModelFail(msg.text); return; }
+      modelDialogs.pending.push(msg);
+      clearTimeout(modelDialogs.timer);
+      modelDialogs.timer = setTimeout(flushModelDialogs, 15000);
+      return;
+    }
+    if (PF.dialogCardWanted(msg)) showDialogCard(msg);
+  }
+  function showDialogCard(msg) {
+    var v = window.PlyoPreflight.dialogView(msg);
+    var box = alertBox(v.tone, '', 'alert');
+    box.classList.add('orca-dialog');
+    box.body.appendChild(el('b', '', fr(v.title)));
+    box.body.appendChild(el('p', '', fr(v.text)));
+    if (v.quote) box.body.appendChild(el('p', 'orca-quote', '« ' + v.quote + ' »'));
+    box.body.appendChild(orcaActions(v.actions, box));
+    if (conv) { $('project-alert').appendChild(box); if (viewUI.tab === 'guide') box.scrollIntoView({ block: 'nearest' }); }
+    else placeInOpenTab(box);
   }
   // Fin réelle de l'export (la fenêtre d'enregistrement est fermée, le fichier écrit). Annulé : on revient à l'état d'avant, sans un mot.
   function onExportDone(msg) {
@@ -1667,7 +1883,7 @@
       canvasUI.refused = '';
       if (!lockSend('print')) return;
       if (conv && PlyoCanvas.needsReread(conv.project.canvas)) sendWithCanvasCheck();
-      else { rememberHabit(); window.orca.postMessage({ type: 'print_start', export: false, preset: conv && conv.project.printer ? conv.project.printer.preset : '', watch_id: newWatchId() }); }
+      else { rememberHabit(); waitForExport(); window.orca.postMessage({ type: 'print_start', export: false, preset: conv && conv.project.printer ? conv.project.printer.preset : '', watch_id: newWatchId() }); } // réponse à la fermeture de la fenêtre d'envoi d'Orca
     }
     else if (kind === 'confirmCanvas') { if (canvasUI.mapping && PlyoCanvas.complete(canvasUI.mapping)) applyCanvas(canvasUI.mapping); }
     else if (kind === 'manualYes') { canvasUI.manual.confirmed = true; canvasUI.mapping = canvasProposal(); renderProject(); }
@@ -3632,7 +3848,19 @@
       none.appendChild(button('Choisir un fichier', function () { pickFiles(); }, 'link'));
       return;
     }
-    if (!msg.ok) { projectUI.reposing = false; noteLine((msg.text || 'Je n’ai pas pu poser cette pièce sur le plateau.') + ' Je prends les fichiers STL, 3MF, OBJ, STEP et AMF.', 'error', 'alert', 'guide'); return; }
+    if (!msg.ok) {
+      projectUI.reposing = false;
+      // Fichier refusé par Orca (ERR-14) : une raison probable et une issue ; le message d'Orca, s'il en ouvre un, est cité dessous.
+      var failLine = noteLine(msg.reason === 'orca_refused' ? msg.text : (msg.text || 'Je n’ai pas pu poser cette pièce sur le plateau.') + ' Je prends les fichiers STL, 3MF, OBJ, STEP et AMF.', 'error', 'alert', 'guide');
+      failLine.appendChild(button('Choisir un autre fichier', function () { pickFiles(); }, 'link'));
+      modelFail = { line: failLine, at: Date.now(), quotes: [], ask: null };
+      var seen = modelDialogs.pending;
+      clearTimeout(modelDialogs.timer);
+      modelDialogs = { pending: [], timer: null };
+      seen.forEach(function (d) { quoteUnderModelFail(d.text); });
+      return;
+    }
+    flushModelDialogs(); // pièce posée malgré un message d'Orca : une erreur reste montrée
     if (msg.adaptation) { syncProjectNames(msg.adaptation.saved); if (msg.name) conv.project.adapted = msg.name; } // adapté dès l'import : pas une deuxième fois
     if (tourSignals) tourSignals.objects = Math.max(tourSignals.objects || 0, 1); // sans attendre le prochain signal
     attachDone(); // pièce posée : le slicer a attaché le plateau
@@ -5702,6 +5930,16 @@
       onSpoolAdopted(msg);
     } else if (msg.type === 'print_started') {
       onPrintStarted(msg);
+    } else if (msg.type === 'print_send_waiting') {
+      onSendWaiting();
+    } else if (msg.type === 'print_upload') {
+      onPrintUpload(msg);
+    } else if (msg.type === 'orca_dialog') {
+      onOrcaDialog(msg);
+    } else if (msg.type === 'printer_link_rechecked') {
+      onLinkRechecked(msg);
+    } else if (msg.type === 'printer_link_current_closed') {
+      onLinkCurrentClosed(msg);
     } else if (msg.type === 'setup_catalog') {
       onSetupCatalog(Array.isArray(msg.catalog) ? msg.catalog : []);
     } else if (msg.type === 'setup_installed') {

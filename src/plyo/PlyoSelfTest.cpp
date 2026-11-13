@@ -1,8 +1,12 @@
 #include "PlyoSelfTest.hpp"
 #include "PlyoAssistant.hpp"
+#include "PlyoGuard.hpp"
 #include "PlyoHighlight.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoOrcaMessages.hpp"
+#include "PlyoOrcaWindows.hpp"
+#include "PlyoSend.hpp"
+#include "PlyoSpools.hpp"
 #include "PlyoPlateActions.hpp"
 #include "PlyoPreflight.hpp"
 #include "PlyoProject.hpp"
@@ -22,11 +26,14 @@
 #include <wx/timer.h>
 #include <wx/toplevel.h>
 
+#include <algorithm>
 #include <chrono>
+#include <functional>
 #include <ios>
 #include <iterator>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace Plyo { namespace SelfTest {
 
@@ -85,14 +92,60 @@ void append_line(const std::string& file_suffix, nlohmann::json line)
     out.flush();
 }
 
-// Fenêtres de premier niveau visibles (titre) : le pilote vérifie qu'aucune fenêtre d'Orca ne s'est ouverte.
-nlohmann::json shown_windows()
+// Fenêtres de premier niveau visibles : le pilote vérifie qu'aucune fenêtre d'Orca ne s'est ouverte, ou laquelle (lot 10 :
+// {title, main, modal, kind, class}, kind : main, send, message:error|warning|question|info, dialog, frame).
+nlohmann::json shown_windows() { return OrcaWindows::windows(); }
+
+// Lot 10 · réponses préparées aux fenêtres modales d'Orca, sans clic système : la prochaine fenêtre modale du genre voulu
+// (« send », « message », « any ») est fermée comme par un clic sur « valider » ou « annuler », `after_ms` après avoir été
+// vue. Préparées AVANT l'action qui ouvre la fenêtre : pendant une fenêtre modale, la page peut ne plus pouvoir parler au
+// slicer. Le minuteur tourne aussi dans la boucle de la fenêtre modale.
+struct ModalPlan
 {
-    nlohmann::json out = nlohmann::json::array();
-    for (wxWindow* w : wxTopLevelWindows)
-        if (w != nullptr && w->IsShown())
-            out.push_back({{"title", w->GetLabel().utf8_string()}, {"main", w == Slic3r::GUI::wxGetApp().mainframe}});
-    return out;
+    std::string answer, kind;
+    int         after_ms = 1200;
+    std::chrono::steady_clock::time_point until, seen;
+    bool        has_seen = false;
+};
+std::vector<ModalPlan>                              s_plans;
+std::function<void(const nlohmann::json&)>          s_plan_send;
+wxTimer*                                            s_plan_timer = nullptr;
+
+void plan_tick()
+{
+    if (s_plans.empty()) {
+        s_plan_timer->Stop();
+        return;
+    }
+    ModalPlan&  plan = s_plans.front();
+    const auto  now  = std::chrono::steady_clock::now();
+    if (now > plan.until) {
+        const nlohmann::json done = {{"type", "selftest_modal_done"}, {"ok", false}, {"timeout", true}, {"kind", plan.kind}};
+        append_line(".log", {{"modal", done}});
+        s_plans.erase(s_plans.begin());
+        if (s_plan_send)
+            s_plan_send(done);
+        return;
+    }
+    const std::string kind = OrcaWindows::top_modal_kind();
+    if (kind.empty() || (plan.kind != "any" && plan.kind != kind)) {
+        plan.has_seen = false;
+        return;
+    }
+    if (!plan.has_seen) {
+        plan.has_seen = true;
+        plan.seen     = now;
+        return;
+    }
+    if (now - plan.seen < std::chrono::milliseconds(plan.after_ms))
+        return;
+    nlohmann::json done = OrcaWindows::answer_top_modal(plan.answer);
+    done["type"]        = "selftest_modal_done";
+    done["answer"]      = plan.answer;
+    append_line(".log", {{"modal", done}});
+    s_plans.erase(s_plans.begin());
+    if (s_plan_send)
+        s_plan_send(done);
 }
 
 // Entrée « Assistant Plyo » actionnée par le banc (selftest_menu_toggle) : nombre d'actions, et panneau vu fermé entre deux.
@@ -171,6 +224,12 @@ nlohmann::json call(const std::string& fn)
         return SettingsBridge::ai_context();
     if (fn == "hooks")
         return hooks();
+    if (fn == "upload")
+        return Send::state();
+    if (fn == "dialogs")
+        return OrcaWindows::history();
+    if (fn == "last_sent")
+        return Spools::read_last_sent(); // bobine notée à l'envoi (vide si aucune)
     return {{"error", "fonction inconnue : " + Json::utf8_prefix(fn, 40)}};
 }
 
@@ -243,6 +302,25 @@ bool handle(const std::string& type, const nlohmann::json& data, const std::func
                 BOOST_LOG_TRIVIAL(error) << "Plyo: banc d'essai : entrée de menu « Assistant Plyo » introuvable";
             s_toggle->Start(500);
         });
+    } else if (type == "selftest_modal") {
+        // {answer: "ok" | "cancel", kind: "send" | "message" | "any", after_ms, timeout_ms} → selftest_modal_done.
+        ModalPlan plan;
+        plan.answer   = Json::str(data, "answer", 10) == "ok" ? "ok" : "cancel";
+        plan.kind     = Json::str(data, "kind", 10);
+        if (plan.kind != "send" && plan.kind != "message")
+            plan.kind = "any";
+        plan.after_ms = static_cast<int>(std::clamp<long long>(Json::integer(data, "after_ms", 1200), 300, 30000));
+        plan.until    = std::chrono::steady_clock::now() +
+                     std::chrono::milliseconds(std::clamp<long long>(Json::integer(data, "timeout_ms", 60000), 1000, 300000));
+        s_plans.push_back(plan);
+        s_plan_send = send;
+        if (s_plan_timer == nullptr) {
+            s_plan_timer = new wxTimer();
+            s_plan_timer->Bind(wxEVT_TIMER, [](wxTimerEvent&) { guarded("le banc d'essai (fenêtres)", [] { plan_tick(); }); });
+        }
+        if (!s_plan_timer->IsRunning())
+            s_plan_timer->Start(200);
+        append_line(".log", {{"modal_plan", {{"answer", plan.answer}, {"kind", plan.kind}, {"after_ms", plan.after_ms}}}});
     } else if (type == "selftest_call") {
         const std::string fn = Json::str(data, "fn", 40);
         send({{"type", "selftest_result"}, {"request", Json::integer(data, "request", 0)}, {"fn", fn}, {"result", call(fn)}});
