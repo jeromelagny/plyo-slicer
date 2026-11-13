@@ -106,7 +106,7 @@ nlohmann::json measure()
                            {"foot", {std::round(size.x() * 10) / 10, std::round(size.y() * 10) / 10}},
                            {"contact_mm2", std::round(contact_area(*object))},
                            {"needs_support", floating.count(object->id()) > 0},
-                           {"fits", PlateActions::fits(size, bed)}});
+                           {"fits", PlateActions::fits_on_plate(*object, bed)}}); // même verdict qu'Orca (ERR-11)
     }
     nlohmann::json result{{"settings", settings}, {"objects", objects}, {"sliced", plate->is_slice_result_valid()}};
     // Conflit de trajets trouvé par la découpe (même source que l'alerte d'Orca, GLCanvas3D) : le panneau ne dit plus « pas de risque ».

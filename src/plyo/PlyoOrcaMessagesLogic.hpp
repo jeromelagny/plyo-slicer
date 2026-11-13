@@ -73,8 +73,53 @@ double safe_layer_height(double nozzle_mm);
 // sinon), MAX_ISSUES au plus. Champs vides omis.
 nlohmann::json to_json(const std::vector<Issue>& issues);
 
-// Y a-t-il une erreur (niveau « error ») dans cette liste (forme JSON de to_json) ?
+// Y a-t-il une erreur (niveau « error ») dans cette liste (forme JSON de to_json) ? Une notification d'Orca de type inconnu
+// (source « notification », code « unknown ») ne compte pas : on ne sait pas si elle bloque, Plyo ne refuse rien sur elle.
 bool has_error(const nlohmann::json& issues);
+
+// ---------- Notifications d'Orca (bulles du plateau et de la pièce, ERR-11) ----------
+// Une notification affichée par Orca (NotificationManager::plyo_notices), lue par son type, jamais par son texte.
+struct Notice
+{
+    std::string type;   // nom de l'énumérateur NotificationType (« PlaterError », « BBLMixUsePLAAndPETG »…)
+    std::string level;  // error | warning | info (NotificationLevel ramené à trois)
+    std::string text;   // déjà nettoyé pour le panneau (clean_for_panel), préfixe « Error: » retiré
+    bool        gray = false; // grisée par Orca : périmée, en attente d'une nouvelle découpe
+};
+// Faits lus dans Orca pour un type partagé par plusieurs messages (jamais le texte).
+struct NoticeFacts
+{
+    bool        prime_tower_outside = false; // PlaterWarning : la tour de purge sort du plateau (contrôle d'Orca)
+    std::string mesh_object_ref;             // BBLObjectInfo : pièce de la plaque au maillage abîmé (arêtes ouvertes), vide sinon
+    std::string mesh_object_name;
+};
+// Keep : expliquée dans le panneau ; Covered : déjà lue ailleurs par Plyo (validation, découpe, contrôles du G-code, envoi) ;
+// Ignored : sans intérêt pour l'utilisateur (progression, astuce, mise à jour, compte en ligne, simple information).
+enum class NoticeUse { Keep, Covered, Ignored };
+struct NoticeClass
+{
+    NoticeUse   use = NoticeUse::Ignored;
+    std::string code;  // code stable (object_outside, pla_petg_mix…), « unknown » pour une erreur ou un avertissement non reconnu
+    std::string level; // error | warning
+};
+NoticeClass classify_notice(const Notice& notice, const NoticeFacts& facts);
+
+// Types que Plyo nomme explicitement (gardés, déjà couverts ou écartés) : la sentinelle vérifie qu'ils existent chez Orca.
+std::vector<std::string> listed_notice_types();
+
+// Retire les balises « <Error> » d'Orca, puis un préfixe suivi d'un saut de ligne (« Error:\n », « Warning:\n », déjà
+// traduits) en tête du texte.
+std::string strip_notice_prefix(const std::string& text, const std::vector<std::string>& prefixes);
+
+// Joint aux problèmes déjà lus (validation, découpe) les notifications gardées et non grisées, source « notification » :
+// - même code qu'un problème déjà là : pas de doublon, le texte d'Orca complète seulement un problème qui n'en avait pas ;
+// - « object_outside » quand la validation dit déjà « object_too_tall » : même pièce, même problème ;
+// - une raison précise du refus d'Orca (filament_unprintable, extruder_unprintable, plugin_missing) remplace la supposition
+//   « object_outside » sans texte (plaque refusée sans erreur de validation).
+void merge_notices(std::vector<Issue>& issues, const std::vector<Notice>& notices, const NoticeFacts& facts);
+
+// Codes des notifications gardées et non grisées, triés et sans doublon : signal léger lu toutes les 2 s par le panneau.
+std::vector<std::string> notice_codes(const std::vector<Notice>& notices, const NoticeFacts& facts);
 
 // Fin d'une découpe réussie ou annulée, lue juste après. `slicing` : une autre découpe suit vraiment (Orca découpe encore, ou
 // « Tout découper » passe à la plaque suivante) → rien, sa propre fin parlera. `update_scheduled` : la minuterie de mise à

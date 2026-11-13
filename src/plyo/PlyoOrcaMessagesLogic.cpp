@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <iterator>
 #include <set>
 #include <tuple>
 
@@ -228,7 +229,146 @@ bool has_error(const nlohmann::json& issues)
 {
     if (!issues.is_array())
         return false;
-    return std::any_of(issues.begin(), issues.end(), [](const nlohmann::json& i) { return Json::str(i, "level") == "error"; });
+    return std::any_of(issues.begin(), issues.end(), [](const nlohmann::json& i) {
+        return Json::str(i, "level") == "error" && !(Json::str(i, "source") == "notification" && Json::str(i, "code") == "unknown");
+    });
+}
+
+namespace {
+
+// Notifications expliquées par le panneau : type d'Orca → {code, niveau}. Le niveau est celui de l'effet réel sur la plaque
+// (erreur : Orca ne découpe pas), pas la couleur de la bulle.
+struct KnownNotice { const char* type; const char* code; const char* level; };
+const KnownNotice KNOWN_NOTICES[] = {
+    {"PlaterError", "object_outside", "error"},                       // pièce à cheval sur le bord ou trop haute (découpe refusée)
+    {"BBLFilamentPrintableError", "filament_unprintable", "error"},   // filament que cette imprimante ne sait pas imprimer
+    {"LeftExtruderUnprintableError", "extruder_unprintable", "error"},
+    {"RightExtruderUnprintableError", "extruder_unprintable", "error"},
+    {"OrcaLocalPluginMissingError", "plugin_missing", "error"},       // le profil demande une extension d'Orca absente
+    {"OrcaCloudPluginMissingError", "plugin_missing", "error"},
+    {"OrcaPluginInactiveError", "plugin_missing", "error"},
+    {"OrcaPluginCapabilityUnavailableError", "plugin_missing", "error"},
+    {"BBLFlushingVolumeZero", "flushing_volume_zero", "warning"},
+    {"BBLNozzleFilamentIncompatible", "nozzle_filament", "warning"},
+    {"BBLMixUsePLAAndPETG", "pla_petg_mix", "warning"},
+    {"BBLSingleExtruderMixedFilamentRisk", "mixed_filament_single_nozzle", "warning"},
+    {"BBLMixedFilamentBroken", "mixed_filament_broken", "warning"},
+    {"SimplifySuggestion", "simplify_suggestion", "warning"},
+    {"UnknownFont", "unknown_font", "warning"},
+    {"BBL3MFInfo", "project_load_warning", "warning"},
+    {"BBLPreviewOnlyMode", "preview_only", "warning"},
+    {"CustomSupportsAndSeamRemovedAfterRepair", "repair_removed_paint", "warning"},
+};
+// Types partagés, classés par un fait lu dans Orca (classify_notice) ; BBLGeneralError : texte libre, carte générique.
+const char* const FACT_NOTICES[] = {"PlaterWarning", "BBLObjectInfo", "BBLGeneralError"};
+// Déjà lus par Plyo ailleurs : validation (validate_plate), découpe et ses avertissements (on_slicing_done, step_warnings),
+// contrôles du G-code (gcode_issues), conflit de trajets (Preflight), envoi (Send).
+const char* const COVERED_NOTICES[] = {"ValidateError", "ValidateWarning", "SlicingError", "SlicingSeriousWarning", "SlicingWarning",
+                                       "BBLSliceEmptyLayer", "BBLNeedSupportON", "BBLGcodeOverlap", "BBLSliceLimitError",
+                                       "BBLSliceMultiExtruderHeightOutside", "BBLBedFilamentIncompatible", "PrintHostUpload"};
+// Sans intérêt pour l'assistant : progression, astuces, mises à jour, intégration au bureau, compte en ligne d'Orca, informations.
+const char* const IGNORED_NOTICES[] = {"ExportFinished", "ExportOngoing", "Mouse3dDisconnected", "NewAppAvailable", "NewAlphaAvailable",
+                                       "NewBetaAvailable", "PresetUpdateAvailable", "PresetUpdateFinished", "ProgressBar", "SlicingProgress",
+                                       "SignDetected", "QuitSLAManualMode", "DesktopIntegrationSuccess", "DesktopIntegrationFail",
+                                       "UndoDesktopIntegrationSuccess", "UndoDesktopIntegrationFail", "DidYouKnowHint", "UpdatedItemsInfo",
+                                       "ProgressIndicator", "CgalFinished", "URLDownload", "ArrangeOngoing", "BBLPlateInfo", "BBLSeqPrintInfo",
+                                       "BBLPluginInstallHint", "BBLPluginUpdateAvailable", "BBLPrinterConfigUpdateAvailable",
+                                       "BBLUserPresetExceedLimit", "OrcaSharedProfilesAvailable", "OrcaCloudAPIError", "OrcaSyncConflict"};
+
+template<size_t N> bool listed(const char* const (&list)[N], const std::string& type)
+{
+    return std::any_of(std::begin(list), std::end(list), [&](const char* t) { return type == t; });
+}
+
+// Raisons précises d'une plaque refusée, qui remplacent la supposition « object_outside » sans texte.
+bool explains_refusal(const std::string& code) { return code == "filament_unprintable" || code == "extruder_unprintable" || code == "plugin_missing"; }
+
+} // namespace
+
+NoticeClass classify_notice(const Notice& notice, const NoticeFacts& facts)
+{
+    const std::string& t = notice.type;
+    for (const KnownNotice& k : KNOWN_NOTICES)
+        if (t == k.type)
+            return {NoticeUse::Keep, k.code, k.level};
+    if (t == "PlaterWarning")
+        return {NoticeUse::Keep, facts.prime_tower_outside ? "prime_tower" : "plate_warning", "warning"};
+    if (t == "BBLObjectInfo") // fiche de la pièce sélectionnée : un souci seulement si son maillage est abîmé
+        return facts.mesh_object_ref.empty() ? NoticeClass{NoticeUse::Ignored, "", ""} : NoticeClass{NoticeUse::Keep, "mesh_errors", "warning"};
+    if (listed(COVERED_NOTICES, t))
+        return {NoticeUse::Covered, "", ""};
+    if (listed(IGNORED_NOTICES, t))
+        return {NoticeUse::Ignored, "", ""};
+    // BBLGeneralError, CustomNotification et tout type nouveau : expliqué de façon générique s'il prévient ou bloque.
+    if (notice.level == "error" || notice.level == "warning")
+        return {NoticeUse::Keep, "unknown", notice.level};
+    return {NoticeUse::Ignored, "", ""};
+}
+
+std::vector<std::string> listed_notice_types()
+{
+    std::vector<std::string> out;
+    for (const KnownNotice& k : KNOWN_NOTICES)
+        out.push_back(k.type);
+    out.insert(out.end(), std::begin(FACT_NOTICES), std::end(FACT_NOTICES));
+    out.insert(out.end(), std::begin(COVERED_NOTICES), std::end(COVERED_NOTICES));
+    out.insert(out.end(), std::begin(IGNORED_NOTICES), std::end(IGNORED_NOTICES));
+    return out;
+}
+
+std::string strip_notice_prefix(const std::string& text, const std::vector<std::string>& prefixes)
+{
+    // Balises de mise en forme d'Orca (Plater::show_object_info), retirées par la bulle à son premier affichage seulement.
+    std::string out = replace_all(replace_all(text, "<Error>", ""), "</Error>", "");
+    for (const std::string& p : prefixes)
+        if (!p.empty() && out.size() > p.size() && out.compare(0, p.size(), p) == 0 && out[p.size()] == '\n')
+            return out.substr(p.size() + 1);
+    return out;
+}
+
+void merge_notices(std::vector<Issue>& issues, const std::vector<Notice>& notices, const NoticeFacts& facts)
+{
+    for (const Notice& n : notices) {
+        if (n.gray)
+            continue;
+        const NoticeClass c = classify_notice(n, facts);
+        if (c.use != NoticeUse::Keep)
+            continue;
+        Issue issue;
+        issue.source = "notification";
+        issue.code   = c.code;
+        issue.level  = c.level;
+        issue.text   = n.text;
+        if (c.code == "mesh_errors") {
+            issue.object_ref  = facts.mesh_object_ref;
+            issue.object_name = facts.mesh_object_name;
+        }
+        if (c.code != "unknown") {
+            const auto same = std::find_if(issues.begin(), issues.end(), [&](const Issue& i) { return i.code == c.code; });
+            if (same != issues.end()) {
+                if (same->text.empty())
+                    same->text = n.text;
+                continue;
+            }
+            if (c.code == "object_outside" &&
+                std::any_of(issues.begin(), issues.end(), [](const Issue& i) { return i.code == "object_too_tall"; }))
+                continue;
+            if (explains_refusal(c.code))
+                issues.erase(std::remove_if(issues.begin(), issues.end(), [](const Issue& i) { return i.code == "object_outside" && i.text.empty(); }),
+                             issues.end());
+        }
+        issues.push_back(issue);
+    }
+}
+
+std::vector<std::string> notice_codes(const std::vector<Notice>& notices, const NoticeFacts& facts)
+{
+    std::set<std::string> codes;
+    for (const Notice& n : notices)
+        if (!n.gray)
+            if (const NoticeClass c = classify_notice(n, facts); c.use == NoticeUse::Keep)
+                codes.insert(c.code);
+    return std::vector<std::string>(codes.begin(), codes.end());
 }
 
 FinishRead finish_read(bool slicing, bool update_scheduled, int tries, int max_tries)

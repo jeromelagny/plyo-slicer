@@ -7,6 +7,10 @@
 #include <functional>
 #include <string>
 
+namespace Slic3r {
+class ModelObject;
+} // namespace Slic3r
+
 // Le plateau vu par l'assistant (ce qui est posé, tient ou pas, découpé ou pas) et les actions que l'utilisateur
 // déclenche depuis une réponse : chacune passe par la commande d'Orca correspondante, donc par son « Annuler ».
 namespace Plyo { namespace PlateActions {
@@ -15,6 +19,10 @@ namespace Plyo { namespace PlateActions {
 Slic3r::Vec3d  bed_size();
 // Tient sur le plateau, au besoin tourné d'un quart de tour (une dimension du plateau à 0 est ignorée).
 bool           fits(const Slic3r::Vec3d& size, const Slic3r::Vec3d& bed);
+// Verdict sur une pièce de la plaque en cours, qui ne contredit jamais Orca (ERR-11) : un exemplaire qu'Orca juge dans la
+// plaque (ModelInstance::print_volume_state, calculé par Orca sur la vraie forme du plateau) tient ; sinon, la mesure
+// `fits` (boîte englobante de la zone imprimable) dit si la pièce pourrait tenir une fois rangée.
+bool           fits_on_plate(const Slic3r::ModelObject& object, const Slic3r::Vec3d& bed);
 // {objects: [{ref, name, size_mm, …}], bed_mm, sliced, time_s, weight_g, issues} pour la plaque en cours (issues : OrcaMessages::report).
 nlohmann::json context();
 // `kind` : orient | arrange | scale_to_fit | slice. Renvoie {ok, text} et, pour une action annulable, `undo_token`

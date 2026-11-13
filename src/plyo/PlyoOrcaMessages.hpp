@@ -27,7 +27,8 @@ void set_listener(std::function<void(const nlohmann::json&)> listener);
 // d'exception, retient ce type pour l'export, et prévient le panneau d'une découpe finie ou en erreur. Une annulation
 // n'est jamais une erreur : elle n'est dite que si aucune découpe ne reprend.
 
-// Refus et avertissements de validation de la plaque en cours. `busy` : Orca découpe, rien n'est lu. `pending` : un
+// Refus et avertissements de validation de la plaque en cours, avec les notifications d'Orca sur la plaque et la pièce
+// (source « notification », OrcaMessagesLogic::merge_notices). `busy` : Orca découpe, rien n'est lu. `pending` : un
 // changement attend d'être pris en compte par Orca (la lecture peut dater d'avant ce changement).
 struct Validation
 {
@@ -37,9 +38,13 @@ struct Validation
 };
 Validation validate_plate();
 
-// Tout ce qu'Orca dit de la plaque en cours (validation, puis avertissements de découpe et contrôles du G-code si elle est
-// découpée), MAX_ISSUES au plus : {issues, busy, pending, sliced, ready_for_print}.
+// Tout ce qu'Orca dit de la plaque en cours (validation et notifications du plateau, puis avertissements de découpe et
+// contrôles du G-code si elle est découpée), MAX_ISSUES au plus : {issues, busy, pending, sliced, ready_for_print}.
 nlohmann::json report();
+
+// Codes des notifications d'Orca que le panneau explique, affichées en ce moment (ERR-11) : signal léger joint à
+// tour_signals ; le panneau demande le détail (orca_issues) quand il change.
+std::vector<std::string> notice_codes();
 
 // Plaque découpée et imprimable : le résultat d'Orca (PartPlate::is_slice_result_ready_for_print) et ses contrôles de
 // l'aperçu (trajet hors plateau ou trop haut).

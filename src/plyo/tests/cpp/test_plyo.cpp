@@ -31,8 +31,11 @@
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <functional>
+#include <sstream>
 #include <iterator>
 #include <random>
 #include <stdexcept>
@@ -4894,4 +4897,161 @@ TEST_CASE("Lot 12 · ARCH-16 : refused_name ne montre jamais la clé d'Orca")
     CHECK(refused_name("layer_height", lot12_label) == "« Hauteur de couche »");
     CHECK(refused_name("seam_position", lot12_label) == "ce réglage");
     CHECK(refused_name("", lot12_label) == "ce réglage");
+}
+
+// --- Lot 16 de l'audit (ERR-11) : notifications d'Orca lues par leur type, jamais par leur texte ---
+
+namespace {
+Plyo::OrcaMessagesLogic::Notice notice(const std::string& type, const std::string& level, const std::string& text = "texte d'Orca", bool gray = false)
+{
+    Plyo::OrcaMessagesLogic::Notice n;
+    n.type  = type;
+    n.level = level;
+    n.text  = text;
+    n.gray  = gray;
+    return n;
+}
+} // namespace
+
+TEST_CASE("Lot 16 · ERR-11 : chaque notification classée par son type (gardée, déjà couverte, écartée)")
+{
+    using namespace Plyo::OrcaMessagesLogic;
+    const NoticeFacts none;
+    const auto kept = [&](const std::string& type, const std::string& level = "warning") { return classify_notice(notice(type, level), none); };
+    CHECK(kept("PlaterError", "error").use == NoticeUse::Keep);
+    CHECK(kept("PlaterError", "error").code == "object_outside");
+    CHECK(kept("PlaterError", "error").level == "error");
+    CHECK(kept("BBLMixUsePLAAndPETG").code == "pla_petg_mix");
+    CHECK(kept("BBLMixUsePLAAndPETG").level == "warning");
+    CHECK(kept("BBLFlushingVolumeZero").code == "flushing_volume_zero");
+    CHECK(kept("BBLNozzleFilamentIncompatible").code == "nozzle_filament");
+    CHECK(kept("BBLFilamentPrintableError", "error").level == "error");
+    CHECK(kept("LeftExtruderUnprintableError", "error").code == "extruder_unprintable");
+    CHECK(kept("OrcaPluginInactiveError", "error").code == "plugin_missing");
+    // Le niveau vient de l'effet sur la plaque, pas de la couleur de la bulle : un 3MF « Error » ne bloque pas la découpe.
+    CHECK(kept("BBL3MFInfo", "error").level == "warning");
+    CHECK(kept("SimplifySuggestion", "info").use == NoticeUse::Keep);
+    // Déjà lus ailleurs par Plyo : jamais deux fois.
+    for (const char* t : {"ValidateError", "ValidateWarning", "SlicingError", "SlicingWarning", "SlicingSeriousWarning", "BBLSliceLimitError",
+                          "BBLBedFilamentIncompatible", "BBLSliceMultiExtruderHeightOutside", "BBLNeedSupportON", "PrintHostUpload"})
+        CHECK(kept(t, "error").use == NoticeUse::Covered);
+    // Sans intérêt pour l'utilisateur, quel que soit le niveau.
+    for (const char* t : {"SlicingProgress", "DidYouKnowHint", "NewAppAvailable", "PresetUpdateAvailable", "ProgressIndicator", "ExportFinished", "OrcaSyncConflict"})
+        CHECK(kept(t, "error").use == NoticeUse::Ignored);
+    // Type non reconnu : générique s'il prévient ou bloque, écarté si simple information.
+    CHECK(kept("CustomNotification", "warning").code == "unknown");
+    CHECK(kept("BBLGeneralError", "error").code == "unknown");
+    CHECK(kept("BBLGeneralError", "error").level == "error");
+    CHECK(kept("TypeAjouteParOrca", "error").code == "unknown");
+    CHECK(kept("CustomNotification", "info").use == NoticeUse::Ignored);
+}
+
+TEST_CASE("Lot 16 · ERR-11 : un type partagé est départagé par un fait lu dans Orca")
+{
+    using namespace Plyo::OrcaMessagesLogic;
+    NoticeFacts facts;
+    CHECK(classify_notice(notice("PlaterWarning", "warning"), facts).code == "plate_warning");
+    facts.prime_tower_outside = true;
+    CHECK(classify_notice(notice("PlaterWarning", "warning"), facts).code == "prime_tower");
+    // Fiche de la pièce : un souci seulement si son maillage est abîmé.
+    CHECK(classify_notice(notice("BBLObjectInfo", "info"), facts).use == NoticeUse::Ignored);
+    facts.mesh_object_ref  = "7";
+    facts.mesh_object_name = "Benchy";
+    CHECK(classify_notice(notice("BBLObjectInfo", "info"), facts).code == "mesh_errors");
+    std::vector<Issue> issues;
+    merge_notices(issues, {notice("BBLObjectInfo", "info", "Error: 12 non-manifold edges.")}, facts);
+    REQUIRE(issues.size() == 1);
+    CHECK(issues[0].source == "notification");
+    CHECK(issues[0].object_ref == "7");
+    CHECK(issues[0].object_name == "Benchy");
+}
+
+TEST_CASE("Lot 16 · ERR-11 : jointes sans doublon avec la validation (ERR-02, ERR-04)")
+{
+    using namespace Plyo::OrcaMessagesLogic;
+    const NoticeFacts none;
+    // Supposition « object_outside » sans texte (plaque refusée) + bulle d'Orca : un seul problème, avec le texte d'Orca.
+    std::vector<Issue> issues{issue("validate_error", "object_outside", "error", "")};
+    merge_notices(issues, {notice("PlaterError", "error", "An object is laid over the boundary of plate.")}, none);
+    REQUIRE(issues.size() == 1);
+    CHECK(issues[0].source == "validate_error");
+    CHECK(issues[0].text == "An object is laid over the boundary of plate.");
+    // Déjà dit par la validation (pièce trop haute) : pas de seconde carte.
+    issues = {issue("validate_error", "object_too_tall", "error", "too tall")};
+    merge_notices(issues, {notice("PlaterError", "error")}, none);
+    CHECK(issues.size() == 1);
+    // La vraie raison du refus remplace la supposition sans texte.
+    issues = {issue("validate_error", "object_outside", "error", "")};
+    merge_notices(issues, {notice("BBLFilamentPrintableError", "error", "Filament 2 cannot be printed.")}, none);
+    REQUIRE(issues.size() == 1);
+    CHECK(issues[0].code == "filament_unprintable");
+    // Grisée (périmée), couverte ou écartée : rien.
+    issues.clear();
+    merge_notices(issues, {notice("BBLMixUsePLAAndPETG", "warning", "x", true), notice("SlicingError", "error"), notice("DidYouKnowHint", "info")}, none);
+    CHECK(issues.empty());
+    // Deux bulles inconnues différentes : deux problèmes ; la même deux fois : un seul après to_json.
+    merge_notices(issues, {notice("CustomNotification", "warning", "a"), notice("CustomNotification", "warning", "b"), notice("CustomNotification", "warning", "a")}, none);
+    CHECK(issues.size() == 3);
+    CHECK(to_json(issues).size() == 2);
+}
+
+TEST_CASE("Lot 16 · ERR-11 : une bulle inconnue ne fait jamais refuser la découpe par Plyo")
+{
+    using namespace Plyo::OrcaMessagesLogic;
+    std::vector<Issue> issues;
+    merge_notices(issues, {notice("BBLGeneralError", "error", "Something odd.")}, {});
+    CHECK(!has_error(to_json(issues)));
+    merge_notices(issues, {notice("PlaterError", "error")}, {});
+    CHECK(has_error(to_json(issues)));
+}
+
+TEST_CASE("Lot 16 · ERR-11 : texte d'une bulle et codes du signal")
+{
+    using namespace Plyo::OrcaMessagesLogic;
+    const std::vector<std::string> prefixes{"Error:", "Warning:"};
+    CHECK(strip_notice_prefix("Error:\nAn object is laid over the boundary.", prefixes) == "An object is laid over the boundary.");
+    CHECK(strip_notice_prefix("Warning:\nPLA and PETG.", prefixes) == "PLA and PETG.");
+    CHECK(strip_notice_prefix("Error: sans saut de ligne", prefixes) == "Error: sans saut de ligne");
+    CHECK(strip_notice_prefix("Size: 1 x 2<Error>Error: 3 non-manifold edges.</Error>", prefixes) == "Size: 1 x 2Error: 3 non-manifold edges.");
+    const std::vector<std::string> codes = notice_codes({notice("BBLMixUsePLAAndPETG", "warning"), notice("PlaterError", "error"), notice("PlaterError", "error"),
+                                                         notice("SlicingProgress", "info"), notice("BBLFlushingVolumeZero", "warning", "x", true)}, {});
+    CHECK(codes == std::vector<std::string>{"object_outside", "pla_petg_mix"});
+}
+
+TEST_CASE("Lot 16 · sentinelle ERR-11 : types de notification nommés par Plyo, accesseur d'Orca en place")
+{
+    const std::string hpp  = read_source("../../../../src/slic3r/GUI/NotificationManager.hpp");
+    const std::string body = between(hpp, "enum class NotificationType", "NotificationTypeCount");
+    REQUIRE(!body.empty());
+    // Énumérateurs d'Orca (lignes commentées ignorées).
+    std::set<std::string> orca;
+    std::string           line;
+    std::istringstream    lines(body);
+    while (std::getline(lines, line)) {
+        const size_t comment = line.find("//");
+        std::string  code    = line.substr(0, comment);
+        std::string  word;
+        for (char ch : code)
+            if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '_')
+                word += ch;
+            else if (!word.empty())
+                break;
+        if (!word.empty() && word != "enum" && word != "NotificationType")
+            orca.insert(word);
+    }
+    for (const std::string& t : Plyo::OrcaMessagesLogic::listed_notice_types()) {
+        INFO("type nommé par PlyoOrcaMessagesLogic.cpp, à retrouver chez Orca : " << t);
+        CHECK(orca.count(t) == 1);
+    }
+    // Rendus « unknown » par défaut (carte générique) : seuls ceux-là ne sont pas nommés.
+    const std::vector<std::string> listed = Plyo::OrcaMessagesLogic::listed_notice_types();
+    std::set<std::string>          by_default;
+    for (const std::string& t : orca)
+        if (std::find(listed.begin(), listed.end(), t) == listed.end())
+            by_default.insert(t);
+    CHECK(by_default == std::set<std::string>{"CustomNotification", "EmptyColorChangeCode", "EmptyAutoColorChange", "MmSegmentationExceededExtrudersLimit"});
+    // Accesseur ajouté par Plyo (docs/plyo/FICHIERS-MODIFIES.md) : lecture seule, sans les notifications finies.
+    CHECK(hpp.find("std::vector<PlyoNotice> plyo_notices() const;") != std::string::npos);
+    const std::string cpp = read_source("../../../../src/slic3r/GUI/NotificationManager.cpp");
+    CHECK(between(cpp, "NotificationManager::plyo_notices() const", "// PLYO: end").find("if (!notification->is_finished())") != std::string::npos);
 }

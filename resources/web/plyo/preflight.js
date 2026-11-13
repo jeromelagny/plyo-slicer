@@ -197,6 +197,9 @@
   // Sans compte (N7) : le bouton le dit ; la question est gardée et part après la connexion (afterLogin, index.html).
   var ASK_LOGIN_LABEL = 'Me connecter pour demander à l’assistant';
   var ARRANGE_ACT = { kind: 'plate', action: 'arrange', label: 'Ranger le plateau' };
+  var SCALE_ACT = { kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour que ça tienne' };
+  var FILAMENT_ACT = { kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' };
+  var PRINTER_ACT = { kind: 'show_me', target: 'printer', label: 'Montre-moi l’imprimante' };
   var SCOPES = { print: true, filament: true }; // réglages que l'assistant peut changer (catalogue Impression et Filament)
 
   function pieceOf(issue, capital) {
@@ -231,7 +234,8 @@
     filament_bed_type: function () { return { text: 'Orca déconseille ce filament sur le type de plateau choisi : pour cette surface, sa température de plateau est à 0.', actions: [{ kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' }] }; },
     collision: function () { return { text: 'Des pièces sont trop proches : la buse ou la tête d’impression les toucherait.', actions: [ARRANGE_ACT] }; },
     collision_by_object: function () { return { text: 'En impression pièce par pièce, la tête de l’imprimante toucherait une pièce déjà imprimée : elles sont trop proches, ou l’une est trop haute.', actions: [ARRANGE_ACT] }; },
-    object_outside: function () { return { text: 'Une pièce touche le bord du plateau ou en sort. Orca vérifie la vraie forme du plateau, zones interdites comprises.', actions: [ARRANGE_ACT] }; },
+    object_outside: function () { return { text: 'Une pièce dépasse du plateau : elle déborde sur un bord, ou elle est plus haute que ce que ton imprimante peut atteindre. Orca vérifie la vraie forme du plateau, zones interdites comprises.',
+      actions: [ARRANGE_ACT, SCALE_ACT] }; },
     plate_refused: function () { return { text: 'Orca refuse de découper cette plaque sans me dire pourquoi. Range le plateau, puis découpe à nouveau.', actions: [ARRANGE_ACT] }; },
     toolpath_outside: function () { return { text: 'Une partie du trajet de la buse sort du plateau : souvent la bordure (rebord collé autour de la pièce) ou la jupe (contour tracé autour d’elle) d’une pièce placée trop près du bord.', actions: [ARRANGE_ACT] }; },
     height_outside: function () { return { text: 'Le trajet de la buse monte plus haut que ce que ton imprimante peut atteindre.', actions: [{ kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour que ça tienne' }] }; },
@@ -249,10 +253,33 @@
     precise_outer_wall: function () { return { text: 'L’option « Parois précises » ne marche pas avec l’ordre des parois choisi : Orca l’ignore et imprime sans elle.', actions: [] }; },
     adaptive_layer_height: function () { return { text: 'La tour de purge (le petit bloc qui nettoie la buse entre deux couleurs) ne marche pas avec la hauteur de couche adaptative : toutes les pièces doivent avoir la même hauteur de couche.', actions: [] }; },
     enable_prime_tower: function (i) { return { text: 'La tour de purge (le petit bloc qui nettoie la buse entre deux couleurs) ne va pas avec tes réglages actuels' +
-      (i.level === 'error' ? ' : en impression pièce par pièce, Orca ne sait pas la faire.' : '.'), actions: [] }; }
+      (i.level === 'error' ? ' : en impression pièce par pièce, Orca ne sait pas la faire.' : '.'), actions: [] }; },
+    // ERR-11 : bulles d'Orca sur la plaque et la pièce (source « notification »), reconnues par leur type, jamais par leur texte.
+    plate_warning: function () { return { text: 'Orca signale un point à surveiller sur le plateau. Je cite son message juste en dessous : le plus souvent, ranger le plateau suffit.', actions: [ARRANGE_ACT] }; },
+    flushing_volume_zero: function () { return { text: 'Quand ta plaque change de couleur, la buse jette un peu de filament (la purge) pour repartir avec une couleur propre. Ici, certains volumes de purge sont à 0 : les couleurs risquent de se mélanger sur ta pièce. Pour les régler, clique sur « Volume de purge » dans la bulle d’Orca, ou sur le bouton « Volumes de purge » au-dessus de la liste des filaments.', actions: [FILAMENT_ACT] }; },
+    nozzle_filament: function () { return { text: 'Un filament de ta plaque ne va pas avec la buse de ton imprimante : par exemple un filament chargé de fibres, qui use vite une buse en laiton. L’impression peut rater, ou abîmer la buse.', actions: [FILAMENT_ACT, PRINTER_ACT] }; },
+    pla_petg_mix: function () { return { text: 'Ta plaque mélange du PLA et du PETG. Ces deux matières collent mal l’une sur l’autre : dans une même pièce, les couches risquent de se séparer. Pour des supports faciles à détacher, c’est au contraire voulu.', actions: [FILAMENT_ACT] }; },
+    mixed_filament_single_nozzle: function () { return { text: 'Ta plaque utilise un filament « mélangé » (deux couleurs qui alternent) sur une imprimante à une seule buse : elle va changer très souvent de filament et purger à chaque fois. L’impression sera plus longue et utilisera plus de filament.', actions: [FILAMENT_ACT] }; },
+    mixed_filament_broken: function () { return { text: 'Un filament « mélangé » de ta liste renvoie à un filament supprimé, ou mélange des matières qui ne vont pas ensemble. Ouvre la liste des filaments pour le corriger avant de découper.', actions: [FILAMENT_ACT] }; },
+    filament_unprintable: function () { return { text: 'Un des filaments de ta plaque ne peut pas être imprimé par cette imprimante telle qu’elle est réglée (matière qu’elle ne gère pas, ou filament placé sur une buse qui ne peut pas l’imprimer). Choisis un autre filament pour cette pièce.', actions: [FILAMENT_ACT] }; },
+    extruder_unprintable: function () { return { text: 'Ton imprimante a deux buses, et une pièce est placée là où la buse prévue pour son filament ne peut pas aller. Range le plateau, ou change le filament de cette pièce.', actions: [ARRANGE_ACT, FILAMENT_ACT] }; },
+    plugin_missing: function () { return { text: 'Le profil choisi a besoin d’une extension d’Orca (un module ajouté au logiciel) qui n’est pas installée ou pas activée. Tant qu’elle manque, Orca ne découpe pas. La bulle d’Orca propose de la régler ; sinon, choisis un autre profil d’imprimante.', actions: [PRINTER_ACT] }; },
+    mesh_errors: function (i, p, P) { return { text: P + ' a un maillage abîmé : sa surface a des trous ou des faces mal raccordées. Orca s’en sort souvent, mais des couches peuvent manquer à l’impression. Pour la réparer : clic droit sur la pièce, puis « Réparer le modèle » (Fix Model).', actions: [{ kind: 'show_me', target: 'plate', label: 'Montre-moi le plateau' }] }; },
+    simplify_suggestion: function () { return { text: 'Ta pièce a énormément de petites facettes : Orca propose de la simplifier pour travailler plus vite. Ce n’est pas obligatoire.', actions: [] }; },
+    unknown_font: function () { return { text: 'Le texte ajouté sur ta pièce utilise une police absente de cet ordinateur : Orca l’a remplacée par une police proche. Le texte peut avoir un aspect un peu différent.', actions: [] }; },
+    project_load_warning: function () { return { text: 'En ouvrant ce projet, Orca n’a pas pu reprendre certains réglages du fichier tels quels (valeur refusée, réglage ignoré, ou emplacement de filament changé). Je cite son message juste en dessous : vérifie le filament et l’imprimante avant d’imprimer.', actions: [FILAMENT_ACT, PRINTER_ACT] }; },
+    preview_only: function () { return { text: 'Tu as ouvert un fichier G-code : Orca le montre seulement en aperçu, il ne peut ni le modifier ni le redécouper. Pour changer des réglages, ouvre le modèle 3D (STL ou 3MF).', actions: [{ kind: 'import', label: 'Choisir un fichier' }] }; },
+    repair_removed_paint: function () { return { text: 'Pour réparer la pièce, Orca a dû retirer les supports peints à la main et la couleur peinte. Si tu en avais besoin, annule la réparation avec Cmd + Z (Ctrl + Z sur Windows) dans la fenêtre de Plyo.', actions: [] }; }
+  };
+  // Ce que change une bulle d'Orca dont l'effet n'est pas celui de son niveau (N7) ; sinon impactOf dit bloquant ou non.
+  var NOTICE_IMPACT = {
+    prime_tower: 'Orca ne bloque pas encore, mais la découpe risque d’échouer tant que la tour dépasse.',
+    preview_only: 'Rien n’est abîmé : avec ce fichier, seul l’aperçu est possible.',
+    unknown: 'Je ne sais pas si ça bloque : découpe ta plaque, et si Orca refuse, je te dirai pourquoi.'
   };
   // Ce que le problème change pour l'impression, dit juste après l'explication (N7) : bloquant ou non.
   function impactOf(i) {
+    if (i.source === 'notification' && NOTICE_IMPACT[i.code] && (i.code !== 'unknown' || i.level === 'error')) return NOTICE_IMPACT[i.code];
     if (i.level !== 'error') return 'Ce n’est pas bloquant : tu peux imprimer quand même.';
     if (i.source === 'gcode_check') return 'C’est bloquant : Orca ne laissera pas imprimer cette plaque tant que ce n’est pas réglé.';
     return 'C’est bloquant : tant que ce n’est pas réglé, Orca ne découpera pas ta plaque, et rien ne peut partir à l’imprimante.';
@@ -278,6 +305,11 @@
 
   var TITLES = { slicing_error: 'Orca n’a pas pu préparer ta pièce', validate_error: 'Orca refuse de découper cette plaque',
     gcode_check: 'Orca bloque l’impression de cette plaque', validate_warning: 'Orca prévient', step_warning: 'Orca prévient' };
+  // Bulle d'Orca : une erreur reconnue l'empêche de découper ; une erreur inconnue ou un avertissement n'est qu'un signalement.
+  function titleOf(i, warn) {
+    if (i.source === 'notification') return warn ? 'Orca prévient' : i.code === 'unknown' ? 'Orca a un souci' : 'Orca refuse de découper cette plaque';
+    return TITLES[i.source] || (warn ? 'Orca prévient' : 'Orca a un souci');
+  }
 
   // Problèmes à montrer en carte : les erreurs d'abord ; les avertissements seulement si `warnings` ; au plus `max` (3).
   function orcaCards(issues, opts) {
@@ -289,6 +321,18 @@
     return list.slice(0, o.max || 3);
   }
   function issueKey(i) { return [i.source, i.code, i.object_ref || '', i.text || ''].join('|'); }
+
+  // Bulles d'Orca expliquées (tour_signals.notices, codes lus toutes les 2 s) : `added` à demander en détail (orca_issues,
+  // purpose « notices »), `gone` dont la carte n'a plus lieu d'être (Orca a fermé sa bulle). { added, gone }.
+  function noticeChange(before, now) {
+    var a = Array.isArray(before) ? before : [], b = (Array.isArray(now) ? now : []).filter(function (c) { return typeof c === 'string' && c; });
+    return { added: b.filter(function (c) { return a.indexOf(c) < 0; }), gone: a.filter(function (c) { return b.indexOf(c) < 0; }) };
+  }
+  // Réponse à « notices » : les problèmes de la liste dont le code vient d'apparaître, pas encore montrés (`known` : issueKey).
+  function noticeIssues(issues, added, known) {
+    var k = known || {};
+    return (Array.isArray(issues) ? issues : []).filter(function (i) { return i && (added || []).indexOf(i.code) >= 0 && !k[issueKey(i)]; });
+  }
 
   // La question préremplie pour l'assistant : le texte d'Orca tel quel, et la pièce quand elle est connue.
   function askPrompt(issue, explained) {
@@ -306,7 +350,7 @@
     var i = issue || {}, c = ctx || {}, p = pieceOf(i, false), P = pieceOf(i, true);
     var known = EXPLAIN[i.code] ? EXPLAIN[i.code](i, p, P) : null;
     var warn = i.level !== 'error';
-    var view = { tone: warn ? 'warn' : 'error', title: TITLES[i.source] || (warn ? 'Orca prévient' : 'Orca a un souci'), text: '', impact: impactOf(i), quote: i.text || '', quoteMain: false, actions: [] };
+    var view = { tone: warn ? 'warn' : 'error', title: titleOf(i, warn), text: '', impact: impactOf(i), quote: i.text || '', quoteMain: false, actions: [] };
     if (known) {
       view.text = known.text;
       view.actions = known.actions.filter(function (a) { return a.kind !== 'fix' || a.changes.every(function (c) { return c.key; }); });
@@ -455,6 +499,7 @@
   var api = { preflightRisks: preflightRisks, riskKey: riskKey, preflightPlan: preflightPlan, fixChanges: fixChanges, fixBatch: fixBatch, undoText: undoText,
     leftoverNames: leftoverNames, SLICE_NOT_STARTED_AFTER_CHANGE: SLICE_NOT_STARTED_AFTER_CHANGE,
     orcaCards: orcaCards, orcaIssueView: orcaIssueView, issueKey: issueKey, askPrompt: askPrompt, exportErrorView: exportErrorView,
+    noticeChange: noticeChange, noticeIssues: noticeIssues,
     SLICE_SLOW: SLICE_SLOW, SLICE_STOPPED: SLICE_STOPPED, SLICE_NOT_STARTED: SLICE_NOT_STARTED, ASK_LABEL: ASK_LABEL, ASK_LOGIN_LABEL: ASK_LOGIN_LABEL, impactOf: impactOf,
     SEND_TEXTS: SEND_TEXTS, uploadFailureView: uploadFailureView, linkRecheckView: linkRecheckView, dialogWaitText: dialogWaitText,
     dialogCardWanted: dialogCardWanted, dialogView: dialogView, modelDialogQuoted: modelDialogQuoted, modelFailPrompt: modelFailPrompt };

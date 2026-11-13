@@ -256,6 +256,9 @@ nlohmann::json tour_signals()
     }
     // Orca découpe en ce moment : une découpe demandée qui n'a pas démarré a été refusée sans un mot (le panneau demande pourquoi).
     signals["slicing"]            = plater->is_background_process_slicing();
+    // Bulles d'Orca que le panneau explique (pièce à cheval sur le bord, mélange PLA/PETG…) : codes seulement, le panneau
+    // demande le détail quand la liste change (ERR-11).
+    signals["notices"]            = OrcaMessages::notice_codes();
     Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
     if (plate != nullptr && plate->is_slice_result_valid()) {
         signals["sliced"] = true;

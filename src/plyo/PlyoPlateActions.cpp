@@ -85,7 +85,7 @@ nlohmann::json slice_refusal(Slic3r::GUI::Plater& plater)
     const auto          objects = plate->get_objects_on_this_plate();
     for (const Slic3r::ModelObject* object : objects) {
         const Slic3r::Vec3d size = object_size(*object);
-        if (!fits(size, bed))
+        if (!fits_on_plate(*object, bed)) // jamais « trop grande » pour une pièce qu'Orca juge dans la plaque (ERR-11)
             return {{"ok", false}, {"reason", "too_big"}, {"text", "« " + Json::utf8_prefix(object->name, 120) + " » ne tient pas sur le plateau : je ne lance pas la découpe."},
                     {"name", Json::utf8_prefix(object->name, 120)}, {"count", objects.size()}, {"size_mm", size_json(size)}, {"bed_mm", size_json(bed)}, {"fits", false}};
     }
@@ -171,6 +171,16 @@ bool fits(const Slic3r::Vec3d& size, const Slic3r::Vec3d& bed)
         return true;
     const auto flat = [&](double a, double b) { return a <= bed.x() + 1e-6 && b <= bed.y() + 1e-6; };
     return (flat(size.x(), size.y()) || flat(size.y(), size.x())) && (bed.z() <= 0 || size.z() <= bed.z() + 1e-6);
+}
+
+bool fits_on_plate(const Slic3r::ModelObject& object, const Slic3r::Vec3d& bed)
+{
+    // État tenu à jour par Orca à chaque mise à jour du plateau (Plater::priv::update_print_volume_state, forme réelle de la
+    // plaque en cours, zones par buse comprises). « Limited » : dedans, Orca découpe.
+    const bool orca_inside = std::any_of(object.instances.begin(), object.instances.end(), [](const Slic3r::ModelInstance* i) {
+        return i->print_volume_state == Slic3r::ModelInstancePVS_Inside || i->print_volume_state == Slic3r::ModelInstancePVS_Limited;
+    });
+    return orca_inside || fits(object_size(object), bed);
 }
 
 nlohmann::json context()

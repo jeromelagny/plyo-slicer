@@ -3827,7 +3827,8 @@
   // texte d'Orca n'est que cité ; chaque carte a une suite (corriger, montrer, demander à l'assistant).
   // `failedConv` : conversation dont la dernière découpe a échoué ; `known` : problèmes déjà vus (pas de redite après un lot) ;
   // `blockSig` : découpe dont le blocage a déjà été expliqué ; `afterApply` : relecture demandée après un lot appliqué.
-  var orcaUI = { failedConv: null, known: {}, blockSig: '', afterApply: null };
+  // `notices` : codes des bulles d'Orca déjà vus pour la conversation `noticeConv` ; `noticeAsk` : ceux demandés en détail (ERR-11).
+  var orcaUI = { failedConv: null, known: {}, blockSig: '', afterApply: null, notices: [], noticeConv: null, noticeAsk: [] };
   // `all` : aussi les corrections faites (avec leur « Annuler »), qui restent sinon le temps de la conversation.
   function dropOrcaCards(all) { $('project-alert').querySelectorAll(all ? '.orca-issue, .orca-fixed' : '.orca-issue').forEach(function (b) { b.remove(); }); }
   function rememberIssues(issues) { (issues || []).forEach(function (i) { orcaUI.known[window.PlyoPreflight.issueKey(i)] = true; }); }
@@ -3843,6 +3844,7 @@
     var v = window.PlyoPreflight.orcaIssueView(issue, { canUndo: !!(lastValues && lastValues.can_undo) });
     var box = alertBox(v.tone, '', 'alert');
     box.classList.add('orca-issue');
+    box.dataset.code = issue.code || ''; // une bulle d'Orca fermée retire sa carte (forgetNotices)
     box.body.appendChild(el('b', '', fr(v.title)));
     box.body.appendChild(el('p', '', fr(v.text)));
     if (v.impact) box.body.appendChild(el('p', 'orca-impact', fr(v.impact))); // bloquant ou non, dit avant la citation d'Orca
@@ -3949,6 +3951,19 @@
     renderProject();
   }
   function askOrca(purpose) { if (conv) window.orca.postMessage({ type: 'orca_issues', purpose: purpose }); }
+  // Bulles d'Orca (tour_signals.notices) : une nouvelle est demandée en détail, une bulle fermée par Orca retire sa carte et
+  // pourra être redite si elle revient.
+  function watchNotices(codes) {
+    if (!conv || !Array.isArray(codes)) return;
+    if (orcaUI.noticeConv !== conv) { orcaUI.noticeConv = conv; orcaUI.notices = []; }
+    var change = window.PlyoPreflight.noticeChange(orcaUI.notices, codes);
+    orcaUI.notices = codes.slice();
+    if (change.gone.length) {
+      $('project-alert').querySelectorAll('.orca-issue').forEach(function (b) { if (change.gone.indexOf(b.dataset.code) >= 0) b.remove(); });
+      Object.keys(orcaUI.known).forEach(function (k) { if (change.gone.indexOf(k.split('|')[1]) >= 0) delete orcaUI.known[k]; });
+    }
+    if (change.added.length) { orcaUI.noticeAsk = change.added; askOrca('notices'); }
+  }
   // Fin d'une découpe, envoyée par le slicer dès qu'Orca a fini (erreur comprise).
   function onSliceResult(msg) {
     if (!conv) return;
@@ -3989,6 +4004,16 @@
       return;
     }
     if (msg.purpose === 'blocked') { rememberIssues(issues); showOrcaIssues(issues, {}); renderProject(); return; }
+    // Bulle d'Orca apparue sur le plateau (ERR-11) : sa carte, sans redire une carte déjà là. Orca découpe : on redemandera.
+    if (msg.purpose === 'notices') {
+      if (msg.busy) { orcaUI.notices = []; return; }
+      var shown = window.PlyoPreflight.noticeIssues(issues, orcaUI.noticeAsk, orcaUI.known).filter(function (i) {
+        return !$('project-alert').querySelector('.orca-issue[data-code="' + i.code + '"]');
+      });
+      rememberIssues(shown);
+      if (shown.length) showOrcaIssues(shown, { warnings: true, keep: true });
+      return;
+    }
     if (msg.purpose === 'after_apply') {
       var wait = orcaUI.afterApply;
       if (!wait) return;
@@ -5302,6 +5327,7 @@
     // Découpée mais non imprimable (contrôles d'Orca) : la raison, une fois par découpe, même sans la fin vue (panneau rouvert).
     if (!signals.sliced) orcaUI.blockSig = '';
     else if (signals.ready_for_print === false && !orcaUI.blockSig) { orcaUI.blockSig = 'asked'; askOrca('blocked'); }
+    watchNotices(signals.notices);
     followAssistSlice(signals);
     watchSlice(signals);
     var hadSummary = !!printSummary();

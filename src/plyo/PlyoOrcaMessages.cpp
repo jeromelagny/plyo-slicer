@@ -22,6 +22,7 @@
 #include "slic3r/GUI/GLCanvas3D.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/I18N.hpp"
+#include "slic3r/GUI/NotificationManager.hpp"
 #include "slic3r/GUI/PartPlate.hpp"
 #include "slic3r/GUI/Plater.hpp"
 
@@ -35,6 +36,7 @@
 #include <algorithm>
 #include <exception>
 #include <functional>
+#include <iterator>
 #include <new>
 #include <string>
 #include <utility>
@@ -249,6 +251,91 @@ std::vector<Issue> gcode_issues(Slic3r::GUI::Plater& plater, Slic3r::GUI::PartPl
     return out;
 }
 
+// ---------- Notifications d'Orca (ERR-11) : lues par leur type, jamais par leur texte ----------
+using NoticeType = Slic3r::GUI::NotificationType;
+#define PLYO_NOTICE(name) {NoticeType::name, #name}
+// Nom de chaque type, pour la logique pure (PlyoOrcaMessagesLogic). Si Orca en ajoute, la compilation s'arrête ici : classer
+// le nouveau type dans PlyoOrcaMessagesLogic.cpp (gardé, déjà couvert ou écarté), puis l'ajouter à cette liste.
+const std::pair<NoticeType, const char*> NOTICE_NAMES[] = {
+    PLYO_NOTICE(CustomNotification), PLYO_NOTICE(ExportFinished), PLYO_NOTICE(Mouse3dDisconnected), PLYO_NOTICE(NewAppAvailable),
+    PLYO_NOTICE(NewAlphaAvailable), PLYO_NOTICE(NewBetaAvailable), PLYO_NOTICE(PresetUpdateAvailable), PLYO_NOTICE(PresetUpdateFinished),
+    PLYO_NOTICE(ValidateError), PLYO_NOTICE(ValidateWarning), PLYO_NOTICE(SlicingError), PLYO_NOTICE(SlicingSeriousWarning),
+    PLYO_NOTICE(SlicingWarning), PLYO_NOTICE(BBLGeneralError), PLYO_NOTICE(PlaterError), PLYO_NOTICE(LeftExtruderUnprintableError),
+    PLYO_NOTICE(RightExtruderUnprintableError), PLYO_NOTICE(PlaterWarning), PLYO_NOTICE(ProgressBar), PLYO_NOTICE(PrintHostUpload),
+    PLYO_NOTICE(SlicingProgress), PLYO_NOTICE(EmptyColorChangeCode), PLYO_NOTICE(CustomSupportsAndSeamRemovedAfterRepair),
+    PLYO_NOTICE(EmptyAutoColorChange), PLYO_NOTICE(SignDetected), PLYO_NOTICE(QuitSLAManualMode), PLYO_NOTICE(DesktopIntegrationSuccess),
+    PLYO_NOTICE(DesktopIntegrationFail), PLYO_NOTICE(UndoDesktopIntegrationSuccess), PLYO_NOTICE(UndoDesktopIntegrationFail),
+    PLYO_NOTICE(MmSegmentationExceededExtrudersLimit), PLYO_NOTICE(DidYouKnowHint), PLYO_NOTICE(UpdatedItemsInfo),
+    PLYO_NOTICE(ProgressIndicator), PLYO_NOTICE(SimplifySuggestion), PLYO_NOTICE(UnknownFont), PLYO_NOTICE(CgalFinished),
+    PLYO_NOTICE(ExportOngoing), PLYO_NOTICE(URLDownload), PLYO_NOTICE(ArrangeOngoing), PLYO_NOTICE(BBLPlateInfo), PLYO_NOTICE(BBL3MFInfo),
+    PLYO_NOTICE(BBLObjectInfo), PLYO_NOTICE(BBLSliceEmptyLayer), PLYO_NOTICE(BBLNeedSupportON), PLYO_NOTICE(BBLGcodeOverlap),
+    PLYO_NOTICE(BBLSeqPrintInfo), PLYO_NOTICE(BBLPluginInstallHint), PLYO_NOTICE(BBLFlushingVolumeZero), PLYO_NOTICE(BBLMixedFilamentBroken),
+    PLYO_NOTICE(BBLPluginUpdateAvailable), PLYO_NOTICE(BBLPreviewOnlyMode), PLYO_NOTICE(BBLPrinterConfigUpdateAvailable),
+    PLYO_NOTICE(BBLUserPresetExceedLimit), PLYO_NOTICE(BBLFilamentPrintableError), PLYO_NOTICE(BBLSliceLimitError),
+    PLYO_NOTICE(BBLSliceMultiExtruderHeightOutside), PLYO_NOTICE(BBLBedFilamentIncompatible), PLYO_NOTICE(BBLMixUsePLAAndPETG),
+    PLYO_NOTICE(BBLNozzleFilamentIncompatible), PLYO_NOTICE(BBLSingleExtruderMixedFilamentRisk), PLYO_NOTICE(OrcaSharedProfilesAvailable),
+    PLYO_NOTICE(OrcaCloudAPIError), PLYO_NOTICE(OrcaSyncConflict), PLYO_NOTICE(OrcaLocalPluginMissingError),
+    PLYO_NOTICE(OrcaCloudPluginMissingError), PLYO_NOTICE(OrcaPluginInactiveError), PLYO_NOTICE(OrcaPluginCapabilityUnavailableError),
+};
+#undef PLYO_NOTICE
+static_assert(std::size(NOTICE_NAMES) == static_cast<size_t>(NoticeType::NotificationTypeCount),
+              "NotificationType a changé : compléter NOTICE_NAMES et classer le type dans PlyoOrcaMessagesLogic.cpp");
+
+std::string notice_name(NoticeType type)
+{
+    for (const auto& [t, name] : NOTICE_NAMES)
+        if (t == type)
+            return name;
+    return std::string();
+}
+
+std::string notice_level(Slic3r::GUI::NotificationManager::NotificationLevel level)
+{
+    using Level = Slic3r::GUI::NotificationManager::NotificationLevel;
+    if (level == Level::ErrorNotificationLevel)
+        return "error";
+    if (level == Level::WarningNotificationLevel || level == Level::SeriousWarningNotificationLevel)
+        return "warning";
+    return "info";
+}
+
+// Les notifications affichées par Orca (pas encore finies), textes nettoyés comme tout message d'Orca (clean_for_panel).
+std::vector<OML::Notice> read_notices(Slic3r::GUI::Plater& plater)
+{
+    std::vector<OML::Notice> out;
+    Slic3r::GUI::NotificationManager* manager = plater.get_notification_manager();
+    if (manager == nullptr)
+        return out;
+    const std::vector<std::string> prefixes{_u8L("Error:"), _u8L("Warning:"), _u8L("WARNING:")};
+    for (const Slic3r::GUI::NotificationManager::PlyoNotice& n : manager->plyo_notices()) {
+        OML::Notice notice;
+        notice.type  = notice_name(n.type);
+        notice.level = notice_level(n.level);
+        notice.text  = clean_for_panel(OML::strip_notice_prefix(n.text, prefixes));
+        notice.gray  = n.gray;
+        out.push_back(notice);
+    }
+    return out;
+}
+
+// Faits qui départagent un type partagé, lus comme Orca les calcule (GLCanvas3D::reload_scene, Plater::show_object_info).
+OML::NoticeFacts notice_facts(Slic3r::GUI::Plater& plater, Slic3r::GUI::PartPlate& plate)
+{
+    OML::NoticeFacts facts;
+    // Tour de purge hors plateau : même contrôle que l'alerte « The prime tower extends beyond the plate boundary ».
+    Slic3r::GUI::GLCanvas3D* canvas = plater.get_view3D_canvas3D();
+    if (canvas != nullptr && plate.fff_print() != nullptr && plate.fff_print()->is_step_done(Slic3r::psWipeTower))
+        facts.prime_tower_outside = !canvas->get_volumes().check_wipe_tower_outside_state(plater.build_volume(), plater.get_partplate_list().get_curr_plate_index());
+    // Maillage abîmé (arêtes ouvertes) : ce qui fait proposer « Réparer » dans la fiche de la pièce.
+    for (const Slic3r::ModelObject* o : plate.get_objects_on_this_plate())
+        if (!o->get_object_stl_stats().manifold()) {
+            facts.mesh_object_ref  = std::to_string(o->id().id);
+            facts.mesh_object_name = Json::utf8_prefix(o->name, 120);
+            break;
+        }
+    return facts;
+}
+
 // Étape restée « commencée » au moment de l'erreur (Orca ne la marque finie qu'en la réussissant) ; pour « posSlice », la
 // pièce sans aucune couche.
 OML::SliceFacts slice_facts(const Slic3r::Print& print, std::vector<size_t>& object_ids)
@@ -396,6 +483,7 @@ Validation validate_plate()
     std::vector<Issue> issues;
     if (plate->get_objects_on_this_plate().empty()) {
         issues.push_back(plyo_issue("plate_empty"));
+        OML::merge_notices(issues, read_notices(*plater), notice_facts(*plater, *plate)); // G-code ouvert en aperçu, 3MF…
         out.issues = OML::to_json(issues);
         return out;
     }
@@ -416,8 +504,20 @@ Validation validate_plate()
         else if (!plate->can_slice())
             issues.push_back(plyo_issue("object_outside"));
     }
+    // Bulles d'Orca sur la plaque et la pièce (ERR-11), sans doublon avec ce qui précède ; une raison précise du refus
+    // (filament, buse, extension) remplace la supposition « object_outside ».
+    OML::merge_notices(issues, read_notices(*plater), notice_facts(*plater, *plate));
     out.issues = OML::to_json(issues);
     return out;
+}
+
+std::vector<std::string> notice_codes()
+{
+    Slic3r::GUI::Plater*    plater = wxGetApp().plater();
+    Slic3r::GUI::PartPlate* plate  = current_plate();
+    if (plater == nullptr || plate == nullptr)
+        return {};
+    return OML::notice_codes(read_notices(*plater), notice_facts(*plater, *plate));
 }
 
 bool ready_for_print()
