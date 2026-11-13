@@ -20,14 +20,29 @@
     if (!x || !y) return Infinity;
     return Math.pow(x[0] - y[0], 2) * 2 + Math.pow(x[1] - y[1], 2) * 4 + Math.pow(x[2] - y[2], 2) * 3;
   }
+  // Nom d'une couleur par sa teinte, comme on la nomme à l'œil. Avant, c'était la plus proche de douze couleurs de référence :
+  // un bleu profond lu sur un CFS (#1B04AE, teinte 248°) était dit « violet », parce qu'il lui manque surtout du vert.
   function colourName(hex) {
-    if (!rgb(hex)) return '';
-    var best = '', bestD = Infinity;
-    PALETTE.forEach(function (p) {
-      var d = distance(hex, '#' + ((1 << 24) + (p[1] << 16) + (p[2] << 8) + p[3]).toString(16).slice(1));
-      if (d < bestD) { bestD = d; best = p[0]; }
-    });
-    return best;
+    var c = rgb(hex);
+    if (!c) return '';
+    var r = c[0] / 255, g = c[1] / 255, b = c[2] / 255;
+    var max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min, l = (max + min) / 2;
+    // Sans couleur franche : noir, gris ou blanc selon la clarté.
+    if (d < 0.1) return l < 0.2 ? 'noir' : l > 0.85 ? 'blanc' : 'gris';
+    var h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+    if (l < 0.08) return 'noir';
+    if (h >= 20 && h < 70 && l > 0.8) return 'crème';                     // jaune ou orangé très clair
+    if (h >= 10 && h < 50 && l < 0.42) return 'brun';                     // orangé sombre
+    if (h >= 50 && h < 70 && l < 0.3) return 'brun';                      // jaune très sombre
+    if (h >= 345 || h < 15) return l > 0.6 ? 'rose' : 'rouge';            // un rouge clair se dit rose
+    if (h < 45) return 'orange';
+    if (h < 70) return 'jaune';
+    if (h < 170) return 'vert';
+    if (h < 262) return 'bleu';                                           // du turquoise au bleu profond
+    if (h < 290) return 'violet';
+    if (h < 330) return l < 0.45 ? 'violet' : 'rose';                     // pourpre sombre, fuchsia clair
+    return 'rose';
   }
   function upper(s) { return String(s || '').trim().toUpperCase(); }
   function trayText(type, color) { return (type || '?') + (colourName(color) ? ' ' + colourName(color) : ''); }

@@ -22,6 +22,28 @@ test('colourName : un nom français simple pour la couleur d’un emplacement', 
   assert.equal(C.colourName('#FFFFFF'), 'blanc');
   assert.equal(C.colourName('#1E50D2'), 'bleu');
   assert.equal(C.colourName(''), '');
+});
+
+test('colourName : nommée par la teinte, comme à l’œil (un bleu profond n’est pas « violet »)', () => {
+  // Lu sur le CFS d'une K2 le 2026-11-13 : bobine bleue annoncée « PLA violet ».
+  assert.equal(C.colourName('#1B04AE'), 'bleu');
+  const cases = {
+    bleu: ['#0000FF', '#1E1E96', '#3A2FD0', '#0A2989', '#00A0E0', '#00FFFF', '#87CEEB', '#112A5C'],
+    violet: ['#7B2FBE', '#8040C0', '#6A0DAD', '#800080', '#5B2A86'],
+    rose: ['#FF69B4', '#FF00FF', '#F070A0', '#FFC0CB', '#F95D77'],
+    rouge: ['#D22020', '#FF0000', '#8B0000', '#C8102E'],
+    orange: ['#F08020', '#FF7F00', '#FFA040'],
+    jaune: ['#F0D020', '#FFFF00', '#FFD700'],
+    vert: ['#30A040', '#00FF00', '#006400', '#7FFF00', '#2E8B57'],
+    brun: ['#7B4A12', '#5A2D0C', '#8B4513'],
+    crème: ['#F3E5C8', '#FCEBD7', '#FFF8DC'],
+    noir: ['#000000', '#1A1A1A', '#0A0A0A'],
+    gris: ['#8C8C8C', '#606060', '#C0C0C0'],
+    blanc: ['#FFFFFF', '#F5F5F5', '#EEEEEE'],
+  };
+  for (const [name, list] of Object.entries(cases)) for (const hex of list) assert.equal(C.colourName(hex), name, hex);
+  assert.equal(C.colourName('#1b04ae'), 'bleu');
+  assert.equal(C.colourName('#12345'), '');
   assert.equal(C.colourName('rouge'), '');
 });
 
