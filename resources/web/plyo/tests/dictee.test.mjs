@@ -16,9 +16,22 @@ test('aide si la dictée ne démarre pas : comment la lancer soi-même, selon le
   assert.equal(L.dictationFailText(undefined), L.dictationFailText('other'));
 });
 
-test('pendant la dictée : dire où le texte arrive et comment envoyer', () => {
-  assert.match(L.DICTATION_LISTENING, /s’écrit dans le champ/);
-  assert.match(L.DICTATION_LISTENING, /Entrée pour envoyer/);
+test('pendant la dictée : dire où le texte arrive et comment arrêter', () => {
+  assert.match(L.DICTATION_LISTENING, /ton texte s’écrit ici/);
+  assert.match(L.DICTATION_LISTENING, /Clique à nouveau sur le micro pour arrêter/);
+});
+
+test('un appui lance la dictée, un second l’arrête : le libellé du bouton le dit', () => {
+  assert.equal(L.dictationLabel(false), 'Dicter ta demande à la voix');
+  assert.equal(L.dictationLabel(true), 'Arrêter la dictée');
+  assert.equal(L.DICTATION_SILENCE_MS, 30000);
+});
+
+test('le second appui demande l’arrêt au slicer, sans retirer le curseur du champ', () => {
+  const page = read('../index.html');
+  assert.match(page, /type: 'dictation_stop'/);
+  assert.match(page, /\$\('btn-mic'\)\.addEventListener\('mousedown', function \(e\) \{ e\.preventDefault\(\); \}\)/);
+  assert.match(page, /noteInput\.addEventListener\('blur', stopDictation\)/);
 });
 
 test('le bouton micro est caché tant que le slicer n’a pas dit que le système sait dicter', () => {

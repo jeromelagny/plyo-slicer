@@ -16,8 +16,9 @@ namespace Plyo { namespace Dictation {
 
 bool available() { return true; }
 
+namespace {
 // Windows : la saisie vocale s'ouvre par le raccourci Windows + H ; on l'envoie comme si l'utilisateur l'avait tapé.
-bool start()
+bool press_windows_h()
 {
     INPUT keys[4] = {};
     for (INPUT& key : keys)
@@ -30,6 +31,11 @@ bool start()
     keys[3].ki.dwFlags = KEYEVENTF_KEYUP;
     return SendInput(4, keys, sizeof(INPUT)) == 4;
 }
+} // namespace
+
+bool start() { return press_windows_h(); }
+// Le même raccourci met en pause l'écoute quand la saisie vocale est ouverte.
+bool stop() { return press_windows_h(); }
 
 const char* platform() { return "windows"; }
 
@@ -37,6 +43,7 @@ const char* platform() { return "windows"; }
 
 bool available() { return false; }
 bool start() { return false; }
+bool stop() { return false; }
 const char* platform() { return "other"; }
 
 #endif

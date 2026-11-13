@@ -267,6 +267,10 @@ void handle_page_message(const nlohmann::json& data)
             // Bouton micro du champ de saisie : le système écoute et écrit dans le champ, Plyo n'enregistre ni n'envoie rien.
             send({{"type", "dictation"}, {"available", Dictation::available()}, {"platform", Dictation::platform()},
                   {"started", Dictation::start()}});
+        } else if (type == "dictation_stop") {
+            // Second appui sur le micro : le système arrête d'écouter.
+            send({{"type", "dictation"}, {"available", Dictation::available()}, {"platform", Dictation::platform()},
+                  {"stopped", Dictation::stop()}});
         } else if (type == "get_values")
             send_values();
         else if (type == "apply") {

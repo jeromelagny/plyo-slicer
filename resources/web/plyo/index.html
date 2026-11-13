@@ -155,6 +155,8 @@
   .gauge.empty { border-color: var(--danger); color: var(--danger-text); }
   .icon-btn { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: var(--r-sm); border: 0; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
   .icon-btn:hover { background: var(--surface); color: var(--fg); }
+  /* Micro pendant la dictée : enfoncé, pour qu'on voie qu'un second appui arrête. */
+  .icon-btn.on, .icon-btn.on:hover { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent); }
   .linked { display: inline-flex; align-items: center; gap: var(--s1); min-height: 28px; padding: 0 var(--s2); border-radius: var(--r-pill); border: 1px solid var(--accent); color: var(--accent-text); background: transparent; font-size: var(--fs-xs); font-weight: 600; cursor: pointer; white-space: nowrap; }
   .menu { position: absolute; right: var(--s2); top: 48px; width: 264px; max-width: calc(100vw - 16px); background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s1); box-shadow: var(--shadow); z-index: 10; }
   .menu button { display: flex; gap: var(--s2); align-items: center; width: 100%; min-height: 32px; text-align: left; padding: 6px var(--s2); border: 0; border-radius: var(--r-sm); background: transparent; cursor: pointer; }
@@ -6172,16 +6174,49 @@
   });
   $('btn-files').addEventListener('click', pickFiles);
   $('btn-phone').addEventListener('click', openPhone);
-  // Micro : le curseur va dans le champ, puis le slicer demande au système de lancer sa dictée (rien n'est enregistré par Plyo).
+  // Micro : un appui lance la dictée du système dans le champ, un second l'arrête (rien n'est enregistré par Plyo).
+  // `dictating` : la dictée a été lancée d'ici et rien n'a dit qu'elle s'est arrêtée. Le système ne prévient pas quand il
+  // arrête seul : on considère la dictée finie quand le champ perd le curseur, à l'envoi, sur Échap, ou après un silence.
+  var dictating = false, dictationTimer = null;
+  function setDictating(on) {
+    dictating = on;
+    clearTimeout(dictationTimer);
+    dictationTimer = on ? setTimeout(stopDictation, Logic.DICTATION_SILENCE_MS) : null;
+    var mic = $('btn-mic'), label = Logic.dictationLabel(on);
+    mic.classList.toggle('on', on);
+    mic.setAttribute('aria-pressed', on ? 'true' : 'false');
+    mic.title = label;
+    mic.setAttribute('aria-label', label);
+    $('note-hint').textContent = fr(on ? Logic.DICTATION_LISTENING : Logic.noteHint(noteInput.value.length, noteInput.maxLength));
+  }
+  // Arrêt demandé au système : second appui, envoi de la demande, champ quitté, ou silence prolongé.
+  function stopDictation() {
+    if (!dictating) return;
+    setDictating(false);
+    window.orca.postMessage({ type: 'dictation_stop' });
+  }
+  // Le clic ne doit pas retirer le curseur du champ : la dictée s'arrêterait d'elle-même.
+  $('btn-mic').addEventListener('mousedown', function (e) { e.preventDefault(); });
   $('btn-mic').addEventListener('click', function () {
+    if (dictating) { stopDictation(); return; }
     noteInput.focus();
     window.orca.postMessage({ type: 'dictation_start' });
   });
-  // Réponse du slicer : au démarrage, le bouton n'apparaît que si le système sait dicter ; après un clic, la suite ou l'aide.
+  noteInput.addEventListener('blur', stopDictation);
+  sendButton.addEventListener('click', stopDictation);
+  // Échap arrête déjà la dictée du système ; Entrée envoie la demande : dans les deux cas le bouton revient à « Dicter ».
+  noteInput.addEventListener('keydown', function (e) {
+    if (!dictating) return;
+    if (e.key === 'Escape') setDictating(false);
+    else if (Logic.isSendKey(e)) stopDictation();
+  });
+  // Du texte arrive pendant la dictée : elle écoute encore, le délai de silence repart.
+  noteInput.addEventListener('input', function () { if (dictating) setDictating(true); });
+  // Réponse du slicer : au démarrage, le bouton n'apparaît que si le système sait dicter ; après un appui, la suite ou l'aide.
   function onDictation(msg) {
     $('btn-mic').classList.toggle('hidden', !msg.available);
-    if (msg.started === true) $('note-hint').textContent = fr(Logic.DICTATION_LISTENING);
-    else if (msg.started === false) noteLine(Logic.dictationFailText(msg.platform), 'error', 'alert');
+    if (msg.started === true) setDictating(true);
+    else if (msg.started === false) { setDictating(false); noteLine(Logic.dictationFailText(msg.platform), 'error', 'alert'); }
   }
   $('phone-linked').addEventListener('click', openPhone);
   $('goals').querySelectorAll('.chip').forEach(function (chip) { chip.addEventListener('click', function () { send(chip.textContent); }); });

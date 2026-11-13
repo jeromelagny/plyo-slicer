@@ -12,6 +12,10 @@ bool available();
 // écoute : si elle est désactivée, le système propose lui-même de l'activer.
 bool start();
 
+// Demande au système d'arrêter sa dictée (second appui sur le bouton micro). Faux si la demande n'a pas pu partir.
+// Sans dictée en cours, la demande est sans effet sur macOS.
+bool stop();
+
 // « mac », « windows » ou « other » : le panneau choisit son texte d'aide.
 const char* platform();
 
