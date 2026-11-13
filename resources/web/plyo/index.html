@@ -506,6 +506,7 @@
       <div class="tools">
         <button class="icon-btn" id="btn-files" type="button" title="Joindre des photos ou un modèle 3D (STL, 3MF…)" aria-label="Joindre un fichier"></button>
         <button class="icon-btn" id="btn-phone" type="button" title="Prendre des photos avec mon téléphone" aria-label="Photos avec le téléphone"></button>
+        <button class="icon-btn hidden" id="btn-mic" type="button" title="Dicter ta demande à la voix" aria-label="Dicter ta demande à la voix"></button>
         <span class="hint" id="note-hint">Entrée pour envoyer (utilise ta jauge)</span>
         <button class="send" id="btn-send" type="button" title="Envoyer à l’assistant (utilise ta jauge) · Entrée envoie, Maj + Entrée va à la ligne" aria-label="Envoyer à l’assistant (utilise ta jauge)"></button>
       </div>
@@ -606,6 +607,7 @@
   // ---------- Icônes (dessinées, mêmes traits partout) ----------
   var ICONS = {
     phone: '<rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18h2"/>',
+    mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
     camera: '<rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/>',
     cube: '<path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/>',
     clip: '<path d="M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5L12.5 4a4 4 0 0 1 5.7 5.7l-8.5 8.5a2 2 0 0 1-2.8-2.8l8-8"/>',
@@ -648,6 +650,7 @@
   $('btn-more').appendChild(icon('more', 18));
   $('btn-files').appendChild(icon('clip', 18));
   $('btn-phone').appendChild(icon('phone', 18));
+  $('btn-mic').appendChild(icon('mic', 18));
   $('btn-send').appendChild(icon('send', 16));
   $('focus-close').appendChild(icon('x', 12));
   $('phone-linked').appendChild(icon('phone', 12));
@@ -6169,6 +6172,17 @@
   });
   $('btn-files').addEventListener('click', pickFiles);
   $('btn-phone').addEventListener('click', openPhone);
+  // Micro : le curseur va dans le champ, puis le slicer demande au système de lancer sa dictée (rien n'est enregistré par Plyo).
+  $('btn-mic').addEventListener('click', function () {
+    noteInput.focus();
+    window.orca.postMessage({ type: 'dictation_start' });
+  });
+  // Réponse du slicer : au démarrage, le bouton n'apparaît que si le système sait dicter ; après un clic, la suite ou l'aide.
+  function onDictation(msg) {
+    $('btn-mic').classList.toggle('hidden', !msg.available);
+    if (msg.started === true) $('note-hint').textContent = fr(Logic.DICTATION_LISTENING);
+    else if (msg.started === false) noteLine(Logic.dictationFailText(msg.platform), 'error', 'alert');
+  }
   $('phone-linked').addEventListener('click', openPhone);
   $('goals').querySelectorAll('.chip').forEach(function (chip) { chip.addEventListener('click', function () { send(chip.textContent); }); });
 
@@ -6385,6 +6399,8 @@
     } else if (msg.type === 'conv_save_failed') {
       var why = msg.reason || 'too_big';
       if (!saveFailedShown[why]) { saveFailedShown[why] = true; noteLine(Logic.saveFailedText(why), 'error', 'alert'); }
+    } else if (msg.type === 'dictation') {
+      onDictation(msg);
     } else if (msg.type === 'other_instance') {
       if (!otherInstanceShown) { otherInstanceShown = true; noteLine(Logic.OTHER_INSTANCE_TEXT, 'error', 'alert'); }
     } else if (msg.type === 'project_restored') {

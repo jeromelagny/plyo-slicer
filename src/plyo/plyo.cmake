@@ -49,6 +49,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoStore.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoConversations.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoConversations.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoDictation.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoDictation.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscovery.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscovery.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscoveryLogic.cpp
@@ -137,6 +139,10 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoRetouchesLogic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoRetouchesLogic.hpp
 )
+# Dictée vocale du système : sur macOS, l'appel passe par AppKit (fichier Objective-C++).
+if (APPLE)
+    list(APPEND PLYO_SOURCES ${CMAKE_CURRENT_LIST_DIR}/PlyoDictationMac.mm)
+endif ()
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
 
 # Adresse du service Plyo compilée dans l'app (remplaçable au lancement par la variable d'environnement PLYO_API_URL).

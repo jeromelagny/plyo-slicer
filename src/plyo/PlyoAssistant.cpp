@@ -9,6 +9,7 @@
 #include "PlyoCC2.hpp"
 #include "PlyoCommands.hpp"
 #include "PlyoConversations.hpp"
+#include "PlyoDictation.hpp"
 #include "PlyoDiscovery.hpp"
 #include "PlyoFirstSteps.hpp"
 #include "PlyoHighlight.hpp"
@@ -259,7 +260,13 @@ void handle_page_message(const nlohmann::json& data)
             // Une autre instance de Plyo tient déjà ce dossier de données (ROB-16) : le panneau le dit, avec quoi faire.
             if (Store::other_instance())
                 send({{"type", "other_instance"}});
+            // Dictée vocale du système : le panneau ne montre son bouton micro que si elle peut être lancée d'ici.
+            send({{"type", "dictation"}, {"available", Dictation::available()}, {"platform", Dictation::platform()}});
             send_values();
+        } else if (type == "dictation_start") {
+            // Bouton micro du champ de saisie : le système écoute et écrit dans le champ, Plyo n'enregistre ni n'envoie rien.
+            send({{"type", "dictation"}, {"available", Dictation::available()}, {"platform", Dictation::platform()},
+                  {"started", Dictation::start()}});
         } else if (type == "get_values")
             send_values();
         else if (type == "apply") {
