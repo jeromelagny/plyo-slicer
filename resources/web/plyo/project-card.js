@@ -9,7 +9,8 @@
   // handlers : { pickPrinter(preset, name), keepProposed(), setupPrinter(), pickSpool(row), toggleNewSpool(), pickMaterial(type),
   //              typeSpoolName(text), createSpool(), setTemps(nozzle, bed), importPart(), change(line), expand() }
   // ctx.spools : lignes de PlyoSpools.choiceRows (null tant que le slicer ne les a pas données) ; ctx.newSpool : voir renderNewSpool.
-  // Aucun bouton plein ici : le seul bouton plein d'une étape est celui de la ligne d'action (journey-view.js).
+  // Aucun bouton plein ici : la ligne d'action (journey-view.js) porte le bouton plein de l'étape. Quand elle n'en a pas, le
+  // bouton marqué « main-choice » (au plus un par écran) prend l'aspect plein (index.html, CSS).
   function projectOf(ctx) { return ctx.project || root.PlyoProject.emptyProject(); }
 
   // La fiche : seulement ce qui est déjà choisi (rien au tout début), ou une seule ligne quand `compact`.
@@ -284,7 +285,7 @@
       box.appendChild(ui.el('p', 'muted small', ns.choice && S.suggestedName(ns.choice, ns.material) ? 'Tu peux ajouter la couleur, par exemple « ' + S.suggestedName(ns.choice, ns.material) + ' noir ».' : root.PlyoSpools.NAME_HELP));
       if (ns.error) box.appendChild(ui.el('p', 'project-error', S.nameErrorText(ns.error) || ns.error));
       var acts = ui.el('div', 'printer-actions');
-      acts.appendChild(ui.button('C’est ma bobine', h.createSpool, 'btn ghost sm', 'check'));
+      acts.appendChild(ui.button('C’est ma bobine', h.createSpool, 'btn ghost sm main-choice', 'check'));
       if (closable) acts.appendChild(ui.button('Annuler', h.toggleNewSpool, 'link'));
       box.appendChild(acts);
       if (ns.focus) { ns.focus = false; setTimeout(function () { input.focus(); }, 0); }
@@ -370,7 +371,7 @@
     } else {
       body.appendChild(ui.el('p', 'muted small', 'Glisse ici le fichier 3D de ta pièce (STL ou 3MF), ou choisis-le sur ton ordinateur. Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
       var pacts = ui.el('div', 'printer-actions');
-      pacts.appendChild(ui.button('Choisir un fichier', h.importPart, 'btn ghost sm', 'folder'));
+      pacts.appendChild(ui.button('Choisir un fichier', h.importPart, 'btn ghost sm main-choice', 'folder'));
       body.appendChild(pacts);
       // Un débutant n'a souvent aucun fichier : le petit bateau de test fourni avec le slicer se pose comme une pièce choisie.
       body.appendChild(ui.button('Pas encore de fichier ? Essaie avec le petit bateau de test', h.samplePart, 'link'));

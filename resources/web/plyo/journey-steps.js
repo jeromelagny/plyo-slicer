@@ -38,7 +38,11 @@
         body.appendChild(acts);
         body.appendChild(ui.button('Choisis pour moi (réglages sûrs)', function () { h.answer(q.id, help.safe); }, 'link'));
       } else {
-        q.choices.forEach(function (c) { acts.appendChild(ui.button(c.label, function () { h.answer(q.id, c.id); }, 'btn ghost sm')); });
+        q.choices.forEach(function (c) {
+          var b = ui.button(c.label, function () { h.answer(q.id, c.id); }, 'btn ghost sm' + (q.id === 'use' && c.id === it.guess ? ' suggested' : ''));
+          if (q.id === 'use' && c.id === it.guess) b.title = 'Suggéré d’après le nom de ta pièce';
+          acts.appendChild(b);
+        });
         acts.appendChild(ui.button('Je ne sais pas', h.idk, 'link'));
         body.appendChild(acts);
         if (q.id === 'use' && it.guess) {

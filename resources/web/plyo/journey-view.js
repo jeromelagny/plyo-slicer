@@ -40,7 +40,8 @@
     var J = root.PlyoJourney, action = J.primaryAction(opts.step, opts.ctx);
     slot.textContent = '';
     var line = ui.el('div', 'journey-action');
-    line.appendChild(ui.el('span', 'journey-prompt', J.prompt(opts.step, opts.ctx)));
+    var promptEl = ui.el('span', 'journey-prompt', J.prompt(opts.step, opts.ctx));
+    line.appendChild(promptEl);
     // Un lien toujours visible à côté de la consigne (hors du contenu qui défile), jamais un bouton plein.
     if (opts.extra) line.appendChild(ui.button(opts.extra.label, opts.extra.onClick, 'link journey-extra', opts.extra.icon));
     var promptText = J.prompt(opts.step, opts.ctx);
@@ -50,7 +51,7 @@
       busy.setAttribute('role', 'status');
       busy.setAttribute('aria-label', action.label);
       for (var d = 0; d < 3; d++) busy.appendChild(ui.el('i'));
-      line.appendChild(busy);
+      promptEl.appendChild(busy); // au bout de la consigne, sur sa ligne
     } else if (action.kind !== 'none') {
       var b = ui.button(action.label, function () { if (action.enabled) opts.handlers.run(action.kind); }, 'btn sm');
       if (!action.enabled) b.disabled = true;

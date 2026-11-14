@@ -202,11 +202,26 @@
   .journey-go:hover .journey-name { text-decoration: underline; }
   .journey-go:hover .journey-fill { background: var(--accent-text); }
   .step-card { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
-  .journey-action { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
-  .journey-prompt { flex: 1; min-width: 12ch; font-weight: 600; font-size: var(--fs-lg); }
+  /* Consigne sur toute la largeur, son bouton dessous, toujours au même endroit ; un lien éventuel en dernier. */
+  .journey-action { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); }
+  .journey-prompt { font-weight: 700; font-size: var(--fs-lg); line-height: 1.35; }
+  .journey-action > .btn { order: 1; }
+  .journey-action > .journey-extra { order: 2; }
+  .journey-action:empty { display: none; }
   .suggestions { display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s2); }
   .suggestions:empty { display: none; }
-  .intent-q { margin: 0; font-weight: 700; font-size: var(--fs-lg); }
+  /* Sous-question d'une étape : un cran sous la consigne (15 px), pour lire en escalier. */
+  .intent-q { margin: 0; font-weight: 700; font-size: var(--fs-md); }
+  .new-spool, .brand-ask { display: flex; flex-direction: column; gap: var(--s2); }
+  .new-spool .brand-ask { margin-top: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--border); }
+  .new-spool p, .brand-ask p { margin: 0; }
+  /* Choix deviné d'après le nom de la pièce : signalé, sans être choisi à ta place. */
+  .btn.suggested { border-color: var(--accent); color: var(--accent-text); }
+  .btn.suggested::after { content: "suggéré"; font-size: var(--fs-xs); font-weight: 600; padding: 0 6px; border-radius: var(--r-pill); background: var(--accent-soft); }
+  /* L'action principale d'un écran sans bouton plein dans sa ligne d'action (choisir un fichier, valider sa bobine, corriger) :
+     un seul bouton plein par écran, là où l'action se fait. */
+  #view-guide:not(:has(#journey-action .btn:not(.ghost))) .btn.ghost.main-choice { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent); }
+  #view-guide:not(:has(#journey-action .btn:not(.ghost))) .btn.ghost.main-choice:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent-fill); }
   .intent-details summary { cursor: pointer; color: var(--accent-text); }
   .btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
 
@@ -5718,7 +5733,7 @@
 
     var fail = el('p', 'fail-text hidden');
     var acts = el('div', 'stack');
-    var fixAll = button('', null, 'btn ghost');
+    var fixAll = button('', null, 'btn ghost main-choice');
     acts.appendChild(fixAll);
     box.appendChild(acts);
     box.appendChild(fail);
