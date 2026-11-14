@@ -94,7 +94,9 @@ test('UX-09 : un seul mot côté utilisateur, « projet » (les noms internes ne
   }
   const page = read('index.html');
   assert.ok(page.includes('>Nouveau projet</button>') && page.includes('>Mes projets</button>') && page.includes('>Mes pièces</button>'));
-  assert.ok(page.includes("'Réponses plus détaillées' : 'Réponses plus courtes'"), 'UX-18 : le menu dit l’action');
+  // Lot UX 4 : préférence à coche, qui dit l'état en cours (le clic bascule toujours d'un niveau à l'autre).
+  assert.ok(page.includes('id="m-level" role="menuitemcheckbox"') && page.includes(">Réponses courtes</button>"), 'UX-18 : la préférence et son état');
+  assert.ok(page.includes("$('m-level').setAttribute('aria-checked', String(PlyoMachines.levelOf(habits) === 'short'));"));
 });
 
 test('UX-14 : plus jamais « enregistre le préréglage » dans les textes visibles', () => {

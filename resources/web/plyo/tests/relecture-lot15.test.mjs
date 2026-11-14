@@ -75,7 +75,7 @@ test('N5 : valeurs à choix par leur libellé français du catalogue ; noms de p
 
 test('N6 et N8 : la fiche repliée finit par des points de suspension, texte entier accessible ; « Me connecter » discret', () => {
   const page = read('../index.html');
-  assert.match(page, /\.project-summary \{ display: block; min-width: 0;[^}]*text-overflow: ellipsis;/);
+  assert.match(page, /\.project-summary \{ display: block;[^}]*min-width: 0;[^}]*text-overflow: ellipsis;/);
   assert.match(read('../project-card.js'), /line\.title = sum;/);
   assert.match(page, /<button class="btn ghost sm hidden push" id="btn-login"/);
 });

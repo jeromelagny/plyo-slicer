@@ -208,7 +208,10 @@
   function barMode(widthPx) { return widthPx < 340 ? 'pills' : 'names'; }
   // `folded` : l'utilisateur est dans la Discussion, qui a besoin de la place ; sinon seulement si la fenêtre est basse.
   // Repliée en une ligne : onglet Discussion, petite fenêtre, ou dès l'étape Préparer (les choix sont faits, l'étape en cours a la place).
-  function compactFiche(o) { return !!(o && (o.folded || o.heightPx < 760 || ['preparer', 'imprimer', 'resultat'].indexOf(o.step) >= 0)); }
+  // Lot UX 4 : la fiche tient toujours sur une ligne (les onglets ne bougent plus) ; elle se déplie seulement d'un clic.
+  function compactFiche() { return true; }
+  // Titre du panneau : le nom de la pièce du projet, sinon « Nouveau projet ».
+  function projectTitle(project) { var p = project || {}; return p.part && p.part.name ? String(p.part.name) : 'Nouveau projet'; }
 
   // Ce qui occupe le premier bloc du corps : les choix (étapes 1 à 3, ou « changer » le filament) ou le contenu des étapes 4 à 6.
   function contentFor(step, editing) {
@@ -237,7 +240,7 @@
     // Tenir sur une ligne : ni mot « emplacement » coupé, ni températures en chiffres (elles sont dans la fiche dépliée). La buse,
     // quand le slicer la lit sur la machine du projet.
     if (p.printer && (p.printer.name || p.printer.preset)) parts.push(machineText(p.printer, x.nozzleMm));
-    if (p.part && p.part.name) parts.push(shortName(p.part.name));
+    if (p.part && p.part.name && !x.noPart) parts.push(shortName(p.part.name)); // `noPart` : déjà dit par le titre du panneau
     if (p.filament && p.filament.type && Array.isArray(p.canvas) && p.canvas.length) parts.push(filamentRow(p).text.replace(/ · emplacement /, ' · n° ').replace(/ · (\d+) emplacements$/, ' · $1 bobines'));
     else if (p.filament && p.filament.spool && p.filament.spool.name) parts.push(shortName(p.filament.spool.name));
     else if (p.filament && p.filament.type) parts.push(p.filament.type);
@@ -443,7 +446,7 @@
 
   var api = { machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
-    ficheSummary: ficheSummary, suggestionsFor: suggestionsFor };
+    ficheSummary: ficheSummary, suggestionsFor: suggestionsFor, projectTitle: projectTitle };
   root.PlyoJourney = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

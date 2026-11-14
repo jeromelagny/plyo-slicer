@@ -26,7 +26,7 @@
       // Une ligne coupée par des points de suspension (N6) : le texte entier au survol et pour les lecteurs d'écran.
       // Avec la typographie du bouton (« 0,4 mm » insécable) : le texte au survol est exactement celui affiché.
       var typo = root.PlyoLogic && root.PlyoLogic.fr ? root.PlyoLogic.fr : String;
-      var sum = typo(root.PlyoJourney.ficheSummary(project, extra)), line = ui.button(sum, h.expand, 'link project-summary');
+      var sum = typo(root.PlyoJourney.ficheSummary(project, { nozzleMm: ctx.nozzleMm, noPart: ctx.noPart })), line = ui.button(sum, h.expand, 'link project-summary');
       line.title = sum;
       line.setAttribute('aria-label', sum + ' : afficher le détail');
       card.appendChild(line);
@@ -91,6 +91,7 @@
       }
       if (row.line === 'filament') renderSpool(card, ui, project.filament, ctx);
     });
+    if (ctx.foldable && h.fold) card.appendChild(ui.button('Replier', h.fold, 'link fiche-fold')); // dépliée d'un clic : se replie d'un clic
     slot.appendChild(card);
   }
 

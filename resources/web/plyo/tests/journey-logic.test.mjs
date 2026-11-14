@@ -82,8 +82,9 @@ test('la barre passe en pastilles sous 340 px et la fiche se réduit sur fenêtr
   assert.equal(J.compactFiche({ folded: false, heightPx: 500 }), true);
   assert.equal(J.compactFiche({ folded: true, heightPx: 900 }), true);
   assert.equal(J.compactFiche({ folded: false, heightPx: 759 }), true);
-  assert.equal(J.compactFiche({ folded: false, heightPx: 760 }), false);
-  assert.equal(J.compactFiche({ folded: false, heightPx: 900 }), false);
+  // Lot UX 4 : toujours une ligne, quelle que soit la hauteur (dépliée seulement d'un clic).
+  assert.equal(J.compactFiche({ folded: false, heightPx: 760 }), true);
+  assert.equal(J.compactFiche({ folded: false, heightPx: 900 }), true);
 });
 
 test('ficheSummary omet les parties absentes', () => {
@@ -219,9 +220,14 @@ test('Parcours débutant : textes simples aux étapes Préparer et Imprimer', ()
   assert.ok(J.suggestionsFor('imprimer').some((x) => x.kind === 'ask'), 'une question utile avant de lancer');
 });
 
-test('la fiche se replie dès l’étape Préparer : l’étape en cours garde la place', () => {
-  for (const step of ['machine', 'piece', 'filament']) assert.equal(J.compactFiche({ folded: false, heightPx: 900, step: step }), false, step);
-  for (const step of ['preparer', 'imprimer', 'resultat']) assert.equal(J.compactFiche({ folded: false, heightPx: 900, step: step }), true, step);
+test('lot UX 4 : la fiche tient sur une ligne à toutes les étapes, et le titre du panneau est le nom de la pièce', () => {
+  for (const step of ['machine', 'piece', 'filament', 'preparer', 'imprimer', 'resultat']) assert.equal(J.compactFiche({ folded: false, heightPx: 900, step: step }), true, step);
+  assert.equal(J.projectTitle({ part: { name: 'Petit bateau de test (3DBenchy)' } }), 'Petit bateau de test (3DBenchy)');
+  assert.equal(J.projectTitle({}), 'Nouveau projet');
+  assert.equal(J.projectTitle(null), 'Nouveau projet');
+  const p = { printer: { name: 'Ender-3 Pro', preset: 'x' }, part: { name: 'bateau.stl' }, filament: { type: 'PLA' } };
+  assert.equal(J.ficheSummary(p, { noPart: true }), 'Ender-3 Pro · PLA', 'la pièce est déjà dans le titre');
+  assert.equal(J.ficheSummary(p), 'Ender-3 Pro · bateau.stl · PLA');
 });
 
 test('la fiche montre l’emplacement choisi sur le Canvas, avec sa couleur', () => {

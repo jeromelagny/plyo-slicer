@@ -161,6 +161,9 @@
   .menu { position: absolute; right: var(--s2); top: 48px; width: 264px; max-width: calc(100vw - 16px); background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s1); box-shadow: var(--shadow); z-index: 10; }
   .menu button { display: flex; gap: var(--s2); align-items: center; width: 100%; min-height: 32px; text-align: left; padding: 6px var(--s2); border: 0; border-radius: var(--r-sm); background: transparent; cursor: pointer; }
   .menu button .ic { color: var(--muted); }
+  /* Préférence : la coche dit l'état actuel ; décochée, la place reste vide pour aligner les libellés. */
+  .menu button[role="menuitemcheckbox"] .ic { color: var(--accent-text); }
+  .menu button[aria-checked="false"] .ic { visibility: hidden; }
   .menu button:hover:not(:disabled) { background: var(--surface); }
   .menu button:disabled { color: var(--muted); opacity: .55; cursor: default; }
   .menu .group { padding: var(--s2) var(--s2) 2px; color: var(--muted); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
@@ -176,7 +179,11 @@
   .journey .project.compact { flex-direction: row; }
   /* N6 : un bouton .link est une boîte flex, où text-overflow ne coupe pas le texte : bloc, avec points de suspension à la fin ;
      le texte complet est dans le titre (survol) et la fiche dépliée (clic). */
-  .project-summary { display: block; min-width: 0; flex: 1 1 auto; font-weight: 600; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .project-summary { display: block; position: relative; min-width: 0; flex: 1 1 auto; font-weight: 600; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; padding-right: 18px; color: var(--muted); text-decoration: none; }
+  .project-summary:hover:not(:disabled) { color: var(--fg); }
+  /* La fiche se déplie d'un clic : un chevron le dit, pas un soulignement de lien. */
+  .project-summary::after { content: "▾"; position: absolute; right: 2px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+  .fiche-fold { align-self: flex-start; }
   /* Carte d'Orca : un seul gras (le titre) ; le message d'origine replié quand Plyo a sa propre explication. */
   .orca-fold summary { cursor: pointer; }
   .orca-fold p { margin: var(--s1) 0 0; }
@@ -479,7 +486,7 @@
 </head>
 <body>
   <div class="top">
-    <h1>Assistant Plyo</h1>
+    <h1 id="title">Assistant Plyo</h1>
     <button class="linked hidden push" id="phone-linked" type="button" title="Téléphone relié à ce projet : clique pour revoir le QR code"></button>
     <button class="gauge hidden push" id="gauge" type="button" title="Jauge IA : ton utilisation ce mois-ci. Clique pour le détail." aria-label="Jauge IA du mois"><span class="gauge-name">Jauge IA</span><span class="bar"><i id="gauge-fill"></i></span><span id="gauge-label">…</span></button>
     <!-- N8 : discret (contour) : le bouton plein de chaque écran est l'action de l'étape ; quand une action a besoin du compte, sa carte porte un « Me connecter » plein. -->
@@ -492,9 +499,13 @@
       <button type="button" id="m-convs" role="menuitem" data-icon="folder">Mes projets</button>
       <button type="button" id="m-parts" role="menuitem" data-icon="cube">Mes pièces</button>
       <button type="button" id="m-intent" role="menuitem" data-icon="help" class="hidden">Reposer les questions sur ma pièce</button>
-      <button type="button" id="m-level" role="menuitem" data-icon="chat">Réponses plus courtes</button>
-      <button type="button" id="m-start" role="menuitem" data-icon="help">Je connais déjà : panneau fermé au lancement</button>
+      <hr>
+      <div class="group" role="presentation">Réglages</div>
       <button type="button" id="m-undo" role="menuitem" data-icon="undo" disabled title="Rien à annuler pour l’instant">Annuler les derniers réglages appliqués</button>
+      <hr>
+      <div class="group" role="presentation">Préférences</div>
+      <button type="button" id="m-level" role="menuitemcheckbox" aria-checked="false" data-icon="check">Réponses courtes</button>
+      <button type="button" id="m-start" role="menuitemcheckbox" aria-checked="true" data-icon="check">Me guider pas à pas (panneau ouvert au lancement)</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
       <div class="who" id="m-email"></div>
@@ -703,7 +714,7 @@
     span.innerHTML = '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICONS[name] + '</svg>';
     return span;
   }
-  document.querySelectorAll('[data-icon]').forEach(function (e) { e.insertBefore(icon(e.getAttribute('data-icon'), e.classList.contains('badge') ? 20 : e.getAttribute('role') === 'menuitem' ? 16 : 14), e.firstChild); });
+  document.querySelectorAll('[data-icon]').forEach(function (e) { e.insertBefore(icon(e.getAttribute('data-icon'), e.classList.contains('badge') ? 20 : /^menuitem/.test(e.getAttribute('role') || '') ? 16 : 14), e.firstChild); });
   $('btn-more').appendChild(icon('more', 18));
   $('btn-files').appendChild(icon('clip', 18));
   $('btn-phone').appendChild(icon('phone', 18));
@@ -1863,7 +1874,11 @@
     ensureColoursMapping(step);
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
-    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, spoolLinkInStep: step === 'filament', handlers: projectHandlers,
+    // Le titre du panneau est le nom de la pièce du projet ; la fiche, dessous, n'a donc plus à le répéter.
+    var title = PlyoJourney.projectTitle(conv.project);
+    $('title').textContent = fr(title);
+    $('title').title = fr(title);
+    PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, spoolLinkInStep: step === 'filament', handlers: projectHandlers, foldable: journeyUI.ficheOpen, noPart: true,
       nozzleMm: projectNozzleMm(), bed: PlyoMachines.bedRow(bedInfo()), nozzleChange: !!nozzleChangeOffer(), colours: step === 'filament' && !projectUI.editing ? '' : coloursFiche() });
     PlyoProjectCard.renderBedQuestion($('bed-slot'), ui, { question: bedAsking(step), editing: bedUI.editing, waiting: !!bedUI.token, handlers: bedHandlers });
     PlyoProjectCard.renderSpoolEditor($('spool-slot'), ui, { spool: projectUI.spool, handlers: projectHandlers });
@@ -2636,8 +2651,9 @@
   // L'entrée dit ce que le clic va faire (passer à l'autre niveau), pas le niveau en cours.
   // Seul le texte change : l'icône de l'entrée reste.
   function updateLevelLabel() {
-    var item = $('m-level'), label = fr(PlyoMachines.levelOf(habits) === 'short' ? 'Réponses plus détaillées' : 'Réponses plus courtes');
-    if (item.lastChild && item.lastChild.nodeType === 3) item.lastChild.nodeValue = label; else item.appendChild(txt(label));
+    // Lot UX 4 : une préférence à coche (« Réponses courtes »), cochée quand elle est en service ; le clic bascule, comme avant
+    // (autrefois « Réponses plus détaillées » : 'Réponses plus courtes').
+    $('m-level').setAttribute('aria-checked', String(PlyoMachines.levelOf(habits) === 'short'));
   }
   // Début d'une impression : que demander pour la machine ? (voir PlyoMachines.machineQuestion)
   function applyMachineQuestion() {
@@ -2757,6 +2773,7 @@
       if (old) { conv.project.part = { name: old.label }; projectChanged(); attachPlate(); }
     },
     expand: function () { journeyUI.ficheOpen = true; renderProject(); },
+    fold: function () { journeyUI.ficheOpen = false; renderProject(); },
     cancelEdit: function () { projectUI.editing = null; renderProject(); },
     calibrate: function () { openCalibChooser(); },
     toggleOthers: function () { projectUI.showOthers = !projectUI.showOthers; renderProject(); },
@@ -5897,8 +5914,9 @@
     updateStartMenu();
   }
   function updateStartMenu() {
-    var item = $('m-start'), label = fr(PlyoJourney.startMenuLabel(fsState.level));
-    if (item.lastChild && item.lastChild.nodeType === 3) item.lastChild.nodeValue = label; else item.appendChild(txt(label));
+    // Préférence à coche : « Me guider pas à pas » est cochée sauf en mode « Je connais déjà » ; le clic bascule, comme avant.
+    $('m-start').setAttribute('aria-checked', String(fsState.level !== 'expert'));
+    $('m-start').title = fr(PlyoJourney.startMenuLabel(fsState.level));
     $('hello-guide').classList.toggle('hidden', fsState.level !== 'expert');
   }
 
