@@ -215,7 +215,7 @@
 
   var api = { MANUAL_MAX: MANUAL_MAX, MANUAL_TYPES: MANUAL_TYPES, MANUAL_COLOURS: MANUAL_COLOURS, manualRecall: manualRecall, manualDraft: manualDraft, manualCount: manualCount, manualComplete: manualComplete, manualSlots: manualSlots, needsReread: needsReread, exportNote: exportNote, askSlots: askSlots, typeMismatch: typeMismatch, sendRoute: sendRoute, printNote: printNote, orcaConfirm: orcaConfirm, colourName: colourName, trays: trays, propose: propose, complete: complete, tooMany: tooMany,
     checkBeforeSend: checkBeforeSend, profileTypes: profileTypes, mapLabel: mapLabel, distance: distance,
-    words: words, slotName: slotName, isImposed: isImposed };
+    words: words, slotName: slotName, isImposed: isImposed, trayText: trayText };
   root.PlyoCanvas = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

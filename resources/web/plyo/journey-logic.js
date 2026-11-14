@@ -61,6 +61,8 @@
       if (cv.mode === 'manual') return { label: 'Garder ces emplacements', kind: 'manualSave', enabled: cv.complete !== false };
       if (cv.mode === 'single' && cv.proposal) return { label: cv.system === 'u1' ? 'Oui, la t' + cv.proposal.label.slice(1) : 'Oui, l’emplacement ' + cv.proposal.label, kind: 'confirmCanvas', enabled: true };
       if (cv.mode === 'multi') return { label: cv.system === 'u1' ? 'Utiliser ces têtes' : 'Utiliser ces emplacements', kind: 'confirmCanvas', enabled: !!cv.complete };
+      // Carte « Couleurs » : chaque pièce change tout de suite ; la ligne d'action confirme les bobines, ou referme la carte rouverte.
+      if (cv.mode === 'colours') return cv.reopened ? { label: 'C’est bon', kind: 'closeColours', enabled: !cv.busy } : { label: 'Utiliser ces bobines', kind: 'confirmCanvas', enabled: !!cv.complete && !cv.busy };
       return { label: '', kind: 'none', enabled: false };
     }
     // « changer » le filament en cours : on répond avec les choix, ou « Garder cette bobine ».
@@ -132,6 +134,7 @@
     if (c.canvas.mode === 'manual') return 'Décris tes emplacements';
     if (c.canvas.mode === 'loading') return t.loading;
     if (c.canvas.mode === 'multi') return t.multi || 'Quel emplacement pour chaque couleur ?';
+    if (c.canvas.mode === 'colours') return 'Couleurs de ta plaque';
     if (c.canvas.mode === 'tooMany') return t.tooMany || 'Ta pièce a plus de couleurs que d’emplacements';
     return t.one;
   }

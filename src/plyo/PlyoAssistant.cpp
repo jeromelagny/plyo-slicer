@@ -7,6 +7,7 @@
 #include "PlyoCalibration.hpp"
 #include "PlyoCatalog.hpp"
 #include "PlyoCanvas.hpp"
+#include "PlyoColours.hpp"
 #include "PlyoSlots.hpp"
 #include "PlyoCC2.hpp"
 #include "PlyoCommands.hpp"
@@ -715,6 +716,26 @@ void handle_page_message(const nlohmann::json& data)
             r["type"]        = "canvas_applied";
             send(r);
             send_values();
+        } else if (type == "colours_get") {
+            // Carte « Couleurs » : les pièces de la plaque et leur couleur (lecture seule). `select` : la ligne touchée, sélectionnée
+            // dans la vue 3D comme un clic (sans point d'annulation, contrairement à l'ordre « select » de l'IA).
+            if (const std::string ref = Json::str(data, "select", 20); !ref.empty())
+                Colours::select(ref);
+            nlohmann::json r = Colours::state();
+            r["type"]        = "colours";
+            r["id"]          = Json::integer(data, "id", 0);
+            send(r);
+        } else if (type == "colour_set") {
+            // Couleur d'une pièce choisie d'un clic dans la carte « Couleurs ». Jamais un ordre de l'IA : ce message n'est envoyé
+            // que par ce bouton du panneau. Annulable par plate_action « undo » avec l'undo_token rendu.
+            const long long token = Json::integer(data, "token", 0);
+            Colours::set_colour(data, [token](nlohmann::json r) {
+                r["type"]  = "colour_set";
+                r["token"] = token;
+                send(r);
+                if (Json::boolean(r, "ok", false))
+                    send_values();
+            });
         } else if (type == "canvas_plan") {
             static bool hooked = false;
             if (!hooked) { // un départ avec carte refusé (envoi de Plyo ou d'Orca) est signalé au panneau

@@ -29,6 +29,7 @@
 #include "../../PlyoConversations.hpp"
 #include "../../PlyoLifetimeLogic.hpp"
 #include "../../PlyoPageLogic.hpp"
+#include "../../PlyoColoursLogic.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -5242,4 +5243,147 @@ TEST_CASE("Projet : la marque de la bobine et des emplacements est gardée")
     const json q = sanitize({{"filament", {{"type", "PLA"}, {"brand_profile", "oui"}}}});
     CHECK_FALSE(q["filament"].contains("brand_profile"));
     CHECK_FALSE(q["filament"].contains("brand"));
+}
+
+TEST_CASE("Couleurs : couleur d'une pièce et de ses parties")
+{
+    using namespace Plyo::ColoursLogic;
+    Piece simple;
+    simple.t = 2;
+    CHECK(piece_colour(simple) == 2);
+    Piece same;
+    same.t     = 1;
+    same.parts = {{"11", "Corps", 1}, {"12", "Bouton", 1}};
+    CHECK(piece_colour(same) == 1);
+    Piece mixed = same;
+    mixed.parts[1].t = 3;
+    CHECK(piece_colour(mixed) == -1);
+    // Les parties suivent la pièce : une pièce réglée sur une couleur et ses deux parties sur une autre n'est pas « mélangée ».
+    Piece moved = same;
+    moved.t = 0;
+    CHECK(piece_colour(moved) == 1);
+}
+
+TEST_CASE("Couleurs : forme rendue au panneau (mixed, parties, zones peintes)")
+{
+    using namespace Plyo::ColoursLogic;
+    Piece a;
+    a.ref = "7"; a.name = "Coque"; a.selected = true; a.t = 0; a.painted = {2, 1}; a.splittable = true;
+    Piece b;
+    b.ref = "9"; b.name = "Couvercle"; b.t = 1; b.parts = {{"21", "Haut", 1}, {"22", "Bas", 0}};
+    const json out = to_json({a, b});
+    REQUIRE(out.size() == 2);
+    CHECK(out[0] == json({{"ref", "7"}, {"name", "Coque"}, {"selected", true}, {"t", 0}, {"mixed", false}, {"parts", json::array()},
+                          {"painted", {1, 2}}, {"splittable", true}}));
+    CHECK(out[1]["mixed"] == true);
+    CHECK(out[1]["t"] == -1);
+    CHECK(out[1]["selected"] == false);
+    CHECK(out[1]["parts"] == json({{{"ref", "21"}, {"name", "Haut"}, {"t", 1}}, {{"ref", "22"}, {"name", "Bas"}, {"t", 0}}}));
+}
+
+TEST_CASE("Couleurs : couleur du projet pour une bobine choisie")
+{
+    using namespace Plyo::ColoursLogic;
+    const json canvas = {{{"t", 0}, {"canvas_id", 0}, {"tray_id", 1}}, {{"t", 2}, {"canvas_id", 0}, {"tray_id", 3}}};
+    // Déjà associée : sa couleur, sans rien ajouter.
+    Choice c = filament_for(canvas, {0, 2}, 4, {0, 3}, MAX_COLOURS);
+    CHECK(c.t == 2);
+    CHECK_FALSE(c.add);
+    CHECK(c.refusal.empty());
+    // Une couleur libre (ni utilisée ni associée) est réutilisée, la plus petite ; jamais la première.
+    c = filament_for(canvas, {0, 2}, 4, {0, 2}, MAX_COLOURS);
+    CHECK(c.t == 1);
+    CHECK_FALSE(c.add);
+    c = filament_for(json::array(), {1}, 3, {0, 2}, MAX_COLOURS);
+    CHECK(c.t == 2);
+    c = filament_for(json::array(), {1}, 2, {0, 2}, MAX_COLOURS); // la première est libre, mais c'est le filament du projet
+    CHECK(c.t == 2);
+    CHECK(c.add);
+    // Rien de libre : une couleur ajoutée à la fin.
+    c = filament_for(canvas, {0, 1, 2, 3}, 4, {1, 0}, MAX_COLOURS);
+    CHECK(c.t == 4);
+    CHECK(c.add);
+    // Déjà 16 couleurs, toutes prises : refus qui dit quoi faire, rien d'ajouté.
+    std::vector<int> all;
+    for (int i = 0; i < 16; ++i)
+        all.push_back(i);
+    c = filament_for(json::array(), all, 16, {0, 5}, MAX_COLOURS);
+    CHECK(c.t == -1);
+    CHECK_FALSE(c.add);
+    CHECK(c.refusal == "Ton projet a déjà 16 couleurs : libère-en une avant d'en ajouter.");
+    // Même à 16, une bobine déjà associée reste possible.
+    c = filament_for({{{"t", 5}, {"canvas_id", 0}, {"tray_id", 5}}}, all, 16, {0, 5}, MAX_COLOURS);
+    CHECK(c.t == 5);
+    // Association mal formée : ignorée (pas de t, t négatif ou hors du projet, texte à la place d'un nombre).
+    const json bad = {{{"canvas_id", 0}, {"tray_id", 3}}, {{"t", -1}, {"canvas_id", 0}, {"tray_id", 3}}, {{"t", 9}, {"canvas_id", 0}, {"tray_id", 3}},
+                      {{"t", "1"}, {"canvas_id", 0}, {"tray_id", 3}}, "rien", {{"t", 1}, {"canvas_id", "0"}, {"tray_id", 3}}};
+    c = filament_for(bad, {0}, 3, {0, 3}, MAX_COLOURS);
+    CHECK(c.t == 1);
+    CHECK_FALSE(c.add);
+    c = filament_for("pas une liste", {0}, 1, {0, 3}, MAX_COLOURS);
+    CHECK(c.t == 1);
+    CHECK(c.add);
+}
+
+TEST_CASE("Couleurs : association mise à jour après un choix")
+{
+    using namespace Plyo::ColoursLogic;
+    const json canvas = {{{"t", 2}, {"canvas_id", 0}, {"tray_id", 3}, {"type", "PLA"}}, {{"t", 0}, {"canvas_id", 0}, {"tray_id", 1}}, "rien"};
+    CHECK(canvas_with(canvas, 1, {0, 2}) == json({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 1}}, {{"t", 1}, {"canvas_id", 0}, {"tray_id", 2}},
+                                                  {{"t", 2}, {"canvas_id", 0}, {"tray_id", 3}}}));
+    // La couleur 2 passe sur une autre bobine : son ancienne entrée part.
+    CHECK(canvas_with(canvas, 2, {0, 4}) == json({{{"t", 0}, {"canvas_id", 0}, {"tray_id", 1}}, {{"t", 2}, {"canvas_id", 0}, {"tray_id", 4}}}));
+    CHECK(canvas_with(json(), 0, {1, 0}) == json({{{"t", 0}, {"canvas_id", 1}, {"tray_id", 0}}}));
+    // Une couleur que plus aucune pièce n'utilise quitte l'association (la vérification d'avant l'envoi la refuserait).
+    const json both = {{{"t", 0}, {"canvas_id", 0}, {"tray_id", 1}}, {{"t", 2}, {"canvas_id", 0}, {"tray_id", 3}}, "rien"};
+    CHECK(only_used(both, {2}) == json({{{"t", 2}, {"canvas_id", 0}, {"tray_id", 3}}}));
+    CHECK(only_used(both, {}) == json::array());
+    CHECK(only_used("x", {0}) == json::array());
+}
+
+TEST_CASE("Couleurs : refus quand le slicer est occupé")
+{
+    using namespace Plyo::ColoursLogic;
+    CHECK(busy_refusal({}).empty());
+    Busy b;
+    b.other_conversation      = true;
+    b.other_conversation_text = "Le plateau est encore celui d'un autre projet.";
+    b.slicing                 = true;
+    CHECK(busy_refusal(b) == "Le plateau est encore celui d'un autre projet.");
+    Busy s;
+    s.slicing = true;
+    CHECK(busy_refusal(s) == "Plyo Slicer découpe la plaque : attends la fin de la découpe, puis change la couleur. Rien n'a été modifié.");
+    Busy j;
+    j.job = true;
+    CHECK(busy_refusal(j) == "Plyo Slicer est déjà occupé sur le plateau. Réessaie dans un instant : rien n'a été modifié.");
+    Busy m;
+    m.modal = true;
+    CHECK(busy_refusal(m) == "Plyo Slicer attend ta réponse dans une fenêtre ouverte : réponds-y d'abord, puis réessaie. Rien n'a été modifié.");
+    Busy e;
+    e.sending = true;
+    CHECK(busy_refusal(e) == "Plyo Slicer envoie ou calibre en ce moment : attends la fin, puis change la couleur. Rien n'a été modifié.");
+}
+
+TEST_CASE("Couleurs : la bobine choisie est encore celle qu'on a lue")
+{
+    using namespace Plyo::ColoursLogic;
+    const json state = {{"ok", true}, {"empty_blocks", true},
+                        {"canvases", {{{"canvas_id", 0}, {"connected", true}, {"trays", {{{"tray_id", 0}, {"type", "PLA"}, {"color", "#2060D0"}, {"status", 1}, {"label", "1A"}},
+                                                                                         {{"tray_id", 1}, {"type", "PLA"}, {"color", "#F5F5F5"}, {"status", 0}, {"label", "1B"}}}}},
+                                      {{"canvas_id", 1}, {"connected", false}, {"trays", {{{"tray_id", 0}, {"type", "PLA"}, {"color", "#000000"}}}}}}}};
+    CHECK(slot_refusal(state, {0, 0}, "PLA", "#2060d0").empty()); // casse de la couleur sans importance
+    CHECK(slot_refusal(state, {0, 0}, "pla", "#2060D0").empty());
+    CHECK(slot_refusal(state, {0, 0}, "PETG", "#2060D0") == "La bobine 1A contient maintenant du PLA : touche « Vérifier à nouveau », puis choisis à nouveau. Rien n'a été modifié.");
+    CHECK(slot_refusal(state, {0, 0}, "PLA", "#000000") == "La bobine 1A a changé de couleur sur l'imprimante : touche « Vérifier à nouveau », puis choisis à nouveau. Rien n'a été modifié.");
+    CHECK(slot_refusal(state, {0, 1}, "PLA", "#F5F5F5") == "La bobine 1B est vide : charge-la, règle-la sur l'écran de l'imprimante, puis touche « Vérifier à nouveau ». Rien n'a été modifié.");
+    json lenient = state;
+    lenient["empty_blocks"] = false; // CC2 : le « vide » n'est pas fiable
+    CHECK(slot_refusal(lenient, {0, 1}, "PLA", "#F5F5F5").empty());
+    CHECK(slot_refusal(state, {1, 0}, "PLA", "#000000") == "Je ne vois plus cette bobine sur l'imprimante : touche « Vérifier à nouveau », puis choisis à nouveau. Rien n'a été modifié.");
+    CHECK(slot_refusal(state, {0, 7}, "PLA", "") == "Je ne vois plus cette bobine sur l'imprimante : touche « Vérifier à nouveau », puis choisis à nouveau. Rien n'a été modifié.");
+    CHECK(slot_refusal({{"ok", false}}, {0, 0}, "PLA", "#2060D0") == "Je n'arrive pas à relire tes bobines : touche « Vérifier à nouveau ». Rien n'a été modifié.");
+    // Sans numéro donné par l'imprimante (CC2) : tray_id + 1.
+    json cc2 = state;
+    cc2["canvases"][0]["trays"][0].erase("label");
+    CHECK(slot_refusal(cc2, {0, 0}, "ABS", "#2060D0") == "La bobine 1 contient maintenant du PLA : touche « Vérifier à nouveau », puis choisis à nouveau. Rien n'a été modifié.");
 }

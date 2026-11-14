@@ -15,6 +15,7 @@
   // La fiche : seulement ce qui est déjà choisi (rien au tout début), ou une seule ligne quand `compact`.
   // ctx.nozzleMm : buse lue par le slicer sur la machine du projet ; ctx.bed : ligne du plateau (PlyoMachines.bedRow) ou null ;
   // ctx.nozzleChange : « Changer de buse » est possible (h.changeNozzle) ; h.changeBed rouvre la question du plateau.
+  // ctx.colours : ligne « Couleurs » (PlyoColours.ficheText), rouverte par h.changeColours ; '' : pas de ligne.
   function renderFiche(slot, ui, ctx) {
     var project = projectOf(ctx), h = ctx.handlers, extra = { nozzleMm: ctx.nozzleMm }, rows = root.PlyoJourney.filledRows(project, extra);
     slot.textContent = '';
@@ -57,6 +58,15 @@
         if (h.changeBed) bed.appendChild(ui.button('changer', h.changeBed, 'link'));
         card.appendChild(bed);
         if (ctx.bed.note) card.appendChild(ui.el('p', 'muted small', ctx.bed.note));
+      }
+      // Sous le filament : quelle bobine imprime chaque pièce (carte « Couleurs », lot 20), rouverte par « changer ».
+      if (row.line === 'filament' && ctx.colours && h.changeColours) {
+        var co = ui.el('div', 'project-row project-sub');
+        var cl = ui.el('div', 'project-label');
+        cl.appendChild(ui.el('span', 'muted small', ctx.colours));
+        co.appendChild(cl);
+        co.appendChild(ui.button('changer', h.changeColours, 'link'));
+        card.appendChild(co);
       }
       // Températures modifiables à la main : réservées aux confirmés (un débutant les change sans le vouloir).
       if (row.line === 'filament' && !ctx.beginner) {
