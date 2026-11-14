@@ -2544,7 +2544,7 @@
       habits = PlyoMachines.noteIntent(habits, true);
       saveHabits();
       projectChanged();
-      noteLine('D’accord, je garde les réglages d’impression actuels.', '', 'info', 'guide');
+      noteLine('D’accord, je garde les réglages d’impression actuels.', '', 'info', 'guide').classList.add('kept-settings'); // retirée dès qu'un lot s'applique
       // Le confirmé peut arrêter les questions dès la première fois (UX-33) ; le débutant, après trois projets passés.
       if (fsState.level === 'expert' && PlyoMachines.askIntent(habits) && !PlyoMachines.offerStopAsking(habits)) {
         var stop = noteLine('Tu préfères régler toi-même à chaque fois ?', '', 'info', 'guide');
@@ -6578,6 +6578,15 @@
         rows.forEach(function (r) { if (!r.box.checked) r.row.remove(); else r.box.replaceWith(markCell()); });
         sheet.querySelector('header').textContent = fr('Réglages appliqués');
         sheet.classList.add('applied');
+        // L'onglet Étapes ne contredit plus la discussion : « je garde les réglages actuels » part, le lot appliqué y est dit.
+        var keptNotes = document.querySelectorAll('#guide-notes .kept-settings');
+        keptNotes.forEach(function (n) { n.remove(); });
+        if (keptNotes.length) {
+          var appliedNote = el('div', 'note-line ok');
+          appliedNote.appendChild(icon('check', 14));
+          appliedNote.appendChild(el('span', 'note-text', picked.length + (picked.length > 1 ? ' réglages appliqués' : ' réglage appliqué') + ' depuis la discussion.'));
+          $('guide-notes').appendChild(appliedNote); // toujours dans l'onglet Étapes, même quand la discussion est ouverte
+        }
         pickHint.remove();
         footer.textContent = '';
         footer.classList.add('undo-row');
