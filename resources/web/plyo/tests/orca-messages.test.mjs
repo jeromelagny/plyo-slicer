@@ -163,7 +163,7 @@ test('parcours : plaque découpée mais non imprimable, pas de « Continuer » n
   assert.match(J.prompt('imprimer', { sliced: true, blocked: true }), /Plyo Slicer bloque l’impression/);
   assert.equal(J.prompt('imprimer', { sliced: true }), 'Prêt à imprimer');
   // Découpe refusée ou en erreur : plus de « Je découpe… », l'explication est annoncée, « Découper » reste possible.
-  assert.match(J.prompt('preparer', { sliceFailed: true }), /Plyo Slicer n’a pas pu découper ta plaque/);
+  assert.match(J.prompt('preparer', { sliceFailed: true }), /La découpe a échoué/);
   assert.equal(J.primaryAction('preparer', { sliceFailed: true }).kind, 'slice');
   assert.equal(J.primaryAction('preparer', { sliceFailed: true }).enabled, true);
 });

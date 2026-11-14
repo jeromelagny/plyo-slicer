@@ -177,7 +177,14 @@
   /* N6 : un bouton .link est une boîte flex, où text-overflow ne coupe pas le texte : bloc, avec points de suspension à la fin ;
      le texte complet est dans le titre (survol) et la fiche dépliée (clic). */
   .project-summary { display: block; min-width: 0; flex: 1 1 auto; font-weight: 600; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-  .orca-impact { font-weight: 600; }
+  /* Carte d'Orca : un seul gras (le titre) ; le message d'origine replié quand Plyo a sa propre explication. */
+  .orca-fold summary { cursor: pointer; }
+  .orca-fold p { margin: var(--s1) 0 0; }
+  .orca-acts > .btn { align-self: flex-start; }
+  /* Une carte bloquante porte la correction en bouton plein : « Découper », qui échouerait encore, passe en secondaire. */
+  .step-card:has(.orca-issue .fix-main) .journey-action .btn:not(.ghost) { background: transparent; color: var(--fg); border-color: var(--border); }
+  .journey-busy i:nth-child(2) { animation-delay: .2s; }
+  .journey-busy i:nth-child(3) { animation-delay: .4s; }
   .journey-bar { display: flex; gap: 3px; }
   #journey-bar { margin-bottom: var(--s3); }
   #journey-bar:empty { display: none; }
@@ -4333,18 +4340,31 @@
     box.body.appendChild(el('b', '', fr(v.title)));
     box.body.appendChild(el('p', '', fr(v.text)));
     if (v.impact) box.body.appendChild(el('p', 'orca-impact', fr(v.impact))); // bloquant ou non, dit avant la citation d'Orca
-    if (v.quote) box.body.appendChild(el('p', v.quoteMain ? 'orca-quote' : 'muted small', (v.quoteMain ? '' : 'Message de Plyo Slicer : ') + '« ' + v.quote + ' »'));
+    if (v.quote) box.body.appendChild(orcaQuote(v));
     if (v.note) box.body.appendChild(el('p', 'muted small', fr(v.note)));
     box.body.appendChild(orcaActions(v.actions, box));
     return box;
   }
+  // Le texte d'Orca : cité tel quel quand Plyo n'a pas d'explication à lui ; replié sinon, à un clic.
+  function orcaQuote(v) {
+    var text = '« ' + v.quote + ' »';
+    if (v.quoteMain) return el('p', 'orca-quote', text);
+    if (!v.explained) return el('p', 'muted small', 'Message de Plyo Slicer : ' + text);
+    var fold = el('details', 'orca-fold muted small');
+    fold.appendChild(el('summary', '', 'Message d’origine de Plyo Slicer'));
+    fold.appendChild(el('p', '', text));
+    return fold;
+  }
   // Libellé d'un bouton : sans compte, « Demander à l'assistant » dit qu'il faut se connecter (la question part après, afterLogin).
   function actionLabel(a) { return a.kind === 'ask' && !session ? window.PlyoPreflight.ASK_LOGIN_LABEL : a.label; }
   // Avec « Continuer quand même » (avertissement non bloquant), « Fermer » ferait la même chose : il n'est pas ajouté.
+  // Carte bloquante : sa première correction (réglage ou plateau) est le bouton plein, seul sur sa ligne ; le reste suit en secondaire.
   function orcaActions(actions, box) {
     var acts = el('div', 'printer-actions');
+    var main = box.classList.contains('error') ? actions.filter(function (a) { return a.kind === 'fix' || a.kind === 'plate'; })[0] : null;
+    var wrap = main ? el('div', 'stack orca-acts') : acts;
     actions.forEach(function (a) {
-      var b = button(actionLabel(a), function () {
+      var b = button(a === main && a.short ? a.short : actionLabel(a), function () {
         if (a.kind === 'show_setting') showSetting(a.key);
         else if (a.kind === 'show_me') showMe(a.target);
         else if (a.kind === 'import') projectHandlers.importPart();
@@ -4359,11 +4379,14 @@
           // Le plateau change : la découpe repart, et dit à son tour si Orca est d'accord.
           plateAction(a.action, function (ok) { if (!ok) { b.disabled = false; return; } box.remove(); plateAction('slice'); });
         } else if (a.kind === 'fix') { b.disabled = true; applyOrcaFix(a, box, function (ok) { if (!ok) b.disabled = false; }); }
-      }, 'btn ghost sm', a.kind === 'fix' || a.kind === 'plate' ? 'wand' : a.kind === 'show_setting' || a.kind === 'show_me' || a.kind === 'preview' ? 'eye' : a.kind === 'undo_last' ? 'undo' : '');
-      acts.appendChild(b);
+      }, a === main ? 'btn sm fix-main' : 'btn ghost sm', a.kind === 'fix' || a.kind === 'plate' ? 'wand' : a.kind === 'show_setting' || a.kind === 'show_me' || a.kind === 'preview' ? 'eye' : a.kind === 'undo_last' ? 'undo' : '');
+      if (a !== main) { acts.appendChild(b); return; }
+      wrap.appendChild(b);
+      if (a.short && a.also) wrap.appendChild(el('p', 'muted small', 'Je remets aussi : ' + a.also + '.'));
     });
     if (!actions.some(function (a) { return a.kind === 'dismiss'; })) acts.appendChild(button('Fermer', function () { box.remove(); }, 'link'));
-    return acts;
+    if (main) wrap.appendChild(acts);
+    return wrap;
   }
   // « Annuler les derniers réglages de l'assistant » depuis une carte d'Orca : le dernier lot appliqué (comme le menu « ⋯ »),
   // puis la découpe repart et dit à son tour si Orca est d'accord.

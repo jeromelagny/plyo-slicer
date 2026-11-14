@@ -153,7 +153,7 @@
         if (!c.sliced && c.intent === 'repeat') return 'Même usage que ta dernière pièce ?';
         if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';
         if (!c.sliced && c.slicing) return 'Je découpe ta plaque…';
-        if (!c.sliced && c.sliceFailed) return 'Plyo Slicer n’a pas pu découper ta plaque : je t’explique ci-dessous';
+        if (!c.sliced && c.sliceFailed) return 'La découpe a échoué : je t’explique ci-dessous';
         if (c.sliced && c.blocked) return 'Plyo Slicer bloque l’impression de cette plaque : je t’explique ci-dessous';
         return !c.sliced ? 'Découpe la plaque pour que je la vérifie' : (c.risks > 0 ? 'J’ai trouvé des points à régler : coche ce que tu veux corriger ci-dessous'
           : c.checked === 'clean' ? 'Tout est bon, on passe à l’impression' : c.checked === 'ignored' ? 'Tu as ignoré des points : à toi de voir' : 'Je vérifie ta plaque…');

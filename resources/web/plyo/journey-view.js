@@ -43,7 +43,15 @@
     line.appendChild(ui.el('span', 'journey-prompt', J.prompt(opts.step, opts.ctx)));
     // Un lien toujours visible à côté de la consigne (hors du contenu qui défile), jamais un bouton plein.
     if (opts.extra) line.appendChild(ui.button(opts.extra.label, opts.extra.onClick, 'link journey-extra', opts.extra.icon));
-    if (action.kind !== 'none') {
+    var promptText = J.prompt(opts.step, opts.ctx);
+    if (action.kind !== 'none' && !action.enabled && promptText.indexOf(action.label.replace('…', '')) === 0) {
+      // Attente déjà dite par la consigne (« Je découpe ta plaque… ») : un signe d'attente, pas un bouton grisé qui la répète.
+      var busy = ui.el('span', 'thinking journey-busy');
+      busy.setAttribute('role', 'status');
+      busy.setAttribute('aria-label', action.label);
+      for (var d = 0; d < 3; d++) busy.appendChild(ui.el('i'));
+      line.appendChild(busy);
+    } else if (action.kind !== 'none') {
       var b = ui.button(action.label, function () { if (action.enabled) opts.handlers.run(action.kind); }, 'btn sm');
       if (!action.enabled) b.disabled = true;
       line.appendChild(b);

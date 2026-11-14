@@ -227,7 +227,9 @@
       // Avec ce que le mode vase avait imposé (parois, couches du dessus, remplissage…) : sinon la pièce partirait creuse et ouverte.
       var also = i.fix ? leftovers(i.fix.also) : [];
       var label = 'Désactiver le mode vase' + (also.length ? ' et remettre ' + leftoverNames(also) : '');
-      var fix = i.fix && SCOPES[i.scope] ? [{ kind: 'fix', label: label, changes: [{ key: i.fix.key, value: i.fix.value, label: 'Mode vase' }].concat(leftoverChanges(also)) }] : [];
+      // `short` et `also` : le même libellé en deux morceaux, pour un bouton court avec, dessous, ce qui est remis en plus.
+      var fix = i.fix && SCOPES[i.scope] ? [{ kind: 'fix', label: label, short: 'Désactiver le mode vase', also: also.length ? leftoverNames(also) : '',
+        changes: [{ key: i.fix.key, value: i.fix.value, label: 'Mode vase' }].concat(leftoverChanges(also)) }] : [];
       return { text: 'Le mode vase imprime une seule pièce, en un seul trait qui monte en spirale. Avec plusieurs pièces sur la plaque, Plyo Slicer refuse.', actions: fix }; },
     spiral_mode: function () { return { text: 'Le mode vase ne marche pas avec une pièce de plusieurs couleurs ou matières.', actions: [] }; },
     object_too_tall: function (i, p, P) { return { text: P + ' est trop haute pour ton imprimante : son sommet dépasse la hauteur maximale.', actions: [{ kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour qu’elle tienne' }] }; },
@@ -350,7 +352,8 @@
     var i = issue || {}, c = ctx || {}, p = pieceOf(i, false), P = pieceOf(i, true);
     var known = EXPLAIN[i.code] ? EXPLAIN[i.code](i, p, P) : null;
     var warn = i.level !== 'error';
-    var view = { tone: warn ? 'warn' : 'error', title: titleOf(i, warn), text: '', impact: impactOf(i), quote: i.text || '', quoteMain: false, actions: [] };
+    // `explained` : Plyo a sa propre explication ; le texte d'Orca peut alors être replié (il propose parfois une autre piste).
+    var view = { tone: warn ? 'warn' : 'error', title: titleOf(i, warn), text: '', impact: impactOf(i), quote: i.text || '', quoteMain: false, explained: !!known, actions: [] };
     if (known) {
       view.text = known.text;
       view.actions = known.actions.filter(function (a) { return a.kind !== 'fix' || a.changes.every(function (c) { return c.key; }); });
