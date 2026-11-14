@@ -114,3 +114,15 @@ test('UX-27 : annulation refusée, les valeurs d’avant proposées d’un clic,
   assert.match(offer, /undoButton\('Annuler'/);
   assert.doesNotMatch(read('../../../src/plyo/PlyoSettingsBridge.cpp'), /remets la valeur à la main/i);
 });
+
+test('réglages liés en liste : la raison commune une seule fois, sinon une par ligne ; rien quand il n’y a rien', () => {
+  assert.equal(L.addedList([]), null);
+  assert.equal(L.addedList([{ id: 'x', after: 1 }]), null);
+  assert.deepEqual(L.addedList([{ id: 'wall_loops', label: 'Parois', after: 1, added: 'le mode vase l’exige' }, { id: 'sparse_infill_density', label: 'Remplissage', after: '0%', added: 'le mode vase l’exige' }]),
+    { title: 'J’ai aussi réglé, pour que ça tienne (le mode vase l’exige) :', tail: '', items: ['Parois → 1', 'Remplissage → 0 %'] });
+  assert.deepEqual(L.addedList([{ id: 'wall_loops', label: 'Parois', after: 1, added: 'le mode vase l’exige' }, { id: 'brim_width', label: 'Bordure', after: 5, added: 'la pièce est haute' }]).items,
+    ['Parois → 1 (le mode vase l’exige)', 'Bordure → 5 (la pièce est haute)']);
+  assert.equal(L.alsoChangedList(undefined), null);
+  assert.deepEqual(L.alsoChangedList([{ key: 'wall_loops', label: 'Parois', before: 3, after: 1 }]),
+    { title: 'Plyo Slicer a aussi réglé :', tail: '« Annuler » les remet aussi.', items: ['Parois : 3 → 1'] });
+});

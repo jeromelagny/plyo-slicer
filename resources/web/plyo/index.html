@@ -212,7 +212,8 @@
   .view { display: flex; flex-direction: column; gap: var(--s3); }
   .view.hidden { display: none; }
   #guide-notes { display: flex; flex-direction: column; gap: var(--s2); }
-  .more-badge { position: sticky; bottom: var(--s2); align-self: center; z-index: 2; border: 1px solid var(--accent); background: var(--accent-fill); color: var(--on-accent); border-radius: var(--r-pill); padding: 6px 14px; font-weight: 600; font-size: var(--fs-sm); box-shadow: var(--shadow); cursor: pointer; }
+  /* Hors du contenu qui défile, à cheval sur la bordure de la zone de saisie : il ne recouvre jamais un bouton ni un résultat. */
+  .more-badge { position: absolute; top: 0; right: var(--s3); transform: translateY(-50%); z-index: 2; min-height: 24px; border: 1px solid var(--accent); background: var(--accent-fill); color: var(--on-accent); border-radius: var(--r-pill); padding: 2px 10px; font-weight: 600; font-size: var(--fs-xs); line-height: 1.5; box-shadow: var(--shadow); cursor: pointer; }
   .more-badge.hidden { display: none; }
   .ai { scroll-margin-top: var(--s2); }
   .body > div:empty { display: none; } /* emplacements vides : pas d'espace fantôme en haut */
@@ -297,6 +298,17 @@
   .row.static { cursor: default; }
   .sheet .status { padding: var(--s2) var(--s3); color: var(--muted); font-size: var(--fs-sm); }
   .sheet .status:empty { display: none; }
+  /* Réglage sensible décoché : la case reste bien visible, c'est elle qu'il faut cocher. */
+  .row.sensitive.off input { opacity: 1; outline: 2px solid var(--warn); outline-offset: 2px; border-radius: 3px; }
+  .sheet.applied .caution, .sheet.undone .caution { display: none; }
+  /* Fiche annulée : la valeur d'avant redevient la valeur lisible, celle qui avait été appliquée passe en gris barré. */
+  .sheet.undone .row .mark, .sheet.undone .done { color: var(--muted); }
+  .sheet.undone .delta .old { color: var(--fg); text-decoration: none; font-weight: 700; }
+  .sheet.undone .delta .new { color: var(--muted); text-decoration: line-through; font-weight: 400; }
+  /* Réglages changés en plus du lot : une liste, la raison commune dite une seule fois. */
+  .also-list { display: flex; flex-direction: column; gap: 2px; }
+  .also-list p { margin: 0; }
+  .also-list ul { margin: 0; padding-left: var(--s4); }
   .calib-head { display: flex; flex-direction: column; gap: 2px; }
   .calib-head b { color: var(--fg); font-size: var(--fs-md); }
   .calib-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
@@ -317,7 +329,7 @@
   .undo-row .footnote { margin: 0; flex-basis: 100%; order: 2; }
 
   /* Zone de saisie */
-  .composer { border-top: 1px solid var(--border); padding: var(--s3) var(--s3) var(--s2); display: flex; flex-direction: column; gap: var(--s2); flex: none; }
+  .composer { position: relative; border-top: 1px solid var(--border); padding: var(--s3) var(--s3) var(--s2); display: flex; flex-direction: column; gap: var(--s2); flex: none; }
   .attached { display: flex; gap: 6px; flex-wrap: wrap; }
   .att { position: relative; width: 48px; height: 48px; }
   .att img { width: 48px; height: 48px; object-fit: cover; border-radius: var(--r-sm); display: block; }
@@ -515,10 +527,10 @@
       </div>
     </div>
     </div>
-    <button class="more-badge hidden" id="more-badge" type="button">↓ Voir la suite</button>
   </div>
 
   <div class="composer" id="composer">
+    <button class="more-badge hidden" id="more-badge" type="button" title="Voir la suite de la réponse" aria-label="Voir la suite de la réponse">↓ Suite</button>
     <div class="focus-chip hidden" id="focus-chip"><span data-icon="search"></span><span>Tu regardes :</span><b id="focus-label"></b><button type="button" class="go" id="focus-explain">Explique-moi</button><button type="button" class="x" id="focus-close" title="Masquer" aria-label="Masquer"></button></div>
     <div class="attached hidden" id="attached"></div>
     <div class="suggestions" id="suggestions"></div>
@@ -4378,8 +4390,8 @@
       row.appendChild(el('span', 'note-text', fr('Corrigé : ' + a.label.charAt(0).toLowerCase() + a.label.slice(1) + '.')));
       // Ce qui a été remis en plus du réglage en cause (ex. parois et remplissage après le mode vase), valeurs comprises.
       var also = (result && Array.isArray(result.applied) ? result.applied : []).filter(function (x) { return x && x.id && x.id !== a.changes[0].key; });
-      var details = also.length ? 'Remis aussi : ' + also.map(function (x) { return (x.label || x.id) + ' (' + Logic.valueText(x.before, x.id) + ' → ' + Logic.valueText(x.after, x.id) + ')'; }).join(', ') + '.' : '';
-      var orcaToo = Logic.alsoChangedText(result && result.also_changed);
+      var details = also.length ? { title: 'Remis aussi :', items: also.map(function (x) { return (x.label || x.id) + ' : ' + Logic.valueText(x.before, x.id) + ' → ' + Logic.valueText(x.after, x.id); }) } : null;
+      var orcaToo = Logic.alsoChangedList(result && result.also_changed);
       var undoId = (result && result.undo_id) || 0;
       if (undoId) row.appendChild(undoButton('Annuler', function (u) {
         pendingSheet = { kind: 'undo', onResult: function (undone, t) {
@@ -4390,7 +4402,7 @@
         postRequest({ type: 'undo', undo_id: undoId });
       }));
       fixed.body.appendChild(row);
-      [details, orcaToo].forEach(function (t) { if (t) fixed.body.appendChild(el('p', 'muted small', fr(t))); });
+      [details, orcaToo].forEach(function (l) { if (l) fixed.body.appendChild(alsoBlock(l, 'muted small')); });
       box.replaceWith(fixed);
       if (conv === mine) plateAction('slice');
       done(true);
@@ -4986,6 +4998,16 @@
     return b;
   }
   function markCell() { var m = el('span', 'mark'); m.appendChild(icon('check', 14)); return m; }
+  // Réglages changés en plus de ce qui était demandé : { title, items, tail } (Logic.addedList, Logic.alsoChangedList) en liste.
+  function alsoBlock(list, className) {
+    var box = el('div', (className ? className + ' ' : '') + 'also-list');
+    box.appendChild(el('p', '', list.title));
+    var ul = el('ul');
+    list.items.forEach(function (item) { ul.appendChild(el('li', '', item)); });
+    box.appendChild(ul);
+    if (list.tail) box.appendChild(el('p', '', list.tail));
+    return box;
+  }
   function doneLabel(text, iconName) { var d = el('span', 'done'); d.appendChild(icon(iconName || 'check', 13)); d.appendChild(txt(text)); return d; }
 
   // ---------- Calibration guidée par photo ----------
@@ -6391,7 +6413,8 @@
       info.appendChild(delta);
       if (s.reason) info.appendChild(el('div', 'why', s.reason));
       if (!archived && s.beyond) info.appendChild(el('div', 'why', '⚠ Hors de la plage conseillée par le fabricant de ton filament : à toi de décider.'));
-      else if (!archived && s.confirm) info.appendChild(el('div', 'why', '⚠ Réglage sensible : vérifie-le avant de l’appliquer.'));
+      else if (!archived && s.confirm) info.appendChild(el('div', 'why caution', '⚠ Réglage sensible : coche-le si tu veux l’appliquer.'));
+      if (!archived && (s.confirm || s.beyond)) row.classList.add('sensitive');
       row.appendChild(info);
       sheet.appendChild(row);
       if (box) box.addEventListener('change', function () { row.classList.toggle('off', !box.checked); updateCount(); });
@@ -6422,6 +6445,9 @@
       var line = Logic.manualEditsNote(items, conv && conv.project.assistant);
       if (line) { manualNote.textContent = fr(line); manualNote.classList.remove('hidden'); }
     });
+    // Rien de coché (un réglage sensible seul, par exemple) : la consigne, plutôt qu'un bouton grisé sans explication.
+    var pickHint = el('div', 'status hidden', 'Coche un réglage pour l’appliquer.');
+    sheet.insertBefore(pickHint, footer);
     var fail = el('div', 'fail hidden');
     sheet.appendChild(fail);
     var completeSlot = el('div', 'row-acts hidden'); // fiche du projet incomplète : le bouton qui mène à l'étape à faire
@@ -6432,6 +6458,7 @@
       var n = checked().length;
       apply.textContent = fr(n ? 'Appliquer ' + n + ' réglage' + (n > 1 ? 's' : '') : 'Aucun réglage coché');
       apply.disabled = !n;
+      pickHint.classList.toggle('hidden', n > 0);
     }
     updateCount();
 
@@ -6475,12 +6502,14 @@
         scheduleSave();
         rows.forEach(function (r) { if (!r.box.checked) r.row.remove(); else r.box.replaceWith(markCell()); });
         sheet.querySelector('header').textContent = fr('Réglages appliqués');
+        sheet.classList.add('applied');
+        pickHint.remove();
         footer.textContent = '';
         footer.classList.add('undo-row');
         var preset = lastValues && lastValues.context ? lastValues.context.process : '';
         footer.appendChild(doneLabel('Appliqué'));
         // Ce qui est réellement en place en plus des lignes cochées : réglages ajoutés par Plyo, réglages changés par Orca.
-        [Logic.addedText(result.applied), Logic.alsoChangedText(result.also_changed)].forEach(function (t) { if (t) footer.appendChild(el('p', 'small footnote orca-also', fr(t))); });
+        [Logic.addedList(result.applied), Logic.alsoChangedList(result.also_changed)].forEach(function (l) { if (l) footer.appendChild(alsoBlock(l, 'small footnote orca-also')); });
         var savedLine = Logic.savedText(result);
         if (savedLine) footer.appendChild(el('p', 'muted small footnote', fr(savedLine)));
         // Sans texte d'enregistrement : cas qui ne devrait plus arriver (save_applied répond toujours) ; noté pour le débogage,
@@ -6490,6 +6519,11 @@
           entry.applied = false;
           if (entry.hist) entry.hist.cards = 'undone';
           scheduleSave();
+          // La fiche a l'air annulée : son titre, ses coches et ses valeurs disent que les réglages d'avant sont revenus.
+          sheet.classList.remove('applied');
+          sheet.classList.add('undone');
+          sheet.querySelector('header').textContent = fr('Réglages annulés');
+          sheet.querySelectorAll('.row .mark').forEach(function (m) { m.textContent = ''; m.appendChild(icon('undo', 14)); });
           footer.textContent = '';
           footer.appendChild(doneLabel('Réglages d’avant remis', 'undo'));
           // Retouches faites à la main depuis : laissées telles quelles, et dit.
