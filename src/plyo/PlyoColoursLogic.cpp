@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
+#include <functional>
+#include <map>
 #include <set>
 #include <utility>
 
@@ -173,6 +176,276 @@ std::string slot_refusal(const nlohmann::json& state, Slot wanted, const std::st
         }
     }
     return std::string("Je ne vois plus cette bobine sur l'imprimante") + again + NOTHING;
+}
+
+std::string colour_hex(const std::string& value)
+{
+    if ((value.size() != 7 && value.size() != 9) || value[0] != '#')
+        return {};
+    for (size_t i = 1; i < value.size(); ++i)
+        if (!std::isxdigit(static_cast<unsigned char>(value[i])))
+            return {};
+    return upper(value.substr(0, 7));
+}
+
+namespace {
+
+// Lecture à plat des balises d'un modèle 3MF : assez pour les matériaux, les objets, leurs composants et le `build`, sans
+// construire d'arbre (un modèle peut peser des centaines de Mo, faits surtout de sommets et de triangles).
+struct XmlTag
+{
+    std::string                                      name; // sans préfixe d'espace de noms (« m:colorgroup » → « colorgroup »)
+    std::vector<std::pair<std::string, std::string>> attrs;
+    bool                                             closing = false, empty = false;
+    const std::string* get(const char* key) const
+    {
+        for (const auto& [k, v] : attrs)
+            if (k == key)
+                return &v;
+        return nullptr;
+    }
+};
+
+std::string local(const std::string& name)
+{
+    const size_t colon = name.find(':');
+    return colon == std::string::npos ? name : name.substr(colon + 1);
+}
+
+std::string unescape(const std::string& s)
+{
+    if (s.find('&') == std::string::npos)
+        return s;
+    static const std::pair<const char*, char> ENTITIES[] = {{"&amp;", '&'}, {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'}, {"&apos;", '\''}};
+    std::string out;
+    for (size_t i = 0; i < s.size(); ++i) {
+        bool done = false;
+        if (s[i] == '&')
+            for (const auto& [ent, c] : ENTITIES)
+                if (s.compare(i, std::strlen(ent), ent) == 0) {
+                    out += c;
+                    i += std::strlen(ent) - 1;
+                    done = true;
+                    break;
+                }
+        if (!done)
+            out += s[i];
+    }
+    return out;
+}
+
+// La balise qui commence en `pos` (sur '<') ; `pos` passe après son '>'. Faux en fin de texte ou sur une balise coupée.
+// `with_attrs` faux : les attributs ne sont pas lus (sommets).
+bool next_tag(const std::string& xml, size_t& pos, XmlTag& tag, const std::function<bool(const std::string&)>& with_attrs)
+{
+    pos = xml.find('<', pos);
+    if (pos == std::string::npos)
+        return false;
+    tag = XmlTag();
+    size_t i = pos + 1;
+    if (i < xml.size() && (xml[i] == '?' || xml[i] == '!')) { // déclaration, commentaire, CDATA : sautés
+        const size_t end = xml.compare(i, 3, "!--") == 0 ? xml.find("-->", i) : xml.find('>', i);
+        if (end == std::string::npos)
+            return false;
+        pos = end + 1;
+        return true;
+    }
+    if (i < xml.size() && xml[i] == '/') {
+        tag.closing = true;
+        ++i;
+    }
+    size_t start = i;
+    while (i < xml.size() && !std::isspace(static_cast<unsigned char>(xml[i])) && xml[i] != '>' && xml[i] != '/')
+        ++i;
+    tag.name             = local(xml.substr(start, i - start));
+    const bool read_them = !tag.closing && with_attrs(tag.name);
+    while (i < xml.size() && xml[i] != '>') {
+        if (xml[i] == '/') {
+            tag.empty = true;
+            ++i;
+            continue;
+        }
+        if (std::isspace(static_cast<unsigned char>(xml[i]))) {
+            ++i;
+            continue;
+        }
+        start = i;
+        while (i < xml.size() && xml[i] != '=' && xml[i] != '>' && !std::isspace(static_cast<unsigned char>(xml[i])))
+            ++i;
+        std::string key = xml.substr(start, i - start);
+        while (i < xml.size() && std::isspace(static_cast<unsigned char>(xml[i])))
+            ++i;
+        if (i >= xml.size() || xml[i] != '=')
+            continue;
+        ++i;
+        while (i < xml.size() && std::isspace(static_cast<unsigned char>(xml[i])))
+            ++i;
+        if (i >= xml.size() || (xml[i] != '"' && xml[i] != '\''))
+            continue;
+        const char   quote = xml[i];
+        const size_t end   = xml.find(quote, i + 1);
+        if (end == std::string::npos)
+            return false;
+        if (read_them)
+            tag.attrs.emplace_back(local(key), unescape(xml.substr(i + 1, end - i - 1)));
+        i = end + 1;
+    }
+    if (i >= xml.size())
+        return false;
+    pos = i + 1;
+    return true;
+}
+
+int to_int(const std::string* s, int fallback)
+{
+    if (s == nullptr || s->empty() || s->size() > 9 || s->find_first_not_of("0123456789") != std::string::npos)
+        return fallback;
+    return std::stoi(*s);
+}
+
+struct ModelObjectInfo
+{
+    std::string      name;
+    int              pid = -1, pindex = -1;
+    std::vector<int> components;
+    size_t           triangles = 0;
+    int              face_pid = -2, face_p = -2; // propriété commune à tous les triangles ; -1 : différente d'un triangle à l'autre
+};
+
+} // namespace
+
+FileColours model_colours(const std::string& xml)
+{
+    std::map<int, std::vector<std::string>> groups; // basematerials ou colorgroup : id → couleurs, dans l'ordre de pindex
+    std::map<int, ModelObjectInfo>          objects;
+    std::vector<int>                        build;
+    int                                     group = -1, object = -1;
+    const auto with_attrs = [](const std::string& n) { return n != "vertex"; };
+    size_t     pos        = 0;
+    XmlTag     tag;
+    while (next_tag(xml, pos, tag, with_attrs)) {
+        const std::string& n = tag.name;
+        if (tag.closing) {
+            if (n == "basematerials" || n == "colorgroup")
+                group = -1;
+            else if (n == "object")
+                object = -1;
+            continue;
+        }
+        if (n == "vertex")
+            continue;
+        if (n == "triangle") {
+            if (object < 0)
+                continue;
+            ModelObjectInfo& o   = objects[object];
+            const int        pid = to_int(tag.get("pid"), o.pid), p = to_int(tag.get("p1"), o.pindex);
+            if (o.triangles++ == 0) {
+                o.face_pid = pid;
+                o.face_p   = p;
+            } else if (o.face_pid != pid || o.face_p != p)
+                o.face_pid = o.face_p = -1;
+        } else if (n == "basematerials" || n == "colorgroup") {
+            group = to_int(tag.get("id"), -1);
+            if (group >= 0)
+                groups[group]; // groupe vide connu
+            if (tag.empty)
+                group = -1;
+        } else if ((n == "base" || n == "color") && group >= 0) {
+            const std::string* c = tag.get(n == "base" ? "displaycolor" : "color");
+            groups[group].push_back(c != nullptr ? colour_hex(*c) : std::string());
+        } else if (n == "object") {
+            object = to_int(tag.get("id"), -1);
+            if (object >= 0) {
+                ModelObjectInfo& o = objects[object];
+                if (const std::string* name = tag.get("name"))
+                    o.name = *name;
+                o.pid    = to_int(tag.get("pid"), -1);
+                o.pindex = to_int(tag.get("pindex"), o.pid >= 0 ? 0 : -1);
+            }
+            if (tag.empty)
+                object = -1;
+        } else if (n == "component" && object >= 0) {
+            // Un composant d'un autre fichier du paquet (p:path) n'est pas lu ici : sa couleur reste inconnue.
+            const int ref = tag.get("path") != nullptr ? -1 : to_int(tag.get("objectid"), -1);
+            objects[object].components.push_back(ref);
+        } else if (n == "item") {
+            const int id = to_int(tag.get("objectid"), -1);
+            if (id >= 0 && std::find(build.begin(), build.end(), id) == build.end())
+                build.push_back(id);
+        }
+    }
+
+    auto colour_of = [&](const ModelObjectInfo& o) -> std::string {
+        int pid = o.pid, p = o.pindex;
+        if (o.triangles > 0 && o.face_pid != -1) { // tous les triangles portent la même propriété (celle de l'objet par défaut)
+            pid = o.face_pid;
+            p   = o.face_p < 0 ? 0 : o.face_p;
+        }
+        const auto g = groups.find(pid);
+        return g != groups.end() && p >= 0 && p < static_cast<int>(g->second.size()) ? g->second[p] : std::string();
+    };
+
+    FileColours out;
+    auto        t_of = [&](const std::string& c) {
+        if (c.empty())
+            return -1;
+        auto it = std::find(out.colours.begin(), out.colours.end(), c);
+        if (it != out.colours.end())
+            return static_cast<int>(it - out.colours.begin());
+        out.colours.push_back(c);
+        return static_cast<int>(out.colours.size()) - 1;
+    };
+    constexpr size_t MAX_PARTS = 100000; // comme Orca : un graphe de composants cyclique ne s'étend pas sans fin
+    for (int id : build) {
+        const auto top = objects.find(id);
+        if (top == objects.end())
+            continue;
+        FileObject fo;
+        fo.name = top->second.name;
+        // Parcours en largeur, comme _BBS_3MF_Importer::_generate_current_object_list ; un composant sans couleur prend celle
+        // de son parent.
+        std::vector<std::pair<int, std::string>> queue = {{id, std::string()}};
+        size_t                                   seen  = 0;
+        for (size_t q = 0; q < queue.size() && seen < MAX_PARTS; ++q) {
+            const auto it = objects.find(queue[q].first);
+            if (it == objects.end())
+                continue;
+            std::string c = colour_of(it->second);
+            if (c.empty())
+                c = queue[q].second;
+            if (!it->second.components.empty()) {
+                seen += it->second.components.size();
+                for (int child : it->second.components)
+                    queue.emplace_back(child, c);
+            } else if (it->second.triangles > 0)
+                fo.parts.push_back({t_of(c), it->second.name});
+        }
+        out.objects.push_back(fo);
+    }
+    if (out.colours.size() > MAX_COLOURS) { // au-delà, Orca n'a pas assez de couleurs de projet : rien n'est repris
+        out.colours.clear();
+        for (FileObject& o : out.objects)
+            for (FilePart& p : o.parts)
+                p.t = -1;
+    }
+    return out;
+}
+
+std::vector<std::pair<int, std::string>> colours_to_set(const std::vector<std::string>& file, const std::vector<int>& used_by_file,
+                                                        const std::vector<int>& used_by_others)
+{
+    std::vector<std::pair<int, std::string>> out;
+    size_t                                   valid = 0;
+    for (const std::string& c : file)
+        valid += colour_hex(c).empty() ? 0 : 1;
+    if (valid < 2)
+        return out;
+    const std::set<int> mine(used_by_file.begin(), used_by_file.end());
+    for (int t : mine)
+        if (t >= 0 && t < static_cast<int>(file.size()) && !colour_hex(file[t]).empty() &&
+            std::find(used_by_others.begin(), used_by_others.end(), t) == used_by_others.end())
+            out.emplace_back(t, colour_hex(file[t]));
+    return out;
 }
 
 }} // namespace Plyo::ColoursLogic

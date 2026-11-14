@@ -5387,3 +5387,142 @@ TEST_CASE("Couleurs : la bobine choisie est encore celle qu'on a lue")
     cc2["canvases"][0]["trays"][0].erase("label");
     CHECK(slot_refusal(cc2, {0, 0}, "ABS", "#2060D0") == "La bobine 1 contient maintenant du PLA : touche « Vérifier à nouveau », puis choisis à nouveau. Rien n'a été modifié.");
 }
+
+// --- Lot 21 : couleurs prévues par un 3MF joint ---
+
+namespace {
+// Un modèle 3MF « ordinaire » comme celui de Jérôme (ouvre-canette) : trois matériaux de base, trois sous-objets assemblés par
+// composants, un seul objet dans le build.
+const char* const CANETTE_MODEL =
+    R"(<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">)"
+    R"(<resources><basematerials id="1"><base name="Corps bordeaux" displaycolor="#74140CFF"/><base name="Filets or" displaycolor="#b7953eff"/>)"
+    R"(<base name="Etoiles blanc" displaycolor="#FFFFFFFF"/></basematerials>)"
+    R"(<object id="2" name="Corps bordeaux" type="model" pid="1" pindex="0"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices><triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>)"
+    R"(<object id="3" name="Filets or" type="model" pid="1" pindex="1"><mesh><vertices><vertex x="0" y="0" z="0"/></vertices><triangles><triangle v1="0" v2="0" v3="0"/></triangles></mesh></object>)"
+    R"(<object id="4" name="Etoiles &amp; ongle" type="model" pid="1" pindex="2"><mesh><vertices><vertex x="0" y="0" z="0"/></vertices><triangles><triangle v1="0" v2="0" v3="0"/></triangles></mesh></object>)"
+    R"(<object id="5" name="Ouvre-canette" type="model"><components><component objectid="2"/><component objectid="3"/><component objectid="4"/></components></object>)"
+    R"(</resources><build><item objectid="5" transform="1 0 0 0 1 0 0 0 1 128 128 0"/></build></model>)";
+} // namespace
+
+TEST_CASE("Lot 21 · couleurs du fichier : forme « #RRGGBB »")
+{
+    using namespace Plyo::ColoursLogic;
+    CHECK(colour_hex("#74140CFF") == "#74140C");
+    CHECK(colour_hex("#b7953e") == "#B7953E");
+    CHECK(colour_hex("rouge").empty());
+    CHECK(colour_hex("#12345").empty());
+    CHECK(colour_hex("#GG0000").empty());
+    CHECK(colour_hex("").empty());
+}
+
+TEST_CASE("Lot 21 · 3MF ordinaire : matériaux de base portés par les sous-objets (fichier de Jérôme)")
+{
+    using namespace Plyo::ColoursLogic;
+    const FileColours f = model_colours(CANETTE_MODEL);
+    REQUIRE(f.colours == std::vector<std::string>{"#74140C", "#B7953E", "#FFFFFF"});
+    REQUIRE(f.objects.size() == 1);
+    CHECK(f.objects[0].name == "Ouvre-canette");
+    REQUIRE(f.objects[0].parts.size() == 3);
+    CHECK(f.objects[0].parts[0].t == 0);
+    CHECK(f.objects[0].parts[1].t == 1);
+    CHECK(f.objects[0].parts[2].t == 2);
+    CHECK(f.objects[0].parts[0].name == "Corps bordeaux");
+    CHECK(f.objects[0].parts[2].name == "Etoiles & ongle");
+}
+
+TEST_CASE("Lot 21 · 3MF ordinaire : groupes de couleurs, couleur sur les triangles, objets séparés, couleurs partagées")
+{
+    using namespace Plyo::ColoursLogic;
+    const std::string tri = R"(<vertices><vertex x="0" y="0" z="0"/></vertices>)";
+    const std::string xml =
+        R"(<model xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"><resources>)"
+        R"(<m:colorgroup id="7"><m:color color="#FF0000"/><m:color color="#00FF00"/></m:colorgroup>)"
+        R"(<object id="1" name="A" pid="7" pindex="1"><mesh>)" + tri + R"(<triangles><triangle v1="0" v2="0" v3="0"/></triangles></mesh></object>)"
+        // couleur uniforme portée par chaque triangle, pas par l'objet
+        R"(<object id="2" name="B"><mesh>)" + tri + R"(<triangles><triangle v1="0" v2="0" v3="0" pid="7" p1="0"/><triangle v1="0" v2="0" v3="0" pid="7" p1="0"/></triangles></mesh></object>)"
+        // triangles de couleurs différentes : couleur par face, non reprise
+        R"(<object id="3" name="C"><mesh>)" + tri + R"(<triangles><triangle v1="0" v2="0" v3="0" pid="7" p1="0"/><triangle v1="0" v2="0" v3="0" pid="7" p1="1"/></triangles></mesh></object>)"
+        // même couleur que A
+        R"(<object id="4" name="D" pid="7" pindex="1"><mesh>)" + tri + R"(<triangles><triangle v1="0" v2="0" v3="0"/></triangles></mesh></object>)"
+        R"(</resources><build><item objectid="1"/><item objectid="2"/><item objectid="3"/><item objectid="1"/><item objectid="4"/></build></model>)";
+    const FileColours f = model_colours(xml);
+    CHECK(f.colours == std::vector<std::string>{"#00FF00", "#FF0000"});
+    REQUIRE(f.objects.size() == 4); // un objet repris deux fois dans le build : une pièce (deux instances chez Orca)
+    CHECK(f.objects[0].parts[0].t == 0);
+    CHECK(f.objects[1].parts[0].t == 1);
+    CHECK(f.objects[2].parts[0].t == -1);
+    CHECK(f.objects[3].parts[0].t == 0);
+}
+
+TEST_CASE("Lot 21 · 3MF ordinaire : sans couleur, composants imbriqués, composant d'un autre fichier, texte abîmé")
+{
+    using namespace Plyo::ColoursLogic;
+    const std::string mesh = R"(<mesh><vertices><vertex x="0" y="0" z="0"/></vertices><triangles><triangle v1="0" v2="0" v3="0"/></triangles></mesh>)";
+    CHECK(model_colours(R"(<model><resources><object id="1">)" + mesh + R"(</object></resources><build><item objectid="1"/></build></model>)").colours.empty());
+    // Imbriqués : parcours en largeur, comme Orca (la partie directe d'abord, puis celles du sous-assemblage) ; couleur héritée.
+    const std::string nested =
+        R"(<model><resources><basematerials id="9"><base displaycolor="#111111"/><base displaycolor="#222222"/></basematerials>)"
+        R"(<object id="1" name="sub-a">)" + mesh + R"(</object><object id="2" name="sub-b" pid="9" pindex="1">)" + mesh + R"(</object>)"
+        R"(<object id="3" name="groupe" pid="9" pindex="0"><components><component objectid="1"/><component objectid="2"/></components></object>)"
+        R"(<object id="4" name="direct" pid="9" pindex="1">)" + mesh + R"(</object>)"
+        R"(<object id="5" name="tout"><components><component objectid="3"/><component objectid="4"/><component p:path="/3D/x.model" objectid="1"/></components></object>)"
+        R"(</resources><build><item objectid="5"/></build></model>)";
+    const FileColours f = model_colours(nested);
+    REQUIRE(f.objects.size() == 1);
+    REQUIRE(f.objects[0].parts.size() == 3);
+    CHECK(f.objects[0].parts[0].name == "direct");
+    CHECK(f.objects[0].parts[0].t == 0); // #222222, la première rencontrée
+    CHECK(f.objects[0].parts[1].name == "sub-a");
+    CHECK(f.objects[0].parts[1].t == 1); // #111111 hérité du groupe
+    CHECK(f.objects[0].parts[2].t == 0);
+    CHECK(f.colours == std::vector<std::string>{"#222222", "#111111"});
+    CHECK(model_colours("<model><resources><basematerials id=\"1\"><base displaycolor=\"#FF").objects.empty());
+    CHECK(model_colours("").colours.empty());
+    // Un cycle de composants ne bloque pas.
+    CHECK(model_colours(R"(<model><resources><object id="1"><components><component objectid="1"/></components></object></resources><build><item objectid="1"/></build></model>)").objects.size() == 1);
+}
+
+TEST_CASE("Lot 21 · couleurs du projet recolorées d'après le fichier")
+{
+    using namespace Plyo::ColoursLogic;
+    const std::vector<std::string> three = {"#74140C", "#B7953E", "#FFFFFF"};
+    CHECK(colours_to_set(three, {0, 1, 2}, {}) == std::vector<std::pair<int, std::string>>{{0, "#74140C"}, {1, "#B7953E"}, {2, "#FFFFFF"}});
+    // Une couleur que porte déjà une autre pièce de la plaque garde la sienne.
+    CHECK(colours_to_set(three, {0, 1, 2}, {0}) == std::vector<std::pair<int, std::string>>{{1, "#B7953E"}, {2, "#FFFFFF"}});
+    // Seulement les couleurs que portent les pièces posées.
+    CHECK(colours_to_set(three, {2}, {}) == std::vector<std::pair<int, std::string>>{{2, "#FFFFFF"}});
+    // Une seule couleur dans le fichier : la bobine choisie reste.
+    CHECK(colours_to_set({"#74140C"}, {0}, {}).empty());
+    CHECK(colours_to_set({"#74140C", "x"}, {0, 1}, {}).empty());
+    CHECK(colours_to_set({"#74140C", "", "#FFFFFF"}, {0, 1, 2}, {}) == std::vector<std::pair<int, std::string>>{{0, "#74140C"}, {2, "#FFFFFF"}});
+}
+
+TEST_CASE("Lot 21 · couleurs d'un projet Bambu Studio ou Orca (project_settings.config)")
+{
+    using Plyo::ProjectLogic::file_colours;
+    CHECK(file_colours(R"({"filament_colour":["#FF0000","#00ff00ff","rouge","#0000FF"],"layer_height":"0.2"})") ==
+          std::vector<std::string>{"#FF0000", "#00FF00", "", "#0000FF"});
+    CHECK(file_colours(R"({"layer_height":"0.2"})").empty());
+    CHECK(file_colours("pas du json").empty());
+    CHECK(file_colours(R"({"filament_colour":"#FF0000"})").empty());
+    nlohmann::json many = nlohmann::json::array();
+    for (int i = 0; i < 20; ++i)
+        many.push_back("#123456");
+    CHECK(file_colours(nlohmann::json({{"filament_colour", many}}).dump()).size() == 16);
+}
+
+TEST_CASE("Lot 21 · les couleurs du fichier sont gardées dans la fiche du projet, nettoyées")
+{
+    using Plyo::ProjectLogic::sanitize;
+    nlohmann::json p = {{"file_colours", {"#74140cff", "rouge", "#FFFFFF", 12, ""}}};
+    CHECK(sanitize(p)["file_colours"] == nlohmann::json({"#74140C", "", "#FFFFFF"}));
+    CHECK(!sanitize({{"file_colours", {"x", ""}}}).contains("file_colours"));
+    CHECK(!sanitize({{"file_colours", "#FFFFFF"}}).contains("file_colours"));
+    nlohmann::json many = nlohmann::json::array();
+    for (int i = 0; i < 30; ++i)
+        many.push_back("#ABCDEF");
+    CHECK(sanitize({{"file_colours", many}})["file_colours"].size() == 16);
+    // Rechargement : ce qui a été gardé repasse tel quel.
+    const nlohmann::json once = sanitize(p);
+    CHECK(sanitize(once)["file_colours"] == once["file_colours"]);
+}

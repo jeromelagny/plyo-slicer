@@ -2,8 +2,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstddef>
 #include <functional>
 #include <string>
+#include <vector>
 
 // Couleur des pièces de la plaque en cours (carte « Couleurs » de l'étape Filament), côté slicer : lecture, sélection d'une
 // pièce, changement de couleur d'une pièce ou d'une partie. Messages colours_get / colour_set du panneau (PlyoAssistant.cpp).
@@ -27,5 +29,14 @@ bool select(const std::string& ref);
 // au projet si besoin, profil et couleur de la bobine sur cette couleur, sélection de la cible, changement de couleur, sélection
 // d'avant remise. « Annuler » : plate_action « undo » avec `undo_token` (PlateActions::undo).
 void set_colour(const nlohmann::json& request, std::function<void(nlohmann::json)> done);
+
+// Lot 21 : couleurs prévues par le 3MF `path_utf8` que le panneau vient de poser (pièces `added`, rangs dans le modèle, dans
+// l'ordre du fichier). Rend le fichier tel qu'il est, sans choix de l'assistant : chaque partie reprend la couleur du fichier
+// (3MF ordinaire : matériaux de base ou groupes de couleurs, que le lecteur d'Orca ne reprend pas ; projet Bambu Studio ou Orca :
+// Orca garde déjà la couleur des parties), les couleurs du projet manquantes sont ajoutées comme le fait l'import d'Orca, et les
+// couleurs du projet que portent ces pièces (et aucune autre pièce de la plaque) prennent la teinte du fichier. Aucune étape
+// d'annulation à part : celle de l'import la défait. Fichier d'une seule couleur, ou pièces qui ne correspondent pas : rien.
+// Rend {file_colours: ["#RRGGBB" ou "", rang = t]} (vide si rien n'est repris). Rien de tout cela ne part au service.
+nlohmann::json from_file(const std::string& path_utf8, const std::vector<size_t>& added);
 
 }} // namespace Plyo::Colours

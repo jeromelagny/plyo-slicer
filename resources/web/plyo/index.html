@@ -262,6 +262,7 @@
   .note-line > .ic { margin-top: 3px; }
   .note-line .note-text { flex: 1 1 0; min-width: 60%; }
   .note-line.ok { color: var(--accent-text); }
+  .note-line.quiet { color: var(--muted); font-size: var(--fs-sm); } /* lot 21 : « Je connais déjà », une ligne discrète */
   .note-line.error { color: var(--danger-text); }
   .cmds { display: flex; flex-direction: column; gap: var(--s2); align-items: flex-start; }
   .cmds-list { display: flex; flex-direction: column; gap: var(--s1); align-items: flex-start; }
@@ -363,7 +364,15 @@
   .manual-tag { display: inline-flex; align-items: center; }
   /* Carte « Couleurs » (lot 20) : la pièce sélectionnée dans la vue 3D est mise en évidence */
   .colour-row.on { background: var(--accent-soft); border-radius: var(--r-md); padding-left: var(--s1); padding-right: var(--s1); }
-  .colour-name { display: inline-flex; align-items: center; }
+  .colour-name { display: inline-flex; align-items: center; text-align: left; }
+  /* Lot 21 : le nom à gauche (il peut passer à la ligne), la bobine à droite sur une seule ligne ; les parties décalées sous leur pièce */
+  .colour-label { flex: 1 1 auto; flex-wrap: wrap; row-gap: 0; }
+  .colour-right { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s1) var(--s2); flex: none; max-width: 62%; }
+  .colour-spool { display: inline-flex; align-items: center; white-space: nowrap; }
+  .colour-part { margin-left: 12px; padding-left: 12px; border-left: 2px solid var(--border); }
+  .colour-detail { flex-basis: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .colour-file-name { display: inline-flex; align-items: center; }
+  .colour-same { color: var(--warn-text); }
   .project-temps { padding-left: 20px; }
   .tour { border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--accent-soft); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .tour .step { font-size: var(--fs-xs); font-weight: 600; color: var(--accent-text); text-transform: uppercase; letter-spacing: .04em; }
@@ -1020,7 +1029,11 @@
   // dernière demande, `key` (dernier état reçu, pour ne redessiner que s'il change), `picker` (« changer » ouvert), `token` du
   // changement en attente (0 sinon), `error` et `recheck` (le refus propose « Vérifier à nouveau »), `reopen` (rouverte depuis la fiche).
   // La couleur d'une pièce ne change que sur un clic dans cette carte : aucun autre chemin n'envoie colour_set.
-  var coloursUI = { conv: null, state: null, id: 0, key: '', picker: null, token: 0, next: 0, error: '', recheck: false, reopen: false };
+  // Lot 21 : `unfolded` (« Changer la couleur d'une seule pièce » ouvert sous les couleurs du fichier), `seen` (pièces déjà vues dans
+  // cette conversation : l'invitation à choisir les couleurs n'est faite qu'une fois par pièce posée), `seenConv`, `posed` (une
+  // pièce vient d'être posée par le panneau : elle compte comme nouvelle même à la première lecture), `invite` (la note affichée).
+  var coloursUI = { conv: null, state: null, id: 0, key: '', picker: null, token: 0, next: 0, error: '', recheck: false, reopen: false, unfolded: false,
+    seen: {}, seenConv: null, posed: null, invite: null };
   function orcaPrinterName() { return lastValues && lastValues.context ? lastValues.context.printer : ''; }
   function projectPrinterPreset() { var p = conv && conv.project.printer; return p && !p.proposed ? p.preset : ''; }
   // La buse lue par le slicer, seulement quand il est sur la machine du projet.
@@ -1138,7 +1151,7 @@
     if (PlyoCanvas.tooMany(colours, trays)) return 'tooMany';
     // Plusieurs pièces, une pièce en parties ou plusieurs couleurs : la carte « Couleurs », une ligne par pièce (lot 20).
     if (!(coloursUI.conv === conv && coloursUI.state)) return 'loading'; // une lecture, sans réseau : la réponse suit tout de suite
-    if (PlyoColours.wanted(coloursState(), trays)) return 'colours';
+    if (PlyoColours.wanted(coloursState(), trays) || coloursFileRows(trays).length) return 'colours';
     return colours.length > 1 ? 'multi' : 'single';
   }
   function ensureCanvasRead(step) {
@@ -1175,7 +1188,9 @@
     }
     if (mode === 'colours') {
       out.complete = PlyoColours.complete(canvasColours(), canvasUI.mapping, PlyoCanvas.trays(st));
-      out.reopened = coloursUI.reopen && Array.isArray(conv.project.canvas) && conv.project.canvas.length > 0;
+      // Rouverte depuis la fiche : « C’est bon » tant que les bobines sont celles déjà choisies ; une couleur du fichier réaffectée
+      // (lot 21) n'est écrite qu'à « Utiliser ces bobines ».
+      out.reopened = coloursUI.reopen && Array.isArray(conv.project.canvas) && conv.project.canvas.length > 0 && PlyoColours.sameAsChosen(canvasUI.mapping, conv.project.canvas, canvasColours());
       out.busy = !!coloursUI.token;
     }
     return out;
@@ -1536,7 +1551,7 @@
   // Pièces et couleurs de la plaque, relues au slicer (lecture seule) ; `select` : la pièce touchée, sélectionnée dans la vue 3D.
   function requestColours(select) {
     if (!conv) return;
-    if (coloursUI.conv !== conv) { coloursUI.conv = conv; coloursUI.state = null; coloursUI.key = ''; coloursUI.picker = null; coloursUI.error = ''; coloursUI.recheck = false; }
+    if (coloursUI.conv !== conv) { coloursUI.conv = conv; coloursUI.state = null; coloursUI.key = ''; coloursUI.picker = null; coloursUI.error = ''; coloursUI.recheck = false; coloursUI.unfolded = false; }
     coloursUI.id += 1;
     var m = { type: 'colours_get', id: coloursUI.id };
     if (select) m.select = select;
@@ -1545,7 +1560,19 @@
   // Utile à l'étape Filament (choix des bobines), et ensuite pour la ligne « Couleurs » de la fiche.
   function coloursRelevant(step) {
     if (!conv || !conv.project.printer) return false;
-    return canvasWanted(step) || manualWanted(step) || (Array.isArray(conv.project.canvas) && conv.project.canvas.length > 0);
+    // Après l'étape Filament aussi : une pièce posée ensuite peut mériter la carte (invitation, lot 21).
+    return canvasWanted(step) || manualWanted(step) || (Array.isArray(conv.project.canvas) && conv.project.canvas.length > 0) || (afterFilament(step) && !!knownPrinter());
+  }
+  function afterFilament(step) { return step === 'preparer' || step === 'imprimer' || step === 'resultat'; }
+  function coloursOpts() { return { partName: conv && conv.project.part && conv.project.part.name || '' }; }
+  // Lot 21 : une ligne par couleur du 3MF joint ([] hors 3MF en couleurs).
+  function coloursFileRows(trays) { return conv ? PlyoColours.fileRows(coloursState(), conv.project.file_colours, trays, canvasUI.mapping, coloursOpts()) : []; }
+  // Une pièce posée a apporté des couleurs : l'association est proposée à nouveau pour toutes les couleurs (la proposition reprend
+  // celle du projet si elle les couvre encore). Rien n'est écrit avant « Utiliser ces bobines ».
+  function ensureColoursMapping(step) {
+    if (!conv || coloursUI.token || canvasMode(step) !== 'colours' || PlyoColours.covers(canvasUI.mapping, canvasColours())) return;
+    canvasUI.mapping = canvasProposal();
+    coloursUI.picker = null;
   }
   function ensureColoursRead(step) { if (coloursRelevant(step) && coloursUI.conv !== conv) requestColours(); }
   // À chaque relevé du plateau (toutes les 2 s) : une pièce ajoutée, retirée ou sélectionnée se voit dans la carte.
@@ -1556,6 +1583,47 @@
     var first = !coloursUI.state;
     coloursUI.state = msg;
     if (first || key !== coloursUI.key) { coloursUI.key = key; renderProject(); }
+    maybeInviteColours();
+  }
+  // Lot 21 : la machine a-t-elle plusieurs bobines ? true, false, ou null tant que la saisie manuelle n'est pas relue.
+  function severalSpools() {
+    var st = slotState(), known = knownPrinter();
+    if (st && st.ok) return PlyoCanvas.trays(st).length > 1;
+    if (Array.isArray(conv.project.canvas) && conv.project.canvas.length > 1) return true;
+    if (!known) return false;
+    if (known.slots && known.linked) return true; // CFS, IFS, U1, Canvas : plusieurs emplacements par nature
+    if (known.slots === 'canvas') return false;
+    var m = canvasUI.manual;
+    if (m.preset === known.preset && !m.loading) return !!(m.state && m.state.ok && PlyoCanvas.trays(m.state).length > 1);
+    if (!m.loading) { m.preset = known.preset; m.loading = true; m.state = null; window.orca.postMessage({ type: 'slots_manual_get', preset: known.preset }); }
+    return null;
+  }
+  // Une pièce posée après l'étape Filament qui mérite la carte « Couleurs », sur une machine à plusieurs bobines : une phrase et
+  // « Choisir les couleurs », une seule fois par pièce, sans fenêtre. « Je connais déjà » : une ligne discrète.
+  function maybeInviteColours() {
+    var st = coloursState();
+    if (!st) return;
+    if (coloursUI.seenConv !== conv) {
+      coloursUI.seenConv = conv; coloursUI.seen = {};
+      if (coloursUI.invite) { coloursUI.invite.remove(); coloursUI.invite = null; }
+      // Les pièces déjà là à l'ouverture de la conversation ne sont pas « posées » (sauf celle que le panneau vient de poser).
+      if (coloursUI.posed !== conv) { PlyoColours.newPieces(st, {}).forEach(function (r) { coloursUI.seen[r] = true; }); return; }
+    }
+    var fresh = PlyoColours.newPieces(st, coloursUI.seen), step = PlyoJourney.currentStep(conv.project);
+    if (!fresh.length) return;
+    if (!afterFilament(step) || projectUI.editing) { fresh.forEach(function (r) { coloursUI.seen[r] = true; }); return; } // à l'étape Filament, la carte s'affiche d'elle-même
+    var trays = slotState() && slotState().ok ? PlyoCanvas.trays(slotState()) : PlyoColours.traysFromCanvas(conv.project.canvas);
+    var worth = PlyoColours.worth(st) || PlyoColours.fileRows(st, conv.project.file_colours, trays.length > 1 ? trays : [{}, {}], [], coloursOpts()).length > 0;
+    var several = worth ? severalSpools() : false;
+    if (several === null) return; // la saisie manuelle arrive : on décidera à la prochaine lecture
+    fresh.forEach(function (r) { coloursUI.seen[r] = true; });
+    coloursUI.posed = null;
+    if (!worth || !several) return;
+    if (coloursUI.invite) coloursUI.invite.remove();
+    var expert = fsState.level === 'expert';
+    var line = noteLine(PlyoColours.inviteText(st, conv.project.file_colours, trays, coloursOpts(), expert), expert ? 'quiet' : '', 'info', 'guide');
+    line.appendChild(button(PlyoColours.INVITE_BUTTON, function () { line.remove(); coloursUI.invite = null; projectHandlers.changeColours(); }, expert ? 'link' : 'btn ghost sm'));
+    coloursUI.invite = line;
   }
   function coloursPicker(ref, part, name, tray) {
     var st = slotState() || {}, trays = PlyoCanvas.trays(st);
@@ -1569,13 +1637,22 @@
   var coloursHandlers = {
     select: function (ref) { requestColours(ref); },
     open: coloursPicker,
+    // Lot 21 : la bobine d'une couleur du fichier (toute la couleur), proposée seulement : écrite à « Utiliser ces bobines ».
+    openFile: function (t, name, tray) {
+      var trays = PlyoCanvas.trays(slotState() || {});
+      coloursUI.picker = { fileT: t, ref: '', part: '', name: name, current: tray || PlyoColours.trayFor(0, trays, canvasUI.mapping), confirm: null, missing: false };
+      coloursUI.error = ''; coloursUI.recheck = false;
+      renderProject();
+    },
     pick: function (tray) {
       var pk = coloursUI.picker;
       if (!pk) return;
       if (PlyoColours.otherMaterialNote(pk.current, tray)) { pk.confirm = tray; renderProject(); return; }
-      setPieceColour(pk, tray);
+      if (pk.fileT !== undefined) setFileColour(pk.fileT, tray); else setPieceColour(pk, tray);
     },
-    confirm: function (tray) { var pk = coloursUI.picker; if (pk) setPieceColour(pk, tray); },
+    confirm: function (tray) { var pk = coloursUI.picker; if (!pk) return; if (pk.fileT !== undefined) setFileColour(pk.fileT, tray); else setPieceColour(pk, tray); },
+    toggleOne: function () { coloursUI.unfolded = !coloursUI.unfolded; coloursUI.picker = null; renderProject(); },
+    paint: function () { window.orca.postMessage({ type: 'open_tool', tool: 'paint_color' }); },
     cancel: function () { coloursUI.picker = null; renderProject(); },
     missing: function () { if (coloursUI.picker) { coloursUI.picker.missing = true; renderProject(); } },
     // Relit les bobines (sur l'imprimante, ou la saisie manuelle) et les pièces.
@@ -1583,6 +1660,7 @@
     useList: function () { coloursUI.picker = null; coloursUI.reopen = false; canvasHandlers.useList(); },
     openManual: function () { coloursUI.picker = null; openManual(); }
   };
+  function setFileColour(t, tray) { coloursUI.picker = null; canvasHandlers.setTray(t, PlyoColours.trayKey(tray)); }
   // Le seul envoi de colour_set : un clic sur une bobine dans la carte (jamais une réponse de l'IA).
   function setPieceColour(pk, tray) {
     var pr = conv && conv.project.printer, st = slotState() || {};
@@ -1653,7 +1731,7 @@
   function coloursFiche() {
     var st = slotState(), canvas = conv && conv.project.canvas;
     var trays = st && st.ok ? PlyoCanvas.trays(st) : PlyoColours.traysFromCanvas(canvas);
-    return PlyoColours.ficheText(coloursState(), trays, canvas);
+    return PlyoColours.ficheText(coloursState(), trays, canvas, coloursOpts());
   }
 
   function projectChanged() {
@@ -1747,7 +1825,8 @@
     if (projectUI.endNote && projectUI.endNoteConv !== conv) staleEndNote();
     else if (projectUI.endNote && step === 'resultat' && endQuestionNow()) dropEndNote();
     if (step !== 'imprimer') { projectUI.sentConv = null; projectUI.exported = null; } // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
-    if (step !== journeyUI.lastStep) { clearStepNotes(); journeyUI.lastStep = step; if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; coloursUI.picker = null; coloursUI.error = ''; coloursUI.reopen = false; } }
+    if (step !== journeyUI.lastStep) { clearStepNotes(); journeyUI.lastStep = step; if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; coloursUI.picker = null; coloursUI.error = ''; coloursUI.reopen = false; coloursUI.unfolded = false; } }
+    ensureColoursMapping(step);
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, spoolLinkInStep: step === 'filament', handlers: projectHandlers,
@@ -1771,7 +1850,9 @@
     else if (cmode === 'colours') {
       ensureSlotBrands(cst);
       var ctrays = PlyoCanvas.trays(cst);
-      PlyoColoursView.render($('project-card'), ui, { rows: PlyoColours.pieceRows(coloursState(), ctrays, canvasUI.mapping), trays: ctrays, system: cst.source === 'manual' ? 'manual' : cst.system || slotWordsKey(),
+      var cfiles = coloursFileRows(ctrays);
+      PlyoColoursView.render($('project-card'), ui, { rows: PlyoColours.pieceRows(coloursState(), ctrays, canvasUI.mapping, coloursOpts()), fileRows: cfiles, unfolded: coloursUI.unfolded,
+        sameTray: PlyoColours.sameTrayNote(cfiles), trays: ctrays, system: cst.source === 'manual' ? 'manual' : cst.system || slotWordsKey(),
         emptyBlocks: !!cst.empty_blocks, picker: coloursUI.picker, error: coloursUI.error, recheck: coloursUI.recheck, pending: !!coloursUI.token, handlers: coloursHandlers });
     }
     else if (cmode && cmode !== 'loading') {
@@ -4601,7 +4682,12 @@
     var old = projectUI.oldPart;
     projectUI.oldPart = null;
     var firstPose = !(conv.project.part && conv.project.part.name);
-    if (firstPose) { conv.project.part = { name: msg.name }; projectChanged(); }
+    // Lot 21 : couleurs prévues par le 3MF, gardées dans la fiche du projet (la carte « Couleurs » les montre même après le choix
+    // des bobines). Un nouveau projet repart sans elles.
+    if (Array.isArray(msg.file_colours) && msg.file_colours.length) conv.project.file_colours = msg.file_colours.slice(0, 16);
+    else if (firstPose || msg.replaced > 0) delete conv.project.file_colours;
+    coloursUI.posed = conv;
+    if (firstPose) { conv.project.part = { name: msg.name }; projectChanged(); } else scheduleSave();
     if (projectUI.reposing) { projectUI.reposing = false; renderProject(); noteLine('« ' + msg.name + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); }
     projectUI.newProjectFile = false;
     if (msg.replaced > 0) showReplaced(msg, old);
@@ -4627,6 +4713,7 @@
         detachPlate();
         conv.project.part = null;
         delete conv.project.adapted;
+        delete conv.project.file_colours;
         delete conv.project.step;
         delete conv.project.intent;
         intentUI.idk = false;

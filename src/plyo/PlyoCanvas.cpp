@@ -164,6 +164,8 @@ bool set_preset(size_t idx, const std::string& name) { return FirstSteps::select
 
 std::string bare_host(const std::string& print_host) { return CanvasLogic::bare_host(print_host); }
 
+void set_project_colour(size_t idx, const std::string& color) { set_colour(idx, color); }
+
 std::string translator_of(const Slic3r::DynamicPrintConfig& config, std::string* reason)
 {
     const SlotsLogic::Detection found = SlotsLogic::detect(PrinterLink::facts_of(config));

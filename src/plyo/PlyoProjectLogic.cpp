@@ -2,6 +2,7 @@
 
 #include "PlyoBedLogic.hpp"
 #include "PlyoCatalogPolicy.hpp"
+#include "PlyoColoursLogic.hpp"
 #include "PlyoJson.hpp"
 
 #include <algorithm>
@@ -220,6 +221,20 @@ nlohmann::json sanitize(const nlohmann::json& project)
     }
     if (const std::string adapted = Json::str(project, "adapted", 200); !adapted.empty())
         out["adapted"] = adapted;
+    // Lot 21 : couleurs prévues par le 3MF joint (t = rang), gardées pour la carte « Couleurs » rouverte depuis la fiche, même
+    // après le choix des bobines. 16 au plus, « #RRGGBB » ou vide (rang sans couleur lisible).
+    if (const nlohmann::json* fc = Json::field(project, "file_colours"); fc != nullptr && fc->is_array()) {
+        nlohmann::json list = nlohmann::json::array();
+        for (const nlohmann::json& c : *fc) {
+            if (list.size() >= static_cast<size_t>(ColoursLogic::MAX_COLOURS))
+                break;
+            list.push_back(c.is_string() ? ColoursLogic::colour_hex(c.get<std::string>()) : std::string());
+        }
+        while (!list.empty() && list.back().get_ref<const std::string&>().empty())
+            list.erase(list.size() - 1);
+        if (!list.empty())
+            out["file_colours"] = list;
+    }
     // Réussite dite à l'étape Résultat : elle tient après une réouverture de la conversation.
     if (const nlohmann::json* v = Json::field(project, "success"); v != nullptr && v->is_boolean() && v->get<bool>())
         out["success"] = true;
@@ -308,6 +323,21 @@ nlohmann::json first_values(const nlohmann::json& settings)
             out[it.key()] = it.value();
         else if (it.value().is_array() && !it.value().empty() && it.value().front().is_string())
             out[it.key()] = it.value().front();
+    }
+    return out;
+}
+
+std::vector<std::string> file_colours(const std::string& project_settings_json)
+{
+    std::vector<std::string> out;
+    const nlohmann::json     settings = nlohmann::json::parse(project_settings_json, nullptr, false);
+    const nlohmann::json*    list     = settings.is_object() ? Json::field(settings, "filament_colour") : nullptr;
+    if (list == nullptr || !list->is_array())
+        return out;
+    for (const nlohmann::json& c : *list) {
+        if (out.size() >= static_cast<size_t>(ColoursLogic::MAX_COLOURS))
+            break;
+        out.push_back(c.is_string() ? ColoursLogic::colour_hex(c.get<std::string>()) : std::string());
     }
     return out;
 }

@@ -6,13 +6,18 @@
 #include "PlyoColoursLogic.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoProjectFiles.hpp"
+#include "PlyoProjectLogic.hpp"
 #include "PlyoSlots.hpp"
 
 #include "libslic3r/Config.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/ObjectID.hpp"
+#include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/PrintConfig.hpp"
+#include "libslic3r/miniz_extension.hpp"
 #include "slic3r/GUI/GLCanvas3D.hpp"
+#include "slic3r/GUI/GUI.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/GUI_ObjectList.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmosManager.hpp"
@@ -22,10 +27,13 @@
 #include "slic3r/GUI/PartPlate.hpp"
 #include "slic3r/GUI/Plater.hpp"
 #include "slic3r/GUI/Selection.hpp"
+#include "slic3r/GUI/Tab.hpp"
 #include "slic3r/Utils/UndoRedo.hpp"
 
 #include <boost/log/trivial.hpp>
+#include <wx/colour.h>
 #include <wx/dataview.h>
+#include <wx/string.h>
 
 #include <algorithm>
 #include <optional>
@@ -339,7 +347,187 @@ nlohmann::json finish(const nlohmann::json& request, const nlohmann::json& slots
             {"canvas", CL::only_used(CL::canvas_with(canvas, choice.t, wanted), used_after)}};
 }
 
+// Une entrée du 3MF (zip), `max_bytes` au plus ; nullopt si elle manque, est trop grande ou ne se lit pas. miniz alloue d'après
+// la taille annoncée et échoue si le contenu réel la dépasse (comme Project::read_3mf_settings).
+std::optional<std::string> zip_entry(mz_zip_archive& zip, const char* name, size_t max_bytes)
+{
+    const int                index = mz_zip_reader_locate_file(&zip, name, nullptr, 0);
+    mz_zip_archive_file_stat stat;
+    if (index < 0 || !mz_zip_reader_file_stat(&zip, static_cast<mz_uint>(index), &stat) || stat.m_uncomp_size > max_bytes)
+        return std::nullopt;
+    size_t size = 0;
+    void*  data = mz_zip_reader_extract_to_heap(&zip, static_cast<mz_uint>(index), &size, 0);
+    if (data == nullptr)
+        return std::nullopt;
+    std::string out(static_cast<const char*>(data), size);
+    mz_free(data);
+    return out;
+}
+
+bool zip_has(mz_zip_archive& zip, const char* name) { return mz_zip_reader_locate_file(&zip, name, nullptr, 0) >= 0; }
+
+// Couleurs (dès 0) que portent les pièces `objects` : pièce, parties, zones peintes.
+std::vector<int> used_by(const Slic3r::Model& model, const std::vector<size_t>& objects)
+{
+    std::set<int> out;
+    for (size_t idx : objects) {
+        if (idx >= model.objects.size())
+            continue;
+        const Slic3r::ModelObject& object = *model.objects[idx];
+        out.insert(object_t(object));
+        for (int v : model_parts(object)) {
+            out.insert(std::max(object.volumes[v]->extruder_id(), 1) - 1);
+            for (size_t e : object.volumes[v]->get_extruders_from_multi_material_painting())
+                out.insert(static_cast<int>(e));
+        }
+    }
+    return std::vector<int>(out.begin(), out.end());
+}
+
+// Partie d'un 3MF ordinaire nommée par Orca d'après sa pièce (« Pièce », « Pièce_2 »…, bbs_3mf.cpp) : elle reprend le nom
+// qu'elle porte dans le fichier.
+bool named_after_object(const std::string& volume, const std::string& object, size_t rank)
+{
+    return volume == object || volume == object + "_" + std::to_string(rank + 1);
+}
+
+// Les pièces que le lecteur d'Orca vient de créer (`added`) correspondent-elles au fichier (nombre de pièces et de parties) ?
+bool parts_match(Slic3r::GUI::Plater& plater, const std::vector<size_t>& added, const CL::FileColours& file)
+{
+    const auto& objects = plater.model().objects;
+    if (added.size() != file.objects.size())
+        return false;
+    for (size_t i = 0; i < added.size(); ++i)
+        if (added[i] >= objects.size() || model_parts(*objects[added[i]]).size() != file.objects[i].parts.size())
+            return false;
+    return true;
+}
+
+// Couleurs du fichier données aux parties de ces pièces (parts_match vrai). Les couleurs du projet doivent déjà exister : Orca
+// ramène à la première tout numéro qui les dépasse dès que leur nombre change (ObjectList::update_filament_values_for_items).
+void assign_parts(Slic3r::GUI::Plater& plater, const std::vector<size_t>& added, const CL::FileColours& file)
+{
+    auto&                             objects = plater.model().objects;
+    Slic3r::GUI::ObjectList*          list  = wxGetApp().obj_list();
+    Slic3r::GUI::ObjectDataViewModel* model = list->GetModel();
+    for (size_t i = 0; i < added.size(); ++i) {
+        const int                 obj_idx = static_cast<int>(added[i]);
+        Slic3r::ModelObject&      object  = *objects[obj_idx];
+        const std::vector<int>    parts   = model_parts(object);
+        const CL::FileObject&     fo      = file.objects[i];
+        if (fo.parts.empty())
+            continue;
+        // Toutes les parties d'une même couleur : la couleur va à la pièce, comme « Changer de filament » d'Orca sur une pièce.
+        const bool same = std::all_of(fo.parts.begin(), fo.parts.end(), [&](const CL::FilePart& p) { return p.t == fo.parts.front().t; });
+        if (same && fo.parts.front().t >= 0) {
+            object.config.set_key_value("extruder", new Slic3r::ConfigOptionInt(fo.parts.front().t + 1));
+            for (int v : parts)
+                if (object.volumes[v]->config.has("extruder"))
+                    object.volumes[v]->config.erase("extruder");
+            model->SetExtruder(wxString::Format("%d", fo.parts.front().t + 1), model->GetItemById(obj_idx));
+        }
+        for (size_t k = 0; k < parts.size(); ++k) {
+            Slic3r::ModelVolume& volume = *object.volumes[parts[k]];
+            const wxDataViewItem item   = parts.size() > 1 ? model->GetItemByVolumeId(obj_idx, model->get_real_volume_index_in_ui(obj_idx, parts[k])) : wxDataViewItem();
+            if (!same && fo.parts[k].t >= 0) {
+                volume.config.set_key_value("extruder", new Slic3r::ConfigOptionInt(fo.parts[k].t + 1));
+                if (item.IsOk())
+                    model->SetExtruder(wxString::Format("%d", fo.parts[k].t + 1), item);
+            }
+            const std::string& name = fo.parts[k].name;
+            if (parts.size() > 1 && !name.empty() && name != object.name && named_after_object(volume.name, object.name, k)) {
+                volume.name = name;
+                if (item.IsOk())
+                    model->SetName(Slic3r::GUI::from_u8(name), item);
+            }
+        }
+    }
+}
+
 } // namespace
+
+nlohmann::json from_file(const std::string& path_utf8, const std::vector<size_t>& added)
+{
+    nlohmann::json       none = {{"file_colours", nlohmann::json::array()}};
+    Slic3r::GUI::Plater* plater = wxGetApp().plater();
+    if (plater == nullptr || added.empty())
+        return none;
+    constexpr size_t MAX_SETTINGS_BYTES = 8 * 1024 * 1024;
+    constexpr size_t MAX_MODEL_BYTES    = 512 * 1024 * 1024;
+    std::vector<std::string> colours;
+    std::optional<CL::FileColours> parts; // 3MF ordinaire : couleurs des parties, à poser
+    {
+        mz_zip_archive zip;
+        mz_zip_zero_struct(&zip);
+        if (!Slic3r::open_zip_reader(&zip, path_utf8))
+            return none;
+        // Projet de Bambu Studio, d'Orca ou de PrusaSlicer : Orca garde déjà la couleur de chaque partie (model_settings.config) ;
+        // seules les teintes manquent (elles sont dans les réglages du projet, que l'import de la pièce seule ne lit pas).
+        const bool project_file = zip_has(zip, "Metadata/model_settings.config") || zip_has(zip, "Metadata/Slic3r_PE_model.config");
+        if (const auto settings = zip_entry(zip, "Metadata/project_settings.config", MAX_SETTINGS_BYTES))
+            colours = ProjectLogic::file_colours(*settings);
+        if (!project_file)
+            if (const auto xml = zip_entry(zip, "3D/3dmodel.model", MAX_MODEL_BYTES)) {
+                parts   = CL::model_colours(*xml);
+                colours = parts->colours;
+            }
+        Slic3r::close_zip_reader(&zip);
+    }
+    size_t valid = 0;
+    for (const std::string& c : colours)
+        valid += c.empty() ? 0 : 1;
+    if (valid < 2)
+        return none; // une couleur (ou aucune) : la pièce prend la bobine choisie, comme avant
+
+    // Les pièces de la plaque qui n'arrivent pas avec ce fichier gardent leurs couleurs.
+    std::vector<size_t> others;
+    for (size_t i = 0; i < plater->model().objects.size(); ++i)
+        if (std::find(added.begin(), added.end(), i) == added.end())
+            others.push_back(i);
+    const std::vector<int> used_before = used_by(plater->model(), others);
+    {
+        // Rendre le fichier tel qu'il est fait partie de l'import : pas d'étape d'annulation à part (« Annuler » de l'import, ou
+        // celui du remplacement de la pièce, défait aussi ces couleurs).
+        Slic3r::GUI::Plater::SuppressSnapshots quiet(plater);
+        if (parts && !parts_match(*plater, added, *parts)) {
+            BOOST_LOG_TRIVIAL(warning) << "Plyo: couleurs du 3MF non reprises : les pièces posées ne correspondent pas au fichier";
+            return none;
+        }
+        // Comme l'import d'Orca (Plater::load_files) : une couleur de projet de plus pour chaque couleur du fichier qui manque, avant
+        // d'affecter les parties.
+        int needed = 0;
+        if (parts) {
+            for (const CL::FileObject& o : parts->objects)
+                for (const CL::FilePart& p : o.parts)
+                    needed = std::max(needed, p.t + 1);
+        } else if (const std::vector<int> used = used_by(plater->model(), added); !used.empty())
+            needed = used.back() + 1;
+        int count = static_cast<int>(bundle().filament_presets.size());
+        while (count < needed && count < CL::MAX_COLOURS) {
+            const std::string c = count < static_cast<int>(colours.size()) && !colours[count].empty() ? colours[count]
+                                                                                                      : Slic3r::GUI::Plater::get_next_color_for_filament().GetAsString(wxC2S_HTML_SYNTAX).ToStdString();
+            bundle().set_num_filaments(static_cast<unsigned int>(count + 1), c);
+            plater->on_filament_count_change(static_cast<size_t>(count + 1));
+            ++count;
+        }
+        if (Slic3r::GUI::Tab* tab = wxGetApp().get_tab(Slic3r::Preset::TYPE_PRINT))
+            tab->update();
+        if (parts)
+            assign_parts(*plater, added, *parts);
+        const std::vector<int> used_now = used_by(plater->model(), added);
+        for (const auto& [t, c] : CL::colours_to_set(colours, used_now, used_before))
+            if (t < count)
+                Canvas::set_project_colour(static_cast<size_t>(t), c);
+    }
+    wxGetApp().obj_list()->Refresh();
+    plater->update();
+    plater->get_view3D_canvas3D()->set_as_dirty();
+    BOOST_LOG_TRIVIAL(info) << "Plyo: couleurs du 3MF reprises : " << valid << " couleurs";
+    nlohmann::json out = nlohmann::json::array();
+    for (const std::string& c : colours)
+        out.push_back(c);
+    return {{"file_colours", out}};
+}
 
 nlohmann::json state()
 {

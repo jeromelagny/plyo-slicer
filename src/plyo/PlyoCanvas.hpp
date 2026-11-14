@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <optional>
@@ -54,5 +55,7 @@ void select_extra(const std::vector<std::pair<int, std::string>>& extra);
 std::string translator_of(const Slic3r::DynamicPrintConfig& config, std::string* reason = nullptr);
 // Adresse sans schéma, chemin ni port (« http://192.168.1.29:80/ » → « 192.168.1.29 »), comme ElegooLink.
 std::string bare_host(const std::string& print_host);
+// Couleur de la couleur du projet `idx` (dès 0), comme le sélecteur de couleur d'Orca : la vue et les volumes de purge suivent.
+void set_project_colour(size_t idx, const std::string& color);
 
 }} // namespace Plyo::Canvas

@@ -41,6 +41,11 @@ std::vector<std::pair<int, std::string>> extra_filaments(const nlohmann::json& p
 // valeurs non textuelles et listes vides ignorées.
 nlohmann::json first_values(const nlohmann::json& settings);
 
+// Couleurs prévues par un projet 3MF de Bambu Studio ou d'Orca : toute la liste `filament_colour` de
+// Metadata/project_settings.config, une entrée par couleur du projet (t = rang), « #RRGGBB ». Une valeur illisible garde sa place,
+// vide, pour que les rangs suivants restent justes ; 16 au plus ; fichier sans liste ou illisible : vide.
+std::vector<std::string> file_colours(const std::string& project_settings_json);
+
 // Le filament actuel d'Orca est-il celui du projet ? Oui s'il porte le même nom, ou ce nom suivi de « (Plyo) » (copie faite
 // à l'enregistrement d'un profil d'Orca) ou de « — » (profil calibré par Plyo).
 bool same_filament(const std::string& project_preset, const std::string& current);

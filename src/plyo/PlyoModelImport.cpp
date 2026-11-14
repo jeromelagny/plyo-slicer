@@ -1,4 +1,5 @@
 #include "PlyoModelImport.hpp"
+#include "PlyoColours.hpp"
 #include "PlyoFiles.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoOrcaWindows.hpp"
@@ -111,6 +112,10 @@ nlohmann::json place(const fs::path& path, const std::string& shown_name, const 
     // Un 3MF arrive avec les réglages de son auteur : on les adapte à l'imprimante et au filament du projet.
     if (boost::algorithm::to_lower_copy(path.extension().string()) == ".3mf") {
         s_last_3mf = path.string();
+        // Lot 21 : les couleurs prévues par le fichier, rendues aux pièces (le lecteur d'Orca les perd pour un 3MF ordinaire).
+        const nlohmann::json colours = Colours::from_file(path.string(), added);
+        if (!Json::arr(colours, "file_colours").empty())
+            result["file_colours"] = colours["file_colours"];
         const nlohmann::json adaptation = Project::adapt_file(path.string(), project);
         if (!adaptation.empty())
             result["adaptation"] = adaptation;

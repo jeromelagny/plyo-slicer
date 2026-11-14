@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 // Couleur des pièces de la plaque (carte « Couleurs » de l'étape Filament) : logique pure, sans Orca ni wxWidgets, testée
@@ -70,5 +71,38 @@ std::string busy_refusal(const Busy& busy);
 // La bobine demandée est-elle encore celle qu'on a lue ? `state` : lecture des emplacements au format commun ({ok, canvases,
 // empty_blocks}) ; `type`, `color` : ce que la carte a montré. '' si oui, sinon la phrase à montrer (avec « Vérifier à nouveau »).
 std::string slot_refusal(const nlohmann::json& state, Slot wanted, const std::string& type, const std::string& color);
+
+// --- Couleurs prévues par un 3MF joint (lot 21) ---
+
+// « #RRGGBB » en majuscules depuis « #RRGGBB » ou « #RRGGBBAA » (forme des 3MF), '' pour toute autre valeur.
+std::string colour_hex(const std::string& value);
+
+// Couleurs d'un 3MF « ordinaire » (exporté par un logiciel de dessin : pas de Metadata/model_settings.config de Bambu Studio ou
+// d'Orca), lues dans le modèle `3D/3dmodel.model` : matériaux de base (`basematerials`, `displaycolor`) ou groupes de couleurs
+// (`m:colorgroup`), désignés par `pid` / `pindex` sur un objet (ou, de façon uniforme, sur tous ses triangles). Le lecteur 3MF
+// d'Orca ne lit que `m:colorgroup` sur l'objet de tête et ignore les matériaux de base : sans cette lecture, toutes les parties
+// arrivent dans la première couleur.
+struct FilePart
+{
+    int         t = -1; // couleur du fichier (rang dans `colours`), -1 : aucune
+    std::string name;   // nom du sous-objet dans le fichier
+};
+struct FileObject
+{
+    std::string           name;
+    std::vector<FilePart> parts; // dans l'ordre où Orca crée les parties (composants parcourus en largeur, comme bbs_3mf)
+};
+struct FileColours
+{
+    std::vector<std::string> colours; // couleurs utilisées, « #RRGGBB », dans l'ordre de leur première partie
+    std::vector<FileObject>  objects; // un par objet du `build`, dans l'ordre où Orca crée les pièces
+};
+FileColours model_colours(const std::string& model_xml);
+
+// Couleurs du projet à recolorer d'après le fichier : {t, couleur} pour chaque t que portent les pièces posées (`used_by_file`)
+// et qu'aucune autre pièce de la plaque n'utilise (`used_by_others`), avec une couleur valide dans `file`. Rien si le fichier
+// prévoit moins de deux couleurs : une seule couleur ne dit rien de la répartition, la bobine choisie reste.
+std::vector<std::pair<int, std::string>> colours_to_set(const std::vector<std::string>& file, const std::vector<int>& used_by_file,
+                                                        const std::vector<int>& used_by_others);
 
 }} // namespace Plyo::ColoursLogic

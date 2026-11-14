@@ -43,18 +43,142 @@
   // « PLA bleu · 1B » : la matière, la couleur nommée par sa teinte, le numéro de l'emplacement.
   function spoolText(tray) { return tray ? C.trayText(tray.type, tray.color) + ' · ' + tray.slot : NO_SPOOL; }
 
-  function pieceRows(state, trays, canvas) {
-    var many = Array.isArray(trays) && trays.length > 1;
+  // Nom technique (un nom de fichier : « 3DBenchy.drc », « boite.stl ») : la pièce porte plutôt un nom parlant.
+  var FILE_EXT = /\.(stl|3mf|obj|step|stp|amf|drc|ply|gcode)$/i;
+  function technical(name) { return FILE_EXT.test(String(name || '').trim()); }
+  function tidy(name) {
+    var s = String(name || '').trim().replace(FILE_EXT, '').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+  }
+  // Le nom montré pour une pièce : le sien s'il est parlant ; sinon le nom de la pièce du projet (« Petit bateau de test
+  // (3DBenchy) ») s'il désigne bien ce fichier, sinon le nom du fichier sans son extension.
+  function pieceName(name, partName) {
+    var n = String(name || '').trim();
+    if (!n) return 'Pièce';
+    if (!technical(n)) return n;
+    var stem = n.replace(FILE_EXT, '');
+    if (partName && !technical(partName) && stem && String(partName).toLowerCase().indexOf(stem.toLowerCase()) >= 0) return String(partName);
+    return tidy(n) || 'Pièce';
+  }
+  // Le nom d'une partie dit-il quelque chose de plus que sa pièce ? Pas s'il la répète (« Pièce », « Pièce_2 », nommées ainsi par
+  // le slicer) ou si c'est un nom de fichier.
+  function partDetail(partName, pieceRawName) {
+    var q = String(partName || '').trim(), p = String(pieceRawName || '').trim();
+    if (!q || technical(q) || q === p || (p && q.indexOf(p + '_') === 0 && /^\d+$/.test(q.slice(p.length + 1)))) return '';
+    return q;
+  }
+
+  // opts : { partName } (nom de la pièce du projet, pour une pièce au nom technique).
+  function pieceRows(state, trays, canvas, opts) {
+    var many = Array.isArray(trays) && trays.length > 1, o = opts || {};
     return pieces(state).map(function (p) {
-      var tray = p.mixed ? null : trayFor(p.t, trays, canvas);
-      var parts = (Array.isArray(p.parts) ? p.parts : []).map(function (q) {
-        var tq = trayFor(q.t, trays, canvas);
-        return { ref: String(q.ref), name: q.name || 'Partie', tray: tq, text: spoolText(tq), canChange: many };
+      var tray = p.mixed ? null : trayFor(p.t, trays, canvas), name = pieceName(p.name, o.partName);
+      // Les parties sont numérotées (« Partie 2 »), décalées sous leur pièce ; leur nom d'origine reste en petit quand il dit
+      // quelque chose, et en infobulle.
+      var parts = (Array.isArray(p.parts) ? p.parts : []).map(function (q, i) {
+        var tq = trayFor(q.t, trays, canvas), detail = partDetail(q.name, p.name);
+        return { ref: String(q.ref), label: 'Partie ' + (i + 1), detail: detail, title: q.name || '', name: detail || name + ', partie ' + (i + 1),
+          tray: tq, text: spoolText(tq), canChange: many };
       });
       var painted = Array.isArray(p.painted) && p.painted.length > 0;
-      return { ref: String(p.ref), name: p.name || 'Pièce', selected: !!p.selected, mixed: !!p.mixed, tray: tray,
+      return { ref: String(p.ref), name: name, title: p.name || '', selected: !!p.selected, mixed: !!p.mixed, tray: tray,
         text: p.mixed ? MIXED : spoolText(tray), painted: painted, paintedText: painted ? PAINTED : '', parts: parts, canChange: !p.mixed && many };
     });
+  }
+
+  // --- Lot 21 : un 3MF en couleurs ---
+
+  // Une couleur du fichier (« #RRGGBB »), '' sinon.
+  function fileColour(fileColours, t) {
+    var c = Array.isArray(fileColours) ? fileColours[t] : '';
+    return typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c) ? c.toUpperCase() : '';
+  }
+  // Une ligne par couleur du fichier que porte la plaque : sa teinte prévue, les pièces (ou parties) qui la portent, les zones
+  // peintes, la bobine associée. [] si le fichier prévoit moins de deux couleurs sur cette plaque (la carte par pièce suffit).
+  // opts : { partName }.
+  function fileRows(state, fileColours, trays, canvas, opts) {
+    var colours = state && state.ok && Array.isArray(state.colours) ? state.colours : [], rows = pieceRows(state, trays, canvas, opts), list = pieces(state);
+    var out = colours.filter(function (c) { return !!fileColour(fileColours, c.t); }).map(function (c) {
+      var on = [], painted = [];
+      list.forEach(function (p, i) {
+        var r = rows[i], qs = Array.isArray(p.parts) ? p.parts : [];
+        if (qs.length) {
+          var mine = qs.filter(function (q) { return q.t === c.t; });
+          if (mine.length === qs.length) on.push(r.name);
+          else mine.forEach(function (q) { on.push(r.parts[qs.indexOf(q)].detail || r.name + ', partie ' + (qs.indexOf(q) + 1)); });
+        } else if (p.t === c.t) on.push(r.name);
+        if (Array.isArray(p.painted) && p.painted.indexOf(c.t) >= 0) painted.push(r.name);
+      });
+      var hex = fileColour(fileColours, c.t), tray = trayFor(c.t, trays, canvas);
+      return { t: c.t, fileColour: hex, fileName: C.colourName(hex) || 'couleur', pieces: on, painted: painted, tray: tray, text: spoolText(tray) };
+    });
+    return out.length >= 2 ? out : [];
+  }
+  function fileIntro(rows) { return 'Ce fichier prévoit ' + rows.length + ' couleurs. Pour chacune, choisis la bobine qui l’imprime.'; }
+  // « sur Coque, Bouton » ; « zones peintes sur Coque ».
+  function fileWhere(row) {
+    var parts = [];
+    if (row.pieces.length) parts.push('sur ' + row.pieces.join(', '));
+    if (row.painted.length) parts.push('zones peintes sur ' + row.painted.join(', '));
+    return parts.join(' · ');
+  }
+  // Deux couleurs du fichier (ou plus) sur la même bobine : la carte le dit. '' sinon.
+  function sameTrayNote(rows) {
+    var groups = {}, order = [];
+    (rows || []).forEach(function (r) {
+      if (!r.tray) return;
+      var k = trayKey(r.tray);
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(r);
+    });
+    return order.filter(function (k) { return groups[k].length > 1; }).map(function (k) {
+      var g = groups[k], names = g.map(function (r) { return r.fileName; }), spool = spoolText(g[0].tray);
+      var distinct = names.filter(function (n, i) { return names.indexOf(n) === i; }).length === names.length;
+      if (!distinct) return 'Ces ' + g.length + ' couleurs du fichier sortiront toutes en ' + spool + '.';
+      var said = names.map(function (n) { return (/^[aeiouyéèêh]/i.test(n) ? 'l’' : 'le ') + n; });
+      var list = said.length === 2 ? said[0] + ' et ' + said[1] : said.slice(0, -1).join(', ') + ' et ' + said[said.length - 1];
+      return list.charAt(0).toUpperCase() + list.slice(1) + ' sortiront ' + (g.length === 2 ? 'tous les deux' : 'tous') + ' en ' + spool + '.';
+    }).join(' ');
+  }
+  var PAINTED_FILE = 'Les zones peintes gardent leur peinture : tu choisis seulement la bobine de chaque couleur.';
+  var ONE_PIECE = 'Changer la couleur d’une seule pièce';
+
+  // La plaque mérite-t-elle la carte « Couleurs » (plusieurs pièces, une pièce en parties, ou plusieurs couleurs) ?
+  function worth(state) {
+    var list = pieces(state);
+    return list.length > 1 || list.some(function (p) { return Array.isArray(p.parts) && p.parts.length > 0; }) || (!!state && Array.isArray(state.colours) && state.colours.length > 1);
+  }
+  // Pièces de la plaque pas encore vues (refs), pour ne proposer la carte qu'une fois par pièce posée.
+  function newPieces(state, seen) {
+    var s = seen || {};
+    return pieces(state).map(function (p) { return String(p.ref); }).filter(function (r) { return !s[r]; });
+  }
+  // L'invitation à choisir les couleurs, quand une pièce posée après l'étape Filament le mérite. `expert` (« Je connais déjà ») :
+  // une ligne discrète. opts : { partName }.
+  var INVITE_BUTTON = 'Choisir les couleurs';
+  function inviteText(state, fileColours, trays, opts, expert) {
+    if (expert) return 'Ta plaque peut s’imprimer en plusieurs couleurs.';
+    var list = pieces(state), files = fileRows(state, fileColours, trays, [], opts);
+    if (files.length) return 'Ce fichier prévoit ' + files.length + ' couleurs, et ta machine a plusieurs bobines : choisis la bobine qui imprime chacune.';
+    if (list.length > 1) return 'Ta plaque a maintenant ' + list.length + ' pièces, et ta machine a plusieurs bobines : tu peux choisir la bobine qui imprime chacune.';
+    var parted = list.filter(function (p) { return Array.isArray(p.parts) && p.parts.length > 0; })[0];
+    if (parted) return '« ' + pieceName(parted.name, (opts || {}).partName) + ' » est faite de ' + parted.parts.length + ' parties, et ta machine a plusieurs bobines : tu peux choisir la bobine de chacune.';
+    return 'Ta plaque a plusieurs couleurs, et ta machine a plusieurs bobines : choisis la bobine qui imprime chacune.';
+  }
+  // L'association en cours (`mapping`) est-elle celle déjà choisie pour le projet (`canvas`), pour chaque couleur utilisée ?
+  function sameAsChosen(mapping, canvas, colours) {
+    var list = Array.isArray(colours) ? colours : [];
+    if (!list.length) return true;
+    return list.every(function (c) {
+      var a = (mapping || []).filter(function (m) { return m && m.t === c.t; })[0], b = (canvas || []).filter(function (m) { return m && m.t === c.t; })[0];
+      return !!a && !!b && a.canvas_id === b.canvas_id && a.tray_id === b.tray_id;
+    });
+  }
+  // L'association couvre-t-elle exactement les couleurs utilisées ? Sinon (une pièce posée a apporté des couleurs) elle est
+  // proposée à nouveau.
+  function covers(mapping, colours) {
+    var m = Array.isArray(mapping) ? mapping : [], list = Array.isArray(colours) ? colours : [];
+    return m.length === list.length && list.every(function (c) { return m.some(function (e) { return e && e.t === c.t; }); });
   }
 
   // L'association couvre-t-elle chaque couleur utilisée par la plaque ? (« Utiliser ces bobines »)
@@ -95,20 +219,19 @@
     });
   }
 
-  // Ligne « Couleurs » de la fiche du projet : '' sans association choisie ou sans rien à colorier.
-  function ficheText(state, trays, canvas) {
-    var list = pieces(state);
-    if (!Array.isArray(canvas) || !canvas.length || !list.length) return '';
-    var worth = list.length > 1 || list.some(function (p) { return Array.isArray(p.parts) && p.parts.length > 0; }) || (Array.isArray(state.colours) && state.colours.length > 1);
-    if (!worth) return '';
-    var rows = pieceRows(state, trays, canvas);
+  // Ligne « Couleurs » de la fiche du projet : '' sans association choisie ou sans rien à colorier. opts : { partName }.
+  function ficheText(state, trays, canvas, opts) {
+    if (!Array.isArray(canvas) || !canvas.length || !pieces(state).length || !worth(state)) return '';
+    var rows = pieceRows(state, trays, canvas, opts);
     if (rows.length > 3) return 'Couleurs : ' + rows.length + ' pièces';
     return 'Couleurs : ' + rows.map(function (r) { return r.name + ' en ' + r.text; }).join(', ');
   }
 
   var api = { NO_SPOOL: NO_SPOOL, MIXED: MIXED, PAINTED: PAINTED, INTRO: INTRO, wanted: wanted, pieceRows: pieceRows, complete: complete, changedText: changedText,
     otherMaterialNote: otherMaterialNote, missingText: missingText, spoolText: spoolText, trayFor: trayFor, trayKey: trayKey, mappingFrom: mappingFrom,
-    traysFromCanvas: traysFromCanvas, ficheText: ficheText };
+    traysFromCanvas: traysFromCanvas, ficheText: ficheText, pieceName: pieceName, partDetail: partDetail, fileRows: fileRows, fileIntro: fileIntro,
+    fileWhere: fileWhere, sameTrayNote: sameTrayNote, PAINTED_FILE: PAINTED_FILE, ONE_PIECE: ONE_PIECE, worth: worth, newPieces: newPieces,
+    INVITE_BUTTON: INVITE_BUTTON, inviteText: inviteText, sameAsChosen: sameAsChosen, covers: covers, fileColour: fileColour };
   root.PlyoColours = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
