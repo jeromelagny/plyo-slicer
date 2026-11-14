@@ -859,8 +859,9 @@ test('lot 1 · UX-04 et UX-05 : Résultat en cours, puis « Oui, c’est réussi
   assert.match(page, /ctx\.failed = !!\(sendOf\(\) && sendOf\(\)\.failed\);/);
   assert.doesNotMatch(page, /'Envoyer une photo'|Envoyer une photo du résultat/);
   const chat = page.slice(page.indexOf('function openChatAbout'), page.indexOf('function onCanvasSent'));
-  assert.match(chat, /button\(PlyoJourney\.PHOTO_PHONE, function \(\) \{ openPhone\(\); \}, 'link'\)/);
-  assert.match(chat, /button\(PlyoJourney\.PHOTO_COMPUTER, function \(\) \{ pickFiles\(\); \}, 'link'\)/);
+  // Lot UX 5 : dans la discussion, les deux façons d'envoyer la photo sont des boutons, comme à l'étape Résultat (téléphone en plein).
+  assert.match(chat, /button\(PlyoJourney\.PHOTO_PHONE, function \(\) \{ openPhone\(\); \}, 'btn sm'\)/);
+  assert.match(chat, /button\(PlyoJourney\.PHOTO_COMPUTER, function \(\) \{ pickFiles\(\); \}, 'btn ghost sm'\)/);
 });
 
 test('lot 1 · UX-15 : le lot des questions d’intention a son « Annuler », qui ramène au résumé', () => {

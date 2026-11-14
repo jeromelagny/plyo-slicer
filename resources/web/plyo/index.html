@@ -190,8 +190,7 @@
   .orca-acts > .btn { align-self: flex-start; }
   /* Une carte bloquante porte la correction en bouton plein : « Découper », qui échouerait encore, passe en secondaire. */
   .step-card:has(.orca-issue .fix-main) .journey-action .btn:not(.ghost) { background: transparent; color: var(--fg); border-color: var(--border); }
-  .journey-busy i:nth-child(2) { animation-delay: .2s; }
-  .journey-busy i:nth-child(3) { animation-delay: .4s; }
+  .journey-busy { display: inline-flex; margin-left: var(--s2); vertical-align: middle; }
   .journey-bar { display: flex; gap: 3px; }
   #journey-bar { margin-bottom: var(--s3); }
   #journey-bar:empty { display: none; }
@@ -253,7 +252,6 @@
   .home-mini { display: none; color: var(--muted); margin: var(--s1) 0 0; }
   body.touring .home-more { display: none; }
   body.touring .home-mini { display: block; }
-  body.touring .hello { display: none; }
   body.touring #view-guide .step-card { display: none; } /* installation en cours : une seule carte à l'écran */
   .action { display: flex; gap: var(--s3); align-items: center; width: 100%; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); cursor: pointer; text-align: left; }
   .action:hover { border-color: var(--accent); }
@@ -299,6 +297,15 @@
   .howto { border-left: 3px solid var(--accent); padding: var(--s1) 0 var(--s1) var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   .thinking { color: var(--muted); font-size: var(--fs-sm); display: flex; gap: var(--s2); align-items: center; }
   .thinking i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.2s infinite; }
+  .thinking i:nth-child(2) { animation-delay: .2s; }
+  .thinking i:nth-child(3) { animation-delay: .4s; }
+  .thinking i + i { margin-left: -4px; }
+  /* Attente d'une réponse : à la place où la réponse arrivera, sous « Assistant », avec « Annuler » à droite. */
+  .waiting .thinking { font-size: var(--fs-md); color: var(--fg); }
+  .waiting .thinking .link { margin-left: auto; }
+  /* « Une impression ratée ? » : les deux façons d'envoyer la photo, en boutons ; l'accueil s'efface pendant ce temps. */
+  .photo-ask .photo-acts { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--s2); }
+  #view-chat:has(.photo-ask) .hello { display: none; }
   @keyframes blink { 50% { opacity: .2; } }
   .feedback { display: flex; flex-direction: column; gap: var(--s2); }
   .field { width: 100%; min-height: 56px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); color: var(--fg); font: inherit; padding: 6px var(--s2); }
@@ -1421,9 +1428,13 @@
   function openChatAbout(prefill, photo) {
     applyTab('show-chat');
     if (photo) {
-      var line = noteLine('Une photo de ta pièce m’aide à trouver la cause.', '', 'camera', 'chat');
-      line.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { openPhone(); }, 'link'));
-      line.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { pickFiles(); }, 'link'));
+      // Comme à l'étape Résultat : le téléphone en bouton plein, l'ordinateur en secondaire. Un seul bloc à la fois.
+      document.querySelectorAll('#thread .photo-ask').forEach(function (n) { n.remove(); });
+      var line = noteLine('Une photo de ta pièce m’aide à trouver la cause.', 'photo-ask', 'camera', 'chat');
+      var photoActs = el('div', 'photo-acts');
+      photoActs.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { openPhone(); }, 'btn sm'));
+      photoActs.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { pickFiles(); }, 'btn ghost sm'));
+      line.appendChild(photoActs);
     }
     noteInput.value = prefill || '';
     growNote();
@@ -1921,7 +1932,9 @@
       machine: conv.project.printer ? { name: PlyoJourney.shortMachine(conv.project.printer) || conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     $('hello-spool').textContent = '';
-    if (spoolMissing()) $('hello-spool').appendChild(chooseSpoolButton());
+    // Le bouton sous « Bonjour » mène à la vraie prochaine étape : la pièce d'abord, puis la bobine.
+    if (step === 'piece') $('hello-spool').appendChild(button('Ajouter ma pièce', function () { applyTab('show-guide'); projectHandlers.importPart(); }, 'btn ghost sm', 'folder'));
+    else if (spoolMissing()) $('hello-spool').appendChild(chooseSpoolButton());
     ensureRecheck(step);
     updateIntentMenu();
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
@@ -5952,7 +5965,7 @@
     if (!archived || reopened) acts.appendChild(button('Et dans mon cas, je mets combien ? (utilise ta jauge)', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }, 'btn ghost sm'));
     box.appendChild(acts);
     thread.appendChild(box);
-    scrollDown();
+    if (archived) scrollDown(); else scrollToAnswerTop(box); // lue depuis son titre, comme une réponse de l'IA
   }
 
   $('focus-explain').addEventListener('click', function () { if (focusKey) explain(focusKey); });
@@ -6111,11 +6124,17 @@
     touch();
     var cap = setTimeout(function () { controller.abort('timeout'); }, ANSWER_MAX_MS);
     var started = Date.now(), phase = '';
-    var thinking = el('div', 'thinking');
-    thinking.appendChild(el('i'));
+    var thinking = el('div', 'ai waiting');
+    thinking.appendChild(whoLine(''));
+    var waitRow = el('div', 'thinking');
+    waitRow.setAttribute('role', 'status');
+    for (var dot = 0; dot < 3; dot++) waitRow.appendChild(el('i'));
     var thinkingText = txt(Logic.waitingText(0, photos.length > 0, phase));
-    thinking.appendChild(thinkingText);
-    thinking.appendChild(button('Annuler', function () { controller.abort('cancel'); }, 'link'));
+    var waitText = el('span');
+    waitText.appendChild(thinkingText);
+    waitRow.appendChild(waitText);
+    waitRow.appendChild(button('Annuler', function () { controller.abort('cancel'); }, 'link'));
+    thinking.appendChild(waitRow);
     thread.appendChild(thinking);
     // Une longue attente (recherches dans le catalogue, demande déjà en route) se voit : le texte change avec le temps.
     function sayWaiting() { thinkingText.textContent = fr(Logic.waitingText(Date.now() - started, photos.length > 0, phase)); }
