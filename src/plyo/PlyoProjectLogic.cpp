@@ -235,6 +235,16 @@ nlohmann::json sanitize(const nlohmann::json& project)
         if (!list.empty())
             out["file_colours"] = list;
     }
+    // Pièce dessinée par Plyo (« Crée-moi une pièce ») : sa description, pour la retoucher depuis la discussion ou après une
+    // réouverture. Gardée telle quelle si elle a la forme attendue et une taille raisonnable ; elle est revérifiée par le
+    // panneau (design-builder.js) et par le service (checkDesign) avant toute construction.
+    if (const nlohmann::json* d = Json::field(project, "design"); d != nullptr && d->is_object()) {
+        const nlohmann::json* part  = Json::field(*d, "part");
+        const nlohmann::json* nodes = part != nullptr ? Json::field(*part, "nodes") : nullptr;
+        if (part != nullptr && part->is_object() && nodes != nullptr && nodes->is_array() && !nodes->empty() && nodes->size() <= MAX_DESIGN_NODES &&
+            Json::field(*part, "name") != nullptr && part->dump().size() <= MAX_DESIGN_BYTES)
+            out["design"] = {{"part", *part}};
+    }
     // Réussite dite à l'étape Résultat : elle tient après une réouverture de la conversation.
     if (const nlohmann::json* v = Json::field(project, "success"); v != nullptr && v->is_boolean() && v->get<bool>())
         out["success"] = true;

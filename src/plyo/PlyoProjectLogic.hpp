@@ -31,6 +31,9 @@ std::string refusal(const nlohmann::json& project, const std::string& current_pr
 // `canvas` : [{t, canvas_id, tray_id, type, color, preset}] (emplacements du Canvas choisis, 16 au plus) ; `success` : réussite
 // dite à l'étape Résultat ; `send` : {spool: {id, name}, watch, failed, answered, marked, end: {verdict, file}, outcome}, le
 // dernier envoi ou export fait depuis le panneau.
+// Pièce dessinée gardée avec le projet (project.design.part) : 200 formes et 64 Kio au plus.
+constexpr size_t MAX_DESIGN_NODES = 200;
+constexpr size_t MAX_DESIGN_BYTES = 64 * 1024;
 nlohmann::json sanitize(const nlohmann::json& project);
 
 // Filaments des couleurs 2 et suivantes choisis par les emplacements du Canvas : (numéro de filament t > 0, profil).

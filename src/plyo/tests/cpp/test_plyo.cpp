@@ -574,6 +574,24 @@ TEST_CASE("Project: les étapes manquantes sont dans l'ordre")
     CHECK_FALSE(complete(nlohmann::json("pas un objet")));
 }
 
+TEST_CASE("Project: la pièce dessinée par Plyo reste avec le projet")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json node = {{"id", "a"}, {"kind", "sphere"}, {"radius", 5}, {"children", nlohmann::json::array()}};
+    const nlohmann::json part = {{"name", "Pince"}, {"root", "a"}, {"nodes", {node}}};
+    CHECK(sanitize({{"design", {{"part", part}}}})["design"] == nlohmann::json{{"part", part}});
+    // Forme inattendue ou trop grosse : écartée (le projet reste valable).
+    CHECK_FALSE(sanitize({{"design", {{"part", {{"name", "x"}, {"nodes", nlohmann::json::array()}}}}}}).contains("design"));
+    CHECK_FALSE(sanitize({{"design", "texte"}}).contains("design"));
+    nlohmann::json many = part;
+    many["nodes"] = nlohmann::json::array();
+    for (size_t i = 0; i <= MAX_DESIGN_NODES; ++i) many["nodes"].push_back(node);
+    CHECK_FALSE(sanitize({{"design", {{"part", many}}}}).contains("design"));
+    nlohmann::json heavy = part;
+    heavy["summary"] = std::string(MAX_DESIGN_BYTES, 'x');
+    CHECK_FALSE(sanitize({{"design", {{"part", heavy}}}}).contains("design"));
+}
+
 TEST_CASE("Project: refus quand la fiche est incomplète ou que le profil d'Orca diverge")
 {
     using namespace Plyo::ProjectLogic;
