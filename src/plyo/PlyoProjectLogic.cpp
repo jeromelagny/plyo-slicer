@@ -245,6 +245,21 @@ nlohmann::json sanitize(const nlohmann::json& project)
             Json::field(*part, "name") != nullptr && part->dump().size() <= MAX_DESIGN_BYTES)
             out["design"] = {{"part", *part}};
     }
+    // Fil du projet (project-thread.js) : ce qui s'est passé dans les deux onglets, transmis à l'assistant. 30 événements au
+    // plus, chacun { at, from: etapes | discussion | slicer, text (200 octets) }.
+    if (const nlohmann::json* t = Json::field(project, "thread"); t != nullptr && t->is_array()) {
+        nlohmann::json list = nlohmann::json::array();
+        for (const nlohmann::json& e : *t) {
+            const std::string text = Json::str(e, "text", MAX_THREAD_TEXT), from = Json::str(e, "from", 20);
+            if (text.empty() || (from != "etapes" && from != "discussion" && from != "slicer"))
+                continue;
+            list.push_back({{"at", Json::str(e, "at", 19)}, {"from", from}, {"text", text}});
+        }
+        while (list.size() > MAX_THREAD)
+            list.erase(0);
+        if (!list.empty())
+            out["thread"] = list;
+    }
     // Réussite dite à l'étape Résultat : elle tient après une réouverture de la conversation.
     if (const nlohmann::json* v = Json::field(project, "success"); v != nullptr && v->is_boolean() && v->get<bool>())
         out["success"] = true;

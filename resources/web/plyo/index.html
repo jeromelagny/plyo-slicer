@@ -640,6 +640,7 @@
 <!--plyo-include:retouches-logic.js-->
 <!--plyo-include:design-builder.js-->
 <!--plyo-include:design-flow.js-->
+<!--plyo-include:project-thread.js-->
 <script>
 (function () {
   // Adresse du service Plyo, donnée par le slicer (Plyo::Config, variable d'environnement PLYO_API_URL en développement).
@@ -1933,7 +1934,7 @@
     if (projectUI.endNote && projectUI.endNoteConv !== conv) staleEndNote();
     else if (projectUI.endNote && step === 'resultat' && endQuestionNow()) dropEndNote();
     if (step !== 'imprimer') { projectUI.sentConv = null; projectUI.exported = null; } // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
-    if (step !== journeyUI.lastStep) { clearStepNotes(); journeyUI.lastStep = step; if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; coloursUI.picker = null; coloursUI.error = ''; coloursUI.reopen = false; coloursUI.unfolded = false; } }
+    if (step !== journeyUI.lastStep) { clearStepNotes(); journeyUI.lastStep = step; threadNote('Étape « ' + PlyoThread.STEP_LABELS[step] + ' »', 'etapes'); if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; coloursUI.picker = null; coloursUI.error = ''; coloursUI.reopen = false; coloursUI.unfolded = false; } }
     ensureColoursMapping(step);
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
@@ -2065,10 +2066,10 @@
     skip: function () { $('preflight-slot').textContent = ''; preflightFix = null; plateChecked = 'ignored'; setTourStep('print'); },
     exportFile: function () { runAction('export'); },
     // L'étape Résultat commence : les corrections en attente de ce projet sont celles de cette impression (sa question les couvre).
-    started: function () { rememberHabit(); journalPart(''); delete conv.project.success; declareSent(); setTourStep('after'); window.orca.postMessage({ type: 'outcome_printed', conv: conv.id }); },
+    started: function () { rememberHabit(); journalPart(''); threadNote('Impression lancée.'); delete conv.project.success; declareSent(); setTourStep('after'); window.orca.postMessage({ type: 'outcome_printed', conv: conv.id }); },
     photo: function () { pickFiles(); },
-    success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; spoolSuccess(); markCorrections('ok'); markSendAnswered(); projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
-    failed: function () { spoolFailure(); markCorrections('bad'); markSendAnswered(); renderProject(); },
+    success: function () { conv.project.success = true; journalPart('ok'); dropLoginCard(); afterLogin = null; spoolSuccess(); markCorrections('ok'); markSendAnswered(); threadNote('Résultat : impression réussie.'); projectChanged(); }, // plus de photo à envoyer : plus de carte de connexion
+    failed: function () { threadNote('Résultat : impression ratée.'); spoolFailure(); markCorrections('bad'); markSendAnswered(); renderProject(); },
     newPart: function () { newConversation(); },
     endChoice: function (id) { answerEnd(id); },
     reprint: function () { delete conv.project.success; setTourStep(tourSignals && tourSignals.sliced ? 'print' : 'slice'); },
@@ -2128,6 +2129,7 @@
   // Rien n'est dit « parti », ni la bobine notée, ni le suivi lancé, avant qu'Orca ait pris l'envoi.
   function onPrintStarted(msg) {
     repaintPanel(); // retour d'une fenêtre native : WebKit peut garder une image décalée du défilement
+    if (msg.ok && !msg.export) threadNote('Envoyée à l’imprimante.', 'etapes');
     if (msg.export) { onExportDone(msg); return; }
     dropSendConfirm();
     var S = window.PlyoPreflight.SEND_TEXTS;
@@ -2360,6 +2362,7 @@
   function onExportDone(msg) {
     unlockSend();
     if (msg.cancelled) return;
+    if (msg.ok) threadNote('Fichier exporté pour l’imprimante.', 'etapes');
     if (!msg.ok && msg.reason === 'error') {
       // La phrase vient du type de l'erreur (kind), avec la suite : jamais le texte brut d'Orca seul.
       var ev = window.PlyoPreflight.exportErrorView(msg);
@@ -2663,6 +2666,7 @@
       if (lastAnswers) habits.last_intent = lastAnswers;
       saveHabits();
       projectChanged();
+      threadNote('Choix pour la pièce appliqués : ' + st.summary.sentence.replace(/ :$/, '') + ' ' + st.summary.bullets.join(', ') + '.', 'etapes');
       // Une seule ligne, même si le filament change plusieurs fois de suite.
       if (intentUI.doneLine) intentUI.doneLine.remove();
       intentUI.doneLine = noteLine(again ? 'J’ai réappliqué tes choix sur cette machine. Je prépare l’impression.' : 'Réglages appliqués. Je prépare l’impression.', 'ok', 'check', 'guide');
@@ -3031,6 +3035,7 @@
   }
   // Après le choix : la phrase de reprise (dernière impression réussie), et le retour aux réglages réussis s'ils ont changé.
   function announceSpool(pend) {
+    threadNote('Bobine : « ' + pend.spool.name + ' ».', 'etapes');
     announcePrintRestored(pend);
     var text = PlyoSpools.resumeText(pend.spool.name, pend.success);
     if (!text) return;
@@ -3061,6 +3066,7 @@
     var text = PlyoSpools.printRestoredText(pend.spool.name, r);
     if (!text) return;
     var line = noteLine(text, 'ok', 'check', 'guide');
+    threadNote(text, 'etapes');
     line.classList.add('print-restored');
     if (r.undo_id) line.appendChild(undoButton('Annuler', function (u) {
       pendingSheet = { kind: 'undo', onResult: function (ok, t) { if (!ok) { u.disabled = false; noteLine(t, 'error', 'alert', 'guide'); return; } line.remove(); noteLine('C’est annulé : ce projet reprend les réglages d’impression de ton profil.', 'ok', 'undo', 'guide'); } };
@@ -4316,6 +4322,21 @@
   }
   function dropPlacing() { if (projectUI.placing) { projectUI.placing.remove(); projectUI.placing = null; } }
 
+  // ---------- Fil du projet (project-thread.js) : ce qui se passe, quel que soit l'onglet, transmis à l'assistant ----------
+  function threadNote(text, from) {
+    if (conv && PlyoThread.add(conv.project, from || (viewUI.tab === 'chat' ? 'discussion' : 'etapes'), text)) scheduleSave();
+  }
+
+  // La discussion a appris où en est l'impression (« c'est raté », « elle tourne ») : l'onglet Étapes suit, par les mêmes
+  // gestes que ses boutons (mémoire des corrections, bobine, journal compris).
+  function applyPrintOutcome(outcome) {
+    if (!conv || !outcome || outcome === 'none') return;
+    var move = PlyoThread.outcomeMoves(PlyoJourney.currentStep(conv.project), outcome, { success: !!conv.project.success, failed: !!(sendOf() && sendOf().failed) });
+    if (!move.moves.length) return;
+    move.moves.forEach(function (m) { stepHandlers[m](); });
+    noteLine(move.text, 'ok', 'check', 'chat');
+  }
+
   // ---------- « Crée-moi une pièce » (pièces sur mesure) ----------
   // L'IA décrit (plyo-api /api/design), le panneau vérifie et construit (design-builder.js, manifold-3d), le slicer pose le
   // STL comme un fichier choisi. Retouche : la pièce en cours repart avec la demande, la nouvelle remplace l'ancienne.
@@ -4397,7 +4418,7 @@
       conv.project.design = { part: answer.part }; // gardée avec le projet : retouches depuis la discussion, et après un redémarrage
       scheduleSave();
       designUI = { open: false, conv: conv, retouch: false, text: '', busy: false, questions: [], answers: [], conversation: asked.conversation, part: answer.part, message: '', failed: false, needsLogin: false,
-        placing: { message: answer.message || '', size: built.size, name: name } };
+        placing: { message: answer.message || '', size: built.size, name: name, retouch: !!asked.retouch } };
       projectUI.placing = noteLine('Je pose « ' + answer.part.name + ' » sur le plateau…', '', 'cube', 'guide');
       window.orca.postMessage({ type: 'model_add', name: name, data: btoa(bin), project: conv.project, conv: conv.id,
         replace: asked.retouch || PlyoProject.replacesPlate(conv.project, projectUI.oldPart, projectUI.newProjectFile) });
@@ -4410,6 +4431,7 @@
     if (!p || designUI.conv !== conv || msg.name !== p.name.replace(/\.stl$/, '') && msg.name !== p.name) return;
     designUI.placing = null;
     if (!msg.ok) return;
+    threadNote('Pièce ' + (p.retouch ? 'retouchée' : 'dessinée') + ' par Plyo : « ' + designUI.part.name + ' », ' + PlyoDesign.sizeText(p.size) + (p.message ? '. ' + p.message : '.'));
     var part = designUI.part, line = noteLine(PlyoDesignFlow.TEXT.placed + ' : « ' + part.name + ' », ' + PlyoDesign.sizeText(p.size) + '.', 'ok', 'cube', 'guide');
     line.classList.add('design-placed');
     var dims = PlyoDesignFlow.dimensionLines(part);
@@ -5016,6 +5038,7 @@
     if (Array.isArray(msg.file_colours) && msg.file_colours.length) conv.project.file_colours = msg.file_colours.slice(0, 16);
     else if (firstPose || msg.replaced > 0) delete conv.project.file_colours;
     coloursUI.posed = conv;
+    threadNote((firstPose ? 'Pièce posée : « ' : 'Pièce remplacée : « ') + msg.name + ' »' + (Array.isArray(msg.size_mm) ? ', ' + msg.size_mm.map(function (x) { return Math.round(x); }).join(' × ') + ' mm' : '') + (msg.fits === false ? ' (trop grande pour le plateau)' : '') + '.', 'etapes');
     if (firstPose) { conv.project.part = { name: msg.name }; projectChanged(); } else scheduleSave();
     if (projectUI.reposing) { projectUI.reposing = false; renderProject(); noteLine('« ' + msg.name + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); }
     projectUI.newProjectFile = false;
@@ -5901,6 +5924,7 @@
     var fresh = risks.filter(function (r) { return !dismissedRisks[window.PlyoPreflight.riskKey(r)]; });
     openRisks = fresh.length;
     plateChecked = !risks.length ? 'clean' : fresh.length ? 'open' : 'ignored';
+    if (data && data.sliced) threadNote('Découpe vérifiée : ' + (risks.length ? risks.length + ' point' + (risks.length > 1 ? 's' : '') + ' à surveiller (' + risks.map(function (r) { return r.kind; }).join(', ') + ')' : 'aucun risque') + '. ' + printSummary(), 'etapes');
     renderPreflight(manual || fresh.length ? risks : [], data);
     // Découpe faite et aucun risque : on passe à l'impression sans demander (jamais si Orca juge la plaque non imprimable).
     var orcaBlocks = !!(tourSignals && tourSignals.ready_for_print === false);
@@ -6537,6 +6561,8 @@
       if (ctx && ctx.snapshot && Object.keys(ctx.snapshot).length) body.snapshot = ctx.snapshot;
       body.explanation_level = PlyoMachines.levelOf(habits);
       if (pendingIntent) body.intent_questions = pendingIntent;
+      // Où en est le projet (onglet Étapes) : l'étape en cours et le fil des deux onglets.
+      body.project = PlyoThread.forAI(conv.project, PlyoJourney.currentStep(conv.project));
       body.capabilities = Logic.CAPABILITIES.slice(); // actions que ce panneau sait exécuter (aperçu, tests bruts d'Orca)
       // Pièce du projet dessinée par Plyo : une retouche de forme devient « Modifier ma pièce » (au lieu d'un autre logiciel).
       if (conv && conv.project.design && conv.project.design.part) body.capabilities.push('redesign');
@@ -6582,6 +6608,7 @@
       if (target !== conv) return;
       try { renderAnswer(entry, false); }
       catch (e) { noteLine('La réponse est arrivée mais n’a pas pu s’afficher. Rouvre ce projet depuis « Mes projets » (menu « ⋯ »).', 'error', 'alert'); }
+      applyPrintOutcome(a.print_outcome);
     }
   }
 
@@ -7106,6 +7133,8 @@
       else noteLine(msg.text, 'error', 'alert');
     } else if (msg.type === 'result') {
       syncProjectNames(msg.saved);
+      if (msg.ok && msg.undo_id && Array.isArray(msg.applied)) threadNote(PlyoThread.appliedText(msg.applied, viewUI.tab === 'chat' ? 'discussion' : 'etapes'));
+      if (msg.ok && msg.undone_id) threadNote('Réglages remis comme avant (« Annuler »).');
       // Réglages posés par l'assistant pour ce projet : retenus, et oubliés à l'annulation, pour ne jamais les présenter comme
       // tes modifications manuelles. Conversation plus ancienne sans relevé : on ne commence pas un relevé incomplet.
       if (conv && msg.ok && conv.project.assistant && typeof conv.project.assistant === 'object') {

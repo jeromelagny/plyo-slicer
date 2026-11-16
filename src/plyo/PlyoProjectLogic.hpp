@@ -34,6 +34,9 @@ std::string refusal(const nlohmann::json& project, const std::string& current_pr
 // Pièce dessinée gardée avec le projet (project.design.part) : 200 formes et 64 Kio au plus.
 constexpr size_t MAX_DESIGN_NODES = 200;
 constexpr size_t MAX_DESIGN_BYTES = 64 * 1024;
+// Fil du projet (project.thread) : 30 événements, 200 octets de texte chacun.
+constexpr size_t MAX_THREAD = 30;
+constexpr size_t MAX_THREAD_TEXT = 200;
 nlohmann::json sanitize(const nlohmann::json& project);
 
 // Filaments des couleurs 2 et suivantes choisis par les emplacements du Canvas : (numéro de filament t > 0, profil).

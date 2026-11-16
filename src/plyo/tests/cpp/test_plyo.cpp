@@ -592,6 +592,20 @@ TEST_CASE("Project: la pièce dessinée par Plyo reste avec le projet")
     CHECK_FALSE(sanitize({{"design", {{"part", heavy}}}}).contains("design"));
 }
 
+TEST_CASE("Project: le fil du projet reste avec lui, borné")
+{
+    using namespace Plyo::ProjectLogic;
+    nlohmann::json thread = nlohmann::json::array();
+    for (int i = 0; i < 35; ++i) thread.push_back({{"at", "2026-11-16T22:30:00"}, {"from", "etapes"}, {"text", "événement " + std::to_string(i)}});
+    thread.push_back({{"at", "x"}, {"from", "pirate"}, {"text", "écarté"}});
+    thread.push_back({{"at", "x"}, {"from", "discussion"}, {"text", ""}});
+    const nlohmann::json out = sanitize({{"thread", thread}})["thread"];
+    REQUIRE(out.size() == MAX_THREAD);
+    CHECK(out.front()["text"] == "événement 5"); // les plus anciens partent
+    CHECK(out.back()["text"] == "événement 34");
+    CHECK(sanitize({{"thread", {{{"from", "discussion"}, {"text", std::string(300, 'a')}}}}})["thread"][0]["text"].get<std::string>().size() <= MAX_THREAD_TEXT);
+}
+
 TEST_CASE("Project: refus quand la fiche est incomplète ou que le profil d'Orca diverge")
 {
     using namespace Plyo::ProjectLogic;
