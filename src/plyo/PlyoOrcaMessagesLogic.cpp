@@ -156,6 +156,8 @@ std::string validate_code(int type, const std::string& opt_key, bool has_object,
         return "layer_height_over_nozzle";
     if (opt_key == "spiral_mode" && facts.several_objects)
         return "vase_several_objects";
+    if (!opt_key.empty() && facts.motion_capped)
+        return "motion_capped";
     if (opt_key.empty() && has_object && facts.too_tall)
         return "object_too_tall";
     return opt_key.empty() ? std::string("validate") : opt_key;

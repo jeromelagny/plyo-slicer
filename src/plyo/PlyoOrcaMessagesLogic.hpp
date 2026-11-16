@@ -52,10 +52,12 @@ struct ValidateFacts
     bool over_nozzle      = false; // la hauteur de couche en cause dépasse le diamètre de la buse
     bool several_objects  = false; // plusieurs pièces (ou exemplaires) imprimées couche par couche
     bool too_tall         = false; // la pièce en cause atteint la hauteur maximale de l'imprimante
+    bool motion_capped    = false; // le réglage en cause (jerk, accélération, déviation de jonction) dépasse la limite de la
+                                   // machine : Orca le bride lui-même, rien à faire
 };
 // Code d'un refus ou d'un avertissement de validation : StringExceptionType (1 à 5) d'abord, puis la clé du réglage
-// complétée par les faits (layer_height_over_nozzle, vase_several_objects), object_too_tall, la clé elle-même, ou
-// « validate ».
+// complétée par les faits (layer_height_over_nozzle, vase_several_objects, motion_capped), object_too_tall, la clé
+// elle-même, ou « validate ».
 std::string validate_code(int type, const std::string& opt_key, bool has_object, const ValidateFacts& facts);
 
 // Code d'un avertissement d'étape (PrintStateBase::SlicingNotificationType) : need_support, empty_layers… ; 0 ou inconnu :

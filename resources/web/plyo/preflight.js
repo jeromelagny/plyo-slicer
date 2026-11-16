@@ -231,6 +231,7 @@
       var fix = i.fix && SCOPES[i.scope] ? [{ kind: 'fix', label: label, short: 'Désactiver le mode vase', also: also.length ? leftoverNames(also) : '',
         changes: [{ key: i.fix.key, value: i.fix.value, label: 'Mode vase' }].concat(leftoverChanges(also)) }] : [];
       return { text: 'Le mode vase imprime une seule pièce, en un seul trait qui monte en spirale. Avec plusieurs pièces sur la plaque, Plyo Slicer refuse.', actions: fix }; },
+    motion_capped: function () { return { text: 'Ta machine limite elle-même la vitesse de certains mouvements, et Plyo Slicer s’y adapte tout seul. Rien à faire : ta pièce s’imprime normalement.', actions: [], noAsk: true }; },
     spiral_mode: function () { return { text: 'Le mode vase ne marche pas avec une pièce de plusieurs couleurs ou matières.', actions: [] }; },
     object_too_tall: function (i, p, P) { return { text: P + ' est trop haute pour ton imprimante : son sommet dépasse la hauteur maximale.', actions: [{ kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour qu’elle tienne' }] }; },
     filament_bed_type: function () { return { text: 'Plyo Slicer déconseille ce filament sur le type de plateau choisi : pour cette surface, sa température de plateau est à 0.', actions: [{ kind: 'show_me', target: 'filament', label: 'Montre-moi le filament' }] }; },
@@ -304,6 +305,9 @@
   }
   // « Pièce flottante » : déjà dans la carte « Avant d'imprimer » (risque « support »), avec ses corrections.
   var LEFT_TO_PREFLIGHT = { need_support: true };
+  // Rien à faire : Orca bride déjà le réglage à la limite de la machine (motion_capped). Pas de carte, donc pas d'alerte
+  // jaune à côté de « Aucun risque détecté » ; l'explication reste pour l'assistant (EXPLAIN).
+  var QUIET = { motion_capped: true };
 
   var TITLES = { slicing_error: 'Plyo Slicer n’a pas pu préparer ta pièce', validate_error: 'Plyo Slicer refuse de découper cette plaque',
     gcode_check: 'Plyo Slicer bloque l’impression de cette plaque', validate_warning: 'Plyo Slicer prévient', step_warning: 'Plyo Slicer prévient' };
@@ -317,7 +321,7 @@
   function orcaCards(issues, opts) {
     var o = opts || {};
     var list = (Array.isArray(issues) ? issues : []).filter(function (i) {
-      return i && typeof i.code === 'string' && !LEFT_TO_PREFLIGHT[i.code] && (i.level === 'error' || o.warnings);
+      return i && typeof i.code === 'string' && !LEFT_TO_PREFLIGHT[i.code] && !QUIET[i.code] && (i.level === 'error' || o.warnings);
     });
     list.sort(function (a, b) { return (a.level === 'error' ? 0 : 1) - (b.level === 'error' ? 0 : 1); });
     return list.slice(0, o.max || 3);
@@ -357,6 +361,14 @@
     if (known) {
       view.text = known.text;
       view.actions = known.actions.filter(function (a) { return a.kind !== 'fix' || a.changes.every(function (c) { return c.key; }); });
+    } else if (warn && c.novice) {
+      // Débutant, avertissement sans explication Plyo : ce qu'il change d'abord (rien de bloquant), deux suites au plus, et le
+      // texte d'Orca replié (jamais « je ne sais pas expliquer » en premier).
+      view.text = 'Plyo Slicer signale un point à surveiller' + (i.object_name ? ' sur ' + p : '') + '. Ce n’est pas bloquant : tu peux continuer, ou me demander ce que ça veut dire.';
+      view.impact = '';
+      view.explained = true;
+      view.actions = [{ kind: 'dismiss', label: 'Continuer' }, { kind: 'ask', label: ASK_LABEL, prompt: askPrompt(i, '') }];
+      return view;
     } else {
       // Pas d'explication Plyo : on le dit simplement ; le texte d'Orca (parfois en anglais) reste un détail cité.
       var on = i.object_name ? ' sur ' + p : '';

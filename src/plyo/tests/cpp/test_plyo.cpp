@@ -3117,6 +3117,10 @@ TEST_CASE("Messages d'Orca : le code d'un refus de validation, d'un avertissemen
     CHECK(validate_code(0, "", true, {false, false, true}) == "object_too_tall");
     CHECK(validate_code(0, "", false, {false, false, true}) == "validate");
     CHECK(validate_code(0, "enable_prime_tower", false, {}) == "enable_prime_tower");
+    // Jerk ou accélération au-delà de la limite de la machine : Orca le bride lui-même (rien à faire, pas une alerte).
+    CHECK(validate_code(0, "default_jerk", false, {false, false, false, true}) == "motion_capped");
+    CHECK(validate_code(0, "outer_wall_jerk", false, {false, false, false, false}) == "outer_wall_jerk"); // jerk trop bas : la clé
+    CHECK(validate_code(0, "", false, {false, false, false, true}) == "validate");
     CHECK(validate_code(0, "", false, {}) == "validate");
     CHECK(step_warning_code(2) == "need_support");
     CHECK(step_warning_code(3) == "empty_layers");

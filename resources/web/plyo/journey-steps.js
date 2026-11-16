@@ -77,6 +77,15 @@
     body.appendChild(ui.button('Changer une réponse', h.reset, 'link'));
   }
 
+  // Débutant (parcours débutant, P9 et P10) : où va le fichier, et l'aperçu d'Orca qui s'ouvre après la découpe.
+  var EXPORT_STEPS = [
+    '« Exporter le fichier » enregistre ta pièce prête à imprimer (un fichier .gcode) sur ton ordinateur.',
+    'Copie ce fichier sur la carte SD ou la clé USB de ton imprimante, puis remets-la dans l’imprimante.',
+    'Sur l’écran de l’imprimante, choisis « Imprimer », puis ton fichier.',
+    'Quand c’est fini, reviens ici me dire si ça a marché : je retiendrai ce qui marche.'
+  ];
+  var AFTER_SLICE_NOTE = 'Au milieu de la fenêtre, tu vois ta pièce couche par couche, avec des couleurs et des chiffres : tu n’as rien à y faire.';
+
   // « Aucun risque » n'est dit que si la vérification a vraiment eu lieu et n'a rien trouvé.
   function checkedLine(checked) {
     if (checked === 'clean') return 'Aucun risque détecté';
@@ -111,6 +120,8 @@
       if (c.sliced && c.blocked) body.appendChild(line(ui, 'alert', 'Plyo Slicer ne laisse pas imprimer cette plaque', 'warn'));
       else if (c.sliced) body.appendChild(line(ui, c.risks > 0 ? 'alert' : 'check', c.risks > 0 ? c.risks + ' point' + (c.risks > 1 ? 's' : '') + ' à régler avant d’imprimer' : checkedLine(c.checked), c.risks > 0 || c.checked === 'ignored' ? 'warn' : c.checked === 'clean' ? 'ok' : ''));
       if (c.sliced && c.risks > 0) body.appendChild(ui.button('Imprimer quand même', h.skip, 'link'));
+      // L'aperçu d'Orca s'ouvre au milieu après la découpe (tableaux, couleurs) : le débutant sait qu'il peut l'ignorer.
+      if (c.sliced && opts.novice) body.appendChild(ui.el('p', 'muted small', AFTER_SLICE_NOTE));
     } else if (opts.step === 'imprimer') {
       // Dans l'étape et non en bas des messages : le texte entier reste lu, sous les suggestions rien n'est coupé.
       if (opts.exported) body.appendChild(line(ui, 'check', opts.exported, 'ok exported'));
@@ -138,6 +149,13 @@
         else body.appendChild(ui.button('Laisser l’imprimante choisir l’emplacement', h.startPlain, 'link'));
       }
       body.appendChild(ui.el('p', 'muted small', 'Vérifie que le plateau est vide et propre, et que le filament est chargé.'));
+      // Imprimante non reliée : le débutant ne sait pas comment le fichier arrive dans la machine.
+      if (!c.linked && opts.novice) {
+        body.appendChild(ui.el('p', 'intent-q', c.exported ? 'Et maintenant ?' : 'Comment ça se passe'));
+        var how = ui.el('ol', 'how-steps');
+        (c.exported ? EXPORT_STEPS.slice(1) : EXPORT_STEPS).forEach(function (t) { how.appendChild(ui.el('li', '', t)); });
+        body.appendChild(how);
+      }
       var acts = ui.el('div', 'printer-actions');
       // Plaque qu'Orca juge non imprimable (c.blocked) : ni envoi ni export, la carte d'Orca dit quoi corriger.
       if (c.exported) {
@@ -188,6 +206,6 @@
     if (body.childNodes.length) slot.appendChild(body);
   }
 
-  root.PlyoJourneySteps = { render: render, endCard: endCard };
+  root.PlyoJourneySteps = { render: render, endCard: endCard, EXPORT_STEPS: EXPORT_STEPS, AFTER_SLICE_NOTE: AFTER_SLICE_NOTE };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.PlyoJourneySteps;
 })(typeof window !== 'undefined' ? window : globalThis);

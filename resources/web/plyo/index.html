@@ -416,6 +416,7 @@
   .bed-choice .muted { padding-left: 2px; }
   .bed-choice .btn { width: 100%; justify-content: flex-start; text-align: left; }
   .step-card.bed-first #project-card { display: none; }
+  .how-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: var(--s1); font-size: var(--fs-sm); }
   .project-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s1); }
   .project-body p, .project-hint { margin: 0; }
   .project-error { color: var(--danger-text); margin: 0; }
@@ -1973,7 +1974,7 @@
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds,
         spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, beginner: fsState.level !== 'expert', handlers: projectHandlers });
-    else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers,
+    else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers, novice: fsState.level !== 'expert',
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()), spoolAsk: spoolAsk(), spoolNo: !!(sendOf() && sendOf().failed), endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
       machine: conv.project.printer ? { name: PlyoJourney.shortMachine(conv.project.printer) || conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
@@ -4447,7 +4448,7 @@
     return list.length;
   }
   function orcaCard(issue) {
-    var v = window.PlyoPreflight.orcaIssueView(issue, { canUndo: !!(lastValues && lastValues.can_undo) });
+    var v = window.PlyoPreflight.orcaIssueView(issue, { canUndo: !!(lastValues && lastValues.can_undo), novice: fsState.level !== 'expert' });
     var box = alertBox(v.tone, '', 'alert');
     box.classList.add('orca-issue');
     box.dataset.code = issue.code || ''; // une bulle d'Orca fermée retire sa carte (forgetNotices)

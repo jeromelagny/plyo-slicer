@@ -132,6 +132,30 @@ double min_nozzle(const Slic3r::Print& print)
     return values.empty() ? 0 : *std::min_element(values.begin(), values.end());
 }
 
+// Avertissement de mouvement d'Orca (Print::validate, « motion_warning ») : le réglage dépasse la limite de la machine,
+// qu'Orca applique de lui-même à la place (jerk, accélération, déviation de jonction). Lu sur les valeurs, jamais sur le texte.
+bool motion_capped(const Slic3r::Print& print, const std::string& key)
+{
+    const auto ends_with = [&key](const char* end) { const std::string e(end); return key.size() > e.size() && key.compare(key.size() - e.size(), e.size(), e) == 0; };
+    const bool jerk = ends_with("_jerk"), accel = ends_with("_acceleration"), junction = key == "default_junction_deviation";
+    if (!jerk && !accel && !junction)
+        return false;
+    try {
+        const Slic3r::PrintConfig& pc    = print.config();
+        const double               value = print.default_object_config().get_abs_value_at(key, 0);
+        double                     limit = 0;
+        if (jerk)
+            limit = std::min(pc.machine_max_jerk_x.values.at(0), pc.machine_max_jerk_y.values.at(0));
+        else if (junction)
+            limit = pc.machine_max_junction_deviation.values.at(0);
+        else
+            limit = key == "travel_acceleration" ? pc.machine_max_acceleration_travel.values.at(0) : pc.machine_max_acceleration_extruding.values.at(0);
+        return limit > 0 && value > limit;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 // Un refus ou un avertissement de Print::validate, avec ses faits lus sur la plaque (jamais sur le texte).
 Issue from_validation(const Slic3r::StringObjectException& e, bool warning, const Slic3r::Print& print)
 {
@@ -159,6 +183,7 @@ Issue from_validation(const Slic3r::StringObjectException& e, bool warning, cons
         const double height = PlateActions::bed_size().z();
         facts.too_tall      = height > 0 && mo->instance_bounding_box(0).size().z() >= height - 2.0;
     }
+    facts.motion_capped = motion_capped(print, e.opt_key);
     issue.code = OML::validate_code(static_cast<int>(e.type), e.opt_key, mo != nullptr, facts);
 
     // Correction sûre, seulement pour un réglage d'impression que la pièce ne remplace pas par le sien.
