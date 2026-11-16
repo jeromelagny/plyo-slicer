@@ -94,7 +94,8 @@ std::string content_security_policy(const std::string& api_url, const std::strin
     for (const std::string& extra : extra_connect)
         if (!extra.empty() && extra.find_first_of(" ;,'\"\r\n\t") == std::string::npos)
             connect += (connect.empty() ? "" : " ") + extra;
-    return "default-src 'none'; script-src 'nonce-" + nonce + "'; style-src 'unsafe-inline'; img-src data: blob:; connect-src " +
+    // 'wasm-unsafe-eval' : compiler le WebAssembly de manifold-3d (pièces sur mesure) ; jamais d'eval JavaScript.
+    return "default-src 'none'; script-src 'nonce-" + nonce + "' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; connect-src " +
            (connect.empty() ? std::string("'none'") : connect) + "; base-uri 'none'; form-action 'none'";
 }
 

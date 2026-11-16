@@ -4694,9 +4694,10 @@ TEST_CASE("Lot 12 · CSP : seulement ce que la page charge, construite d'après 
 {
     using Plyo::PageLogic::content_security_policy;
     const std::string csp = content_security_policy("http://localhost:3000/", "abc123");
-    CHECK(csp == "default-src 'none'; script-src 'nonce-abc123'; style-src 'unsafe-inline'; img-src data: blob:; "
+    CHECK(csp == "default-src 'none'; script-src 'nonce-abc123' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; "
                  "connect-src http://localhost:3000; base-uri 'none'; form-action 'none'");
-    CHECK(csp.find("unsafe-eval") == std::string::npos);
+    // Le WebAssembly des pièces sur mesure se compile ; l'eval JavaScript reste interdit.
+    CHECK(csp.find("'unsafe-eval'") == std::string::npos);
     CHECK(csp.find("script-src 'unsafe-inline'") == std::string::npos);
     CHECK(csp.find("http:;") == std::string::npos);
     // Adresse illisible : aucune connexion permise (le panneau le vit comme un service injoignable).

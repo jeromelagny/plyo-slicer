@@ -418,6 +418,9 @@
   .step-card.bed-first #project-card { display: none; }
   .project-body > .btn { align-self: flex-start; }
   .sheet-help { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-sm); }
+  .design-box .design-text { width: 100%; resize: vertical; min-height: 64px; }
+  .design-placed .design-said, .design-placed .design-dims { display: block; color: var(--fg); margin-top: 2px; }
+  .design-placed .design-dims { color: var(--muted); }
   .how-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: var(--s1); font-size: var(--fs-sm); }
   .project-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s1); }
   .project-body p, .project-hint { margin: 0; }
@@ -559,6 +562,7 @@
     <div id="journey-bar"></div>
     <section class="step-card"><div id="resume-slot"></div><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="bed-slot"></div><div id="project-card"></div></div></section>
     <div id="spool-slot"></div>
+    <div id="design-slot"></div>
     <div id="tour-slot"></div>
     <div id="outcome-slot"></div>
     <div id="preflight-slot"></div>
@@ -634,6 +638,8 @@
 <!--plyo-include:spools-logic.js-->
 <!--plyo-include:project-card.js-->
 <!--plyo-include:retouches-logic.js-->
+<!--plyo-include:design-builder.js-->
+<!--plyo-include:design-flow.js-->
 <script>
 (function () {
   // Adresse du service Plyo, donnée par le slicer (Plyo::Config, variable d'environnement PLYO_API_URL en développement).
@@ -1974,6 +1980,7 @@
     }
     else if (cmode === 'loading') { $('project-card').textContent = ''; }
     else if (step === 'filament' && PlyoJourney.tempsPending(conv.project) && projectUI.editing !== 'filament') renderTempsStep();
+    else if (step === 'piece' && designUI.open && !designUI.retouch) PlyoDesignFlow.render($('project-card'), ui, designUI, designHandlers);
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds,
@@ -1995,6 +2002,8 @@
     PlyoJourneyView.renderSuggestions($('suggestions'), ui, { step: quietChips ? '' : step, handlers: suggestionHandlers });
     renderSetupFlow();
     renderResume();
+    if (designUI.open && designUI.retouch && designUI.conv === conv) PlyoDesignFlow.render($('design-slot'), ui, designUI, designHandlers);
+    else $('design-slot').textContent = '';
   }
   // Une étape faite de la barre, rouverte en mode « changer » avec les gestes de la fiche : changer de machine ou de bobine refait
   // la préparation (resetStepOnChange) ; la pièce se rechoisit comme à l'étape Pièce (une autre pièce = un autre projet) ;
@@ -2851,6 +2860,7 @@
     calibrate: function () { openCalibChooser(); },
     toggleOthers: function () { projectUI.showOthers = !projectUI.showOthers; renderProject(); },
     openMachines: function () { openMachinesDrawer(); },
+    designOpen: function () { designStart(false); },
     toggleList: function () { projectUI.showList = !projectUI.showList; renderProject(); },
     toggleKinds: function () { projectUI.showKinds = !projectUI.showKinds; renderProject(); },
     // « Oui, <bobine> » : la bobine du projet précédent, avec ses réglages (son préréglage fait foi).
@@ -4305,6 +4315,119 @@
     slot.appendChild(box);
   }
   function dropPlacing() { if (projectUI.placing) { projectUI.placing.remove(); projectUI.placing = null; } }
+
+  // ---------- « Crée-moi une pièce » (pièces sur mesure) ----------
+  // L'IA décrit (plyo-api /api/design), le panneau vérifie et construit (design-builder.js, manifold-3d), le slicer pose le
+  // STL comme un fichier choisi. Retouche : la pièce en cours repart avec la demande, la nouvelle remplace l'ancienne.
+  var designUI = { open: false, conv: null, retouch: false, text: '', busy: false, questions: [], answers: [], conversation: [], part: null, message: '', failed: false, needsLogin: false, placing: null };
+  function designStart(retouch) {
+    var keep = retouch && designUI.conv === conv ? designUI.part : null;
+    designUI = { open: true, conv: conv, retouch: !!retouch, text: '', busy: false, questions: [], answers: [], conversation: [], part: keep, message: '', failed: false, needsLogin: !session, placing: null };
+    renderProject();
+  }
+  var designLib = { promise: null };
+  // manifold-3d, lue par le slicer dans ses ressources (la page est chargée comme texte) : module ES rendu classique, puis
+  // instancié avec ses octets WebAssembly (la politique de sécurité permet 'wasm-unsafe-eval', jamais eval).
+  function loadDesignLib() {
+    if (designLib.promise) return designLib.promise;
+    designLib.promise = new Promise(function (resolve, reject) { designLib.resolve = resolve; designLib.reject = reject; });
+    window.orca.postMessage({ type: 'design_lib_get' });
+    return designLib.promise;
+  }
+  function onDesignLib(msg) {
+    var lib = designLib;
+    if (!lib.resolve) return;
+    if (!msg.ok) { designLib = { promise: null }; lib.reject(new Error('bibliothèque introuvable')); return; }
+    try {
+      var code = String(msg.js).replace(/import\.meta\.url/g, '"plyo://manifold.js"').replace(/export default Module;?\s*$/, 'window.__plyoManifold = Module;');
+      var tag = document.createElement('script');
+      var known = document.querySelector('script[nonce]');
+      tag.nonce = known ? known.nonce : '';
+      tag.textContent = code;
+      document.head.appendChild(tag);
+      var raw = atob(msg.wasm), bytes = new Uint8Array(raw.length);
+      for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      window.__plyoManifold({ wasmBinary: bytes }).then(function (w) {
+        w.setup();
+        lib.resolve({ Manifold: w.Manifold, CrossSection: w.CrossSection });
+      }, function (e) { designLib = { promise: null }; lib.reject(e); });
+    } catch (e) { designLib = { promise: null }; lib.reject(e); }
+  }
+  function designSay(text, failed) { designUI.busy = false; designUI.message = text; designUI.failed = !!failed; renderProject(); }
+  function designSubmit() {
+    if (designUI.busy) return;
+    if (!session) { designUI.needsLogin = true; renderProject(); return; }
+    if (!String(designUI.text || '').trim()) { designSay('Décris ta pièce en quelques mots.', true); return; }
+    designUI.busy = true; designUI.message = ''; designUI.failed = false;
+    renderProject();
+    loadDesignLib().catch(function () {}); // en parallèle de la conception
+    var asked = designUI, body = PlyoDesignFlow.request(designUI, { locale: (navigator.language || 'fr'), material: conv.project.filament && !conv.project.filament.proposed ? conv.project.filament.type : '', requestId: Logic.newRequestId(window.crypto) });
+    apiFetch('/api/design', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; });
+    }).then(function (res) {
+      if (designUI !== asked) return; // annulé ou autre projet entre-temps
+      var j = res.j || {};
+      if (j.credits && j.credits.gauge) setGauge(j.credits.gauge);
+      if (res.status === 401) { designUI.needsLogin = true; designSay('Ta session a expiré : reconnecte-toi pour créer ta pièce.', true); return; }
+      if (res.status !== 200) {
+        if (j.error === 'insufficient_credits' && j.gauge) setGauge(j.gauge, true);
+        designSay(Logic.errorView(j.error || 'upstream_error', j).text, true);
+        return;
+      }
+      designUI.conversation.push({ role: 'user', text: body.text });
+      if (j.message) designUI.conversation.push({ role: 'assistant', text: j.message });
+      if (j.status === 'question' && Array.isArray(j.questions) && j.questions.length) {
+        designUI.busy = false; designUI.questions = j.questions; designUI.answers = []; designUI.message = j.message || ''; designUI.text = '';
+        renderProject();
+        return;
+      }
+      if (j.status !== 'design') { designUI.text = ''; designSay(j.message || 'Je ne peux pas dessiner cette pièce.', false); return; }
+      designPlace(j);
+    }).catch(function () { if (designUI === asked) designSay(Logic.errorView('network').text, true); });
+  }
+  function designPlace(answer) {
+    var asked = designUI;
+    loadDesignLib().then(function (M) {
+      if (designUI !== asked) return;
+      var built = PlyoDesign.build(M, answer.part);
+      if (!built.ok) { designSay('Je n’ai pas pu fabriquer cette pièce (' + built.error + '). Redécris-la plus simplement.', true); return; }
+      var stl = PlyoDesign.toSTL(built.mesh, answer.part.name), bin = '';
+      for (var i = 0; i < stl.length; i += 0x8000) bin += String.fromCharCode.apply(null, stl.subarray(i, i + 0x8000));
+      var name = PlyoDesignFlow.fileName(answer.part);
+      designUI = { open: false, conv: conv, retouch: false, text: '', busy: false, questions: [], answers: [], conversation: asked.conversation, part: answer.part, message: '', failed: false, needsLogin: false,
+        placing: { message: answer.message || '', size: built.size, name: name } };
+      projectUI.placing = noteLine('Je pose « ' + answer.part.name + ' » sur le plateau…', '', 'cube', 'guide');
+      window.orca.postMessage({ type: 'model_add', name: name, data: btoa(bin), project: conv.project, conv: conv.id,
+        replace: asked.retouch || PlyoProject.replacesPlate(conv.project, projectUI.oldPart, projectUI.newProjectFile) });
+      renderProject();
+    }, function () { if (designUI === asked) designSay('Je n’arrive pas à charger l’outil de dessin des pièces. Relance Plyo Slicer, puis réessaie.', true); });
+  }
+  // Pièce créée posée : ce que c'est, ses cotes (les supposées signalées), et « Changer quelque chose ».
+  function designPlaced(msg) {
+    var p = designUI.placing;
+    if (!p || designUI.conv !== conv || msg.name !== p.name.replace(/\.stl$/, '') && msg.name !== p.name) return;
+    designUI.placing = null;
+    if (!msg.ok) return;
+    var part = designUI.part, line = noteLine(PlyoDesignFlow.TEXT.placed + ' : « ' + part.name + ' », ' + PlyoDesign.sizeText(p.size) + '.', 'ok', 'cube', 'guide');
+    line.classList.add('design-placed');
+    var dims = PlyoDesignFlow.dimensionLines(part);
+    if (p.message) line.querySelector('.note-text').appendChild(el('span', 'design-said', ' ' + p.message));
+    if (dims.length) line.querySelector('.note-text').appendChild(el('span', 'design-dims', ' Cotes : ' + dims.join(', ') + '. ' + PlyoDesignFlow.TEXT.check));
+    line.appendChild(button(PlyoDesignFlow.TEXT.change, function () { designStart(true); }, 'btn ghost sm', 'wand'));
+  }
+  var designHandlers = {
+    input: function (t) { designUI.text = t; },
+    submit: designSubmit,
+    answer: function (i, choice) {
+      designUI.answers[i] = choice;
+      if (designUI.answers.filter(Boolean).length < designUI.questions.length) { renderProject(); return; }
+      designUI.text = PlyoDesignFlow.answersText(designUI.questions, designUI.answers);
+      designUI.questions = []; designUI.answers = [];
+      designSubmit();
+    },
+    cancel: function () { designUI.open = false; designUI.busy = false; renderProject(); },
+    login: function () { openLogin(); }
+  };
   function importModel(file) {
     if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd pour passer par ce panneau (150 Mo au plus). Importe-le plutôt par le menu Fichier › Importer : je verrai la pièce arriver.', 'error', 'alert', 'guide'); return; }
     var reader = new FileReader();
@@ -6980,8 +7103,11 @@
       calibHistory = Array.isArray(msg.items) ? msg.items : [];
     } else if (msg.type === 'phone_batch_ready') {
       pollPhone(); // la fenêtre QR s'est fermée sur un envoi : on le traite sans attendre le prochain tour
+    } else if (msg.type === 'design_lib') {
+      onDesignLib(msg);
     } else if (msg.type === 'model_added') {
       onModelAdded(msg);
+      designPlaced(msg); // après : le changement d'étape a déjà effacé les messages de l'étape
     } else if (msg.type === 'firststeps') {
       onFirstSteps(msg.state || {});
     } else if (msg.type === 'tour_signals') {

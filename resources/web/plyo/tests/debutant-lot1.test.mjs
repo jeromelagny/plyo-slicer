@@ -20,7 +20,7 @@ test('accueil du débutant : la règle du jeu, une seule fois, jamais pour « Je
 
 test('les choix qui font avancer sont des boutons, plus des liens soulignés', () => {
   const card = read('project-card.js'), steps = read('journey-steps.js');
-  for (const label of ['Une autre machine', 'Une autre bobine', 'Autre marque', 'Pas encore de fichier ? Essaie avec le petit bateau de test'])
+  for (const label of ['Une autre machine', 'Une autre bobine', 'Autre marque'])
     assert.match(card, new RegExp("ui\\.button\\('" + label.replace(/[?]/g, '\\?') + "'[^\\n]*'btn ghost sm'"), label);
   assert.match(card, /ui\.button\(q\.unknown, h\.unknownBed, 'btn ghost sm'\)/);
   assert.match(steps, /ui\.button\('Je ne sais pas', h\.idk, 'btn ghost sm'\)/);

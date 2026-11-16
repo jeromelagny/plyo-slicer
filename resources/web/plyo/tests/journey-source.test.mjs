@@ -792,7 +792,8 @@ test('reprise 2 : une fenêtre principale recréée (changement de langue) ne co
 
 test('lot 1 · UX-01 : sans fichier, le petit bateau de test se pose comme une pièce choisie', () => {
   const card = read('project-card.js'), page = read('index.html');
-  assert.match(card, /ui\.button\('Pas encore de fichier \? Essaie avec le petit bateau de test', h\.samplePart, 'btn ghost sm'\)/);
+  // 16/11 : avec « crée-moi une pièce » en choix secondaire, le bateau devient un lien (un écran, peu de choix).
+  assert.match(card, /ui\.button\('Pas encore de fichier \? Essaie avec le petit bateau de test', h\.samplePart, h\.designOpen \? 'link' : 'btn ghost sm'\)/);
   const fn = page.slice(page.indexOf('function importSample'), page.indexOf('// Glisser-déposer sur le panneau'));
   assert.match(fn, /postMessage\(\{ type: 'model_add', sample: 'benchy', project: conv\.project, conv: conv\.id,/, 'même chemin que model_add : plateau attaché à la conversation');
   assert.match(fn, /replace: PlyoProject\.replacesPlate\(/);

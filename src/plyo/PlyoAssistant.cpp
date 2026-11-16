@@ -59,6 +59,7 @@
 #include "slic3r/GUI/Widgets/WebHosting.hpp"
 #include "slic3r/GUI/wxExtensions.hpp"
 
+#include <boost/beast/core/detail/base64.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/nowide/fstream.hpp>
@@ -624,6 +625,13 @@ void handle_page_message(const nlohmann::json& data)
                 added["sample"] = sample;
             added["type"]        = "model_added";
             send(added);
+        } else if (type == "design_lib_get") {
+            // Pièces sur mesure : manifold-3d (Apache-2.0), livrée dans resources/web/plyo/vendor/manifold et chargée par le
+            // panneau à la première pièce créée (la page est chargée comme texte : elle ne peut pas lire ce fichier elle-même).
+            const std::string js = read_resource("vendor/manifold/manifold.js"), wasm = read_resource("vendor/manifold/manifold.wasm");
+            std::string encoded(boost::beast::detail::base64::encoded_size(wasm.size()), '\0');
+            encoded.resize(boost::beast::detail::base64::encode(encoded.data(), wasm.data(), wasm.size()));
+            send({{"type", "design_lib"}, {"ok", !js.empty() && !wasm.empty()}, {"js", js}, {"wasm", encoded}});
         } else if (type == "project_attach") {
             // Pièce précédente reprise, ou pièce posée autrement que par le panneau : le plateau est celui de la conversation.
             const std::string conv = Json::str(data, "conv");

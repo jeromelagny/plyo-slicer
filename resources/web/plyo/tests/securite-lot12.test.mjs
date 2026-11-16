@@ -53,7 +53,9 @@ test('CSP : construite côté C++ d’après l’adresse réelle du service, jam
   assert.match(assistant, /content_security_policy\(Config::api_url\(\), nonce, SelfTest::page_connect_sources\(\)\)/);
   const logic = cpp('PlyoPageLogic.cpp');
   assert.match(logic, /script-src 'nonce-/);
-  assert.ok(!/unsafe-eval/.test(logic), 'jamais d’eval permis');
+  // Seule la compilation du WebAssembly des pièces sur mesure est permise ('wasm-unsafe-eval') : jamais 'unsafe-eval'.
+  assert.ok(!/'unsafe-eval'/.test(logic), 'jamais d’eval permis');
+  assert.match(logic, /script-src 'nonce-" \+ nonce \+ "' 'wasm-unsafe-eval'/);
   assert.match(logic, /img-src data: blob:/);
 });
 

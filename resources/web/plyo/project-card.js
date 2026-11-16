@@ -392,9 +392,12 @@
       body.appendChild(ui.el('p', 'muted small', 'Glisse ici le fichier 3D de ta pièce (STL ou 3MF), ou choisis-le sur ton ordinateur. Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
       var pacts = ui.el('div', 'printer-actions');
       pacts.appendChild(ui.button('Choisir un fichier', h.importPart, 'btn ghost sm main-choice', 'folder'));
+      // Pas de fichier : l'assistant dessine une pièce simple (« Crée-moi une pièce »), le choix secondaire de l'écran.
+      if (h.designOpen) pacts.appendChild(ui.button('Je n’ai pas de fichier : crée-moi une pièce', h.designOpen, 'btn ghost sm', 'wand'));
       body.appendChild(pacts);
-      // Un débutant n'a souvent aucun fichier : le petit bateau de test fourni avec le slicer se pose comme une pièce choisie.
-      body.appendChild(ui.button('Pas encore de fichier ? Essaie avec le petit bateau de test', h.samplePart, 'btn ghost sm'));
+      // Un débutant n'a souvent aucun fichier : le petit bateau de test fourni avec le slicer se pose comme une pièce choisie
+      // (un essai, d'où un simple lien sous les deux choix).
+      body.appendChild(ui.button('Pas encore de fichier ? Essaie avec le petit bateau de test', h.samplePart, h.designOpen ? 'link' : 'btn ghost sm'));
       if (ctx.oldPart) {
         body.appendChild(ui.el('p', 'muted small', '« ' + ctx.oldPart + ' », la pièce de ton projet précédent, est encore sur le plateau de Plyo Slicer. Si tu choisis un fichier, elle sera retirée, et tu pourras annuler.'));
         body.appendChild(ui.button('Garder cette pièce', h.keepOldPart, 'link'));
