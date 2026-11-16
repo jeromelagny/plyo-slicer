@@ -30,7 +30,7 @@ test('choiceRows : nom, et dernier résultat sur cette machine (date JJ/MM)', ()
     { id: 'b3', name: 'Bobine rouge', material: 'PLA', has_preset: true, last_outcome: 'bad', last_ok_at: '2026-10-02' }
   ]);
   assert.deepEqual(rows.map(r => r.detail), ['✓ réussie le 11/11', 'à essayer', 'dernière impression ratée']);
-  assert.deepEqual(rows[0], { id: 'b1', label: 'Sunlu PLA+ noir', detail: '✓ réussie le 11/11', name: 'Sunlu PLA+ noir', material: 'PLA' });
+  assert.deepEqual(rows[0], { id: 'b1', label: 'Sunlu PLA+ noir', detail: '✓ réussie le 11/11', name: 'Sunlu PLA+ noir', material: 'PLA', colour: '' });
   assert.deepEqual(S.choiceRows(null), []);
   assert.deepEqual(S.choiceRows([{ id: '', name: 'x' }, null]), [], 'lignes illisibles écartées');
 });
@@ -93,4 +93,9 @@ test('réglages d’impression réussis remis au choix de la bobine : dits avec 
   assert.equal(S.printRestoredText('X', { ok: true, count: 0 }), '');
   assert.equal(S.printRestoredText('X', { ok: false, text: 'Non' }), '');
   assert.equal(S.printRestoredText('X', null), '');
+});
+
+test('liste des bobines : la couleur notée à l’envoi est rendue pour la pastille, jamais une valeur douteuse', () => {
+  const rows = S.choiceRows([{ id: 'b1', name: 'Filforme', colour: '#F5F5F5' }, { id: 'b2', name: 'Sunlu', colour: 'red' }, { id: 'b3', name: 'Elegoo' }]);
+  assert.deepEqual(rows.map(r => r.colour), ['#F5F5F5', '', '']);
 });

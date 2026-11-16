@@ -122,6 +122,33 @@ std::string preset_name(const std::string& spool, const std::string& machine_lab
     }
 }
 
+std::string clean_colour(const std::string& text)
+{
+    // « #RRGGBB » d'Orca (un « #RRGGBBAA » garde ses six premiers chiffres) ; sinon rien.
+    if (text.size() < 7 || text[0] != '#')
+        return "";
+    std::string out = "#";
+    for (size_t i = 1; i < 7; ++i) {
+        const char c = text[i];
+        if (!std::isxdigit(static_cast<unsigned char>(c)))
+            return "";
+        out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+    }
+    return text.size() == 7 || text.size() == 9 ? out : "";
+}
+
+nlohmann::json set_colour(const nlohmann::json& reg, const std::string& id, const std::string& colour)
+{
+    nlohmann::json    out = sanitize(reg);
+    const std::string c   = clean_colour(colour);
+    if (c.empty())
+        return out;
+    for (nlohmann::json& s : out["spools"])
+        if (s["id"] == id)
+            s["colour"] = c;
+    return out;
+}
+
 nlohmann::json sanitize(const nlohmann::json& raw)
 {
     nlohmann::json spools = nlohmann::json::array();
@@ -141,6 +168,8 @@ nlohmann::json sanitize(const nlohmann::json& raw)
                 machines[printer] = machine_entry(entry);
         nlohmann::json spool = {{"id", id}, {"name", name}, {"material", material}, {"machines", machines}};
         put_brand(spool, Json::str(row, "brand"), Json::str(row, "range"));
+        if (const std::string colour = clean_colour(Json::str(row, "colour")); !colour.empty())
+            spool["colour"] = colour;
         spools.push_back(spool);
     }
     return {{"spools", spools}};
@@ -184,6 +213,7 @@ nlohmann::json for_machine(const nlohmann::json& reg, const std::string& printer
                                       {"last_outcome", Json::str(entry, "last_outcome")},
                                       {"last_ok_at", Json::str(entry, "last_ok_at")}};
         put_brand(row, Json::str(s, "brand"), Json::str(s, "range"));
+        row["colour"] = Json::str(s, "colour");
         rows.push_back(row);
     }
     std::stable_sort(rows.begin(), rows.end(), [](const nlohmann::json& a, const nlohmann::json& b) {

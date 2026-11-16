@@ -2685,6 +2685,27 @@ TEST_CASE("Bobines : fichier de la version envoyée ou réussie, relu prudemment
     CHECK_FALSE(ok.contains("print"));
 }
 
+TEST_CASE("Bobines : couleur notée à l'envoi, montrée dans la liste")
+{
+    using namespace Plyo::SpoolsLogic;
+    CHECK(clean_colour("#f5f5f5") == "#F5F5F5");
+    CHECK(clean_colour("#1B04AEFF") == "#1B04AE"); // avec transparence : les six premiers chiffres
+    CHECK(clean_colour("F5F5F5").empty());
+    CHECK(clean_colour("#12345").empty());
+    CHECK(clean_colour("#GGGGGG").empty());
+    const json r   = add(sanitize(json::object()), "Filforme", "PLA");
+    json       reg = set_preset(r["reg"], r["id"], "P", "Filforme — P");
+    CHECK(for_machine(reg, "P")[0]["colour"] == "");
+    reg = set_colour(reg, r["id"], "#f5f5f5");
+    CHECK(for_machine(reg, "P")[0]["colour"] == "#F5F5F5");
+    // Couleur invalide ou bobine inconnue : rien ne change ; une couleur invalide sur le disque est écartée.
+    CHECK(set_colour(reg, r["id"], "blanc") == sanitize(reg));
+    CHECK(set_colour(reg, "inconnue", "#000000") == sanitize(reg));
+    json bad = reg;
+    bad["spools"][0]["colour"] = "rouge";
+    CHECK_FALSE(sanitize(bad)["spools"][0].contains("colour"));
+}
+
 TEST_CASE("Bobines : réglages d'impression qui suivent la bobine")
 {
     using namespace Plyo::SpoolsLogic;

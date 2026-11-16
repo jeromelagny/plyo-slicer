@@ -51,11 +51,8 @@
         if (q.id === 'use' && it.guess) {
           var label = q.choices.filter(function (c) { return c.id === it.guess; })[0];
           if (label) {
-            // « suggéré » dit en clair, et sa confirmation est un vrai bouton (plus un lien au bout de la phrase).
+            // « suggéré » dit en clair ; on clique le choix lui-même (plus de « Oui, c'est ça » en double).
             body.appendChild(ui.el('p', 'muted small', 'D’après son nom, ta pièce ressemble à « ' + label.label + ' » : c’est le choix marqué « suggéré ».'));
-            var g = ui.el('div', 'printer-actions');
-            g.appendChild(ui.button('Oui, c’est ça', function () { h.answer('use', it.guess); }, 'btn ghost sm'));
-            body.appendChild(g);
           }
         }
       }
@@ -135,7 +132,8 @@
           body.appendChild(line(ui, 'alert', 'Elle ne répond pas. Allume-la et vérifie qu’elle est sur le même réseau : je revérifie toute seule.', 'warn'));
           body.appendChild(ui.button('Vérifier à nouveau', h.recheck, 'link'));
         }
-        body.appendChild(ui.button('Refaire la préparation sur une autre machine', h.changeMachine, 'link'));
+        // Geste rare (la fiche du projet permet aussi de changer de machine) : pas montré au débutant.
+        if (!opts.novice) body.appendChild(ui.button('Refaire la préparation sur une autre machine', h.changeMachine, 'link'));
       }
       // Emplacements du Canvas choisis à l'étape Filament : rappel, et relance sans carte si la CC2 les a refusés.
       if (opts.canvas) {

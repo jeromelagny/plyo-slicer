@@ -281,6 +281,7 @@ bool note_sent()
     const nlohmann::json spool = Spools::current_full();
     if (spool.empty())
         return false;
+    Spools::note_colour(spool["id"]); // la couleur de ce qui part : la bobine se reconnaît ensuite dans la liste
     // Les valeurs du moment (modifications pas encore enregistrées comprises) : ce sont elles qui sont parties.
     const nlohmann::json values = Spools::preset_values(spool["preset"]);
     if (values.empty())

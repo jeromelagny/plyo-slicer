@@ -24,7 +24,7 @@ test('les choix qui font avancer sont des boutons, plus des liens soulignés', (
     assert.match(card, new RegExp("ui\\.button\\('" + label.replace(/[?]/g, '\\?') + "'[^\\n]*'btn ghost sm'"), label);
   assert.match(card, /ui\.button\(q\.unknown, h\.unknownBed, 'btn ghost sm'\)/);
   assert.match(steps, /ui\.button\('Je ne sais pas', h\.idk, 'btn ghost sm'\)/);
-  assert.match(steps, /ui\.button\('Oui, c’est ça'[^\n]*'btn ghost sm'\)/);
+  assert.ok(!steps.includes("ui.button('Oui, c’est ça'"), 'le choix suggéré se clique lui-même');
   // « Clique sur ta réponse : » au-dessus des choix (plaque, matière, marque, questions sur la pièce).
   assert.equal((card.match(/'pick-hint', 'Clique sur ta réponse :'/g) || []).length, 3);
   assert.match(steps, /'pick-hint', 'Clique sur ta réponse :'/);

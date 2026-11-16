@@ -854,6 +854,9 @@ void handle_page_message(const nlohmann::json& data)
                 // Ce qui a marché avec cette bobine dans l'onglet Impression (débit de première couche, vitesses…) est remis
                 // dans ce projet sans question : le panneau le dit, avec « Annuler ».
                 r["print_restored"] = Profiles::restore_spool_print();
+                // Bobine déjà connue sans couleur notée (d'avant cette version) : celle de la plaque, corrigée à chaque envoi.
+                if (!Json::boolean(r, "created", false))
+                    Spools::note_colour(Json::str(r, "id"), true);
                 // Dernière version réussie de cette bobine sur cette machine, et ce qui en diffère aujourd'hui (phrase de reprise).
                 r["success"] = Spools::success_for(Json::str(r, "id"), Json::str(r, "printer"));
             }

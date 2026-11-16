@@ -27,14 +27,22 @@ std::string preset_name(const std::string& spool, const std::string& machine_lab
 // last_outcome: "ok"|"bad"|"", last_ok_at: "AAAA-MM-JJ"|""}}}]}. Lignes invalides écartées, 200 bobines au plus.
 // `brand` (marque dite à l'étape Filament) et `range` (sa gamme) n'existent que s'ils sont dits (BrandsLogic::clean_brand) ;
 // une gamme sans marque est écartée.
+// `colour` (couleur du filament de la dernière impression envoyée, « #RRGGBB ») n'existe que si elle est valable.
 nlohmann::json sanitize(const nlohmann::json& raw);
+
+// « #RRGGBB » en majuscules (un « #RRGGBBAA » d'Orca garde ses six premiers chiffres), ou "" si le texte n'est pas une couleur.
+std::string clean_colour(const std::string& text);
+
+// Note la couleur de la bobine `id` (celle de la plaque à l'envoi), pour la reconnaître dans la liste. Couleur invalide ou
+// bobine inconnue : registre (nettoyé) inchangé.
+nlohmann::json set_colour(const nlohmann::json& reg, const std::string& id, const std::string& colour);
 
 // Ajoute une bobine : {reg, id, created}. Une bobine de même `key_of` est reprise (created faux), sans changer sa marque.
 // Refus (nom ou matière invalide, registre plein) : registre inchangé, id "", created faux.
 nlohmann::json add(const nlohmann::json& reg, const std::string& name, const std::string& material, const std::string& brand = "",
                    const std::string& range = "");
 
-// Bobines pour une imprimante : [{id, name, material, brand?, range?, has_preset, last_outcome, last_ok_at}], la dernière
+// Bobines pour une imprimante : [{id, name, material, brand?, range?, colour ("" si inconnue), has_preset, last_outcome, last_ok_at}], la dernière
 // réussite d'abord.
 nlohmann::json for_machine(const nlohmann::json& reg, const std::string& printer);
 

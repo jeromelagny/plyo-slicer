@@ -32,7 +32,9 @@
     return items.filter(function (s) { return s && typeof s.id === 'string' && s.id && typeof s.name === 'string' && s.name; }).map(function (s) {
       var day = shortDate(s.last_ok_at);
       var detail = s.last_outcome === 'bad' ? 'dernière impression ratée' : day ? '✓ réussie le ' + day : 'à essayer';
-      return { id: s.id, label: s.name, detail: detail, name: s.name, material: s.material || '' };
+      // Couleur notée à la dernière impression envoyée : une pastille aide à reconnaître sa bobine.
+      var colour = typeof s.colour === 'string' && /^#[0-9A-Fa-f]{6}$/.test(s.colour) ? s.colour : '';
+      return { id: s.id, label: s.name, detail: detail, name: s.name, material: s.material || '', colour: colour };
     });
   }
 

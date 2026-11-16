@@ -61,6 +61,10 @@ nlohmann::json print_values();
 nlohmann::json print_to_restore(const nlohmann::json& ok_print);
 
 nlohmann::json read_version(bool ok, const std::string& id, const std::string& printer);
+
+// Couleur du filament 1 de la plaque notée pour la bobine `id` (à l'envoi) : la liste des bobines la montre en pastille.
+// `only_if_missing` : seulement si la bobine n'a pas encore de couleur (bobine déjà connue, choisie pour un projet).
+bool note_colour(const std::string& id, bool only_if_missing = false);
 bool           write_version(bool ok, const nlohmann::json& version);
 
 // Dernier envoi ou export (plyo/essai/dernier-envoi.json) : {spool, printer, date, at} (SpoolsLogic::last_sent), ou {}.

@@ -23,3 +23,12 @@ test('débutant : « découper » expliqué, et où lire le nom exact de son imp
   assert.match(read('journey-steps.js'), /Découper, c’est transformer ta pièce en instructions que ton imprimante sait suivre/);
   assert.match(read('index.html'), /Plusieurs modèles se ressemblent : le nom exact est écrit sur ta machine/);
 });
+
+test('un écran, peu de choix : machine proposée sans « pas dans la liste » ni « Mes machines », rangé dans le menu', () => {
+  const page = read('index.html'), card = read('project-card.js');
+  assert.match(page, /extra: step === 'machine' && !\(conv\.project\.printer && conv\.project\.printer\.proposed && !projectUI\.showList\)/);
+  assert.ok(!card.includes("'Mes machines…'"));
+  assert.match(page, /id="m-machines" role="menuitem" data-icon="printer">Mes machines</);
+  assert.match(page, /\.project-body > \.btn \{ align-self: flex-start; \}/);
+  assert.match(card, /dot\.style\.background = r\.colour/);
+});

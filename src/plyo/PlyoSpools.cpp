@@ -419,6 +419,23 @@ bool write_last_sent(const nlohmann::json& pointer)
 
 std::string name_of(const std::string& id) { return SpoolsLogic::spool_name(load(), id); }
 
+bool note_colour(const std::string& id, bool only_if_missing)
+{
+    if (bundle() == nullptr || id.empty())
+        return false;
+    if (only_if_missing)
+        for (const nlohmann::json& s : load()["spools"])
+            if (s["id"] == id && s.contains("colour"))
+                return false;
+    // Couleur du filament 1 de la plaque (celle que la bobine imprime), réglée dans Plyo Slicer ou lue sur l'imprimante.
+    const auto* colours = bundle()->project_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+    if (colours == nullptr || colours->values.empty())
+        return false;
+    const nlohmann::json reg  = load();
+    const nlohmann::json next = SpoolsLogic::set_colour(reg, id, colours->values.front());
+    return next != reg && save(next);
+}
+
 bool note_outcome(const std::string& id, const std::string& printer, const std::string& outcome, const std::string& date)
 {
     const nlohmann::json reg  = load();

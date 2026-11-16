@@ -416,6 +416,7 @@
   .bed-choice .muted { padding-left: 2px; }
   .bed-choice .btn { width: 100%; justify-content: flex-start; text-align: left; }
   .step-card.bed-first #project-card { display: none; }
+  .project-body > .btn { align-self: flex-start; }
   .sheet-help { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-sm); }
   .how-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: var(--s1); font-size: var(--fs-sm); }
   .project-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s1); }
@@ -524,6 +525,7 @@
       <button type="button" id="m-new" role="menuitem" data-icon="plus">Nouveau projet</button>
       <button type="button" id="m-convs" role="menuitem" data-icon="folder">Mes projets</button>
       <button type="button" id="m-parts" role="menuitem" data-icon="cube">Mes pièces</button>
+      <button type="button" id="m-machines" role="menuitem" data-icon="printer">Mes machines</button>
       <button type="button" id="m-intent" role="menuitem" data-icon="help" class="hidden">Reposer les questions sur ma pièce</button>
       <hr>
       <div class="group" role="presentation">Réglages</div>
@@ -1853,7 +1855,8 @@
     if (endQ) ctx.ended = endQ.verdict;
     else if (conv && PlyoJourney.currentStep(conv.project) === 'resultat' && endOutcome()) ctx.ended = endOutcome();
     if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
-    else if (p.filament && p.filament.proposed && p.filament.spool && p.filament.spool.name) ctx.proposal = { name: p.filament.spool.name }; // la bobine du projet précédent
+    // La bobine du projet précédent ; « Une autre bobine » ouvre la liste : plus de « Oui, … » en double au-dessus d'elle.
+    else if (p.filament && p.filament.proposed && p.filament.spool && p.filament.spool.name && !projectUI.showKinds) ctx.proposal = { name: p.filament.spool.name };
     var cctx = conv ? canvasCtx(PlyoJourney.currentStep(conv.project)) : null;
     if (cctx) ctx.canvas = cctx;
     else if (conv && PlyoJourney.tempsPending(p) && !ctx.editing) ctx.temps = { nozzle: p.filament.nozzle_temp, bed: p.filament.bed_temp };
@@ -1945,7 +1948,7 @@
     var intentNow = step === 'preparer' ? intentState(step, plateSliced()) : null;
     $('journey-action').parentNode.classList.toggle('act-after', !!(intentNow && intentNow.mode === 'ready'));
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
-      extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'plus', onClick: projectHandlers.setupPrinter } : null });
+      extra: step === 'machine' && !(conv.project.printer && conv.project.printer.proposed && !projectUI.showList) ? { label: 'Ma machine n’est pas dans la liste', icon: 'plus', onClick: projectHandlers.setupPrinter } : null });
     ensureCanvasRead(step);
     ensureManualRead(step);
     ensureColoursRead(step);
@@ -1987,7 +1990,9 @@
     ensureRecheck(step);
     updateIntentMenu();
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
-    PlyoJourneyView.renderSuggestions($('suggestions'), ui, { step: step, handlers: suggestionHandlers });
+    // Débutant, onglet Étapes : rien à côté de l'étape en cours (un écran, peu de choix) ; au Résultat, la photo du défaut reste.
+    var quietChips = fsState.level !== 'expert' && viewUI.tab !== 'chat' && step !== 'resultat';
+    PlyoJourneyView.renderSuggestions($('suggestions'), ui, { step: quietChips ? '' : step, handlers: suggestionHandlers });
     renderSetupFlow();
     renderResume();
   }
@@ -4110,6 +4115,8 @@
   $('m-new').addEventListener('click', function () { menu.classList.add('hidden'); newConversation(); });
   $('m-convs').addEventListener('click', openConversations);
   $('m-parts').addEventListener('click', openJournal);
+  // « Mes machines » (gérer, masquer, reprendre des habitudes) : un geste rare, rangé ici plutôt que dans l'étape Machine.
+  $('m-machines').addEventListener('click', function () { menu.classList.add('hidden'); openMachinesDrawer(); });
   $('m-usage').addEventListener('click', openUsage);
   $('gauge').addEventListener('click', openUsage);
   $('m-undo').addEventListener('click', function () { menu.classList.add('hidden'); window.orca.postMessage({ type: 'undo' }); });

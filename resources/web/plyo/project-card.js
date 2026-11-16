@@ -164,7 +164,8 @@
       body.appendChild(ui.el('p', 'muted small', 'Ta machine a été reliée sans son numéro de série ni son code d’accès : je ne lis pas ses emplacements. Allume-la, et je la cherche sur le réseau pour la relier.'));
       body.appendChild(ui.button('Relier à nouveau', ctx.handlers.setupPrinter, 'link'));
     }
-    if (ctx.noSlots) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas les emplacements de ta machine pour l’instant : choisis ta bobine ici. À l’envoi, regarde la fenêtre de Plyo Slicer et l’écran de l’imprimante.'));
+    // Sans action à faire, la phrase n'aide que le confirmé (le débutant choisit sa bobine dans la liste, juste dessous).
+    if (ctx.noSlots && ctx.beginner === false) body.appendChild(ui.el('p', 'muted small', 'Je ne lis pas les emplacements de ta machine pour l’instant : choisis ta bobine ici. À l’envoi, regarde la fenêtre de Plyo Slicer et l’écran de l’imprimante.'));
     if (ctx.slotRemark) body.appendChild(ui.el('p', 'muted small', ctx.slotRemark));
   }
   // Pas de question par défaut : le profil ne permet pas de reconnaître une machine à une bobine. Un lien discret, après les bobines.
@@ -350,7 +351,6 @@
         else if (groups.others.length) acts.appendChild(ui.button('Autres machines installées (' + groups.others.length + ')', h.toggleOthers, 'link'));
         body.appendChild(acts);
       }
-      body.appendChild(ui.button('Mes machines…', h.openMachines, 'link'));
     } else if (wantsFilament && proposedFilament && !ctx.showKinds) {
       // « Sunlu PLA+ noir, comme la dernière fois ? » : le bouton « Oui » est dans la ligne d'action.
       renderSlotNotes(body, ui, ctx);
@@ -368,7 +368,9 @@
           var list = ui.el('div', 'printer-actions spool-list');
           rows.forEach(function (r) {
             var on = fi && fi.spool && fi.spool.id === r.id;
-            list.appendChild(ui.button(r.label + ' · ' + r.detail, function () { h.pickSpool(r); }, 'btn ghost sm' + (on ? ' on' : '')));
+            var pick = ui.button(r.label + ' · ' + r.detail, function () { h.pickSpool(r); }, 'btn ghost sm' + (on ? ' on' : ''));
+            if (r.colour) { var dot = ui.el('span', 'swatch'); dot.style.background = r.colour; pick.insertBefore(dot, pick.firstChild); }
+            list.appendChild(pick);
           });
           body.appendChild(list);
         }
