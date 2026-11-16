@@ -45,3 +45,12 @@ test('croquis ou photo joints : deux au plus, formats acceptés seulement, envoy
   assert.equal(F.request({ text: 'x' }, {}).images, undefined);
   assert.match(read('index.html'), /Math\.min\(1, 1600 \/ Math\.max\(img\.width, img\.height\)\)/);
 });
+
+test('discussion : pièce dessinée par Plyo → capacité « redesign », bouton « Modifier ma pièce » qui part au concepteur', () => {
+  const page = read('index.html'), L = require('../assistant-logic.js');
+  assert.match(page, /if \(conv && conv\.project\.design && conv\.project\.design\.part\) body\.capabilities\.push\('redesign'\);/);
+  assert.match(page, /conv\.project\.design = \{ part: answer\.part \};/);
+  assert.match(page, /else if \(a\.kind === 'redesign'\) \{[\s\S]{0,400}designStart\(true\);[\s\S]{0,200}designSubmit\(\);/);
+  assert.equal(L.actionSupported({ kind: 'redesign', target: 'Retire l’encoche', label: 'Modifier ma pièce' }), true);
+  assert.equal(L.actionSupported({ kind: 'redesign', target: ' ', label: 'Modifier ma pièce' }), false);
+});

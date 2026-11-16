@@ -610,7 +610,7 @@ test('l’action remember_success poste spool_success, se grise au clic et dispa
   const fn = html.slice(start, html.indexOf('// ---------- Modèle 3D joint', start));
   // Avec l’id de la bobine de la conversation : le slicer refuse un dernier envoi fait avec une autre bobine.
   assert.match(fn, /a\.kind === 'remember_success'\) \{[\s\S]*?b\.disabled = true;[\s\S]*?postMessage\(\{ type: 'spool_success', spool: \(convSpool && convSpool\.id\) \|\| '' \}\)/);
-  assert.match(fn, /archived && \(PLATE_KINDS\.indexOf\(a\.kind\) >= 0 \|\| a\.kind === 'remember_success'\)/);
+  assert.match(fn, /archived && \(PLATE_KINDS\.indexOf\(a\.kind\) >= 0 \|\| a\.kind === 'remember_success' \|\| a\.kind === 'redesign'\)/);
   assert.match(html, /msg\.type === 'spool_success_done'[\s\S]{0,80}onSpoolSuccessDone\(msg\)/);
   // « Oui » de l’étape Résultat : la bobine de l’envoi, et le changement d’avis après « Non ».
   assert.match(html, /postMessage\(\{ type: 'spool_success', spool: s\.spool\.id, change_of_mind: !!s\.failed \}\)/);

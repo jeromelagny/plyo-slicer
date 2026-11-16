@@ -4321,7 +4321,7 @@
   // STL comme un fichier choisi. Retouche : la pièce en cours repart avec la demande, la nouvelle remplace l'ancienne.
   var designUI = { open: false, conv: null, retouch: false, text: '', busy: false, questions: [], answers: [], conversation: [], part: null, message: '', failed: false, needsLogin: false, placing: null };
   function designStart(retouch) {
-    var keep = retouch && designUI.conv === conv ? designUI.part : null;
+    var keep = retouch ? (designUI.conv === conv && designUI.part) || (conv.project.design && conv.project.design.part) || null : null;
     designUI = { open: true, conv: conv, retouch: !!retouch, text: '', images: [], busy: false, questions: [], answers: [], conversation: [], part: keep, message: '', failed: false, needsLogin: !session, placing: null };
     renderProject();
   }
@@ -4394,6 +4394,8 @@
       var stl = PlyoDesign.toSTL(built.mesh, answer.part.name), bin = '';
       for (var i = 0; i < stl.length; i += 0x8000) bin += String.fromCharCode.apply(null, stl.subarray(i, i + 0x8000));
       var name = PlyoDesignFlow.fileName(answer.part);
+      conv.project.design = { part: answer.part }; // gardée avec le projet : retouches depuis la discussion, et après un redémarrage
+      scheduleSave();
       designUI = { open: false, conv: conv, retouch: false, text: '', busy: false, questions: [], answers: [], conversation: asked.conversation, part: answer.part, message: '', failed: false, needsLogin: false,
         placing: { message: answer.message || '', size: built.size, name: name } };
       projectUI.placing = noteLine('Je pose « ' + answer.part.name + ' » sur le plateau…', '', 'cube', 'guide');
@@ -4897,7 +4899,7 @@
   var PLATE_KINDS = ['orient', 'arrange', 'scale_to_fit', 'slice'];
   function renderActions(actions, archived) {
     // Une action que ce panneau ne sait pas exécuter n'a pas de bouton ; un test d'Orca ne se relance pas d'une conversation rouverte.
-    var list = (actions || []).filter(function (a) { return Logic.actionSupported(a) && !(archived && a.kind === 'open_calibration') && !(archived && (PLATE_KINDS.indexOf(a.kind) >= 0 || a.kind === 'remember_success')); });
+    var list = (actions || []).filter(function (a) { return Logic.actionSupported(a) && !(archived && a.kind === 'open_calibration') && !(archived && (PLATE_KINDS.indexOf(a.kind) >= 0 || a.kind === 'remember_success' || a.kind === 'redesign')); });
     if (!list.length) return null;
     var row = el('div', 'row-acts');
     list.forEach(function (a) {
@@ -4908,6 +4910,14 @@
         else if (a.kind === 'show') showMe(a.target);
         else if (a.kind === 'open_tool') window.orca.postMessage({ type: 'open_tool', tool: a.target });
         else if (a.kind === 'show_setting') showSetting(a.target);
+        else if (a.kind === 'redesign') {
+          // Retouche demandée dans la discussion : elle part au concepteur avec la pièce en cours ; on suit dans « Étapes ».
+          b.disabled = true;
+          designStart(true);
+          designUI.text = String(a.target || '').slice(0, 200);
+          applyTab('show-guide');
+          designSubmit();
+        }
         else if (a.kind === 'remember_success') {
           // Le slicer marque le dernier envoi (pointeur gardé, marche aussi après un redémarrage d'Orca), seulement s'il est
           // celui de la bobine de cette conversation, récent et pas déclaré raté ; sa réponse dit ce qui est noté, ou pourquoi pas.
@@ -6528,6 +6538,8 @@
       body.explanation_level = PlyoMachines.levelOf(habits);
       if (pendingIntent) body.intent_questions = pendingIntent;
       body.capabilities = Logic.CAPABILITIES.slice(); // actions que ce panneau sait exécuter (aperçu, tests bruts d'Orca)
+      // Pièce du projet dessinée par Plyo : une retouche de forme devient « Modifier ma pièce » (au lieu d'un autre logiciel).
+      if (conv && conv.project.design && conv.project.design.part) body.capabilities.push('redesign');
       // Le service rend la réponse déjà réglée de ce même identifiant (« replayed ») sans la refaire ni la débiter.
       body.request_id = req.id;
       return attempt();

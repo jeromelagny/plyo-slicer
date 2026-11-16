@@ -979,6 +979,7 @@
     if (a.kind === 'open_calibration') return RAW_TESTS.indexOf(t) >= 0;
     if (a.kind === 'open_tool') return TOOL_TARGETS.indexOf(t) >= 0;
     if (a.kind === 'show_setting') return typeof t === 'string' && /^[a-z][a-z0-9_]{1,59}$/.test(t);
+    if (a.kind === 'redesign') return typeof t === 'string' && !!t.trim() && t.length <= 200;
     return ['orient', 'arrange', 'scale_to_fit', 'slice', 'remember_success'].indexOf(a.kind) >= 0;
   }
 
