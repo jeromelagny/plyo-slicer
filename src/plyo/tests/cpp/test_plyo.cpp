@@ -2675,6 +2675,47 @@ TEST_CASE("Bobines : fichier de la version envoyée ou réussie, relu prudemment
     CHECK(sanitize_version({{"spool", "b1"}, {"date", "2026-11-12"}}).empty());
     CHECK(sanitize_version({{"spool", "b1"}, {"printer", "P"}, {"date", "hier"}}).empty());
     CHECK(sanitize_version(json::array()).empty());
+
+    // Réglages d'impression qui suivent la bobine : gardés ; ceux de la pièce (supports…) ou qui ne sont pas du texte, écartés.
+    const json with_print = sanitize_version({{"spool", "b1"}, {"printer", "P"}, {"date", "2026-11-16"},
+                                              {"values", json::object()},
+                                              {"print", {{"first_layer_flow_ratio", "1.05"}, {"support_speed", "80"}, {"wall_loops", "3"}, {"top_surface_speed", 175}}}});
+    CHECK(with_print["print"] == json({{"first_layer_flow_ratio", "1.05"}}));
+    // Sans réglage d'impression : pas de champ `print` (les versions d'avant restent identiques).
+    CHECK_FALSE(ok.contains("print"));
+}
+
+TEST_CASE("Bobines : réglages d'impression qui suivent la bobine")
+{
+    using namespace Plyo::SpoolsLogic;
+    // La façon d'imprimer la matière : débits, vitesses, accélérations, première couche, patte d'éléphant.
+    for (const char* k : {"first_layer_flow_ratio", "set_other_flow_ratios", "top_solid_infill_flow_ratio", "outer_wall_speed", "top_surface_speed",
+                          "initial_layer_speed", "initial_layer_print_height", "default_acceleration", "outer_wall_jerk", "bridge_flow",
+                          "elefant_foot_compensation", "elefant_foot_compensation_layers", "slow_down_layers"})
+        CHECK(carries_with_spool(k));
+    // Ce que la forme de la pièce décide reste avec son projet.
+    for (const char* k : {"enable_support", "support_speed", "support_flow_ratio", "tree_support_branch_angle", "brim_type", "brim_flow_ratio",
+                          "skirt_speed", "raft_layers", "ironing_speed", "sparse_infill_density", "wall_loops", "layer_height", "seam_position",
+                          "spiral_mode", "fuzzy_skin", "prime_tower_width", "top_shell_layers"})
+        CHECK_FALSE(carries_with_spool(k));
+
+    const json ok = {{"first_layer_flow_ratio", "1.05"}, {"top_surface_speed", "175"}, {"outer_wall_speed", "150"}, {"wall_loops", "4"}};
+    const std::map<std::string, std::string> saved  = {{"first_layer_flow_ratio", "1"}, {"top_surface_speed", "250"}, {"outer_wall_speed", "200"}, {"wall_loops", "2"}};
+    std::map<std::string, std::string>       edited = saved;
+    // Projet neuf : tout ce qui suit la bobine et diffère est remis ; les parois (la pièce), jamais.
+    CHECK(print_to_restore(ok, saved, edited) == json({{"first_layer_flow_ratio", "1.05"}, {"top_surface_speed", "175"}, {"outer_wall_speed", "150"}}));
+    // Déjà changé dans ce projet (par toi ou par moi) : on n'y touche pas. Déjà à la bonne valeur : rien à remettre.
+    edited["outer_wall_speed"]       = "120";
+    edited["first_layer_flow_ratio"] = "1.05";
+    CHECK(print_to_restore(ok, saved, edited) == json({{"top_surface_speed", "175"}}));
+    // Réglage absent d'aujourd'hui, ou version sans réglage d'impression : rien.
+    CHECK(print_to_restore({{"bridge_flow", "0.9"}}, saved, saved).empty());
+    CHECK(print_to_restore(json(), saved, saved).empty());
+
+    // Le débit de la première couche a son nom simple dans la phrase.
+    const json r = success_summary({{"first_layer_flow_ratio", ""}}, {{"first_layer_flow_ratio", "1.05"}},
+                                   {{"first_layer_flow_ratio", "Rapport de débit de la première couche"}});
+    CHECK(r["summary"] == "débit de la première couche 1,05");
 }
 
 TEST_CASE("Bobines : résultat d'impression noté par machine")
@@ -3174,6 +3215,37 @@ std::string read_source(const std::string& relative)
 }
 
 } // namespace
+
+TEST_CASE("Règles d'Orca : un débit « autre » demandé allume l'interrupteur sans lequel Orca l'ignore")
+{
+    using namespace Plyo::ConfigRules;
+    Values state                    = plain_print();
+    state["set_other_flow_ratios"]  = "0";
+    state["first_layer_flow_ratio"] = "1.05";
+    Outcome o = complete(state, {"first_layer_flow_ratio"}, true, false, false, title_of);
+    REQUIRE(o.ok);
+    REQUIRE(added(o, "set_other_flow_ratios"));
+    CHECK(added(o, "set_other_flow_ratios")->value == true);
+    CHECK(added(o, "set_other_flow_ratios")->trigger == "first_layer_flow_ratio");
+    // Déjà allumé, éteint dans le même lot, débit remis à 1, ou débit qui n'en dépend pas : rien d'ajouté.
+    state["set_other_flow_ratios"] = "1";
+    CHECK(complete(state, {"first_layer_flow_ratio"}, true, false, false, title_of).added.empty());
+    state["set_other_flow_ratios"] = "0";
+    CHECK(complete(state, {"first_layer_flow_ratio", "set_other_flow_ratios"}, true, false, false, title_of).added.empty());
+    state["first_layer_flow_ratio"] = "1";
+    CHECK(complete(state, {"first_layer_flow_ratio"}, true, false, false, title_of).added.empty());
+    state["top_solid_infill_flow_ratio"] = "0.95";
+    CHECK(complete(state, {"top_solid_infill_flow_ratio"}, true, false, false, title_of).added.empty());
+    CHECK(gate_of("support_interface_flow_ratio") == "set_other_flow_ratios");
+    CHECK(gate_of("top_solid_infill_flow_ratio").empty());
+
+    // Remise des réglages réussis d'une bobine : l'interrupteur est remis avec le débit, s'il est éteint ici.
+    using Plyo::SpoolsLogic::print_to_restore;
+    const std::map<std::string, std::string> off = {{"first_layer_flow_ratio", "1"}, {"set_other_flow_ratios", "0"}};
+    CHECK(print_to_restore({{"first_layer_flow_ratio", "1.05"}}, off, off) == nlohmann::json({{"first_layer_flow_ratio", "1.05"}, {"set_other_flow_ratios", "1"}}));
+    const std::map<std::string, std::string> on = {{"first_layer_flow_ratio", "1"}, {"set_other_flow_ratios", "1"}};
+    CHECK(print_to_restore({{"first_layer_flow_ratio", "1.05"}}, on, on) == nlohmann::json({{"first_layer_flow_ratio", "1.05"}}));
+}
 
 TEST_CASE("Règles d'Orca : le mode vase demandé seul est complété avec tout ce qu'Orca exigerait")
 {

@@ -22,6 +22,7 @@
 #include <boost/log/trivial.hpp>
 
 #include <ctime>
+#include <map>
 
 namespace Plyo { namespace Profiles {
 
@@ -198,7 +199,7 @@ nlohmann::json reliable_info()
         const nlohmann::json ok = Spools::read_version(true, spool["id"], spool["printer"]);
         if (ok.empty())
             return {{"available", false}, {"date", ""}};
-        return with_preview({{"available", true}, {"date", ok["date"]}}, {{"filament", ok["values"]}});
+        return with_preview({{"available", true}, {"date", ok["date"]}}, {{"filament", ok["values"]}, {"print", Spools::print_to_restore(Json::obj(ok, "print"))}});
     }
     const nlohmann::json stored = Sanitize::reliable(Store::read(reliable_file()));
     // Le nom du fichier vient d'une empreinte : on vérifie aussi que c'est bien ce couple imprimante + filament.
@@ -219,7 +220,7 @@ nlohmann::json restore_reliable()
         // Les valeurs vont dans l'onglet Filament : il doit montrer le préréglage de la bobine (filament 1).
         if (collection(Preset::TYPE_FILAMENT).get_edited_preset().name != spool["preset"])
             return {{"ok", false}, {"text", "Ouvre le filament de la bobine « " + spool["name"].get<std::string>() + " » dans Plyo Slicer, puis redemande-moi."}};
-        values = {{"filament", ok["values"]}};
+        values = {{"filament", ok["values"]}, {"print", Spools::print_to_restore(Json::obj(ok, "print"))}};
     } else {
         const nlohmann::json stored = Sanitize::reliable(Store::read(reliable_file()));
         if (stored.empty() || stored["machine"] != Limits::machine_key())
@@ -235,6 +236,40 @@ nlohmann::json restore_reliable()
         result["print_edited"]     = saved["print_edited"];
     }
     return result;
+}
+
+nlohmann::json restore_spool_print()
+{
+    nlohmann::json       none  = {{"ok", true}, {"count", 0}};
+    const nlohmann::json spool = Spools::current_full();
+    if (spool.empty())
+        return none;
+    const nlohmann::json ok      = Spools::read_version(true, spool["id"], spool["printer"]);
+    const nlohmann::json restore = ok.empty() ? nlohmann::json::object() : Spools::print_to_restore(Json::obj(ok, "print"));
+    if (restore.empty())
+        return none;
+    const nlohmann::json changes = SettingsBridge::preview_values({{"print", restore}});
+    nlohmann::json       r       = SettingsBridge::restore_values({{"print", restore}});
+    if (!Json::boolean(r, "ok", false)) {
+        BOOST_LOG_TRIVIAL(warning) << "Plyo: réglages d'impression réussis de la bobine « " << Json::str(spool, "name") << " » non remis : " << Json::str(r, "text");
+        return r;
+    }
+    // Ils restent dans ce projet (jamais dans le profil d'impression partagé) : la prochaine impression réussie les retient à son tour.
+    std::map<std::string, std::string> titles, kinds;
+    for (const auto& [key, value] : restore.items()) {
+        titles[key] = Catalog::policy().title(key);
+        kinds[key]  = Catalog::policy().kind("print", key);
+    }
+    nlohmann::json before = nlohmann::json::object();
+    for (const auto& [key, value] : restore.items())
+        before[key] = ""; // tout diffère : success_summary ne sert ici qu'à dire les valeurs remises
+    r["count"]   = changes.size();
+    r["changes"] = changes;
+    r["summary"] = SpoolsLogic::success_summary(before, restore, titles, kinds)["summary"];
+    r["date"]    = ok["date"];
+    r["spool"]   = spool["name"];
+    BOOST_LOG_TRIVIAL(info) << "Plyo: " << changes.size() << " réglage(s) d'impression réussis remis pour la bobine « " << Json::str(spool, "name") << " »";
+    return r;
 }
 
 bool note_sent()
@@ -254,6 +289,9 @@ bool note_sent()
     const nlohmann::json pointer = {{"spool", spool["id"]}, {"printer", spool["printer"]}, {"date", at.substr(0, 10)}, {"at", at}};
     nlohmann::json       trial   = pointer;
     trial["values"]              = values;
+    // Les réglages d'impression qui suivent la bobine (débit de première couche, vitesses…) : remis au prochain projet.
+    if (const nlohmann::json print = Spools::print_values(); !print.empty())
+        trial["print"] = print;
     // L'essai d'abord : le pointeur ne doit jamais viser un essai qui n'a pas été écrit.
     const bool written = Spools::write_version(false, trial) && Spools::write_last_sent(pointer);
     if (!written)

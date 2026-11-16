@@ -2954,12 +2954,13 @@
     }
     projectUI.newSpool = freshNewSpool();
     projectUI.spools.printer = null; // relue la prochaine fois (une bobine de plus, un préréglage de plus)
-    projectUI.pending = { kind: 'filament', type: pend.type, spool: { id: msg.id, name: msg.name }, fresh: msg.preset_created === undefined ? !!msg.created : !!msg.preset_created, success: msg.success || null, profileBefore: pend.profileBefore,
+    projectUI.pending = { kind: 'filament', type: pend.type, spool: { id: msg.id, name: msg.name }, fresh: msg.preset_created === undefined ? !!msg.created : !!msg.preset_created, success: msg.success || null, printRestored: msg.print_restored || null, profileBefore: pend.profileBefore,
       brand: typeof msg.brand === 'string' ? msg.brand : '', range: typeof msg.range === 'string' ? msg.range : '', brandProfile: msg.brand_profile === true };
     window.orca.postMessage({ type: 'project_state' }); // lit le préréglage choisi et ses températures
   }
   // Après le choix : la phrase de reprise (dernière impression réussie), et le retour aux réglages réussis s'ils ont changé.
   function announceSpool(pend) {
+    announcePrintRestored(pend);
     var text = PlyoSpools.resumeText(pend.spool.name, pend.success);
     if (!text) return;
     var tip = noteLine(text, pend.success.differs ? '' : 'ok', pend.success.differs ? 'info' : 'check', 'guide');
@@ -2979,6 +2980,21 @@
       window.orca.postMessage({ type: 'restore_reliable' });
     }, 'link');
     tip.appendChild(back);
+  }
+  // Réglages d'impression qui avaient marché avec cette bobine, remis par le slicer au choix de la bobine (sans question) :
+  // on le dit, avec « Annuler » (la remise est un lot comme un autre). Un refus est dit aussi : rien n'a changé.
+  function announcePrintRestored(pend) {
+    var r = pend.printRestored;
+    if (!r) return;
+    if (!r.ok) { noteLine('Je n’ai pas pu remettre les réglages d’impression qui avaient marché avec ' + pend.spool.name + (r.text ? ' : ' + r.text : '.'), 'error', 'alert', 'guide'); return; }
+    var text = PlyoSpools.printRestoredText(pend.spool.name, r);
+    if (!text) return;
+    var line = noteLine(text, 'ok', 'check', 'guide');
+    line.classList.add('print-restored');
+    if (r.undo_id) line.appendChild(undoButton('Annuler', function (u) {
+      pendingSheet = { kind: 'undo', onResult: function (ok, t) { if (!ok) { u.disabled = false; noteLine(t, 'error', 'alert', 'guide'); return; } line.remove(); noteLine('C’est annulé : ce projet reprend les réglages d’impression de ton profil.', 'ok', 'undo', 'guide'); } };
+      postRequest({ type: 'undo', undo_id: r.undo_id });
+    }));
   }
   // Envoi ou export accepté depuis le panneau : le slicer a noté les réglages de la bobine (print_start). L'étape Résultat
   // demande alors si ça a marché. Pas pour les emplacements (Canvas, CFS…) : la v1 ne suit que la bobine du filament 1.

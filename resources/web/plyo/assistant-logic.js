@@ -532,10 +532,10 @@
   function reliablePreview(info) {
     var list = (info && Array.isArray(info.changes) ? info.changes : []).filter(function (c) { return c && c.key; });
     var count = info && typeof info.count === 'number' ? info.count : list.length;
-    if (!count) return 'Tes réglages du filament sont déjà ceux de ta dernière impression réussie.';
+    if (!count) return 'Tes réglages sont déjà ceux de ta dernière impression réussie.';
     var main = list.filter(function (c) { return MAIN_SETTING.test(c.key); }).concat(list.filter(function (c) { return !MAIN_SETTING.test(c.key); })).slice(0, 3);
     var more = count - main.length;
-    return 'Ça remet ' + count + ' réglage' + (count > 1 ? 's' : '') + ' du filament comme lors de ta dernière impression réussie : ' +
+    return 'Ça remet ' + count + ' réglage' + (count > 1 ? 's' : '') + ' comme lors de ta dernière impression réussie : ' +
       listOf(main.map(function (c) { return (c.label || c.key) + ' (' + valueText(c.before, c.key) + ' → ' + valueText(c.after, c.key) + ')'; })
         .concat(more > 0 ? [more + ' autre' + (more > 1 ? 's' : '')] : [])) + '.';
   }

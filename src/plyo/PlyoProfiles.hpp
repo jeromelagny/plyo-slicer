@@ -43,10 +43,15 @@ nlohmann::json reliable_info(); // {"available": bool, "date": "2026-10-28", "co
 // Remet la version fiable (annulable) puis enregistre les profils (le préréglage d'une bobine est écrasé sous son nom).
 // Refuse si l'imprimante ou le filament ne sont plus ceux de la version fiable. {ok, text, undo_id?, saved, save_error}
 nlohmann::json restore_reliable();
+// Bobine choisie pour un projet : ses réglages d'impression réussis (débit de première couche, vitesses…) sont remis dans
+// ce projet, sans question, comme un lot annulable (jamais dans le profil d'impression partagé). Seulement ceux que ce
+// projet n'a pas déjà changés. {ok, count, changes?, summary?, date?, spool?, undo_id?, text?} ; count 0 : rien à remettre.
+nlohmann::json restore_spool_print();
 
 // Bobines : la version qui a réussi est celle qui est partie à l'imprimante. À chaque envoi ou export réussi, les valeurs
-// filament du catalogue de la bobine en cours sont notées à l'essai (plyo/essai, {spool, printer, date, at, values}), et
-// cet envoi devient le « dernier envoi » (plyo/essai/dernier-envoi.json, {spool, printer, date, at}).
+// filament du catalogue de la bobine en cours sont notées à l'essai (plyo/essai, {spool, printer, date, at, values, print?}),
+// avec les réglages d'impression du projet qui suivent la bobine (`print`, Spools::print_values), et cet envoi devient le
+// « dernier envoi » (plyo/essai/dernier-envoi.json, {spool, printer, date, at}).
 // Faux si le filament en cours n'est pas une bobine, pendant une calibration (plateau de test), ou si l'écriture échoue.
 bool note_sent();
 // « Ça a marché » : la dernière version envoyée de la bobine en cours sur cette imprimante devient sa version réussie

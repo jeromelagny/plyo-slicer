@@ -46,6 +46,14 @@
     return 'Tes réglages pour ' + name + ' ont changé depuis ta dernière impression réussie' + (day ? ', le ' + day : '') +
       (s.summary ? ' (elle avait : ' + s.summary + ')' : '') + '. Je garde ceux d’aujourd’hui.';
   }
+  // Réglages d'impression réussis remis d'eux-mêmes au choix de la bobine (débit de première couche, vitesses…) :
+  // `r` = print_restored du slicer {ok, count, summary, date}. "" s'il n'y a rien à dire.
+  function printRestoredText(name, r) {
+    if (!r || !r.ok || !(r.count > 0)) return '';
+    var day = shortDate(r.date);
+    return 'J’ai remis ' + (r.count > 1 ? 'les ' + r.count + ' réglages d’impression qui avaient marché' : 'le réglage d’impression qui avait marché') +
+      ' avec ' + name + (day ? ' le ' + day : '') + (r.summary ? ' : ' + r.summary : '') + '.';
+  }
   function restoreLabel(date) {
     var day = shortDate(date);
     return day ? 'Revenir aux réglages réussis du ' + day : 'Revenir aux réglages réussis';
@@ -212,7 +220,7 @@
     return { shown: list.slice(0, RANGES_SHOWN), hidden: list.length - RANGES_SHOWN };
   }
   var api = { RANGES_SHOWN: RANGES_SHOWN, rangeButtons: rangeButtons, BRANDS_WAIT_MS: BRANDS_WAIT_MS, NAME_HELP: NAME_HELP, nameError: nameError, nameErrorText: nameErrorText, cleanName: cleanName, shortDate: shortDate, choiceRows: choiceRows,
-    resumeText: resumeText, restoreLabel: restoreLabel, doneText: doneText, adoptQuestion: adoptQuestion, offersAdopt: offersAdopt, declineAdopt: declineAdopt,
+    resumeText: resumeText, printRestoredText: printRestoredText, restoreLabel: restoreLabel, doneText: doneText, adoptQuestion: adoptQuestion, offersAdopt: offersAdopt, declineAdopt: declineAdopt,
     needsSpool: needsSpool, isFilamentQuestion: isFilamentQuestion,
     BRAND_QUESTION: BRAND_QUESTION, BRAND_HELP: BRAND_HELP, BRANDS_SHOWN: BRANDS_SHOWN, brandButtons: brandButtons, cleanBrand: cleanBrand, brandChoice: brandChoice,
     otherChoice: otherChoice, unknownChoice: unknownChoice, suggestedName: suggestedName, brandNote: brandNote, rangeHelp: rangeHelp, brandLine: brandLine,

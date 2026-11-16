@@ -20,6 +20,7 @@
 
 #include <ctime>
 #include <exception>
+#include <map>
 #include <vector>
 
 namespace Plyo { namespace Spools {
@@ -354,6 +355,38 @@ nlohmann::json preset_values(const std::string& preset)
         if (config.option(key) != nullptr)
             out[key] = config.opt_serialize(key);
     return out;
+}
+
+namespace {
+
+// Réglages d'impression du catalogue qui suivent la bobine, en texte d'Orca : enregistrés du profil choisi, ou édités.
+std::map<std::string, std::string> print_texts(bool edited)
+{
+    std::map<std::string, std::string> out;
+    if (bundle() == nullptr)
+        return out;
+    const Slic3r::DynamicPrintConfig& config = edited ? bundle()->prints.get_edited_preset().config : bundle()->prints.get_selected_preset().config;
+    for (const std::string& key : Catalog::policy().keys("print"))
+        if (SpoolsLogic::carries_with_spool(key) && config.option(key) != nullptr)
+            out[key] = config.opt_serialize(key);
+    return out;
+}
+
+} // namespace
+
+nlohmann::json print_values()
+{
+    nlohmann::json                           out    = nlohmann::json::object();
+    const std::map<std::string, std::string> saved  = print_texts(false);
+    for (const auto& [key, value] : print_texts(true))
+        if (const auto s = saved.find(key); s == saved.end() || s->second != value)
+            out[key] = value;
+    return out;
+}
+
+nlohmann::json print_to_restore(const nlohmann::json& ok_print)
+{
+    return SpoolsLogic::print_to_restore(ok_print, print_texts(false), print_texts(true));
 }
 
 nlohmann::json read_version(bool ok, const std::string& id, const std::string& printer)

@@ -979,7 +979,7 @@ nlohmann::json restore_values(const nlohmann::json& values)
         }
     }
     if (keys.empty())
-        return {{"ok", true}, {"text", "Tes réglages du filament sont déjà ceux de ta dernière impression réussie."}};
+        return {{"ok", true}, {"text", "Tes réglages sont déjà ceux de ta dernière impression réussie."}};
     const size_t count = keys.size();
     const Batch  batch = write_batch(configs, keys);
     if (!batch.ok)
@@ -987,7 +987,7 @@ nlohmann::json restore_values(const nlohmann::json& values)
     const int id = s_next_undo_id++;
     s_undo_stack.push_back({id, batch.saved, std::string()});
     return {{"ok", true},
-            {"text", std::to_string(count) + (count > 1 ? " réglages remis" : " réglage remis") + " du filament comme lors de ta dernière impression réussie." + also_text(batch.also)},
+            {"text", std::to_string(count) + (count > 1 ? " réglages remis" : " réglage remis") + " comme lors de ta dernière impression réussie." + also_text(batch.also)},
             {"undo_id", id}, {"also_changed", batch.also}, {"written", written_of(batch.saved)}};
 }
 

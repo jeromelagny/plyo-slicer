@@ -44,6 +44,10 @@ struct Outcome
 
 // Clés lues par complete(), par onglet (à fournir dans `state` quand elles existent).
 const std::vector<std::string>& print_keys();
+
+// Interrupteur d'Orca sans lequel ce réglage n'a aucun effet (« set_other_flow_ratios » pour les débits de première couche,
+// parois, remplissage…), ou "" s'il n'en a pas.
+std::string gate_of(const std::string& key);
 const std::vector<std::string>& filament_keys();
 
 // Règles des fenêtres de cohérence d'Orca sur l'état final prévu (`state` : valeurs actuelles + lot). `requested` : clés du

@@ -53,6 +53,13 @@ nlohmann::json preset_values(const std::string& preset);
 
 // Version envoyée (`ok` faux : plyo/essai) ou réussie (`ok` vrai : plyo/fiable) de la bobine `id` sur cette imprimante :
 // {spool, printer, date, values} (SpoolsLogic::sanitize_version), ou {} si absente ou pas à elles.
+// Réglages d'impression de ce projet qui suivent la bobine (SpoolsLogic::carries_with_spool) et diffèrent du profil
+// d'impression enregistré : {clé: texte d'Orca}. Notés avec la version envoyée de la bobine.
+nlohmann::json print_values();
+
+// Parmi les réglages d'impression réussis `ok_print`, ceux à remettre dans ce projet (SpoolsLogic::print_to_restore).
+nlohmann::json print_to_restore(const nlohmann::json& ok_print);
+
 nlohmann::json read_version(bool ok, const std::string& id, const std::string& printer);
 bool           write_version(bool ok, const nlohmann::json& version);
 

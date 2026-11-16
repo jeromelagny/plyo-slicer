@@ -83,3 +83,14 @@ test('isFilamentQuestion : une question de l’assistant sur la matière renvoie
   assert.equal(S.isFilamentQuestion({ text: 'Quelle buse ?', choices: ['0,4', '0,6'] }), false);
   assert.equal(S.isFilamentQuestion(null), false);
 });
+
+test('réglages d’impression réussis remis au choix de la bobine : dits avec leur date et leurs valeurs', () => {
+  assert.equal(S.printRestoredText('Filforme blanc', { ok: true, count: 3, date: '2026-11-16', summary: 'débit de la première couche 1,05, surface supérieure 175' }),
+    'J’ai remis les 3 réglages d’impression qui avaient marché avec Filforme blanc le 16/11 : débit de la première couche 1,05, surface supérieure 175.');
+  assert.equal(S.printRestoredText('Filforme blanc', { ok: true, count: 1, date: '2026-11-16', summary: 'débit de la première couche 1,05' }),
+    'J’ai remis le réglage d’impression qui avait marché avec Filforme blanc le 16/11 : débit de la première couche 1,05.');
+  // Rien remis, refus (dit à part), ou pas de réponse : rien à dire.
+  assert.equal(S.printRestoredText('X', { ok: true, count: 0 }), '');
+  assert.equal(S.printRestoredText('X', { ok: false, text: 'Non' }), '');
+  assert.equal(S.printRestoredText('X', null), '');
+});

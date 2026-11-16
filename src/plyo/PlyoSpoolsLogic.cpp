@@ -1,6 +1,7 @@
 #include "PlyoSpoolsLogic.hpp"
 
 #include "PlyoBrandsLogic.hpp"
+#include "PlyoConfigRulesLogic.hpp"
 #include "PlyoJson.hpp"
 
 #include <algorithm>
@@ -321,12 +322,62 @@ nlohmann::json sanitize_version(const nlohmann::json& raw)
     const std::string date    = Json::str(raw, "date");
     if (spool.empty() || printer.empty() || !valid_date(date))
         return nlohmann::json::object();
-    nlohmann::json       values = nlohmann::json::object();
-    const nlohmann::json src    = Json::obj(raw, "values"); // copie nommée : items() ne garde pas un temporaire
-    for (const auto& [key, value] : src.items())
-        if (!key.empty() && key.size() <= 80 && value.is_string())
-            values[key] = value;
-    return {{"spool", spool}, {"printer", printer}, {"date", date}, {"at", Json::str(raw, "at", 40)}, {"values", values}};
+    const auto texts = [&raw](const char* field, bool print) {
+        nlohmann::json       out = nlohmann::json::object();
+        const nlohmann::json src = Json::obj(raw, field); // copie nommée : items() ne garde pas un temporaire
+        for (const auto& [key, value] : src.items())
+            if (!key.empty() && key.size() <= 80 && value.is_string() && (!print || carries_with_spool(key)))
+                out[key] = value;
+        return out;
+    };
+    nlohmann::json out = {{"spool", spool}, {"printer", printer}, {"date", date}, {"at", Json::str(raw, "at", 40)}, {"values", texts("values", false)}};
+    if (nlohmann::json print = texts("print", true); !print.empty())
+        out["print"] = print;
+    return out;
+}
+
+bool carries_with_spool(const std::string& key)
+{
+    // La forme de la pièce décide de ceux-là, même s'ils portent un nom de vitesse ou de débit.
+    static const char* const PART[] = {"support_", "tree_support_", "brim_", "raft_", "skirt_", "ironing_", "fuzzy_skin", "spiral_", "prime_tower", "wipe_tower"};
+    for (const char* p : PART)
+        if (key.rfind(p, 0) == 0)
+            return false;
+    const auto ends_with = [&key](const std::string& end) { return key.size() > end.size() && key.compare(key.size() - end.size(), end.size(), end) == 0; };
+    if (key.rfind("initial_layer_", 0) == 0 || key.rfind("elefant_foot_compensation", 0) == 0 || ends_with("_flow_ratio") ||
+        ends_with("_speed") || ends_with("_acceleration") || ends_with("_jerk"))
+        return true;
+    static const std::set<std::string> MORE = {"set_other_flow_ratios", "bridge_flow", "internal_bridge_flow", "enable_overhang_speed",
+                                               "slow_down_layers", "slowdown_for_curled_perimeters", "max_volumetric_extrusion_rate_slope",
+                                               "max_volumetric_extrusion_rate_slope_segment_length", "accel_to_decel_enable",
+                                               "accel_to_decel_factor", "default_junction_deviation", "small_area_infill_flow_compensation"};
+    return MORE.count(key) > 0;
+}
+
+nlohmann::json print_to_restore(const nlohmann::json& ok_print, const std::map<std::string, std::string>& saved,
+                                const std::map<std::string, std::string>& edited)
+{
+    nlohmann::json out = nlohmann::json::object();
+    if (!ok_print.is_object())
+        return out;
+    for (const auto& [key, value] : ok_print.items()) {
+        if (!value.is_string() || !carries_with_spool(key))
+            continue;
+        const auto s = saved.find(key), e = edited.find(key);
+        // Réglage absent d'aujourd'hui, ou déjà changé dans ce projet (par toi ou par moi) : on n'y touche pas.
+        if (s == saved.end() || e == edited.end() || s->second != e->second || e->second == value.get<std::string>())
+            continue;
+        out[key] = value;
+    }
+    // Un débit remis sans son interrupteur n'aurait aucun effet (ConfigRules::gate_of) : on l'allume avec, s'il est éteint ici.
+    const nlohmann::json restored = out; // copie nommée : items() ne garde pas un temporaire, et `out` grandit dans la boucle
+    for (const auto& [key, value] : restored.items()) {
+        const std::string gate = ConfigRules::gate_of(key);
+        const auto        e    = edited.find(gate);
+        if (!gate.empty() && !out.contains(gate) && e != edited.end() && e->second != "1" && value.get<std::string>() != "1")
+            out[gate] = "1";
+    }
+    return out;
 }
 
 nlohmann::json last_sent(const nlohmann::json& raw)
@@ -432,6 +483,7 @@ namespace {
 // Réglages cités d'abord, avec leur nom simple (vide : celui du catalogue).
 const std::vector<std::pair<std::string, std::string>> SUMMARY_FIRST = {
     {"filament_flow_ratio", "débit"},
+    {"first_layer_flow_ratio", "débit de la première couche"},
     {"nozzle_temperature_initial_layer", "température de buse (première couche)"},
     {"nozzle_temperature", "température de buse"},
     {"pressure_advance", ""},

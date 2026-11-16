@@ -850,9 +850,13 @@ void handle_page_message(const nlohmann::json& data)
                                                         Json::str(data, "brand_preset", 200), Json::str(data, "brand", 200),
                                                         Json::str(data, "range", 200));
             r["type"]        = "spool_chosen";
-            // Dernière version réussie de cette bobine sur cette machine, et ce qui en diffère aujourd'hui (phrase de reprise).
-            if (Json::boolean(r, "ok", false))
+            if (Json::boolean(r, "ok", false)) {
+                // Ce qui a marché avec cette bobine dans l'onglet Impression (débit de première couche, vitesses…) est remis
+                // dans ce projet sans question : le panneau le dit, avec « Annuler ».
+                r["print_restored"] = Profiles::restore_spool_print();
+                // Dernière version réussie de cette bobine sur cette machine, et ce qui en diffère aujourd'hui (phrase de reprise).
                 r["success"] = Spools::success_for(Json::str(r, "id"), Json::str(r, "printer"));
+            }
             send(r);
             send_values();
         } else if (type == "spool_adopt_check") {

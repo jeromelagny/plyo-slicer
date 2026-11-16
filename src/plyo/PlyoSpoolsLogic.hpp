@@ -101,9 +101,19 @@ nlohmann::json set_outcome(const nlohmann::json& reg, const std::string& id, con
 std::string version_stem(const std::string& id, const std::string& printer);
 
 // Fichier de version relu : {spool, printer, date: "AAAA-MM-JJ", at: instant de l'envoi ("" s'il manque), values: {clé
-// filament: texte d'Orca}}, ou {} s'il manque la bobine, l'imprimante ou une date valable. Les valeurs qui ne sont pas du
-// texte sont écartées.
+// filament: texte d'Orca}[, print: {clé impression: texte d'Orca}]}, ou {} s'il manque la bobine, l'imprimante ou une date
+// valable. Les valeurs qui ne sont pas du texte sont écartées ; dans `print`, aussi celles qui ne suivent pas la bobine.
 nlohmann::json sanitize_version(const nlohmann::json& raw);
+
+// Réglage de l'onglet Impression qui suit la bobine d'un projet à l'autre : la façon d'imprimer cette matière sur cette
+// machine (débits, vitesses, accélérations, première couche, patte d'éléphant). Ce que la forme de la pièce décide
+// (supports, bordure, radeau, jupe, lissage, remplissage, parois, couture, hauteur de couche…) reste avec son projet.
+bool carries_with_spool(const std::string& key);
+
+// Réglages d'impression réussis (`ok_print`) à remettre dans un projet : ceux qui suivent la bobine, diffèrent d'aujourd'hui
+// (`edited`) et n'ont pas été changés dans ce projet (valeur éditée = valeur enregistrée du profil, `saved`).
+nlohmann::json print_to_restore(const nlohmann::json& ok_print, const std::map<std::string, std::string>& saved,
+                                const std::map<std::string, std::string>& edited);
 
 // Dernier envoi (plyo/essai/dernier-envoi.json) relu : {spool, printer, date, at[, answered: "bad"]}, ou {} s'il manque
 // l'un d'eux. Une réussite dite dans la discussion vise cet envoi, même si une autre bobine a été choisie depuis.

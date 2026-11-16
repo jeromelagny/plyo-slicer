@@ -139,9 +139,9 @@ test('ROB-07 : réglages réussis, ce qui va changer est dit avant (les tempéra
     { key: 'filament_flow_ratio', label: 'Ratio de débit', before: 0.98, after: 0.95 },
     { key: 'slow_down_layer_time', label: 'Temps de couche', before: 4, after: 6 },
     { key: 'filament_retraction_length', label: 'Rétraction', before: 0.8, after: 0.6 }] };
-  assert.equal(L.reliablePreview(info), 'Ça remet 5 réglages du filament comme lors de ta dernière impression réussie : Température de buse (215 °C → 205 °C), Ratio de débit (0,98 → 0,95), Rétraction (0,8 → 0,6) et 2 autres.');
-  assert.equal(L.reliablePreview({ available: true, count: 0, changes: [] }), 'Tes réglages du filament sont déjà ceux de ta dernière impression réussie.');
-  assert.equal(L.reliablePreview({ available: true, count: 1, changes: [{ key: 'nozzle_temperature', label: 'Buse', before: 215, after: 205 }] }), 'Ça remet 1 réglage du filament comme lors de ta dernière impression réussie : Buse (215 °C → 205 °C).');
+  assert.equal(L.reliablePreview(info), 'Ça remet 5 réglages comme lors de ta dernière impression réussie : Température de buse (215 °C → 205 °C), Ratio de débit (0,98 → 0,95), Rétraction (0,8 → 0,6) et 2 autres.');
+  assert.equal(L.reliablePreview({ available: true, count: 0, changes: [] }), 'Tes réglages sont déjà ceux de ta dernière impression réussie.');
+  assert.equal(L.reliablePreview({ available: true, count: 1, changes: [{ key: 'nozzle_temperature', label: 'Buse', before: 215, after: 205 }] }), 'Ça remet 1 réglage comme lors de ta dernière impression réussie : Buse (215 °C → 205 °C).');
   // Un seul vocabulaire : « réglages réussis », plus de « version fiable » à l'écran.
   assert.match(S.restoreLabel('2026-11-11'), /^Revenir aux réglages réussis du /);
 });

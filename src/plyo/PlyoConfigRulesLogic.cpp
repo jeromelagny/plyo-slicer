@@ -107,6 +107,8 @@ std::string joined(const std::vector<std::string>& keys, const Title& title)
     return out;
 }
 
+constexpr const char* GATE_OTHER_FLOWS = "set_other_flow_ratios";
+
 // Une passe des règles d'Orca. Rend un refus, ou les compléments (vides si l'état est cohérent).
 Outcome one_pass(const Values& state, const std::set<std::string>& requested, bool print_touched, bool filament_touched,
                  bool belt_printer, const Title& title)
@@ -150,6 +152,16 @@ Outcome one_pass(const Values& state, const std::set<std::string>& requested, bo
                                   joined(missing, title) + " ne peut pas changer tant qu'il est actif. Désactive d'abord le mode vase.");
             }
         }
+
+        // Débits « autres » (première couche, parois, remplissage…) : Orca les ignore tant que « Régler les autres débits » est
+        // éteint (GCode.cpp, ConfigManipulation grise leur ligne). Un débit demandé allume donc l'interrupteur, sauf si le
+        // lot l'éteint lui-même. Un débit remis à 1 n'en a pas besoin : allumer réveillerait les autres débits du profil.
+        if (has(state, GATE_OTHER_FLOWS) && !is_on(state, GATE_OTHER_FLOWS) && !requested.count(GATE_OTHER_FLOWS))
+            for (const std::string& key : requested)
+                if (gate_of(key) == GATE_OTHER_FLOWS && number(state, key).value_or(1.) != 1.) {
+                    out.added.push_back({GATE_OTHER_FLOWS, "print", true, "1", key, "sans lui, Plyo Slicer ignore ce débit"});
+                    break;
+                }
 
         // Paroi supplémentaire alternée : Orca la refuse avec « Épaisseur verticale de la coque » sur « Tout ».
         if (is_on(state, "alternate_extra_wall") && first_of(state, "ensure_vertical_shell_thickness") == "ensure_all") {
@@ -195,6 +207,15 @@ Outcome one_pass(const Values& state, const std::set<std::string>& requested, bo
 
 } // namespace
 
+std::string gate_of(const std::string& key)
+{
+    // Même liste que ConfigManipulation::toggle_print_fff_options d'Orca (lignes grisées sans l'interrupteur).
+    static const std::set<std::string> OTHER_FLOWS = {"first_layer_flow_ratio", "outer_wall_flow_ratio", "inner_wall_flow_ratio",
+                                                      "overhang_flow_ratio", "sparse_infill_flow_ratio", "internal_solid_infill_flow_ratio",
+                                                      "gap_fill_flow_ratio", "support_flow_ratio", "support_interface_flow_ratio"};
+    return OTHER_FLOWS.count(key) ? GATE_OTHER_FLOWS : std::string();
+}
+
 const std::vector<std::string>& print_keys()
 {
     static const std::vector<std::string> keys = {
@@ -202,7 +223,9 @@ const std::vector<std::string>& print_keys()
         "xy_hole_compensation", "xy_contour_compensation", "elefant_foot_compensation", "spiral_mode", "wall_loops", "top_shell_layers",
         "sparse_infill_density", "enable_support", "enforce_support_layers", "detect_thin_wall", "overhang_reverse", "timelapse_type",
         "enable_wrapping_detection", "alternate_extra_wall", "ensure_vertical_shell_thickness", "seam_slope_type", "seam_slope_start_height",
-        "infill_lock_depth", "skin_infill_depth", "fuzzy_skin_mode", "wall_generator"};
+        "infill_lock_depth", "skin_infill_depth", "fuzzy_skin_mode", "wall_generator", "set_other_flow_ratios", "first_layer_flow_ratio",
+        "outer_wall_flow_ratio", "inner_wall_flow_ratio", "overhang_flow_ratio", "sparse_infill_flow_ratio", "internal_solid_infill_flow_ratio",
+        "gap_fill_flow_ratio", "support_flow_ratio", "support_interface_flow_ratio"};
     return keys;
 }
 
