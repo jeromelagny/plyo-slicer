@@ -4417,11 +4417,15 @@
   }
   // Croquis ou photo joint à la description : réduit à 1 600 px au plus (JPEG), pour rester sous la limite du service.
   function designAttach() {
+    // Dans la page, caché : WebKit (macOS) ne signale pas toujours le fichier choisi par un champ resté hors de la page.
     var pick = document.createElement('input');
     pick.type = 'file';
     pick.accept = 'image/png,image/jpeg,image/webp';
+    pick.className = 'hidden';
+    document.body.appendChild(pick);
     pick.addEventListener('change', function () {
       var file = pick.files && pick.files[0], mine = designUI;
+      pick.remove();
       if (!file) return;
       var reader = new FileReader();
       reader.onload = function () {
