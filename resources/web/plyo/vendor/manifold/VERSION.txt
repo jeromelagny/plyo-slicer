@@ -1,0 +1,3 @@
+manifold-3d 3.5.5 (https://github.com/elalish/manifold), licence Apache-2.0 (LICENSE).
+Fichiers repris tels quels du paquet npm : manifold.js (module ES Emscripten), manifold.wasm.
+Utilisé par design-builder.js pour construire les pièces sur mesure de l’assistant.
