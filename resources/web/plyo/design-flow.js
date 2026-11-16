@@ -18,14 +18,21 @@
     assumed: 'supposé : vérifie',
     check: 'Vérifie la cote principale sur ta première impression.',
     cost: 'Utilise ta jauge, comme une question à l’assistant.',
-    login: 'Me connecter pour créer une pièce'
+    login: 'Me connecter pour créer une pièce',
+    attach: 'Joindre un croquis ou une photo',
+    attached: 'Image jointe',
+    remove: 'retirer'
   };
+  var MAX_IMAGES = 2;
 
   // Corps de la demande à /api/design (DesignRequestSchema) : la conversation de conception reste en texte, la pièce en
   // cours seulement pour une retouche.
   function request(state, opts) {
     var o = opts || {};
     var body = { locale: o.locale || 'fr', text: String(state.text || '').trim().slice(0, 2000), conversation: (state.conversation || []).slice(-20), current: state.retouch && state.part ? state.part : null };
+    // Croquis ou photo (cotes, objet à tenir) : deux au plus, déjà réduits par le panneau.
+    var imgs = (state.images || []).filter(function (i) { return i && /^image\/(jpeg|png|webp)$/.test(i.media_type) && typeof i.data === 'string' && i.data; }).slice(0, MAX_IMAGES);
+    if (imgs.length) body.images = imgs.map(function (i) { return { media_type: i.media_type, data: i.data }; });
     if (o.bed && o.bed.length === 3) body.bed = o.bed;
     if (o.material) body.material = String(o.material).slice(0, 40);
     if (o.requestId) body.request_id = o.requestId;
@@ -88,6 +95,14 @@
     input.dataset.spoolName = '1'; // le panneau ne redessine pas sous les doigts
     input.addEventListener('input', function () { h.input(input.value); });
     box.appendChild(input);
+    // Images jointes : leur nom et « retirer ».
+    (st.images || []).forEach(function (img, i) {
+      var row = ui.el('div', 'project-row project-sub');
+      row.appendChild(ui.el('span', 'muted small', '🖼 ' + (img.name || TEXT.attached)));
+      row.appendChild(ui.button(TEXT.remove, function () { h.removeImage(i); }, 'link'));
+      box.appendChild(row);
+    });
+    if ((st.images || []).length < MAX_IMAGES && h.attach) box.appendChild(ui.button(TEXT.attach, h.attach, 'link', 'clip'));
     var acts = ui.el('div', 'printer-actions');
     if (st.needsLogin) acts.appendChild(ui.button(TEXT.login, h.login, 'btn sm main-choice', 'login'));
     else acts.appendChild(ui.button(st.retouch ? TEXT.retouchGo : TEXT.go, h.submit, 'btn sm main-choice', 'wand'));
@@ -98,7 +113,7 @@
     if (!input.value) setTimeout(function () { input.focus(); }, 0);
   }
 
-  var api = { TEXT: TEXT, request: request, answersText: answersText, dimensionLines: dimensionLines, fileName: fileName, render: render };
+  var api = { TEXT: TEXT, MAX_IMAGES: MAX_IMAGES, request: request, answersText: answersText, dimensionLines: dimensionLines, fileName: fileName, render: render };
   root.PlyoDesignFlow = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

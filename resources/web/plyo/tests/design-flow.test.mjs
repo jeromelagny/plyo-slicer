@@ -35,3 +35,13 @@ test('page : entrée à l’étape Pièce, bibliothèque chargée à la demande,
   assert.match(page, /replace: asked\.retouch \|\| PlyoProject\.replacesPlate/);
   assert.match(page, /onModelAdded\(msg\);\n\s*designPlaced\(msg\);/);
 });
+
+test('croquis ou photo joints : deux au plus, formats acceptés seulement, envoyés avec la demande', () => {
+  const img = { name: 'croquis.png', media_type: 'image/jpeg', data: 'QUJD' };
+  const body = F.request({ text: 'un support', images: [img, img, img] }, {});
+  assert.equal(body.images.length, 2);
+  assert.deepEqual(body.images[0], { media_type: 'image/jpeg', data: 'QUJD' }, 'le nom du fichier ne part pas');
+  assert.equal(F.request({ text: 'x', images: [{ media_type: 'image/gif', data: 'R0lG' }] }, {}).images, undefined);
+  assert.equal(F.request({ text: 'x' }, {}).images, undefined);
+  assert.match(read('index.html'), /Math\.min\(1, 1600 \/ Math\.max\(img\.width, img\.height\)\)/);
+});
