@@ -416,6 +416,7 @@
   .bed-choice .muted { padding-left: 2px; }
   .bed-choice .btn { width: 100%; justify-content: flex-start; text-align: left; }
   .step-card.bed-first #project-card { display: none; }
+  .sheet-help { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-sm); }
   .how-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: var(--s1); font-size: var(--fs-sm); }
   .project-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s1); }
   .project-body p, .project-hint { margin: 0; }
@@ -2748,6 +2749,7 @@
     // « Quelle bobine ? » : une bobine de la liste, ou une nouvelle (matière, puis nom obligatoire).
     pickSpool: function (row) { chooseSpool(row.name, row.material); },
     toggleNewSpool: function () { var ns = projectUI.newSpool; ns.open = !ns.open; ns.error = ''; renderProject(); },
+    moreMaterials: function () { projectUI.newSpool.allMaterials = true; renderProject(); },
     resetMaterial: function () {
       var ns = projectUI.newSpool;
       ns.material = ''; ns.choice = null; ns.picker = freshPicker(); ns.error = '';
@@ -3904,6 +3906,8 @@
         var found = PlyoMachines.searchModels(setup.catalog, setup.query);
         if (setup.query && !found.length) results.appendChild(el('p', 'muted small', 'Aucune imprimante ne correspond. Essaie avec moins de mots, par exemple juste « Ender ».'));
         found.forEach(function (m) { results.appendChild(button(m.model, function () { chooseModel(m, setup.found); }, 'btn ghost sm setup-pick')); });
+        // Plusieurs modèles proches (V3, V3 SE, V3 KE…) : où lire le nom exact.
+        if (found.length > 1) results.appendChild(el('p', 'muted small', 'Plusieurs modèles se ressemblent : le nom exact est écrit sur ta machine, souvent à l’avant ou au dos, ou sur son carton.'));
       }
       input.addEventListener('input', refresh);
       box.appendChild(input);
@@ -6539,6 +6543,8 @@
     var sheet = el('div', 'sheet');
     var day = entry.date ? dayOf(entry.date) : '';
     sheet.appendChild(el('header', '', archived ? (entry.applied ? 'Réglages appliqués le ' + day : 'Réglages proposés le ' + day) : 'Réglages proposés'));
+    // Débutant : ce que veulent dire les cases, avant la première.
+    if (!archived && fsState.level !== 'expert') sheet.appendChild(el('p', 'sheet-help', 'Coché = je le change pour toi. Décoche ce que tu préfères garder.'));
     var rows = [];
     // Réglages du catalogue groupés par onglet d'Orca (Refroidissement, Qualité…) ; les autres restent en tête, sans titre.
     Logic.groupByTab(suggestions).forEach(function (g) {
@@ -6560,7 +6566,7 @@
       info.appendChild(delta);
       if (s.reason) info.appendChild(el('div', 'why', s.reason));
       if (!archived && s.beyond) info.appendChild(el('div', 'why', '⚠ Hors de la plage conseillée par le fabricant de ton filament : à toi de décider.'));
-      else if (!archived && s.confirm) info.appendChild(el('div', 'why caution', '⚠ Réglage sensible : coche-le si tu veux l’appliquer.'));
+      else if (!archived && s.confirm) info.appendChild(el('div', 'why caution', fsState.level !== 'expert' ? '⚠ Réglage sensible : laisse-le décoché si tu débutes, ou coche-le pour l’essayer.' : '⚠ Réglage sensible : coche-le si tu veux l’appliquer.'));
       if (!archived && (s.confirm || s.beyond)) row.classList.add('sensitive');
       row.appendChild(info);
       sheet.appendChild(row);
@@ -6603,7 +6609,8 @@
     function checked() { return rows.filter(function (r) { return r.box.checked; }); }
     function updateCount() {
       var n = checked().length;
-      apply.textContent = fr(n ? 'Appliquer ' + n + ' réglage' + (n > 1 ? 's' : '') : 'Aucun réglage coché');
+      // « 1 réglage sur 2 » : le compte ne contredit plus les lignes affichées quand tout n'est pas coché.
+      apply.textContent = fr(n ? 'Appliquer ' + n + ' réglage' + (n > 1 ? 's' : '') + (n < rows.length ? ' sur ' + rows.length : '') : 'Aucun réglage coché');
       apply.disabled = !n;
       pickHint.classList.toggle('hidden', n > 0);
     }

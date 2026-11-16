@@ -518,7 +518,7 @@ test('Quelle bobine ? : l’aide NAME_HELP est affichée sous le champ du nom, a
   assert.ok(form.indexOf("ui.el('input'") >= 0 && form.indexOf('PlyoSpools.NAME_HELP') > form.indexOf("ui.el('input'"), 'aide après le champ');
   assert.ok(form.includes('C’est ma bobine'));
   assert.ok(form.includes('Une nouvelle bobine') || card.includes('Une nouvelle bobine'));
-  assert.ok(form.includes('MATERIALS.forEach'), 'les puces de matière d’abord');
+  assert.ok(/MATERIALS(\.slice\(0, 2\) : MATERIALS)?\)?\.forEach/.test(form), 'les puces de matière d’abord');
 });
 
 test('Quelle bobine ? : les textes qui renvoyaient à l’ancienne étape suivent (plyo-verifier-renvois-ui)', () => {

@@ -114,6 +114,8 @@
     } else if (opts.step === 'preparer' && opts.intent && !c.sliced) {
       renderIntent(body, ui, opts.intent, h);
     } else if (opts.step === 'preparer') {
+      // « Découper » : pour un débutant, c'est couper la pièce. Dit une fois, pendant la découpe.
+      if (!c.sliced && c.slicing && opts.novice) body.appendChild(ui.el('p', 'muted small', 'Découper, c’est transformer ta pièce en instructions que ton imprimante sait suivre, couche par couche.'));
       // Découpe en cours : la consigne de l'étape le dit déjà (« Je découpe ta plaque… »), pas de ligne qui le répète.
       if (c.sliced || !c.slicing) body.appendChild(line(ui, c.sliced ? 'check' : 'info', c.sliced ? 'Découpe faite' : 'Découpe à faire', c.sliced ? 'ok' : ''));
       // Plaque qu'Orca refuse d'imprimer : jamais « Aucun risque », la carte d'Orca au-dessus dit pourquoi.

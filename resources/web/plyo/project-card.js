@@ -3,6 +3,7 @@
 // Chargé par index.html (window.PlyoProjectCard).
 (function (root) {
   var MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU'];
+  var MATERIAL_WORDS = 'PLA : le plus courant et le plus facile. PETG : plus solide, supporte mieux la chaleur.';
 
   // ui : { el, button, icon, rich } (les aides du panneau).
   // ctx : { project, printers (liste ou null), reachable {preset: bool}, error {printer?, filament?}, editing, compact, handlers }.
@@ -168,7 +169,7 @@
   }
   // Pas de question par défaut : le profil ne permet pas de reconnaître une machine à une bobine. Un lien discret, après les bobines.
   function renderManualLink(body, ui, ctx) {
-    if (ctx.manualLink) body.appendChild(ui.button('Ma machine a plusieurs bobines (AMS, CFS…)', ctx.handlers.openManual, 'link'));
+    if (ctx.manualLink) body.appendChild(ui.button(ctx.beginner !== false ? 'Ma machine a plusieurs bobines à la fois (AMS, CFS…)' : 'Ma machine a plusieurs bobines (AMS, CFS…)', ctx.handlers.openManual, 'link'));
   }
 
   // « De quelle marque est ta bobine ? » : pour une nouvelle bobine (étape Filament) et pour un emplacement (CFS, Canvas…).
@@ -273,10 +274,14 @@
       box.appendChild(ui.el('p', 'muted small', 'Sa matière est écrite sur l’étiquette. Pas sûr ? C’est presque toujours du PLA.'));
       if (!ns.material) box.appendChild(ui.el('p', 'pick-hint', 'Clique sur ta réponse :'));
       var kinds = ui.el('div', 'printer-actions');
-      MATERIALS.forEach(function (k) {
+      // Débutant : PLA et PETG d'abord, avec un mot sur chacun ; ABS, ASA et TPU derrière « Autres matières ».
+      var few = ctx.beginner !== false && h.moreMaterials && !ns.allMaterials && MATERIALS.slice(0, 2).indexOf(ns.material || 'PLA') >= 0;
+      (few ? MATERIALS.slice(0, 2) : MATERIALS).forEach(function (k) {
         kinds.appendChild(ui.button(k, function () { h.pickMaterial(k); }, 'btn ghost sm' + (ns.material === k ? ' on' : '')));
       });
+      if (few) kinds.appendChild(ui.button('Autres matières', h.moreMaterials, 'btn ghost sm'));
       box.appendChild(kinds);
+      if (few) box.appendChild(ui.el('p', 'muted small', MATERIAL_WORDS));
     }
     if (renderSpoolBrand(box, ui, ctx, closable)) { body.appendChild(box); return; } // la marque avant le nom
     if (ns.material) {
@@ -313,7 +318,7 @@
     // tant que rien de ce qui est montré ne change.
     var ns0 = ctx.newSpool || {}, pk0 = ns0.picker || {};
     var key = JSON.stringify([step, project.filament, ctx.editing, ctx.spools, ns0.open, ns0.material, ns0.error, ctx.error, ctx.showKinds, ctx.noCanvas, ctx.noSlots, ctx.manualLink, ctx.slotRemark, ctx.relink,
-      ns0.brands, ns0.choice, ns0.brandOpen, pk0.showAll, pk0.picked && pk0.picked.brand, pk0.other, pk0.error, ctx.beginner]);
+      ns0.brands, ns0.choice, ns0.brandOpen, ns0.allMaterials, pk0.showAll, pk0.picked && pk0.picked.brand, pk0.other, pk0.error, ctx.beginner]);
     var active = typeof document !== 'undefined' ? document.activeElement : null;
     if (active && active.dataset && active.dataset.spoolName && slot.contains(active) && slot.choicesKey === key) return;
     slot.choicesKey = key;
