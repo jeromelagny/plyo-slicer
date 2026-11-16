@@ -99,6 +99,8 @@
       if (rs === 'stopped' && !c.endAsk) return { label: 'Nouveau projet', kind: 'newPart', enabled: true };
       return { label: '', kind: 'none', enabled: false };
     }
+    // Débutant : la question de la plaque passe d'abord, seule ; pas d'autre bouton à côté.
+    if (c.bedFirst && (step === 'machine' || step === 'piece' || step === 'filament')) return { label: '', kind: 'none', enabled: false };
     // Machine et bobine proposées (dernière machine, bobine du projet précédent) : confirmer d'un toucher.
     if (step === 'machine' && c.proposal) return { label: 'Oui, sur ' + c.proposal.name, kind: 'confirmMachine', enabled: true };
     if (step === 'filament' && c.proposal) return { label: 'Oui, ' + c.proposal.name, kind: 'confirmFilament', enabled: true };
@@ -144,6 +146,7 @@
     if (c.canvas) return canvasPrompt(c);
     if (step === 'filament' && c.temps) return 'Quelles températures indique ta bobine ?';
     if (c.editing) return 'Quelle bobine ?';
+    if (c.bedFirst && (step === 'machine' || step === 'piece' || step === 'filament')) return 'D’abord, une question sur ton imprimante';
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return 'Ta pièce n’est plus sur le plateau';
     switch (step) {
       case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : 'Choisis ton imprimante';

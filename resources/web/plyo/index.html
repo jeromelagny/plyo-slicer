@@ -415,6 +415,7 @@
   .bed-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
   .bed-choice .muted { padding-left: 2px; }
   .bed-choice .btn { width: 100%; justify-content: flex-start; text-align: left; }
+  .step-card.bed-first #project-card { display: none; }
   .project-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s1); }
   .project-body p, .project-hint { margin: 0; }
   .project-error { color: var(--danger-text); margin: 0; }
@@ -1838,7 +1839,7 @@
   function plateSliced() { return !!(tourSignals && tourSignals.sliced) && !(conv && conv.project.intent && conv.project.intent.reask); }
   function journeyCtx() {
     var p = conv && conv.project || {}, ctx = { sliced: plateSliced(), linked: !!(tourSignals && tourSignals.linked), risks: openRisks, sending: sendLock.on, editing: projectUI.editing === 'filament', checked: plateChecked, success: !!p.success, slicing: slicing.conv === conv && !!conv,
-      plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name) };
+      plateEmpty: !!(tourSignals && tourSignals.objects === 0 && p.part && p.part.name), bedFirst: !!projectUI.bedFirst };
     // Orca a refusé la découpe (carte d'Orca affichée), ou juge la plaque découpée non imprimable : pas de « Continuer » ni d'« Imprimer ».
     ctx.sliceFailed = !ctx.sliced && orcaUI.failedConv === conv && !!conv;
     ctx.blocked = ctx.sliced && !!(tourSignals && tourSignals.ready_for_print === false);
@@ -1867,6 +1868,8 @@
     slot.textContent = '';
     var body = el('div', 'project-body');
     body.appendChild(el('p', '', 'J’ai mis les températures conseillées pour du ' + f.type + ' : buse ' + (f.nozzle_temp != null ? f.nozzle_temp : '?') + ' °C, plateau ' + (f.bed_temp != null ? f.bed_temp : '?') + ' °C. Ton étiquette dit autre chose ?'));
+    // Le débutant ne sait pas ce que sont ces deux nombres, ni qu'il peut les garder sans rien trouver sur l'étiquette.
+    if (fsState.level !== 'expert') body.appendChild(el('p', 'muted small', 'La buse fait fondre le fil, le plateau garde ta pièce collée. Rien d’écrit sur ton étiquette ? Garde-les, elles conviennent.'));
     if (!sp.open) body.appendChild(button(PlyoProjectCard.LABEL_LINK, projectHandlers.toggleSpool, 'link'));
     slot.appendChild(body);
   }
@@ -1929,7 +1932,11 @@
     $('title').title = fr(title);
     PlyoProjectCard.renderFiche($('journey-fiche'), ui, { project: conv.project, linked: !!(knownPrinter() && knownPrinter().linked), reachable: projectUI.reachable, compact: compact, beginner: fsState.level !== 'expert', spool: projectUI.spool, spoolLinkInStep: step === 'filament', handlers: projectHandlers, foldable: journeyUI.ficheOpen, noPart: true,
       nozzleMm: projectNozzleMm(), bed: PlyoMachines.bedRow(bedInfo()), nozzleChange: !!nozzleChangeOffer(), colours: step === 'filament' && !projectUI.editing ? '' : coloursFiche() });
-    PlyoProjectCard.renderBedQuestion($('bed-slot'), ui, { question: bedAsking(step), editing: bedUI.editing, waiting: !!bedUI.token, handlers: bedHandlers });
+    var bedQ = bedAsking(step);
+    // Débutant : la question de la plaque passe seule, avant la pièce ou la bobine (une question à la fois).
+    projectUI.bedFirst = !!bedQ && !bedUI.editing && fsState.level !== 'expert';
+    $('bed-slot').parentNode.parentNode.classList.toggle('bed-first', projectUI.bedFirst);
+    PlyoProjectCard.renderBedQuestion($('bed-slot'), ui, { question: bedQ, editing: bedUI.editing, waiting: !!bedUI.token, handlers: bedHandlers });
     PlyoProjectCard.renderSpoolEditor($('spool-slot'), ui, { spool: projectUI.spool, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth, onRevisit: barBusy() ? null : revisitStep });
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
@@ -2740,6 +2747,11 @@
     // « Quelle bobine ? » : une bobine de la liste, ou une nouvelle (matière, puis nom obligatoire).
     pickSpool: function (row) { chooseSpool(row.name, row.material); },
     toggleNewSpool: function () { var ns = projectUI.newSpool; ns.open = !ns.open; ns.error = ''; renderProject(); },
+    resetMaterial: function () {
+      var ns = projectUI.newSpool;
+      ns.material = ''; ns.choice = null; ns.picker = freshPicker(); ns.error = '';
+      renderProject();
+    },
     pickMaterial: function (type) {
       var ns = projectUI.newSpool;
       ns.open = true; ns.error = ''; ns.focus = true;
@@ -2902,7 +2914,8 @@
       projectUI.editing = null;
       var wanted = projectUI.keepTemps;
       projectUI.keepTemps = null;
-      var profileNote = PlyoJourney.profileChangeNote(pend.profileBefore, msg.filament_preset, function (n) { return Logic.shortName(n, false); });
+      // Nom de profil interne (« PLA » devient « PLA blanc — … ») : utile au confirmé seulement.
+      var profileNote = fsState.level === 'expert' ? PlyoJourney.profileChangeNote(pend.profileBefore, msg.filament_preset, function (n) { return Logic.shortName(n, false); }) : '';
       if (wanted && (wanted.nozzle !== msg.nozzle_temp || wanted.bed !== msg.bed_temp)) { projectChanged(); if (profileNote) noteLine(profileNote, '', 'info', 'guide'); projectHandlers.setTemps(wanted.nozzle, wanted.bed); return; }
       projectChanged(); // d'abord : le changement d'étape efface les messages de l'étape
       if (pend.note) noteLine(pend.note, 'ok', 'check', 'guide'); // bobine rattachée depuis la carte « Orca est passé sur … »

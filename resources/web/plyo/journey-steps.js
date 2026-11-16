@@ -29,6 +29,8 @@
     if (it.mode === 'asking') {
       var q = it.question, done = Object.keys(it.answers || {}).length;
       body.appendChild(ui.el('p', 'muted small', 'Question ' + (done + 1) + ' sur ' + it.total));
+      // Pourquoi ces questions : dit une fois, à la première.
+      if (!done) body.appendChild(ui.el('p', 'small', 'Tes réponses me servent à choisir pour toi entre solide, joli et rapide.'));
       body.appendChild(ui.el('p', 'intent-q', q.text));
       if (!it.idk) body.appendChild(ui.el('p', 'pick-hint', 'Clique sur ta réponse :'));
       var acts = ui.el('div', 'printer-actions');

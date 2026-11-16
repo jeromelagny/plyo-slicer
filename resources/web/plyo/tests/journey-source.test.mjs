@@ -513,7 +513,7 @@ test('Quelle bobine ? : plus de filament_choose sans nom de bobine, le nom passe
 
 test('Quelle bobine ? : l’aide NAME_HELP est affichée sous le champ du nom, avec le bouton « C’est ma bobine »', () => {
   const card = read('project-card.js');
-  const form = card.slice(card.indexOf('function renderNewSpool'), card.indexOf('function renderNewSpool') + 2500);
+  const form = card.slice(card.indexOf('function renderNewSpool'), card.indexOf('function renderNewSpool') + 3500);
   assert.ok(form.length > 100, 'renderNewSpool existe');
   assert.ok(form.indexOf("ui.el('input'") >= 0 && form.indexOf('PlyoSpools.NAME_HELP') > form.indexOf("ui.el('input'"), 'aide après le champ');
   assert.ok(form.includes('C’est ma bobine'));

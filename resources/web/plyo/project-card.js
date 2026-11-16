@@ -263,17 +263,27 @@
     var h = ctx.handlers, ns = ctx.newSpool || {}, S = root.PlyoSpools;
     var box = ui.el('div', 'new-spool');
     box.appendChild(ui.el('p', 'intent-q', 'Une nouvelle bobine'));
-    box.appendChild(ui.el('p', 'muted small', 'Sa matière est écrite sur l’étiquette. Pas sûr ? C’est presque toujours du PLA.'));
-    if (!ns.material) box.appendChild(ui.el('p', 'pick-hint', 'Clique sur ta réponse :'));
-    var kinds = ui.el('div', 'printer-actions');
-    MATERIALS.forEach(function (k) {
-      kinds.appendChild(ui.button(k, function () { h.pickMaterial(k); }, 'btn ghost sm' + (ns.material === k ? ' on' : '')));
-    });
-    box.appendChild(kinds);
+    if (ns.material && h.resetMaterial && ctx.beginner !== false) {
+      // Une question à la fois : la matière répondue se replie en une ligne, la suivante prend la place.
+      var mat = ui.el('div', 'project-row project-sub');
+      mat.appendChild(ui.el('span', 'muted small', '✓ Matière : ' + ns.material));
+      mat.appendChild(ui.button('changer', h.resetMaterial, 'link'));
+      box.appendChild(mat);
+    } else {
+      box.appendChild(ui.el('p', 'muted small', 'Sa matière est écrite sur l’étiquette. Pas sûr ? C’est presque toujours du PLA.'));
+      if (!ns.material) box.appendChild(ui.el('p', 'pick-hint', 'Clique sur ta réponse :'));
+      var kinds = ui.el('div', 'printer-actions');
+      MATERIALS.forEach(function (k) {
+        kinds.appendChild(ui.button(k, function () { h.pickMaterial(k); }, 'btn ghost sm' + (ns.material === k ? ' on' : '')));
+      });
+      box.appendChild(kinds);
+    }
     if (renderSpoolBrand(box, ui, ctx, closable)) { body.appendChild(box); return; } // la marque avant le nom
     if (ns.material) {
       var lab = ui.el('label', 'temp-field spool-name');
       lab.appendChild(ui.el('span', 'muted small', 'Nom de ta bobine'));
+      // Pourquoi un nom : sans cette phrase, la question paraît administrative.
+      box.appendChild(ui.el('p', 'small', 'Donne-lui un nom : je retiens ce qui marche avec elle, et la prochaine fois tu n’auras rien à refaire.'));
       var input = ui.el('input', 'field');
       input.type = 'text';
       input.maxLength = 60;
