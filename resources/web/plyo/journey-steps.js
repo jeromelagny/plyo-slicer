@@ -30,26 +30,29 @@
       var q = it.question, done = Object.keys(it.answers || {}).length;
       body.appendChild(ui.el('p', 'muted small', 'Question ' + (done + 1) + ' sur ' + it.total));
       body.appendChild(ui.el('p', 'intent-q', q.text));
+      if (!it.idk) body.appendChild(ui.el('p', 'pick-hint', 'Clique sur ta réponse :'));
       var acts = ui.el('div', 'printer-actions');
       if (it.idk) {
         var help = I.idkOptions(q.id, it.answers);
         body.appendChild(ui.el('p', 'muted small', 'Pas de souci. Laquelle ressemble le plus à ce que tu veux ?'));
         help.options.forEach(function (o) { acts.appendChild(ui.button(o.label + (o.sub ? ' · ' + o.sub : ''), function () { h.answer(q.id, o.answer); }, 'btn ghost sm')); });
         body.appendChild(acts);
-        body.appendChild(ui.button('Choisis pour moi (réglages sûrs)', function () { h.answer(q.id, help.safe); }, 'link'));
+        body.appendChild(ui.button('Choisis pour moi (réglages sûrs)', function () { h.answer(q.id, help.safe); }, 'btn ghost sm'));
       } else {
         q.choices.forEach(function (c) {
           var b = ui.button(c.label, function () { h.answer(q.id, c.id); }, 'btn ghost sm' + (q.id === 'use' && c.id === it.guess ? ' suggested' : ''));
           if (q.id === 'use' && c.id === it.guess) b.title = 'Suggéré d’après le nom de ta pièce';
           acts.appendChild(b);
         });
-        acts.appendChild(ui.button('Je ne sais pas', h.idk, 'link'));
+        acts.appendChild(ui.button('Je ne sais pas', h.idk, 'btn ghost sm'));
         body.appendChild(acts);
         if (q.id === 'use' && it.guess) {
           var label = q.choices.filter(function (c) { return c.id === it.guess; })[0];
           if (label) {
-            var g = ui.el('p', 'muted small', 'D’après son nom, ça ressemble à « ' + label.label + ' ». ');
-            g.appendChild(ui.button('Oui, c’est ça', function () { h.answer('use', it.guess); }, 'link'));
+            // « suggéré » dit en clair, et sa confirmation est un vrai bouton (plus un lien au bout de la phrase).
+            body.appendChild(ui.el('p', 'muted small', 'D’après son nom, ta pièce ressemble à « ' + label.label + ' » : c’est le choix marqué « suggéré ».'));
+            var g = ui.el('div', 'printer-actions');
+            g.appendChild(ui.button('Oui, c’est ça', function () { h.answer('use', it.guess); }, 'btn ghost sm'));
             body.appendChild(g);
           }
         }

@@ -444,7 +444,20 @@
   // Une machine qui ne répondait pas est revérifiée toute seule tant qu'on est à l'étape Imprimer.
   function shouldRecheck(step, reachable) { return step === 'imprimer' && reachable === false; }
 
-  var api = { machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  // Accueil du débutant (P1, parcours débutant 16/11) : la règle du jeu, avant la première question. Montré à tous sauf
+  // « Je connais déjà », une seule fois (premiers-pas.json : greeted).
+  var WELCOME = {
+    title: 'Je t’aide à imprimer, étape par étape',
+    lines: [
+      { icon: 'chat', text: 'Je te pose quelques questions sur ton imprimante, ta bobine et ta pièce.' },
+      { icon: 'check', text: 'Pour répondre, clique sur le bouton qui te correspond. Pas sûr ? Il y a toujours « Je ne sais pas ».' },
+      { icon: 'wand', text: 'Je règle Plyo Slicer pour toi : tu n’as pas besoin de toucher à la partie de gauche.' }
+    ],
+    go: 'C’est parti'
+  };
+  function showsWelcome(fs) { return !!(fs && fs.seen && fs.level !== 'expert' && !fs.greeted); }
+
+  var api = { WELCOME: WELCOME, showsWelcome: showsWelcome, machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor, projectTitle: projectTitle };
   root.PlyoJourney = api;

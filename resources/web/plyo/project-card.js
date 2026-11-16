@@ -189,7 +189,7 @@
       rv.shown.forEach(function (r) { ranges.appendChild(ui.button(r.short || r.label, function () { h.pick(S.brandChoice(g, r)); }, 'btn ghost sm')); });
       if (rv.hidden) ranges.appendChild(ui.button('Voir les autres gammes (' + rv.hidden + ')', h.showAll, 'link'));
       box.appendChild(ranges);
-      links.appendChild(ui.button('Je ne sais pas', function () { h.pick(S.brandChoice(g, null)); }, 'link'));
+      links.appendChild(ui.button('Je ne sais pas', function () { h.pick(S.brandChoice(g, null)); }, 'btn ghost sm'));
       links.appendChild(ui.button('Une autre marque', h.back, 'link'));
       box.appendChild(links);
       body.appendChild(box);
@@ -200,6 +200,7 @@
     box.appendChild(ui.el('p', 'muted small', none ? 'Elle est écrite sur l’étiquette. Écris-la, ou passe : je pars de réglages qui conviennent à la plupart des bobines.' : S.BRAND_HELP));
     if (groups === null || groups === undefined) box.appendChild(ui.el('p', 'muted small', 'Je cherche les marques…'));
     else if (!none) {
+      box.appendChild(ui.el('p', 'pick-hint', 'Clique sur ta réponse :'));
       var view = S.brandButtons(groups, st.showAll), acts = ui.el('div', 'printer-actions');
       view.shown.forEach(function (gr) {
         acts.appendChild(ui.button(gr.brand, function () { if (gr.ranges.length === 1) h.pick(S.brandChoice(gr, gr.ranges[0])); else h.pickGroup(gr); }, 'btn ghost sm'));
@@ -226,8 +227,8 @@
       go.appendChild(ui.button('Continuer', h.confirmOther, 'btn ghost sm', 'check'));
       box.appendChild(go);
       if (st.other && !none) setTimeout(function () { if (!input.value) input.focus(); }, 0);
-    } else links.appendChild(ui.button('Autre marque', h.openOther, 'link'));
-    links.appendChild(ui.button('Je ne sais pas', function () { h.pick(S.unknownChoice()); }, 'link'));
+    } else links.appendChild(ui.button('Autre marque', h.openOther, 'btn ghost sm'));
+    links.appendChild(ui.button('Je ne sais pas', function () { h.pick(S.unknownChoice()); }, 'btn ghost sm'));
     if (h.cancel) links.appendChild(ui.button('Annuler', h.cancel, 'link'));
     box.appendChild(links);
     body.appendChild(box);
@@ -263,6 +264,7 @@
     var box = ui.el('div', 'new-spool');
     box.appendChild(ui.el('p', 'intent-q', 'Une nouvelle bobine'));
     box.appendChild(ui.el('p', 'muted small', 'Sa matière est écrite sur l’étiquette. Pas sûr ? C’est presque toujours du PLA.'));
+    if (!ns.material) box.appendChild(ui.el('p', 'pick-hint', 'Clique sur ta réponse :'));
     var kinds = ui.el('div', 'printer-actions');
     MATERIALS.forEach(function (k) {
       kinds.appendChild(ui.button(k, function () { h.pickMaterial(k); }, 'btn ghost sm' + (ns.material === k ? ' on' : '')));
@@ -317,7 +319,7 @@
       var list = ctx.printers;
       if (proposed && !ctx.showList) {
         // Une machine proposée (celle d'Orca ou la dernière utilisée) : le bouton « Oui » est dans la ligne d'action.
-        body.appendChild(ui.button('Une autre machine', h.toggleList, 'link'));
+        body.appendChild(ui.button('Une autre machine', h.toggleList, 'btn ghost sm'));
       } else if (list === null || list === undefined) body.appendChild(ui.el('p', 'muted small', 'Je cherche tes imprimantes…'));
       else {
         var groups = root.PlyoJourney.groupPrinters(list);
@@ -337,7 +339,7 @@
     } else if (wantsFilament && proposedFilament && !ctx.showKinds) {
       // « Sunlu PLA+ noir, comme la dernière fois ? » : le bouton « Oui » est dans la ligne d'action.
       renderSlotNotes(body, ui, ctx);
-      body.appendChild(ui.button('Une autre bobine', h.toggleKinds, 'link'));
+      body.appendChild(ui.button('Une autre bobine', h.toggleKinds, 'btn ghost sm'));
       renderManualLink(body, ui, ctx);
     } else if (wantsFilament) {
       // « Quelle bobine ? » : les bobines de cette machine (la dernière réussie d'abord), puis « Une nouvelle bobine ».
@@ -375,7 +377,7 @@
       pacts.appendChild(ui.button('Choisir un fichier', h.importPart, 'btn ghost sm main-choice', 'folder'));
       body.appendChild(pacts);
       // Un débutant n'a souvent aucun fichier : le petit bateau de test fourni avec le slicer se pose comme une pièce choisie.
-      body.appendChild(ui.button('Pas encore de fichier ? Essaie avec le petit bateau de test', h.samplePart, 'link'));
+      body.appendChild(ui.button('Pas encore de fichier ? Essaie avec le petit bateau de test', h.samplePart, 'btn ghost sm'));
       if (ctx.oldPart) {
         body.appendChild(ui.el('p', 'muted small', '« ' + ctx.oldPart + ' », la pièce de ton projet précédent, est encore sur le plateau de Plyo Slicer. Si tu choisis un fichier, elle sera retirée, et tu pourras annuler.'));
         body.appendChild(ui.button('Garder cette pièce', h.keepOldPart, 'link'));
@@ -396,6 +398,7 @@
     box.appendChild(ui.el('p', 'intent-q', q.title));
     box.appendChild(ui.el('p', 'small', q.text));
     box.appendChild(ui.el('p', 'muted small', q.help));
+    box.appendChild(ui.el('p', 'pick-hint', 'Clique sur ta réponse :'));
     var list = ui.el('div', 'bed-choices');
     q.choices.forEach(function (c) {
       var item = ui.el('div', 'bed-choice');
@@ -407,7 +410,7 @@
     });
     box.appendChild(list);
     var acts = ui.el('div', 'printer-actions');
-    var unknown = ui.button(q.unknown, h.unknownBed, 'link');
+    var unknown = ui.button(q.unknown, h.unknownBed, 'btn ghost sm');
     unknown.disabled = !!ctx.waiting;
     acts.appendChild(unknown);
     if (ctx.editing) acts.appendChild(ui.button('Annuler', h.cancelBed, 'link'));

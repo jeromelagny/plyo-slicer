@@ -77,8 +77,23 @@
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: var(--s1) var(--s3); border-radius: var(--r-sm); font-weight: 600; line-height: 1.25; text-align: center; cursor: pointer; border: 1px solid var(--accent-fill); background: var(--accent-fill); color: var(--on-accent); }
   .btn:hover:not(:disabled) { filter: brightness(1.08); }
   .btn:disabled { opacity: .5; cursor: default; }
-  .btn.ghost { background: transparent; color: var(--fg); border-color: var(--border); }
-  .btn.ghost:hover:not(:disabled) { border-color: var(--accent); background: var(--surface); filter: none; }
+  .btn.ghost { background: var(--raised); color: var(--fg); border-color: color-mix(in srgb, var(--fg) 26%, var(--bg)); }
+  .btn.ghost:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); filter: none; }
+  /* Débutant : « Clique sur ta réponse » au-dessus des choix (masqué pour « Je connais déjà »). */
+  .pick-hint { display: flex; align-items: center; gap: var(--s1); margin: 0; color: var(--accent-text); font-size: var(--fs-sm); font-weight: 600; }
+  body:not(.novice) .pick-hint { display: none; }
+  /* Accueil du débutant : la règle du jeu, seule à l'écran jusqu'à « C'est parti ». */
+  #view-guide.welcoming > :not(#welcome-slot) { display: none !important; }
+  .welcome { display: flex; flex-direction: column; gap: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); padding: var(--s4); }
+  .welcome h2 { margin: 0; font-size: var(--fs-xl); line-height: 1.3; }
+  .welcome ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--s3); }
+  .welcome li { display: flex; gap: var(--s2); align-items: flex-start; }
+  .welcome li .ic { margin-top: 2px; color: var(--accent-text); }
+  .welcome .btn { align-self: stretch; min-height: 38px; font-size: var(--fs-lg); }
+  /* « Voilà ce que je propose » : on lit les puces, puis on clique (le bouton passe sous l'explication). */
+  .step-card.act-after #journey-action, .step-card.act-after .journey-action { display: contents; }
+  .step-card.act-after #project-slot { order: 2; }
+  .step-card.act-after .journey-action > .btn { order: 3; align-self: flex-start; }
   .btn.sm { min-height: 28px; padding: 2px 10px; font-size: var(--fs-sm); }
   .btn.wide { flex: 1; }
   .link { display: inline-flex; align-items: center; gap: var(--s1); min-height: 24px; border: 0; background: none; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-size: var(--fs-sm); padding: 0; }
@@ -399,6 +414,7 @@
   .bed-choices { display: flex; flex-direction: column; gap: var(--s2); }
   .bed-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
   .bed-choice .muted { padding-left: 2px; }
+  .bed-choice .btn { width: 100%; justify-content: flex-start; text-align: left; }
   .project-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s1); }
   .project-body p, .project-hint { margin: 0; }
   .project-error { color: var(--danger-text); margin: 0; }
@@ -534,6 +550,7 @@
   <div class="body" id="body">
     <!-- Premiers pas : étape du parcours en cours -->
     <div class="view" id="view-guide" role="tabpanel" aria-labelledby="tab-guide">
+    <div id="welcome-slot"></div>
     <div id="journey-bar"></div>
     <section class="step-card"><div id="resume-slot"></div><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="bed-slot"></div><div id="project-card"></div></div></section>
     <div id="spool-slot"></div>
@@ -1872,8 +1889,29 @@
     box.textContent = '';
     kept.slice(-KEPT_NOTES).forEach(function (n) { box.appendChild(n); });
   }
+  // Accueil du débutant (premier projet, tant que « C'est parti » n'est pas cliqué) : comment marche l'assistant.
+  function renderWelcome() {
+    var slot = $('welcome-slot'), show = PlyoJourney.showsWelcome(fsState);
+    $('view-guide').classList.toggle('welcoming', show);
+    slot.textContent = '';
+    if (!show) return;
+    var w = PlyoJourney.WELCOME;
+    var card = el('section', 'welcome'); // pas .step-card : l'installation de l'imprimante (body.touring) masque les cartes d'étape
+    card.appendChild(el('h2', '', w.title));
+    var list = el('ol');
+    w.lines.forEach(function (l) { var li = el('li'); li.appendChild(icon(l.icon, 16)); li.appendChild(el('span', '', l.text)); list.appendChild(li); });
+    card.appendChild(list);
+    card.appendChild(button(w.go, function () {
+      fsState.greeted = true;
+      window.orca.postMessage({ type: 'firststeps_set', patch: { greeted: true } });
+      renderWelcome();
+      if (conv) renderProject();
+    }, 'btn'));
+    slot.appendChild(card);
+  }
   function renderProject() {
     if (!conv) return;
+    renderWelcome();
     var ui = { el: el, button: button, icon: icon };
     var step = PlyoJourney.currentStep(conv.project);
     // Question de fin : une seule à la fois. Arrivé au Résultat, l'étape la porte (la note part) ; laissée dans une autre
@@ -1895,6 +1933,8 @@
     PlyoProjectCard.renderSpoolEditor($('spool-slot'), ui, { spool: projectUI.spool, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth, onRevisit: barBusy() ? null : revisitStep });
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
+    var intentNow = step === 'preparer' ? intentState(step, plateSliced()) : null;
+    $('journey-action').parentNode.classList.toggle('act-after', !!(intentNow && intentNow.mode === 'ready'));
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
       extra: step === 'machine' ? { label: 'Ma machine n’est pas dans la liste', icon: 'plus', onClick: projectHandlers.setupPrinter } : null });
     ensureCanvasRead(step);
@@ -5947,6 +5987,8 @@
     $('m-start').setAttribute('aria-checked', String(fsState.level !== 'expert'));
     $('m-start').title = fr(PlyoJourney.startMenuLabel(fsState.level));
     $('hello-guide').classList.toggle('hidden', fsState.level !== 'expert');
+    document.body.classList.toggle('novice', fsState.level !== 'expert');
+    renderWelcome();
   }
 
   function explain(key) { window.orca.postMessage({ type: 'explain', key: key }); }
