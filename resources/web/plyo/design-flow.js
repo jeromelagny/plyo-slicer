@@ -113,7 +113,12 @@
     if (!input.value) setTimeout(function () { input.focus(); }, 0);
   }
 
-  var api = { TEXT: TEXT, MAX_IMAGES: MAX_IMAGES, request: request, answersText: answersText, dimensionLines: dimensionLines, fileName: fileName, render: render };
+  // Pièce retouchée alors que le projet était déjà préparé, imprimé ou réussi : c'est une nouvelle pièce à imprimer, le
+  // parcours repart de « Préparer » (découper à nouveau). Avant la préparation, rien à refaire.
+  function redoesPreparation(step, retouch) { return !!retouch && (step === 'preparer' || step === 'imprimer' || step === 'resultat'); }
+  var REDO_TEXT = 'Ta pièce a changé : découpe-la à nouveau pour l’imprimer.';
+
+  var api = { TEXT: TEXT, MAX_IMAGES: MAX_IMAGES, REDO_TEXT: REDO_TEXT, redoesPreparation: redoesPreparation, request: request, answersText: answersText, dimensionLines: dimensionLines, fileName: fileName, render: render };
   root.PlyoDesignFlow = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

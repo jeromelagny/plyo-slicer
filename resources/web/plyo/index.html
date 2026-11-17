@@ -4432,11 +4432,25 @@
     designUI.placing = null;
     if (!msg.ok) return;
     threadNote('Pièce ' + (p.retouch ? 'retouchée' : 'dessinée') + ' par Plyo : « ' + designUI.part.name + ' », ' + PlyoDesign.sizeText(p.size) + (p.message ? '. ' + p.message : '.'));
+    // Retouchée après la préparation (ou après « Bravo, c'est réussi ! ») : nouvelle pièce, le parcours repart de Préparer,
+    // comme « Réimprimer cette pièce » ; d'abord, car le changement d'étape efface les messages de l'étape.
+    var redo = PlyoDesignFlow.redoesPreparation(PlyoJourney.currentStep(conv.project), p.retouch);
+    if (redo) {
+      delete conv.project.success;
+      // La découpe et la vérification parlaient de l'ancienne pièce (le slicer ne le dit qu'au signal suivant) : périmées tout de suite.
+      if (tourSignals) tourSignals.sliced = false;
+      plateChecked = null; openRisks = 0; $('preflight-slot').textContent = ''; preflightFix = null;
+      threadNote('Retour à « Préparer » : la pièce a changé.', 'etapes');
+      setTourStep('slice');
+    }
+    // Une seule carte de pièce : celle de la dernière version.
+    $('guide-notes').querySelectorAll('.design-placed').forEach(function (old) { old.remove(); });
     var part = designUI.part, line = noteLine(PlyoDesignFlow.TEXT.placed + ' : « ' + part.name + ' », ' + PlyoDesign.sizeText(p.size) + '.', 'ok', 'cube', 'guide');
     line.classList.add('design-placed');
     var dims = PlyoDesignFlow.dimensionLines(part);
     if (p.message) line.querySelector('.note-text').appendChild(el('span', 'design-said', ' ' + p.message));
     if (dims.length) line.querySelector('.note-text').appendChild(el('span', 'design-dims', ' Cotes : ' + dims.join(', ') + '. ' + PlyoDesignFlow.TEXT.check));
+    if (redo) line.querySelector('.note-text').appendChild(el('span', 'design-said', ' ' + PlyoDesignFlow.REDO_TEXT));
     line.appendChild(button(PlyoDesignFlow.TEXT.change, function () { designStart(true); }, 'btn ghost sm', 'wand'));
   }
   // Croquis ou photo joint à la description : réduit à 1 600 px au plus (JPEG), pour rester sous la limite du service.

@@ -54,3 +54,11 @@ test('discussion : pièce dessinée par Plyo → capacité « redesign », bouto
   assert.equal(L.actionSupported({ kind: 'redesign', target: 'Retire l’encoche', label: 'Modifier ma pièce' }), true);
   assert.equal(L.actionSupported({ kind: 'redesign', target: ' ', label: 'Modifier ma pièce' }), false);
 });
+
+test('pièce retouchée après la préparation ou une réussite : le parcours repart de « Préparer »', () => {
+  for (const step of ['preparer', 'imprimer', 'resultat']) assert.equal(F.redoesPreparation(step, true), true, step);
+  for (const step of ['machine', 'piece', 'filament']) assert.equal(F.redoesPreparation(step, true), false, step);
+  assert.equal(F.redoesPreparation('resultat', false), false, 'une première pièce posée ne touche pas au parcours');
+  const page = read('index.html');
+  assert.match(page, /if \(tourSignals\) tourSignals\.sliced = false;\n\s*plateChecked = null; openRisks = 0;/);
+});
