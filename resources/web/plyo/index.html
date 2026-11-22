@@ -3392,28 +3392,37 @@
   // UX-31 : retouches de l'onglet Impression laissées avec le projet d'avant : les garder dans le profil, ou seulement là-bas.
   var retouchUI = { card: null, spoolNote: null, spoolUndo: null, spoolToken: 0 };
   function askRetouches(delay) { setTimeout(function () { window.orca.postMessage({ type: 'retouches_get' }); }, delay || 0); }
+  // Retouches d'impression du projet d'avant (UX-31) : une question sur une autre impression ne doit pas prendre la place de
+  // celle en cours. Débutant : jamais posée ; elles restent avec leur projet, le profil ne change pas (comme « Seulement pour
+  // ce projet »), et ce qui a marché suit déjà la bobine. Confirmé : une ligne repliée sous l'étape, posée une fois ; revenue
+  // sans réponse au projet suivant, elle vaut « Seulement pour ce projet ».
   function onPrintRetouches(msg) {
-    var p = msg.pending || {}, text = PlyoRetouches.printQuestion(p);
+    var p = msg.pending || {}, text = PlyoRetouches.printQuestion(p), key = JSON.stringify([p.preset, p.project, (p.changes || []).length]);
     if (retouchUI.card) { retouchUI.card.remove(); retouchUI.card = null; }
     if (!text) return;
-    var box = alertBox('tip', text, 'info');
-    box.classList.add('retouches-card');
-    foldDetail(box.body, 'Voir les réglages', PlyoRetouches.printDetail(p));
+    if (fsState.level !== 'expert' || retouchUI.asked === key) { window.orca.postMessage({ type: 'retouches_dismiss' }); return; }
+    retouchUI.asked = key;
+    var box = el('div', 'note-line retouches-card');
+    var fold = el('details', 'fold-detail retouches-fold');
+    fold.appendChild(el('summary', '', 'Une question sur ton projet d’avant'));
+    fold.appendChild(el('p', 'small', text));
+    foldDetail(fold, 'Voir les réglages', PlyoRetouches.printDetail(p));
     var err = el('p', 'project-error hidden');
-    box.body.appendChild(err);
+    fold.appendChild(err);
     var acts = el('div', 'printer-actions');
-    var keep = button(PlyoRetouches.KEEP_LABEL, function () { keep.disabled = only.disabled = true; err.classList.add('hidden'); window.orca.postMessage({ type: 'retouches_keep' }); }, 'btn sm', 'check');
+    var keep = button(PlyoRetouches.KEEP_LABEL, function () { keep.disabled = only.disabled = true; err.classList.add('hidden'); window.orca.postMessage({ type: 'retouches_keep' }); }, 'btn ghost sm', 'check');
     var only = button(PlyoRetouches.ONLY_LABEL, function () {
       window.orca.postMessage({ type: 'retouches_dismiss' });
       box.remove(); retouchUI.card = null;
       noteLine(PlyoRetouches.ONLY_NOTE, '', 'info');
-    }, 'btn ghost sm');
+    }, 'link');
     acts.appendChild(keep);
     acts.appendChild(only);
-    box.body.appendChild(acts);
+    fold.appendChild(acts);
+    box.appendChild(fold);
     box.keep = keep; box.only = only; box.err = err;
     retouchUI.card = box;
-    placeInOpenTab(box);
+    $('guide-notes').appendChild(box); // sous l'étape, jamais en tête : elle ne prend pas la place de l'impression en cours
   }
   function onPrintRetouchesKept(msg) {
     var box = retouchUI.card;

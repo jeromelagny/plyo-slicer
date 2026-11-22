@@ -86,7 +86,13 @@ test('UX-31 : la question des retouches d’impression, dans le ton du panneau',
   const p = { preset: '0.20mm Standard', project: 'crochet', changes: [{ key: 'outer_wall_speed', label: 'Vitesse des parois extérieures', before: 200, after: 150 }, { key: 'wall_loops', label: 'Parois', before: 2, after: 3 }] };
   // Allègement (22/11) : la question dit combien et où ; la liste est repliée sous « Voir les réglages » (printDetail).
   assert.equal(R.printQuestion(p), 'Tu as retouché 2 réglages d’impression pendant « crochet ». Les garder pour tes prochains projets ?');
-  assert.match(read('index.html'), /foldDetail\(box\.body, 'Voir les réglages', PlyoRetouches\.printDetail\(p\)\);/);
+  // Une question sur une autre impression ne prend pas la place de celle en cours (retour d'essai, 22/11) : jamais posée au
+  // débutant (« Seulement pour ce projet » d'office) ; pour le confirmé, une ligne repliée sous l'étape, posée une fois.
+  const page0 = read('index.html');
+  assert.match(page0, /if \(fsState\.level !== 'expert' \|\| retouchUI\.asked === key\) \{ window\.orca\.postMessage\(\{ type: 'retouches_dismiss' \}\); return; \}/);
+  assert.match(page0, /fold\.appendChild\(el\('summary', '', 'Une question sur ton projet d’avant'\)\);/);
+  assert.match(page0, /foldDetail\(fold, 'Voir les réglages', PlyoRetouches\.printDetail\(p\)\);/);
+  assert.match(page0, /\$\('guide-notes'\)\.appendChild\(box\); \/\/ sous l'étape/);
   assert.equal(R.printDetail(p), 'Ce que tu as changé : vitesse des parois extérieures 200 → 150, parois 2 → 3.');
   assert.equal(R.printQuestion({ preset: 'x', changes: [] }), '');
   assert.match(R.printQuestion({ preset: 'x', changes: [{ key: 'a', label: 'A' }] }), /un réglage d’impression pendant ton projet d’avant\./);
