@@ -19,6 +19,7 @@ function fakeUi() {
     const node = { tag, className: className || '', children: [], attrs: {}, on: {}, dataset: {}, style: {},
       appendChild(c) { this.children.push(c); return c; }, insertBefore(c) { this.children.unshift(c); return c; },
       setAttribute(k, v) { this.attrs[k] = String(v); }, addEventListener(t, f) { this.on[t] = f; }, contains() { return false; } };
+    Object.defineProperty(node, 'childNodes', { get() { return this.children; } });
     Object.defineProperty(node, 'textContent', { get() { return this._t || ''; }, set(v) { this._t = v; if (v === '') this.children = []; } });
     node.textContent = text || '';
     return node;
@@ -158,4 +159,66 @@ test('lot 3 · débutant : buse 0,4 mm et plateau du profil sans question, « ch
   // La fiche garde le plateau avec « changer » (bedUI.editing rouvre la question) et « Changer de buse ».
   assert.match(page, /changeBed: function \(\) \{ bedUI\.editing = true;/);
   assert.match(read('project-card.js'), /ui\.button\('Changer de buse', h\.changeNozzle, 'link'\)/);
+});
+
+// ---------- Lot 4 : une seule question avant la découpe ----------
+
+const I = require('../intent-logic.js');
+globalThis.PlyoIntent = I;
+const Steps = require('../journey-steps.js');
+
+test('lot 4 · débutant : l’usage seul, préférence et vitesse à leur valeur sûre', () => {
+  assert.deepEqual(I.noviceAnswers({ use: 'daily' }), { use: 'daily', pref: 'balanced', speed: 'normal' });
+  assert.deepEqual(I.noviceAnswers({ use: 'deco' }), { use: 'deco', pref: 'all', speed: 'normal' });
+  assert.deepEqual(I.noviceAnswers({ use: 'strong' }), { use: 'strong', pref: 'heavy', speed: 'normal' });
+  assert.deepEqual(I.noviceAnswers({ use: 'flex' }), { use: 'flex', pref: 'balanced', speed: 'normal' });
+  assert.deepEqual(I.noviceAnswers({ use: 'test' }), { use: 'test' });
+  assert.deepEqual(I.noviceAnswers({ use: 'daily', pref: 'sturdy', speed: 'fine' }), { use: 'daily', pref: 'sturdy', speed: 'fine' }, 'une réponse donnée reste');
+  for (const use of ['deco', 'daily', 'strong', 'flex', 'test']) assert.equal(I.nextQuestion(I.noviceAnswers({ use })), null, use + ' : plus de question');
+  assert.equal(I.doneText({ use: 'daily', pref: 'balanced', speed: 'normal' }), 'Réglages choisis pour un objet du quotidien, équilibrée, sans te presser.');
+  assert.equal(I.doneText({ use: 'test' }), 'Réglages choisis pour un test rapide.');
+});
+
+test('lot 4 · ligne d’action : « Une question sur ta pièce », puis l’attente pendant que la réponse s’applique', () => {
+  assert.equal(J.prompt('preparer', { intent: 'asking', intentOne: true }), 'Une question sur ta pièce');
+  assert.equal(J.prompt('preparer', { intent: 'asking' }), 'Quelques questions sur ta pièce', 'confirmé, ou après « Ajuster »');
+  assert.equal(J.prompt('preparer', { intent: 'auto' }), 'Je prépare ta pièce…');
+  assert.deepEqual(J.primaryAction('preparer', { intent: 'auto' }), { label: 'Je prépare ta pièce…', kind: 'applyIntent', enabled: false });
+  assert.equal(J.primaryAction('preparer', { intent: 'ready' }).label, 'Appliquer et préparer', 'confirmé : inchangé');
+});
+
+test('lot 4 · rendu : pas de compteur pour une seule question ; résumé sans bouton pendant l’application ; « Ajuster » après coup', () => {
+  const ui = fakeUi(), h = new Proxy({}, { get: () => () => {} });
+  const one = ui.el('div');
+  Steps.render(one, ui, { step: 'preparer', ctx: {}, intent: { mode: 'asking', question: I.QUESTIONS.use, answers: {}, total: 1, guess: 'daily' }, handlers: h });
+  assert.doesNotMatch(textOf(one), /Question 1 sur/);
+  assert.match(textOf(one), /Ta réponse me sert à choisir/);
+  assert.ok(labels(one).includes('Je ne sais pas'), '« Je ne sais pas » reste');
+  const three = ui.el('div');
+  Steps.render(three, ui, { step: 'preparer', ctx: {}, intent: { mode: 'asking', question: I.QUESTIONS.use, answers: {}, total: 3 }, handlers: h });
+  assert.match(textOf(three), /Question 1 sur 3/);
+  const auto = ui.el('div');
+  Steps.render(auto, ui, { step: 'preparer', ctx: {}, intent: { mode: 'auto', summary: I.summary({ use: 'daily', pref: 'balanced', speed: 'normal' }, 'PLA'), changes: [], kept: [] }, handlers: h });
+  assert.match(textOf(auto), /Pour un objet du quotidien/);
+  assert.deepEqual(labels(auto), [], 'rien à cliquer : la découpe suit');
+  const after = ui.el('div');
+  let adjusted = 0;
+  Steps.render(after, ui, { step: 'imprimer', ctx: { sliced: true, linked: true }, intentDone: 'Réglages choisis pour un test rapide.', handlers: Object.assign({}, { adjustIntent: () => adjusted++, exportFile() {}, started() {} }) });
+  assert.match(textOf(after), /Réglages choisis pour un test rapide\./);
+  buttons(after).find((b) => b.textContent === 'Ajuster').on.click();
+  assert.equal(adjusted, 1);
+});
+
+test('lot 4 · page : la réponse du débutant applique et découpe ; « Ajuster » garde l’usage ; confirmé inchangé', () => {
+  const page = read('index.html');
+  assert.match(page, /if \(!p\.intent\.adjust\) Object\.assign\(p\.intent, PlyoIntent\.noviceAnswers\(intentAnswers\(p\)\)\);/);
+  assert.match(page, /if \(!PlyoIntent\.nextQuestion\(intentAnswers\(p\)\)\) applyIntent\(false\);/);
+  assert.match(page, /var one = noviceIntent\(\) && !i\.adjust;/);
+  assert.match(page, /mode: noviceIntent\(\) && intentUI\.applying \? 'auto' : 'ready'/);
+  assert.match(page, /st\.mode !== 'ready' && st\.mode !== 'auto'/);
+  assert.match(page, /else p\.intent = \{ use: use, adjust: true, reask: !!\(tourSignals && tourSignals\.sliced\) \};/);
+  assert.match(page, /delete p\.intent\.adjust;/);
+  // Le confirmé garde « Comme la dernière fois » et ses trois questions.
+  assert.match(page, /PlyoIntent\.offersRepeat\(fsState\.level, habits\.last_intent, answers\)/);
+  assert.equal(I.offersRepeat('beginner', { use: 'daily', pref: 'balanced', speed: 'normal' }, {}), false);
 });

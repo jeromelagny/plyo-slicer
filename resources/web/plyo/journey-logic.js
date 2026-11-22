@@ -80,6 +80,8 @@
       if (!c.sliced && c.intent === 'asking') return { label: '', kind: 'none', enabled: false };
       if (!c.sliced && c.intent === 'repeat') return { label: 'Préparer', kind: 'repeatIntent', enabled: true };
       if (!c.sliced && c.intent === 'ready') return { label: 'Appliquer et préparer', kind: 'applyIntent', enabled: true };
+      // Débutant : sa réponse applique les réglages et lance la découpe d'elle-même ; on attend (signe d'attente, pas de bouton).
+      if (!c.sliced && c.intent === 'auto') return { label: 'Je prépare ta pièce…', kind: 'applyIntent', enabled: false };
       if (!c.sliced) return slice;
       // Découpée mais refusée par Orca pour l'impression (`blocked`) : la carte d'Orca porte les corrections, pas de « Continuer ».
       if (c.blocked) return { label: '', kind: 'none', enabled: false };
@@ -159,7 +161,8 @@
       case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : c.onlyMachine ? 'Imprimer sur ' + c.onlyMachine.name + ' ?' : c.noMachine ? 'Ajoute ton imprimante' : 'Choisis ton imprimante';
       case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : c.quickSpool ? 'Ta bobine est en ' + c.quickSpool + ' ?' : 'Quelle bobine ?';
       case 'piece': return 'Ajoute la pièce à imprimer';
-      case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
+      case 'preparer': if (!c.sliced && c.intent === 'asking') return c.intentOne ? 'Une question sur ta pièce' : 'Quelques questions sur ta pièce';
+        if (!c.sliced && c.intent === 'auto') return 'Je prépare ta pièce…';
         if (!c.sliced && c.intent === 'repeat') return 'Même usage que ta dernière pièce ?';
         if (!c.sliced && c.intent === 'ready') return 'Voilà ce que je propose';
         if (!c.sliced && c.slicing) return 'Je découpe ta plaque…';

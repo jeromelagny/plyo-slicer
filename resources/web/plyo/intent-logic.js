@@ -45,6 +45,14 @@
     return IDK[key] || { options: [], safe: '' };
   }
 
+  // Débutant (une seule question) : l'usage répondu, la préférence et la vitesse prennent leur valeur sûre (celle de « Choisis pour
+  // moi » : équilibrée pour un objet du quotidien, normal). « Ajuster » repose ensuite ces deux questions.
+  function noviceAnswers(answers) {
+    var a = answers || {};
+    if (!a.use || a.use === 'test') return a.use ? { use: a.use } : {};
+    return { use: a.use, pref: a.pref || IDK[a.use].safe, speed: a.speed || IDK.speed.safe };
+  }
+
   function guessUse(name) {
     var n = String(name || '').toLowerCase();
     if (!n) return null;
@@ -102,6 +110,14 @@
   var PREF_TEXT = { top: 'vue du dessus', sides: 'vue de côté', all: 'vue de partout', light: 'légère', balanced: 'équilibrée', sturdy: 'robuste',
     heavy: 'qui porte du poids', shocks: 'qui encaisse les chocs', softer: 'plus souple', tougher: 'plus résistante' };
   var SPEED_TEXT = { fast: 'vite', normal: 'sans te presser', fine: 'avec soin' };
+
+  // Ligne gardée après coup (étapes Préparer et Imprimer) : « Réglages choisis pour un objet du quotidien, équilibrée, sans te presser. »
+  function doneText(answers) {
+    var a = answers || {}, parts = [USE_TEXT[a.use] || 'ta pièce'];
+    if (a.pref && PREF_TEXT[a.pref]) parts.push(PREF_TEXT[a.pref]);
+    if (a.use !== 'test') parts.push(SPEED_TEXT[a.speed] || SPEED_TEXT.normal);
+    return 'Réglages choisis pour ' + parts.join(', ') + '.';
+  }
 
   function summary(answers, filamentType) {
     var a = answers || {}, set = {};
@@ -187,7 +203,7 @@
     return 'Comme la dernière fois : ' + parts.join(', ');
   }
 
-  var api = { validLast: validLast, offersRepeat: offersRepeat, repeatText: repeatText, mergeAnswers: mergeAnswers, detectLevel: detectLevel, asksDefinition: asksDefinition, QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
+  var api = { noviceAnswers: noviceAnswers, doneText: doneText, validLast: validLast, offersRepeat: offersRepeat, repeatText: repeatText, mergeAnswers: mergeAnswers, detectLevel: detectLevel, asksDefinition: asksDefinition, QUESTIONS: { use: USE, pref: PREF, speed: SPEED }, nextQuestion: nextQuestion, idkOptions: idkOptions, guessUse: guessUse,
     settingsFor: settingsFor, displayValue: displayValue, keepManual: keepManual, summary: summary, MANAGED_KEYS: Object.keys(LABELS) };
   root.PlyoIntent = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

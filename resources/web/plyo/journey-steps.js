@@ -28,9 +28,10 @@
     }
     if (it.mode === 'asking') {
       var q = it.question, done = Object.keys(it.answers || {}).length;
-      body.appendChild(ui.el('p', 'muted small', 'Question ' + (done + 1) + ' sur ' + it.total));
+      // Débutant : une seule question (it.total 1), pas de compteur.
+      if (it.total > 1) body.appendChild(ui.el('p', 'muted small', 'Question ' + (done + 1) + ' sur ' + it.total));
       // Pourquoi ces questions : dit une fois, à la première.
-      if (!done) body.appendChild(ui.el('p', 'small', 'Tes réponses me servent à choisir pour toi entre solide, joli et rapide.'));
+      if (!done) body.appendChild(ui.el('p', 'small', it.total > 1 ? 'Tes réponses me servent à choisir pour toi entre solide, joli et rapide.' : 'Ta réponse me sert à choisir pour toi entre solide, joli et rapide.'));
       body.appendChild(ui.el('p', 'intent-q', q.text));
       if (!it.idk) body.appendChild(ui.el('p', 'pick-hint', 'Clique sur ta réponse :'));
       var acts = ui.el('div', 'printer-actions');
@@ -61,6 +62,13 @@
     }
     var sum = it.summary;
     body.appendChild(ui.el('p', 'intent-q', sum.sentence));
+    // Débutant : réglages en cours d'application, la découpe suit d'elle-même ; le résumé se lit, rien à cliquer.
+    if (it.mode === 'auto') {
+      var ula = ui.el('ul', 'setup-checks');
+      sum.bullets.forEach(function (b) { ula.appendChild(ui.el('li', '', b)); });
+      body.appendChild(ula);
+      return;
+    }
     var ul = ui.el('ul', 'setup-checks');
     sum.bullets.forEach(function (b) { ul.appendChild(ui.el('li', '', b)); });
     body.appendChild(ul);
@@ -102,6 +110,15 @@
     return box;
   }
 
+  // Débutant : les réglages choisis d'après sa réponse restent lisibles, et « Ajuster » repose les deux autres questions
+  // (opts.intentDone : texte de PlyoIntent.doneText, handlers.adjustIntent).
+  function intentDoneLine(body, ui, opts) {
+    if (!opts.intentDone) return;
+    var row = line(ui, 'wand', opts.intentDone, '');
+    if (opts.handlers.adjustIntent) row.appendChild(ui.button('Ajuster', opts.handlers.adjustIntent, 'link'));
+    body.appendChild(row);
+  }
+
   function render(slot, ui, opts) {
     var c = opts.ctx || {}, h = opts.handlers;
     slot.textContent = '';
@@ -111,6 +128,7 @@
     } else if (opts.step === 'preparer' && opts.intent && !c.sliced) {
       renderIntent(body, ui, opts.intent, h);
     } else if (opts.step === 'preparer') {
+      intentDoneLine(body, ui, opts);
       // « Découper » : pour un débutant, c'est couper la pièce. Dit une fois, pendant la découpe.
       if (!c.sliced && c.slicing && opts.novice) body.appendChild(ui.el('p', 'muted small', 'Découper, c’est transformer ta pièce en instructions que ton imprimante sait suivre, couche par couche.'));
       // Découpe en cours : la consigne de l'étape le dit déjà (« Je découpe ta plaque… »), pas de ligne qui le répète.
@@ -124,6 +142,7 @@
     } else if (opts.step === 'imprimer') {
       // Dans l'étape et non en bas des messages : le texte entier reste lu, sous les suggestions rien n'est coupé.
       if (opts.exported) body.appendChild(line(ui, 'check', opts.exported, 'ok exported'));
+      intentDoneLine(body, ui, opts);
       if (opts.summary) body.appendChild(line(ui, 'check', opts.summary, 'ok'));
       // La machine est rappelée en lecture seule : en changer refait la préparation (réglages, filament, découpe).
       if (opts.machine) {

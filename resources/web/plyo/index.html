@@ -1887,6 +1887,7 @@
     else if (conv && PlyoJourney.tempsPending(p) && !ctx.editing) ctx.temps = { nozzle: p.filament.nozzle_temp, bed: p.filament.bed_temp };
     var st = conv ? intentState(PlyoJourney.currentStep(conv.project), ctx.sliced) : null;
     if (st) ctx.intent = st.mode;
+    if (st && st.mode === 'asking' && st.total === 1) ctx.intentOne = true;
     machineCtx(ctx);
     var quick = conv ? quickSpoolMaterial(PlyoJourney.currentStep(conv.project), ctx) : '';
     if (quick) ctx.quickSpool = quick;
@@ -2028,7 +2029,7 @@
         spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, quickSpool: !projectUI.newSpool.precise, beginner: fsState.level !== 'expert', handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers, novice: fsState.level !== 'expert',
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
-      intent: intentState(step, plateSliced()), spoolAsk: spoolAsk(), spoolNo: !!(sendOf() && sendOf().failed), endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
+      intent: intentState(step, plateSliced()), intentDone: intentDoneText(step), spoolAsk: spoolAsk(), spoolNo: !!(sendOf() && sendOf().failed), endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
       machine: conv.project.printer ? { name: PlyoJourney.shortMachine(conv.project.printer) || conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     $('hello-spool').textContent = '';
@@ -2117,7 +2118,8 @@
     recheck: function () { recheckMachine(); },
     answer: function (q, id) { intentHandlers.answer(q, id); }, idk: function () { intentHandlers.idk(); },
     intentSkip: function () { intentHandlers.skip(); }, reset: function () { intentHandlers.reset(); },
-    intentChange: function () { intentHandlers.change(); }
+    intentChange: function () { intentHandlers.change(); },
+    adjustIntent: function () { if (!barBusy()) intentHandlers.adjust(); }
   };
   // Machine qui ne répond pas : « Vérifier à nouveau » et revérification automatique toutes les 8 s à l'étape Imprimer.
   var recheckTimer = null;
@@ -2622,12 +2624,22 @@
     // Confirmé, deuxième pièce et suivantes (UX-33) : une ligne « Comme la dernière fois » au lieu des trois questions.
     if (q && !i.reask && intentUI.changing !== conv && PlyoIntent.offersRepeat(fsState.level, habits.last_intent, answers))
       return { mode: 'repeat', text: PlyoIntent.repeatText(habits.last_intent) };
-    if (q) return { mode: 'asking', question: q, answers: answers, total: answers.use === 'test' ? 1 : 3, idk: intentUI.idk,
+    // Débutant : une seule question (l'usage), sauf après « Ajuster » qui repose les deux autres.
+    var one = noviceIntent() && !i.adjust;
+    if (q) return { mode: 'asking', question: q, answers: answers, total: answers.use === 'test' || one ? 1 : 3, idk: intentUI.idk,
       guess: PlyoIntent.guessUse(p.part && p.part.name) };
     if (intentUI.manual === null) fetchManualKeys(function () { renderProject(); });
     var type = p.filament && p.filament.type, nozzle = lastValues && lastValues.context ? lastValues.context.nozzle_mm : 0;
     var r = PlyoIntent.keepManual(PlyoIntent.settingsFor(answers, type, nozzle), intentUI.manual);
-    return { mode: 'ready', summary: PlyoIntent.summary(answers, type), changes: r.apply, kept: r.kept, level: PlyoMachines.levelOf(habits) };
+    // Débutant : pas d'écran « Voilà ce que je propose » ; pendant que sa réponse s'applique, le résumé se lit et la découpe suit.
+    return { mode: noviceIntent() && intentUI.applying ? 'auto' : 'ready', summary: PlyoIntent.summary(answers, type), changes: r.apply, kept: r.kept, level: PlyoMachines.levelOf(habits) };
+  }
+  function noviceIntent() { return fsState.level !== 'expert'; }
+  // Ligne « Réglages choisis pour … · Ajuster » des étapes Préparer (découpée) et Imprimer, pour le débutant.
+  function intentDoneText(step) {
+    var i = conv && conv.project.intent;
+    if (!noviceIntent() || !i || !i.applied || !(step === 'imprimer' || (step === 'preparer' && plateSliced()))) return '';
+    return PlyoIntent.doneText(intentAnswers(conv.project));
   }
   function fetchManualKeys(then) {
     intentUI.manual = intentUI.manual || [];
@@ -2636,7 +2648,26 @@
     window.orca.postMessage({ type: 'manual_edits_get' });
   }
   var intentHandlers = {
-    answer: function (qid, id) { var p = conv.project; p.intent = p.intent || {}; p.intent[qid] = id; intentUI.idk = false; projectChanged(); },
+    answer: function (qid, id) {
+      var p = conv.project;
+      p.intent = p.intent || {}; p.intent[qid] = id; intentUI.idk = false;
+      // Débutant : la réponse suffit. Les autres questions prennent leur valeur sûre (sauf après « Ajuster »), puis les réglages
+      // s'appliquent et la découpe se lance, sans écran de confirmation ; « Ajuster » et « Annuler » restent après coup.
+      if (noviceIntent()) {
+        if (!p.intent.adjust) Object.assign(p.intent, PlyoIntent.noviceAnswers(intentAnswers(p)));
+        if (!PlyoIntent.nextQuestion(intentAnswers(p))) applyIntent(false); // avant le rendu : l'écran montre l'attente, pas un bouton
+      }
+      projectChanged();
+    },
+    // « Ajuster » (débutant, après coup) : l'usage reste, la préférence et la vitesse sont reposées ; la découpe est à refaire.
+    adjust: function () {
+      var p = conv.project, use = p.intent && p.intent.use;
+      if (!use || use === 'test') { intentUI.changing = conv; p.intent = tourSignals && tourSignals.sliced ? { reask: true } : {}; }
+      else p.intent = { use: use, adjust: true, reask: !!(tourSignals && tourSignals.sliced) };
+      intentUI.idk = false; intentUI.manual = null;
+      p.step = 'slice';
+      projectChanged();
+    },
     idk: function () { intentUI.idk = true; renderProject(); },
     reset: function () { conv.project.intent = conv.project.intent && conv.project.intent.reask ? { reask: true } : {}; intentUI.idk = false; intentUI.manual = null; projectChanged(); },
     // « Comme la dernière fois » : les réponses du dernier projet, puis le même chemin que « Appliquer et préparer ».
@@ -2696,13 +2727,14 @@
   }
   function applyIntentNow(again) {
     var p = conv.project, st = intentState(PlyoJourney.currentStep(p), false);
-    if (!st || st.mode !== 'ready') { releaseIntent(); return; }
+    if (!st || (st.mode !== 'ready' && st.mode !== 'auto')) { releaseIntent(); return; } // 'auto' : débutant, pendant cet envoi même
     function done(result) {
       releaseIntent();
       intentUI.manual = null; // à relire pour le projet suivant
       p.intent.applied = true;
       delete p.intent.reapply;
       delete p.intent.reask;
+      delete p.intent.adjust;
       habits = PlyoMachines.noteIntent(habits, false);
       // Les réponses de cette pièce deviennent « Comme la dernière fois » pour la suivante (UX-33).
       var lastAnswers = PlyoIntent.validLast(intentAnswers(p));
