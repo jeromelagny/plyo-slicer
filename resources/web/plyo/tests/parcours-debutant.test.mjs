@@ -316,7 +316,7 @@ test('lot 7 · galerie : modèles livrés avec Orca, mêmes clés côté panneau
   assert.deepEqual(picked, ['cali_cat']);
   const page = read('index.html');
   assert.match(page, /window\.orca\.postMessage\(\{ type: 'model_add', sample: sample, project: conv\.project, conv: conv\.id,/);
-  assert.match(page, /pickSample: function \(sample\) \{ projectUI\.gallery = false; importSample\(sample\); \}/);
+  assert.match(page, /pickSample: function \(sample\) \{ projectUI\.gallery = false; partInNewProject\(function \(\) \{ importSample\(sample\); \}\); \}/);
 });
 
 test('depuis la discussion, corriger sa bobine n’attend pas de pièce : machine et bobine d’abord', () => {
@@ -398,4 +398,22 @@ test('hiérarchie visuelle : cinq rôles, la couleur réservée à « agis ici �
   assert.match(page, /<div class="disc-head" id="disc-head">Discussion<\/div>/);
   assert.match(page, /#view-chat:has\(#thread:not\(\.hidden\)\) \.disc-head \{ display: flex; \}/, 'titre seulement quand il y a des échanges');
   assert.match(page, /\.thread > \.ai \{ background: color-mix\(in srgb, var\(--accent\) 7%, var\(--bg\)\);/, 'réponses en bulles teintées');
+});
+
+test('barre : « Ta pièce » rouvre l’écran de l’étape 1 (fichier, galerie, IA), une autre pièce ouvre un nouveau projet', () => {
+  assert.equal(J.contentFor('imprimer', 'part'), 'choices');
+  assert.equal(J.prompt('imprimer', { editingPart: true, sliced: true }), 'Quelle pièce veux-tu imprimer ?');
+  assert.equal(J.primaryAction('imprimer', { editingPart: true, sliced: true, linked: true }).kind, 'none', 'pas « Envoyer » pendant qu’on choisit la pièce');
+  const slot = fakeUi().el('div'), calls = [];
+  const project = { printer: { preset: 'Ma K1C', name: 'K1C' }, part: { name: 'chat.stl' }, filament: { type: 'PLA', preset: 'p', temps_ok: true }, step: 'print' };
+  Card.renderChoices(slot, fakeUi(), { project, editing: 'part', handlers: new Proxy({}, { get: (_, k) => (...a) => calls.push(k) }) });
+  assert.deepEqual(labels(slot), ['Dépose ta pièce ici', 'Mes fichiers', 'Galerie', 'Créer avec l’IA', 'Essaie avec le bateau de test', 'Garder « chat.stl »']);
+  buttons(slot).at(-1).on.click();
+  assert.deepEqual(calls, ['cancelEdit']);
+  const page = read('index.html');
+  assert.match(page, /else if \(key === 'piece'\) \{ projectUI\.editing = 'part'; projectUI\.gallery = false; renderProject\(\); \}/);
+  assert.doesNotMatch(page, /key === 'piece'\) projectHandlers\.importPart\(\)/, 'plus de fenêtre de fichiers directe');
+  assert.match(page, /pickSample: function \(sample\) \{ projectUI\.gallery = false; partInNewProject\(function \(\) \{ importSample\(sample\); \}\); \}/);
+  assert.match(page, /designOpen: function \(\) \{ partInNewProject\(function \(\) \{ designStart\(false\); \}\); \}/);
+  assert.match(page, /if \(projectUI\.editing === 'part' && part && file\.name !== part\) \{\s*partInNewProject\(/);
 });

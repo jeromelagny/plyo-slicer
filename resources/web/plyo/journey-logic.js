@@ -76,6 +76,8 @@
       if (cv.mode === 'colours') return cv.reopened ? { label: 'C’est bon', kind: 'closeColours', enabled: !cv.busy } : { label: 'Utiliser ces bobines', kind: 'confirmCanvas', enabled: !!cv.complete && !cv.busy };
       return { label: '', kind: 'none', enabled: false };
     }
+    // « Ta pièce » rouverte depuis la barre : on choisit dans la carte (fichier, galerie, IA), pas de bouton plein.
+    if (c.editingPart) return { label: '', kind: 'none', enabled: false };
     // Une nouvelle bobine en un clic : la matière proposée (PLA) en bouton plein ; la marque, le nom et les températures de
     // l'étiquette attendent « Préciser ma bobine ». Aussi en « changer » le filament.
     if (c.quickSpool) return { label: 'Oui, du ' + c.quickSpool, kind: 'quickSpool', enabled: true };
@@ -167,6 +169,7 @@
     var c = ctx || {};
     if (c.canvas) return canvasPrompt(c);
     if (step === 'filament' && c.temps) return 'Quelles températures indique ta bobine ?';
+    if (c.editingPart) return 'Quelle pièce veux-tu imprimer ?';
     if (c.editing) return 'Quelle bobine ?';
     if (c.bedFirst && (step === 'machine' || step === 'piece' || step === 'filament')) return 'D’abord, une question sur ton imprimante';
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return 'Ta pièce n’est plus sur le plateau';
@@ -241,7 +244,7 @@
 
   // Ce qui occupe le premier bloc du corps : les choix (étapes 1 à 3, ou « changer » le filament) ou le contenu des étapes 4 à 6.
   function contentFor(step, editing) {
-    if (editing === 'filament') return 'choices';
+    if (editing === 'filament' || editing === 'part') return 'choices'; // « changer » la bobine, ou la pièce depuis la barre
     return step === 'machine' || step === 'filament' || step === 'piece' ? 'choices' : 'steps';
   }
 

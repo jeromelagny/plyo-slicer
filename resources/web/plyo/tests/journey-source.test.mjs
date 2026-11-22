@@ -681,7 +681,8 @@ test('barre : chaque étape rouverte reprend le geste existant de la fiche', () 
   const page = read('index.html');
   const fn = page.slice(page.indexOf('function revisitStep'), page.indexOf('var journeyHandlers'));
   assert.match(fn, /key === 'materiel'\) projectHandlers\.change\('printer'\)/);
-  assert.match(fn, /key === 'piece'\) projectHandlers\.importPart\(\)/);
+  // « Ta pièce » rouvre l'écran de l'étape 1 (retour d'essai, 22/11), plus la fenêtre de fichiers directement.
+  assert.match(fn, /key === 'piece'\) \{ projectUI\.editing = 'part';/);
   assert.match(page, /renderBar\(\$\('journey-bar'\), ui, \{[^}]*onRevisit: barBusy\(\) \? null : revisitStep/);
   assert.match(page, /\.journey-go \{[^}]*cursor: pointer/);
 });
@@ -802,7 +803,7 @@ test('lot 1 · UX-01 : sans fichier, le petit bateau de test se pose comme une p
   const fn = page.slice(page.indexOf('function importSample'), page.indexOf('// Glisser-déposer sur le panneau'));
   assert.match(fn, /postMessage\(\{ type: 'model_add', sample: sample, project: conv\.project, conv: conv\.id,/, 'même chemin que model_add : plateau attaché à la conversation');
   assert.match(fn, /replace: PlyoProject\.replacesPlate\(/);
-  assert.match(page, /samplePart: function \(\) \{ importSample\('benchy'\); \}/);
+  assert.match(page, /samplePart: function \(\) \{ partInNewProject\(function \(\) \{ importSample\('benchy'\); \}\); \}/);
   // Réponse : model_added, traitée comme une pièce choisie ; s'il manque, une issue.
   const added = page.slice(page.indexOf('function onModelAdded'), page.indexOf('function dropReplaced'));
   assert.match(added, /if \(!msg\.ok && msg\.sample\) \{[\s\S]*?button\('Choisir un fichier', function \(\) \{ pickFiles\(\); \}, 'link'\)/);

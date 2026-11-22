@@ -1003,7 +1003,7 @@
     if (typeof intentUI !== 'undefined') { intentUI.idk = false; intentUI.manual = null; }
     if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
-    if (typeof projectUI !== 'undefined') projectUI.gallery = false;
+    if (typeof projectUI !== 'undefined') { projectUI.gallery = false; if (projectUI.editing === 'part') projectUI.editing = null; }
     conv.project.assistant = {}; // réglages que l'assistant posera pour ce projet (les autres modifications sont les tiennes)
     if (typeof renderProject === 'function') renderProject();
     if (typeof applyMachineQuestion === 'function') { projectUI.showList = false; projectUI.showKinds = false; applyMachineQuestion(); }
@@ -1949,7 +1949,8 @@
     if (st) ctx.intent = st.mode;
     if (st && st.mode === 'asking' && st.total === 1) ctx.intentOne = true;
     machineCtx(ctx);
-    var quick = conv ? quickSpoolMaterial(PlyoJourney.currentStep(conv.project), ctx) : '';
+    if (projectUI.editing === 'part') ctx.editingPart = true;
+    var quick = conv && !ctx.editingPart ? quickSpoolMaterial(PlyoJourney.currentStep(conv.project), ctx) : '';
     if (quick) ctx.quickSpool = quick;
     return ctx;
   }
@@ -2076,7 +2077,7 @@
     ensureColoursRead(step);
     ensureSpoolsRead(step);
     syncCanvasPlan(false);
-    var cmode = canvasMode(step), cst = slotState() || {};
+    var cmode = projectUI.editing === 'part' ? null : canvasMode(step), cst = slotState() || {};
     if (cmode === 'manual')
       PlyoCanvasView.renderManual($('project-card'), ui, { draft: canvasUI.manual.draft, count: canvasUI.manual.count, error: canvasUI.manual.error, types: PlyoCanvas.MANUAL_TYPES, colours: PlyoCanvas.MANUAL_COLOURS, handlers: canvasHandlers });
     else if (cmode === 'recall')
@@ -2131,9 +2132,10 @@
     if (!conv || barBusy()) return;
     applyTab('show-guide');
     // Étapes de la barre (lot 6) : « Machine et bobine » rouvre le choix de la machine (la bobine suit) ; « Ta pièce » le fichier.
+    // « Ta pièce » rouvre l'écran de l'étape 1 (fichier, galerie, IA, bateau de test), en mode « changer ».
     if (key === 'materiel') projectHandlers.change('printer');
-    else if (key === 'piece') projectHandlers.importPart();
-    if (key !== 'piece') $('project-card').scrollIntoView({ block: 'nearest' });
+    else if (key === 'piece') { projectUI.editing = 'part'; projectUI.gallery = false; renderProject(); }
+    $('project-card').scrollIntoView({ block: 'nearest' });
   }
   var journeyHandlers = {
     run: function (kind) { applyTab('show-guide'); runAction(kind); } // les retours de l'action arrivent dans le Guide
@@ -3012,11 +3014,11 @@
       });
     },
     importPart: function () { pickFiles(); },
-    samplePart: function () { importSample('benchy'); },
+    samplePart: function () { partInNewProject(function () { importSample('benchy'); }); },
     // Galerie (lot 7) : la grille remplace les choix de l'étape Pièce le temps de choisir.
     galleryOpen: function () { projectUI.gallery = true; if (!projectUI.galleryItems) window.orca.postMessage({ type: 'gallery_get' }); renderProject(); },
     galleryClose: function () { projectUI.gallery = false; renderProject(); },
-    pickSample: function (sample) { projectUI.gallery = false; importSample(sample); },
+    pickSample: function (sample) { projectUI.gallery = false; partInNewProject(function () { importSample(sample); }); },
     keepOldPart: function () {
       var old = projectUI.oldPart;
       projectUI.oldPart = null;
@@ -3028,7 +3030,7 @@
     calibrate: function () { openCalibChooser(); },
     toggleOthers: function () { projectUI.showOthers = !projectUI.showOthers; renderProject(); },
     openMachines: function () { openMachinesDrawer(); },
-    designOpen: function () { designStart(false); },
+    designOpen: function () { partInNewProject(function () { designStart(false); }); },
     toggleList: function () { projectUI.showList = !projectUI.showList; renderProject(); },
     toggleKinds: function () { projectUI.showKinds = !projectUI.showKinds; renderProject(); },
     // « Oui, <bobine> » : la bobine du projet précédent, avec ses réglages (son préréglage fait foi).
@@ -4504,6 +4506,12 @@
       if (tourSignals && tourSignals.objects > 0) projectUI.newProjectFile = true;
     }
     var part = conv.project.part && conv.project.part.name;
+    // « Ta pièce » rouverte depuis la barre : le fichier choisi ouvre son projet sans question de plus (le geste était voulu).
+    if (projectUI.editing === 'part' && part && file.name !== part) {
+      partInNewProject(function () { projectUI.waitingFile = file; projectUI.newProjectFile = true; projectChanged(); });
+      return;
+    }
+    if (projectUI.editing === 'part') { projectUI.editing = null; renderProject(); }
     if (part && file.name !== part) { offerNewProject(file); return; }
     if (part && !(tourSignals && tourSignals.objects === 0)) { noteLine('« ' + part + ' » est déjà sur le plateau.', '', 'info', 'guide'); return; }
     // La pièce de ce projet n'est plus sur le plateau (relance d'Orca, pièce supprimée) : on la repose, le projet continue.
@@ -4726,6 +4734,17 @@
 
   // « Pas encore de fichier ? » : le slicer pose le petit bateau de test fourni avec lui, comme un fichier choisi (même réponse
   // model_added : fiche du projet, nom de la pièce, étape suivante ; il remplace aussi la pièce du projet précédent).
+  // « Ta pièce » rouverte depuis la barre (projectUI.editing === 'part') : une autre pièce est un autre projet. On l'ouvre
+  // (machine et bobine d'avant proposées, l'ancien projet reste dans « Mes projets »), puis on fait le geste choisi.
+  function partInNewProject(then) {
+    if (projectUI.editing !== 'part' || !(conv && conv.project.part && conv.project.part.name)) { projectUI.editing = projectUI.editing === 'part' ? null : projectUI.editing; then(); return; }
+    var before = conv, name = conv.project.part.name;
+    projectUI.editing = null;
+    newConversation();
+    if (conv === before) return; // refusé (une réponse est en cours) : le panneau l'a dit
+    then();
+    noteLine('Nouveau projet pour cette pièce : « ' + name + ' » reste dans « Mes projets ».', '', 'info', 'guide');
+  }
   // `sample` : clé d'un modèle de la galerie (PlyoJourney.GALLERY), « benchy » pour le bateau de test.
   function importSample(sample) {
     if (!conv || projectUI.placing) return;

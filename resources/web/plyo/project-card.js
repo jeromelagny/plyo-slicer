@@ -332,7 +332,8 @@
 
   // Le contenu des étapes 1 à 3 (imprimante, filament, pièce) : des choix qui s'appliquent tout de suite.
   function renderChoices(slot, ui, ctx) {
-    var P = root.PlyoProject, project = projectOf(ctx), step = P.nextStep(project), h = ctx.handlers;
+    var P = root.PlyoProject, project = projectOf(ctx), h = ctx.handlers;
+    var step = ctx.editing === 'part' ? 'part' : P.nextStep(project); // « Ta pièce » rouverte depuis la barre
     // Le panneau se redessine souvent (signaux, redimensionnement) : le nom de bobine en cours de saisie garde le curseur
     // tant que rien de ce qui est montré ne change.
     var ns0 = ctx.newSpool || {}, pk0 = ns0.picker || {};
@@ -443,6 +444,11 @@
       body.appendChild(ui.el('p', 'muted small', 'Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
       // Un essai sans rien chercher : le petit bateau de test fourni avec le slicer, posé comme une pièce choisie.
       body.appendChild(ui.button('Essaie avec le bateau de test', h.samplePart, 'link'));
+      // Rouverte depuis la barre : une autre pièce, c'est un autre projet (celui-ci reste dans « Mes projets ») ; ou on revient.
+      if (ctx.editing === 'part' && project.part && project.part.name) {
+        body.appendChild(ui.el('p', 'muted small', 'Une autre pièce ouvre un nouveau projet, avec la même machine et la même bobine ; celui-ci reste dans « Mes projets ».'));
+        body.appendChild(ui.button('Garder « ' + project.part.name + ' »', h.cancelEdit, 'link'));
+      }
       if (ctx.oldPart) {
         body.appendChild(ui.el('p', 'muted small', '« ' + ctx.oldPart + ' », la pièce de ton projet précédent, est encore sur le plateau de Plyo Slicer. Si tu choisis un fichier, elle sera retirée, et tu pourras annuler.'));
         body.appendChild(ui.button('Garder cette pièce', h.keepOldPart, 'link'));
