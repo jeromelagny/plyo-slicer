@@ -35,9 +35,9 @@
   function printQuestion(pending) {
     var p = pending || {}, list = cleanChanges(p.changes);
     if (!p.preset || !list.length) return '';
-    var where = p.project ? 'le projet « ' + p.project + ' »' : 'ton projet d’avant';
-    return 'Tu as retouché ton profil d’impression « ' + (L ? L.shortName(p.preset, false) : p.preset) + ' » (' + labels(list) + ') pendant ' + where + '. Ces retouches restent avec ce projet. ' +
-      'Les garder aussi dans ton profil, pour tes prochains projets ?';
+    // Court : combien, où ; la liste est repliée sous « Voir les réglages » (printDetail).
+    var where = p.project ? '« ' + p.project + ' »' : 'ton projet d’avant';
+    return 'Tu as retouché ' + (list.length > 1 ? list.length + ' réglages' : 'un réglage') + ' d’impression pendant ' + where + '. Les garder pour tes prochains projets ?';
   }
   function printDetail(pending) { return 'Ce que tu as changé : ' + changeList((pending || {}).changes) + '.'; }
   var ONLY_NOTE = 'D’accord : ton profil ne change pas. Ces retouches restent dans le projet d’avant (« Mes projets » le rouvre).';

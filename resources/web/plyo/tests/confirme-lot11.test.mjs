@@ -66,7 +66,8 @@ test('UX-33 : « Comme la dernière fois » pour le confirmé seulement, avec de
   assert.match(cpp('PlyoProjectLogic.cpp'), /"last_intent"/);
 });
 
-test('UX-33 : la ligne « Comme la dernière fois » a « Changer » et « Je règle moi-même »', () => {
+// Allègement (22/11) : un seul lien, « Changer » ; « Je règle moi-même » est derrière lui, avec les questions.
+test('UX-33 : la ligne « Comme la dernière fois » a « Changer », et « Je règle moi-même » est derrière lui', () => {
   const Steps = require('../journey-steps.js');
   const made = [];
   const node = (tag, cls, text) => { const n = { tag, cls, text: text || '', childNodes: [], appendChild(c) { this.childNodes.push(c); return c; } }; made.push(n); return n; };
@@ -76,15 +77,19 @@ test('UX-33 : la ligne « Comme la dernière fois » a « Changer » et « Je r�
   const texts = made.map((n) => n.text);
   assert.ok(texts.includes('Comme la dernière fois : objet du quotidien, équilibrée, normal'));
   assert.ok(texts.includes('Changer'));
-  assert.ok(texts.includes('Je règle moi-même'));
+  assert.ok(!texts.includes('Je règle moi-même'));
+  assert.ok(!texts.some((t) => /Mêmes parois/.test(t)), 'plus de phrase qui répète la ligne');
+  assert.match(read('journey-steps.js'), /body\.appendChild\(ui\.button\('Je règle moi-même', h\.intentSkip, 'link'\)\);/, 'toujours au bout des questions');
 });
 
 test('UX-31 : la question des retouches d’impression, dans le ton du panneau', () => {
   const p = { preset: '0.20mm Standard', project: 'crochet', changes: [{ key: 'outer_wall_speed', label: 'Vitesse des parois extérieures', before: 200, after: 150 }, { key: 'wall_loops', label: 'Parois', before: 2, after: 3 }] };
-  assert.equal(R.printQuestion(p), 'Tu as retouché ton profil d’impression « 0.20mm Standard » (Vitesse des parois extérieures, Parois) pendant le projet « crochet ». Ces retouches restent avec ce projet. Les garder aussi dans ton profil, pour tes prochains projets ?');
+  // Allègement (22/11) : la question dit combien et où ; la liste est repliée sous « Voir les réglages » (printDetail).
+  assert.equal(R.printQuestion(p), 'Tu as retouché 2 réglages d’impression pendant « crochet ». Les garder pour tes prochains projets ?');
+  assert.match(read('index.html'), /foldDetail\(box\.body, 'Voir les réglages', PlyoRetouches\.printDetail\(p\)\);/);
   assert.equal(R.printDetail(p), 'Ce que tu as changé : vitesse des parois extérieures 200 → 150, parois 2 → 3.');
   assert.equal(R.printQuestion({ preset: 'x', changes: [] }), '');
-  assert.match(R.printQuestion({ preset: 'x', changes: [{ key: 'a', label: 'A' }] }), /pendant ton projet d’avant\./);
+  assert.match(R.printQuestion({ preset: 'x', changes: [{ key: 'a', label: 'A' }] }), /un réglage d’impression pendant ton projet d’avant\./);
   assert.equal(R.KEEP_LABEL, 'Les garder dans mon profil');
   assert.equal(R.ONLY_LABEL, 'Seulement pour ce projet');
   const many = Array.from({ length: 5 }, (_, i) => ({ key: 'k' + i, label: 'R' + i, before: 0.1, after: 0.2 }));

@@ -255,6 +255,9 @@
   #step-recap { display: flex; flex-direction: column; gap: var(--s1); }
   #step-recap:empty, #guide-notes:empty { display: none; }
   .note-step { font-weight: 600; white-space: nowrap; }
+  .fold-detail { flex-basis: 100%; font-size: var(--fs-sm); }
+  .fold-detail summary { cursor: pointer; color: var(--muted); text-decoration: underline; }
+  .fold-detail p { margin: var(--s1) 0 0; }
   .view { display: flex; flex-direction: column; gap: var(--s3); }
   .view.hidden { display: none; }
   #guide-notes { display: flex; flex-direction: column; gap: var(--s2); }
@@ -899,7 +902,7 @@
       // Retour d'une action qui vient de faire passer à l'étape suivante (« bateau.stl est sur le plateau ») : en tête de la carte,
       // avec le nom de l'étape qui l'a provoqué, et non perdu sous l'étape suivante.
       if (journeyUI.leftStep) {
-        node.insertBefore(el('span', 'note-step', PlyoThread.STEP_LABELS[journeyUI.leftStep] + ' :'), node.firstChild);
+        if (!$('step-recap').children.length) node.insertBefore(el('span', 'note-step', PlyoJourney.BAR.filter(function (b) { return b.key === journeyUI.leftStep; })[0].label + ' :'), node.firstChild);
         $('step-recap').appendChild(node);
         return node;
       }
@@ -923,6 +926,14 @@
     return where === 'chat' ? placeInThread(line) : placeInOpenTab(line);
   }
   // État vide : ce qui manque, pourquoi, et l'action qui le remplit.
+  // Détail replié sous une ligne (« Voir lesquels ») : le texte reste à un clic, sans charger l'écran.
+  function foldDetail(parent, label, text) {
+    var d = el('details', 'fold-detail');
+    d.appendChild(el('summary', '', label));
+    d.appendChild(el('p', 'muted small', text));
+    parent.appendChild(d);
+    return d;
+  }
   function emptyState(iconName, title, text, actionLabel, onAction) {
     var box = el('div', 'empty-state');
     box.appendChild(icon(iconName, 20));
@@ -2008,8 +2019,9 @@
       clearStepNotes();
       if (step === 'machine') setTimeout(function () { maybeStartSetup(); renderSetupFlow(); }, 0);
       // En avançant d'une étape, ce qui est dit tout de suite (même tour) vient de l'étape quittée : rangé dans le récapitulatif.
-      var order = PlyoJourney.STEPS.map(function (x) { return x.key; });
-      if (journeyUI.lastStep && order.indexOf(step) > order.indexOf(journeyUI.lastStep)) { journeyUI.leftStep = journeyUI.lastStep; setTimeout(function () { journeyUI.leftStep = null; }, 0); }
+      // Étapes de la barre (trois) : rien à ranger quand on reste dans la même (Préparer → Imprimer, Machine → bobine).
+      var order = PlyoJourney.BAR.map(function (x) { return x.key; }), from = journeyUI.lastStep && PlyoJourney.barKey(journeyUI.lastStep), to = PlyoJourney.barKey(step);
+      if (from && order.indexOf(to) > order.indexOf(from)) { journeyUI.leftStep = from; setTimeout(function () { journeyUI.leftStep = null; }, 0); }
       journeyUI.lastStep = step; threadNote('Étape « ' + PlyoThread.STEP_LABELS[step] + ' »', 'etapes'); if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; coloursUI.picker = null; coloursUI.error = ''; coloursUI.reopen = false; coloursUI.unfolded = false; } }
     ensureColoursMapping(step);
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
@@ -2070,6 +2082,9 @@
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
     // Sous la carte d'étape, l'accueil ne répète pas son action (« Ajouter ma pièce ») : un seul fil, un seul bouton par geste.
     $('hello-spool').textContent = '';
+    // « Bonjour ! » et les objectifs : seulement tant que le projet n'a ni pièce ni machine et que la discussion est vide.
+    var bare = !(conv.project.part && conv.project.part.name) && !PlyoProject.hasPrinter(conv.project);
+    if (!thread.children.length) home.classList.toggle('hidden', !bare);
     ensureRecheck(step);
     updateIntentMenu();
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
@@ -3072,7 +3087,7 @@
         var cal = noteLine('Nouvelle bobine : tu peux la calibrer (débit, température, rétraction).', '', 'target', 'guide');
         cal.appendChild(button(PlyoRetouches.CALIB_LINK, openCalibChooser, 'link'));
       }
-      else if (profileNote) noteLine(profileNote, '', 'info', 'guide');
+      else if (profileNote && !pend.spool) noteLine(profileNote, '', 'info', 'guide'); // une bobine : son nom suffit
       return;
     } else if (pend.kind === 'temps' && conv.project.filament) {
       conv.project.filament.nozzle_temp = msg.nozzle_temp;
@@ -3165,7 +3180,9 @@
     threadNote('Bobine : « ' + pend.spool.name + ' ».', 'etapes');
     announcePrintRestored(pend);
     var text = PlyoSpools.resumeText(pend.spool.name, pend.success);
-    if (!text) return;
+    // « Je reprends tes réglages de la dernière impression réussie » redit ce que la ligne des réglages remis vient de dire.
+    var restored = pend.printRestored && pend.printRestored.ok && pend.printRestored.count > 0;
+    if (!text || (restored && !pend.success.differs)) return;
     var tip = noteLine(text, pend.success.differs ? '' : 'ok', pend.success.differs ? 'info' : 'check', 'guide');
     if (!pend.success.differs) return;
     var back = button(PlyoSpools.restoreLabel(pend.success.date), function () {
@@ -3193,8 +3210,9 @@
     var text = PlyoSpools.printRestoredText(pend.spool.name, r);
     if (!text) return;
     var line = noteLine(text, 'ok', 'check', 'guide');
-    threadNote(text, 'etapes');
+    threadNote(text + (r.summary ? ' (' + r.summary + ')' : ''), 'etapes'); // l'assistant, lui, a besoin des valeurs
     line.classList.add('print-restored');
+    if (r.summary) foldDetail(line, 'Voir lesquels', r.summary);
     if (r.undo_id) line.appendChild(undoButton('Annuler', function (u) {
       pendingSheet = { kind: 'undo', onResult: function (ok, t) { if (!ok) { u.disabled = false; noteLine(t, 'error', 'alert', 'guide'); return; } line.remove(); noteLine('C’est annulé : ce projet reprend les réglages d’impression de ton profil.', 'ok', 'undo', 'guide'); } };
       postRequest({ type: 'undo', undo_id: r.undo_id });
@@ -3380,7 +3398,7 @@
     if (!text) return;
     var box = alertBox('tip', text, 'info');
     box.classList.add('retouches-card');
-    box.body.appendChild(el('p', 'muted small', PlyoRetouches.printDetail(p)));
+    foldDetail(box.body, 'Voir les réglages', PlyoRetouches.printDetail(p));
     var err = el('p', 'project-error hidden');
     box.body.appendChild(err);
     var acts = el('div', 'printer-actions');

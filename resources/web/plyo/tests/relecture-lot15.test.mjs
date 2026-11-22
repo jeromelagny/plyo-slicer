@@ -66,7 +66,7 @@ test('N5 : valeurs à choix par leur libellé français du catalogue ; noms de p
   assert.equal(L.choiceLabel('auto_brim'), 'Auto', 'sans réglage : la table commune');
   assert.equal(R.changeList([{ key: 'seam_position', label: 'Position de la couture', before: 'aligned', after: 'back' }]), 'position de la couture Alignée → Arrière');
   assert.equal(R.changeList([{ key: 'wall_loops', label: 'Parois', before: 2, after: 3 }]), 'parois 2 → 3');
-  assert.match(R.printQuestion({ preset: '0.20mm Standard @Creality K1C', changes: [{ key: 'wall_loops', label: 'Parois' }] }), /profil d’impression « 0\.20mm Standard »/);
+  assert.doesNotMatch(R.printQuestion({ preset: '0.20mm Standard @Creality K1C', changes: [{ key: 'wall_loops', label: 'Parois' }] }), /@Creality/, 'aucun nom interne de profil');
   const short = (n) => L.shortName(n, false);
   assert.equal(J.profileChangeNote('Sunlu PLA+', 'Generic PLA @Ma K1C', short), 'Profil de filament changé dans Plyo Slicer : « PLA+ » devient « PLA ».');
   assert.equal(J.profileChangeNote('Generic PLA @A', 'Generic PLA @B', short), 'Profil de filament changé dans Plyo Slicer : « Generic PLA @A » devient « Generic PLA @B ».', 'mêmes raccourcis : noms entiers');

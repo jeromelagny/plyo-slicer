@@ -230,7 +230,8 @@ test('lot 5 · un seul fil : l’étape, ses retours en tête de carte, puis les
   const card = page.slice(page.indexOf('<section class="step-card">'), page.indexOf('</section>', page.indexOf('<section class="step-card">')));
   assert.ok(card.indexOf('id="step-recap"') >= 0 && card.indexOf('id="step-recap"') < card.indexOf('id="journey-action"'), 'récapitulatif en tête de la carte');
   assert.ok(page.indexOf('id="guide-notes"') < page.indexOf('id="preflight-slot"'), 'les retours de l’étape juste sous sa carte');
-  assert.match(page, /if \(journeyUI\.lastStep && order\.indexOf\(step\) > order\.indexOf\(journeyUI\.lastStep\)\) \{ journeyUI\.leftStep = journeyUI\.lastStep; setTimeout/);
+  // Étiquette : l'étape de la barre quittée (« Ta pièce : … »), seulement en changeant d'étape de la barre.
+  assert.match(page, /if \(from && order\.indexOf\(to\) > order\.indexOf\(from\)\) \{ journeyUI\.leftStep = from; setTimeout/);
   assert.match(page, /\$\('step-recap'\)\.appendChild\(node\);/);
   assert.match(page, /var inStep = msg\.fits !== false && firstPose && !FS\.modelAddedText\(msg\)\.warn;\s*if \(!inStep\) renderModel\(entry, false\);/);
   // applyTab ne cache plus rien : il fait seulement défiler vers ce qu'on regarde.
@@ -377,4 +378,13 @@ test('lot 7 · galerie remplie à la main : modèles vérifiés par le slicer d�
   assert.match(page, /if \(!projectUI\.galleryItems\) window\.orca\.postMessage\(\{ type: 'gallery_get' \}\);/);
   const cpp = fs.readFileSync(new URL('../../../../src/plyo/PlyoAssistant.cpp', import.meta.url), 'utf8');
   assert.match(cpp, /send\(\{\{"type", "gallery"\}, \{"items", ModelImport::gallery\(\)\}\}\);/);
+});
+
+test('allègement : accueil seulement sans pièce ni machine, une étiquette d’étape, pas de doublon des réglages remis', () => {
+  const page = read('index.html');
+  assert.match(page, /var bare = !\(conv\.project\.part && conv\.project\.part\.name\) && !PlyoProject\.hasPrinter\(conv\.project\);\s*if \(!thread\.children\.length\) home\.classList\.toggle\('hidden', !bare\);/);
+  assert.match(page, /if \(!\$\('step-recap'\)\.children\.length\) node\.insertBefore\(el\('span', 'note-step'/);
+  assert.match(page, /if \(!text \|\| \(restored && !pend\.success\.differs\)\) return;/);
+  assert.match(page, /if \(r\.summary\) foldDetail\(line, 'Voir lesquels', r\.summary\);/);
+  assert.match(page, /else if \(profileNote && !pend\.spool\) noteLine/);
 });

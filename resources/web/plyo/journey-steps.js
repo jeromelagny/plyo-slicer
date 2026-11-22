@@ -18,11 +18,11 @@
     var I = root.PlyoIntent;
     if (it.mode === 'repeat') {
       // Confirmé, deuxième pièce et suivantes (UX-33) : « Préparer » (ligne d'action) reprend ces réponses ; « Changer » repose les questions.
-      body.appendChild(ui.el('p', 'intent-q', it.text));
-      body.appendChild(ui.el('p', 'muted small', 'Mêmes parois, même remplissage, même hauteur de couche que pour ta dernière pièce.'));
+      // Une ligne (« Comme la dernière fois : décoration, de partout, normal ») et un seul lien : « Je règle moi-même » est
+      // derrière « Changer », avec les questions.
       var row = ui.el('div', 'printer-actions');
+      row.appendChild(ui.el('span', 'muted small', it.text));
       row.appendChild(ui.button('Changer', h.intentChange, 'link'));
-      row.appendChild(ui.button('Je règle moi-même', h.intentSkip, 'link'));
       body.appendChild(row);
       return;
     }

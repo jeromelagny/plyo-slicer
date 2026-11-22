@@ -60,11 +60,12 @@
   }
   // Réglages d'impression réussis remis d'eux-mêmes au choix de la bobine (débit de première couche, vitesses…) :
   // `r` = print_restored du slicer {ok, count, summary, date}. "" s'il n'y a rien à dire.
+  // La liste des réglages (`r.summary`) n'est plus dans la phrase : le panneau la replie sous « Voir lesquels » (moins de texte).
   function printRestoredText(name, r) {
     if (!r || !r.ok || !(r.count > 0)) return '';
     var day = shortDate(r.date);
-    return 'J’ai remis ' + (r.count > 1 ? 'les ' + r.count + ' réglages d’impression qui avaient marché' : 'le réglage d’impression qui avait marché') +
-      ' avec ' + name + (day ? ' le ' + day : '') + (r.summary ? ' : ' + r.summary : '') + '.';
+    return 'J’ai remis ' + (r.count > 1 ? 'les ' + r.count + ' réglages qui avaient marché' : 'le réglage qui avait marché') +
+      ' avec ' + name + (day ? ' le ' + day : '') + '.';
   }
   function restoreLabel(date) {
     var day = shortDate(date);
