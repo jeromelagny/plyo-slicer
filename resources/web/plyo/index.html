@@ -4083,7 +4083,8 @@
       soonHead.appendChild(icon('bulb', 16));
       soonHead.appendChild(el('span', '', 'Les formules arrivent'));
       soon.appendChild(soonHead);
-      soon.appendChild(el('p', 'muted', 'Bientôt : Plyo+ et Pro pour une jauge plus grande chaque mois, et une recharge sans abonnement qui agrandit ta jauge (ce que tu n’en utilises pas reste le mois suivant). Tu les verras ici dès qu’elles seront prêtes ; d’ici là, ta jauge gratuite se recharge chaque mois.'));
+      soon.appendChild(el('p', 'muted', 'Bientôt : Plyo+ et Pro pour une jauge plus grande chaque mois. Plyo+ correspond à environ 100 questions ou 40 photos par mois, Pro à environ 330 questions ou 130 photos. Plyo+ ouvre aussi les pièces sur mesure et plusieurs photos dans une même demande. Une recharge sans abonnement agrandira aussi ta jauge (ce que tu n’en utilises pas reste le mois suivant).'));
+      soon.appendChild(el('p', 'muted', 'Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne touchent jamais la jauge. Tu verras les formules ici dès qu’elles seront prêtes ; d’ici là, ta jauge gratuite se recharge chaque mois.'));
       body.appendChild(soon);
       body.appendChild(el('h3', '', 'Comment la jauge se remplit'));
       body.appendChild(rich('Chaque demande à l’IA remplit un peu ta jauge : un peu plus avec des photos, rien quand la demande sort de l’impression 3D. Une réponse commencée va toujours jusqu’au bout.'));
@@ -4390,6 +4391,7 @@
       var j = res.j || {};
       if (j.credits && j.credits.gauge) setGauge(j.credits.gauge);
       if (res.status === 401) { designUI.needsLogin = true; designSay('Ta session a expiré : reconnecte-toi pour créer ta pièce.', true); return; }
+      if (j.error === 'plan_required') { designUI.planRequired = true; designSay(PlyoDesignFlow.TEXT.planRequired, false); return; }
       if (res.status !== 200) {
         if (j.error === 'insufficient_credits' && j.gauge) setGauge(j.gauge, true);
         designSay(Logic.errorView(j.error || 'upstream_error', j).text, true);
@@ -4491,6 +4493,7 @@
     attach: designAttach,
     removeImage: function (i) { designUI.images.splice(i, 1); renderProject(); },
     submit: designSubmit,
+    plans: openUsage,
     answer: function (i, choice) {
       designUI.answers[i] = choice;
       if (designUI.answers.filter(Boolean).length < designUI.questions.length) { renderProject(); return; }
@@ -6662,6 +6665,7 @@
       : alertBox('error', view.text + (g && g.resets ? ' Elle se recharge ' + g.resets + '.' : '') + (view.more ? ' ' + view.more : ''), 'alert');
     var acts = el('div', 'row-acts');
     if (view.action === 'credits') acts.appendChild(button('Voir mon utilisation', openUsage, 'btn sm'));
+    else if (view.action === 'plans') acts.appendChild(button('Voir les formules', openUsage, 'btn sm'));
     else if (view.action === 'login') acts.appendChild(button('Me reconnecter', openLogin, 'btn sm'));
     else if (view.action === 'photo') acts.appendChild(button('Choisir une autre photo', function () { box.remove(); pickFiles(); }, 'btn sm', 'camera'));
     else if (view.action === 'edit' && edit) acts.appendChild(button('Modifier ma demande', function () { box.remove(); edit(); }, 'btn sm'));

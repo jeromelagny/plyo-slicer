@@ -366,3 +366,20 @@ test('réglages d’impression jamais enregistrés dans un profil partagé, mêm
   assert.equal(L.manualEditsText([{ preset: 'filament', title: 'Débit', before: 1, after: 0.9 }, { preset: 'print', title: 'Parois', before: 2, after: 3 }]),
     'J’enregistre aussi tes modifications manuelles : Débit (1 → 0.9). Tes modifications manuelles de la pièce restent en place : Parois (2 → 3).');
 });
+
+test('plan_required (plusieurs photos en formule gratuite) : message clair et une issue vers les formules', () => {
+  const v = L.errorView('plan_required', { error: 'plan_required', plan: 'plus' });
+  assert.equal(v.action, 'plans');
+  assert.match(v.text, /Plyo\+/);
+  assert.match(v.text, /une photo à la fois/);
+});
+
+test('« Mon utilisation » : la jauge reste une jauge, les formules disent leurs équivalents sans prix', () => {
+  const fs = require('node:fs');
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(html, /Plyo\+ correspond à environ 100 questions ou 40 photos par mois, Pro à environ 330 questions ou 130 photos/);
+  assert.match(html, /Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne touchent jamais la jauge/);
+  const soon = html.slice(html.indexOf('Les formules arrivent'), html.indexOf('Comment la jauge se remplit'));
+  assert.doesNotMatch(soon, /€|\$/);
+  assert.match(html, /view\.action === 'plans'\) acts\.appendChild\(button\('Voir les formules', openUsage/);
+});

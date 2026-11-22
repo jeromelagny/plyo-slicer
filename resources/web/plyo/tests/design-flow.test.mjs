@@ -62,3 +62,27 @@ test('pièce retouchée après la préparation ou une réussite : le parcours re
   const page = read('index.html');
   assert.match(page, /if \(tourSignals\) tourSignals\.sliced = false;\n\s*plateChecked = null; openRisks = 0;/);
 });
+
+// Faux DOM minimal : chaque nœud garde ses enfants, ses textes et ses boutons.
+function fakeUi() {
+  const node = (tag, cls, text) => ({ tag, cls, text: text || '', children: [], dataset: {}, value: '', appendChild(c) { this.children.push(c); return c; }, setAttribute() {}, addEventListener() {}, focus() {}, set textContent(t) { this.children = []; this.text = t; } });
+  return { el: node, button: (label, fn, cls) => ({ ...node('button', cls, label), fn }), icon: () => node('i') };
+}
+const texts = (n) => [n.text, ...n.children.flatMap(texts)].filter(Boolean);
+const buttons = (n) => [...(n.fn ? [n] : []), ...n.children.flatMap(buttons)];
+
+test('plan_required : « Les pièces sur mesure font partie de Plyo+. » et le bouton vers les formules à la place de « Créer »', () => {
+  const ui = fakeUi(), slot = ui.el('div');
+  let opened = 0;
+  const h = { input() {}, submit() {}, cancel() {}, login() {}, plans: () => { opened++; } };
+  F.render(slot, ui, { text: 'une boîte', planRequired: true, message: F.TEXT.planRequired, failed: false }, h);
+  assert.ok(texts(slot).includes('Les pièces sur mesure font partie de Plyo+.'));
+  const labels = buttons(slot).map((b) => b.text);
+  assert.ok(labels.includes('Voir les formules'));
+  assert.ok(!labels.includes(F.TEXT.go));
+  buttons(slot).find((b) => b.text === 'Voir les formules').fn();
+  assert.equal(opened, 1);
+  const normal = ui.el('div');
+  F.render(normal, ui, { text: 'une boîte' }, h);
+  assert.ok(buttons(normal).map((b) => b.text).includes(F.TEXT.go));
+});
