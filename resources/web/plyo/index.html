@@ -1003,7 +1003,7 @@
     if (typeof intentUI !== 'undefined') { intentUI.idk = false; intentUI.manual = null; }
     if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
-    if (typeof projectUI !== 'undefined') { projectUI.gallery = false; if (projectUI.editing === 'part') projectUI.editing = null; }
+    if (typeof projectUI !== 'undefined') { projectUI.gallery = false; projectUI.addingPart = false; if (projectUI.editing === 'part') projectUI.editing = null; }
     conv.project.assistant = {}; // réglages que l'assistant posera pour ce projet (les autres modifications sont les tiennes)
     if (typeof renderProject === 'function') renderProject();
     if (typeof applyMachineQuestion === 'function') { projectUI.showList = false; projectUI.showKinds = false; applyMachineQuestion(); }
@@ -1150,7 +1150,9 @@
 
   // ---------- Fiche « Mon projet » : imprimante, filament (buse et plateau), pièce ----------
   // Le projet est gardé avec la conversation (conv.project) ; PlyoProject (project-logic.js) dit quelle étape manque.
-  var projectUI = { showList: false, showKinds: false, showOthers: false, keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false,
+  // modelQueue : pièces suivantes d'un même choix de fichiers ; adding : la pose en cours rejoint le plateau du projet ;
+  // addingPart : « Ajouter une pièce à ce plateau » attend son fichier ; arrangeAfter : ranger le plateau à la fin.
+  var projectUI = { modelQueue: [], adding: false, addingPart: false, arrangeAfter: false, showList: false, showKinds: false, showOthers: false, keepTemps: null, newProjectFile: false, waitingFile: null, printers: null, reachable: {}, error: {}, editing: null, pending: null, adopt: false,
     spool: { open: false, limits: null, error: '' }, // plage de températures de l'étiquette de la bobine (fiche)
     // « Quelle bobine ? » : bobines de la machine `printer` (items null tant que le slicer ne les a pas données), saisie d'une
     // nouvelle bobine, préréglages déjà proposés, question de fin posée en note (et sa conversation). L'envoi ou l'export fait
@@ -3026,7 +3028,9 @@
     },
     expand: function () { journeyUI.ficheOpen = true; renderProject(); },
     fold: function () { journeyUI.ficheOpen = false; renderProject(); },
-    cancelEdit: function () { projectUI.editing = null; renderProject(); },
+    cancelEdit: function () { projectUI.editing = null; projectUI.addingPart = false; renderProject(); },
+    // « Ta pièce » rouverte : une pièce de plus pour la même impression (même projet, même plateau).
+    addPart: function () { projectUI.addingPart = true; pickFiles(); },
     calibrate: function () { openCalibChooser(); },
     toggleOthers: function () { projectUI.showOthers = !projectUI.showOthers; renderProject(); },
     openMachines: function () { openMachinesDrawer(); },
@@ -4484,7 +4488,8 @@
   function addFiles(all) {
     var models = all.filter(function (f) { return FS.isModelFile(f.name); });
     var files = all.filter(function (f) { return !FS.isModelFile(f.name); });
-    models.forEach(sendModel);
+    // Plusieurs pièces d'un coup : la première comme d'habitude, les autres ajoutées au même plateau, une à la fois (onModelAdded).
+    if (models.length) { projectUI.modelQueue = models.slice(1); sendModel(models[0]); }
     if (!files.length) return;
     Promise.all(files.map(function (f) { return downscale(f).catch(function () { return null; }); })).then(function (list) {
       var ok = list.filter(Boolean);
@@ -4506,6 +4511,8 @@
       if (tourSignals && tourSignals.objects > 0) projectUI.newProjectFile = true;
     }
     var part = conv.project.part && conv.project.part.name;
+    // « Ajouter une pièce à ce plateau » : la pièce rejoint ce projet.
+    if (projectUI.addingPart && part) { addToPlate(file); return; }
     // « Ta pièce » rouverte depuis la barre : le fichier choisi ouvre son projet sans question de plus (le geste était voulu).
     if (projectUI.editing === 'part' && part && file.name !== part) {
       partInNewProject(function () { projectUI.waitingFile = file; projectUI.newProjectFile = true; projectChanged(); });
@@ -4513,7 +4520,7 @@
     }
     if (projectUI.editing === 'part') { projectUI.editing = null; renderProject(); }
     if (part && file.name !== part) { offerNewProject(file); return; }
-    if (part && !(tourSignals && tourSignals.objects === 0)) { noteLine('« ' + part + ' » est déjà sur le plateau.', '', 'info', 'guide'); return; }
+    if (part && !(tourSignals && tourSignals.objects === 0)) { projectUI.modelQueue = []; noteLine('« ' + part + ' » est déjà sur le plateau.', '', 'info', 'guide'); return; }
     // La pièce de ce projet n'est plus sur le plateau (relance d'Orca, pièce supprimée) : on la repose, le projet continue.
     projectUI.reposing = !!part;
     importModel(file);
@@ -4522,8 +4529,11 @@
   function offerNewProject(file) {
     var slot = $('project-alert');
     slot.textContent = '';
-    var box = alertBox('warn', '« ' + file.name + ' » est une autre pièce : je lui ouvre un nouveau projet ? « ' + conv.project.part.name + ' » reste dans « Mes projets ».', 'alert');
+    var more = projectUI.modelQueue ? projectUI.modelQueue.length : 0;
+    var box = alertBox('tip', (more ? '« ' + file.name + ' » et ' + more + (more > 1 ? ' autres pièces' : ' autre pièce') : '« ' + file.name + ' »') + ' : sur le même plateau que « ' + conv.project.part.name + ' », ou dans un nouveau projet ?', 'cube');
     var acts = el('div', 'printer-actions');
+    // Une impression de plusieurs pièces : elles partagent le plateau (rangé ensuite par Plyo Slicer).
+    acts.appendChild(button('L’ajouter à ce plateau', function () { slot.textContent = ''; addToPlate(file); }, 'btn sm'));
     acts.appendChild(button('Nouveau projet', function () {
       slot.textContent = '';
       if (busy) { blockedWhileBusy(); return; }
@@ -4531,8 +4541,8 @@
       projectUI.waitingFile = file;
       projectUI.newProjectFile = true;
       projectChanged();
-    }, 'btn sm'));
-    acts.appendChild(button('Annuler', function () { slot.textContent = ''; }, 'btn ghost sm'));
+    }, 'btn ghost sm'));
+    acts.appendChild(button('Annuler', function () { slot.textContent = ''; projectUI.modelQueue = []; }, 'link'));
     box.body.appendChild(acts);
     slot.appendChild(box);
   }
@@ -4719,13 +4729,26 @@
     cancel: function () { designUI.open = false; designUI.busy = false; renderProject(); },
     login: function () { openLogin(); }
   };
-  function importModel(file) {
+  // Pièces suivantes d'un même choix (ou ajoutées à ce plateau) : posées sans remplacer, puis le plateau est rangé par Orca.
+  function nextQueuedModel() {
+    var next = projectUI.modelQueue && projectUI.modelQueue.shift();
+    if (next) { importModel(next, true); return; }
+    if (projectUI.arrangeAfter) { projectUI.arrangeAfter = false; plateAction('arrange', null, null, null, true); }
+  }
+  // « L'ajouter à ce plateau » : une pièce de plus dans ce projet (la première vient en tête de `files`, les autres dans la file).
+  function addToPlate(file) {
+    projectUI.editing = projectUI.editing === 'part' ? null : projectUI.editing;
+    projectUI.addingPart = false;
+    importModel(file, true);
+  }
+  function importModel(file, adding) {
     if (file.size > MAX_MODEL_BYTES) { noteLine('« ' + file.name + ' » est trop lourd pour passer par ce panneau (150 Mo au plus). Importe-le plutôt par le menu Fichier › Importer : je verrai la pièce arriver.', 'error', 'alert', 'guide'); return; }
     var reader = new FileReader();
     reader.onload = function () {
       var data = String(reader.result || '');
+      projectUI.adding = !!adding;
       window.orca.postMessage({ type: 'model_add', name: file.name, data: data.slice(data.indexOf(',') + 1), project: conv.project, conv: conv.id,
-        replace: PlyoProject.replacesPlate(conv.project, projectUI.oldPart, projectUI.newProjectFile) });
+        replace: adding ? false : PlyoProject.replacesPlate(conv.project, projectUI.oldPart, projectUI.newProjectFile) });
     };
     reader.onerror = function () { dropPlacing(); noteLine('« ' + file.name + ' » n’a pas pu être lu.', 'error', 'alert', 'guide'); };
     projectUI.placing = noteLine('Je pose « ' + file.name + ' » sur le plateau…', '', 'cube', 'guide');
@@ -5262,6 +5285,8 @@
     }
     if (!msg.ok) {
       projectUI.reposing = false;
+      projectUI.adding = false;
+      projectUI.modelQueue = []; // les pièces suivantes du même choix ne sont pas posées sans celle-ci
       // Fichier refusé par Orca (ERR-14) : une raison probable et une issue ; le message d'Orca, s'il en ouvre un, est cité dessous.
       var failLine = noteLine(msg.reason === 'orca_refused' ? msg.text : (msg.text || 'Je n’ai pas pu poser cette pièce sur le plateau.') + ' Je prends les fichiers STL, 3MF, OBJ, STEP et AMF.', 'error', 'alert', 'guide');
       failLine.appendChild(button('Choisir un autre fichier', function () { pickFiles(); }, 'link'));
@@ -5279,13 +5304,24 @@
     var old = projectUI.oldPart;
     projectUI.oldPart = null;
     var firstPose = !(conv.project.part && conv.project.part.name);
+    var adding = !!projectUI.adding && !firstPose;
+    projectUI.adding = false;
     // Lot 21 : couleurs prévues par le 3MF, gardées dans la fiche du projet (la carte « Couleurs » les montre même après le choix
     // des bobines). Un nouveau projet repart sans elles.
     if (Array.isArray(msg.file_colours) && msg.file_colours.length) conv.project.file_colours = msg.file_colours.slice(0, 16);
     else if (firstPose || msg.replaced > 0) delete conv.project.file_colours;
     coloursUI.posed = conv;
-    threadNote((firstPose ? 'Pièce posée : « ' : 'Pièce remplacée : « ') + msg.name + ' »' + (Array.isArray(msg.size_mm) ? ', ' + msg.size_mm.map(function (x) { return Math.round(x); }).join(' × ') + ' mm' : '') + (msg.fits === false ? ' (trop grande pour le plateau)' : '') + '.', 'etapes');
-    if (firstPose) { conv.project.part = { name: msg.name }; delete conv.project.part_later; projectChanged(); } else scheduleSave();
+    threadNote((firstPose ? 'Pièce posée : « ' : adding ? 'Pièce ajoutée au plateau : « ' : 'Pièce remplacée : « ') + msg.name + ' »' + (Array.isArray(msg.size_mm) ? ', ' + msg.size_mm.map(function (x) { return Math.round(x); }).join(' × ') + ' mm' : '') + (msg.fits === false ? ' (trop grande pour le plateau)' : '') + '.', 'etapes');
+    if (firstPose) { conv.project.part = { name: msg.name }; delete conv.project.part_later; projectChanged(); }
+    else if (adding) {
+      // Une pièce de plus dans ce projet : le plateau a changé, la découpe est à refaire, et il sera rangé (nextQueuedModel).
+      conv.project.part.extra = (Array.isArray(conv.project.part.extra) ? conv.project.part.extra : []).concat([msg.name]).slice(0, 30);
+      projectUI.arrangeAfter = true;
+      if (tourSignals) tourSignals.sliced = false;
+      var at = PlyoJourney.currentStep(conv.project);
+      if (at === 'imprimer' || at === 'resultat') { delete conv.project.success; setTourStep('slice'); } else projectChanged();
+    }
+    else scheduleSave();
     if (projectUI.reposing) { projectUI.reposing = false; renderProject(); noteLine('« ' + msg.name + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); }
     projectUI.newProjectFile = false;
     if (msg.replaced > 0) showReplaced(msg, old);
@@ -5295,10 +5331,12 @@
     var entry = record({ kind: 'model', msg: msg, reduced: false });
     // Un seul fil (lot 5) : une première pièce bien posée est dite dans la carte d'étape (après le changement d'étape, qui
     // efface les messages), pas une deuxième fois dans les échanges ; elle reste dans l'historique du projet.
-    var inStep = msg.fits !== false && firstPose && !FS.modelAddedText(msg).warn;
+    var inStep = msg.fits !== false && (firstPose || adding) && !FS.modelAddedText(msg).warn;
     if (!inStep) renderModel(entry, false);
     if (msg.fits === false) showTooBig(entry);
+    else if (adding) noteLine('« ' + msg.name + ' » ajoutée : ' + (1 + conv.project.part.extra.length) + ' pièces sur le plateau.', 'ok', 'check', 'guide');
     else if (inStep) noteLine(FS.modelAddedText(msg).text, 'ok', 'check', 'guide');
+    nextQueuedModel();
   }
   // Nouveau projet : l'ancienne pièce a été retirée. La ligne et son « Annuler » restent visibles d'une étape à l'autre, jusqu'à la découpe.
   function dropReplaced() { var b = $('project-alert').querySelector('.part-replaced'); if (b) b.remove(); }

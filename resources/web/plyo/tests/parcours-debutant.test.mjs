@@ -233,7 +233,7 @@ test('lot 5 · un seul fil : l’étape, ses retours en tête de carte, puis les
   // Étiquette : l'étape de la barre quittée (« Ta pièce : … »), seulement en changeant d'étape de la barre.
   assert.match(page, /if \(from && order\.indexOf\(to\) > order\.indexOf\(from\)\) \{ journeyUI\.leftStep = from; setTimeout/);
   assert.match(page, /\$\('step-recap'\)\.appendChild\(node\);/);
-  assert.match(page, /var inStep = msg\.fits !== false && firstPose && !FS\.modelAddedText\(msg\)\.warn;\s*if \(!inStep\) renderModel\(entry, false\);/);
+  assert.match(page, /var inStep = msg\.fits !== false && \(firstPose \|\| adding\) && !FS\.modelAddedText\(msg\)\.warn;\s*if \(!inStep\) renderModel\(entry, false\);/);
   // applyTab ne cache plus rien : il fait seulement défiler vers ce qu'on regarde.
   const fn = page.slice(page.indexOf('function applyTab'), page.indexOf('var answerBox'));
   assert.doesNotMatch(fn, /classList\.toggle\('hidden'/);
@@ -407,7 +407,7 @@ test('barre : « Ta pièce » rouvre l’écran de l’étape 1 (fichier, galeri
   const slot = fakeUi().el('div'), calls = [];
   const project = { printer: { preset: 'Ma K1C', name: 'K1C' }, part: { name: 'chat.stl' }, filament: { type: 'PLA', preset: 'p', temps_ok: true }, step: 'print' };
   Card.renderChoices(slot, fakeUi(), { project, editing: 'part', handlers: new Proxy({}, { get: (_, k) => (...a) => calls.push(k) }) });
-  assert.deepEqual(labels(slot), ['Dépose ta pièce ici', 'Mes fichiers', 'Galerie', 'Créer avec l’IA', 'Essaie avec le bateau de test', 'Garder « chat.stl »']);
+  assert.deepEqual(labels(slot), ['Dépose ta pièce ici', 'Mes fichiers', 'Galerie', 'Créer avec l’IA', 'Essaie avec le bateau de test', 'Ajouter une pièce à ce plateau', 'Garder « chat.stl »']);
   buttons(slot).at(-1).on.click();
   assert.deepEqual(calls, ['cancelEdit']);
   const page = read('index.html');
@@ -416,4 +416,18 @@ test('barre : « Ta pièce » rouvre l’écran de l’étape 1 (fichier, galeri
   assert.match(page, /pickSample: function \(sample\) \{ projectUI\.gallery = false; partInNewProject\(function \(\) \{ importSample\(sample\); \}\); \}/);
   assert.match(page, /designOpen: function \(\) \{ partInNewProject\(function \(\) \{ designStart\(false\); \}\); \}/);
   assert.match(page, /if \(projectUI\.editing === 'part' && part && file\.name !== part\) \{\s*partInNewProject\(/);
+});
+
+test('plusieurs pièces pour une même impression : posées sur le même plateau, l’une après l’autre, puis rangées', () => {
+  assert.equal(J.projectTitle({ part: { name: 'chat.stl', extra: ['lapin.stl'] } }), 'chat.stl + 1 pièce');
+  assert.equal(J.projectTitle({ part: { name: 'chat.stl', extra: ['a.stl', 'b.stl'] } }), 'chat.stl + 2 pièces');
+  assert.equal(J.projectTitle({ part: { name: 'chat.stl' } }), 'chat.stl');
+  const page = read('index.html');
+  assert.match(page, /if \(models\.length\) \{ projectUI\.modelQueue = models\.slice\(1\); sendModel\(models\[0\]\); \}/, 'plus de poses en parallèle');
+  assert.match(page, /replace: adding \? false : PlyoProject\.replacesPlate\(/, 'une pièce ajoutée ne remplace rien');
+  assert.match(page, /if \(projectUI\.arrangeAfter\) \{ projectUI\.arrangeAfter = false; plateAction\('arrange', null, null, null, true\); \}/);
+  assert.match(page, /acts\.appendChild\(button\('L’ajouter à ce plateau', function \(\) \{ slot\.textContent = ''; addToPlate\(file\); \}, 'btn sm'\)\);/);
+  assert.match(page, /if \(projectUI\.addingPart && part\) \{ addToPlate\(file\); return; \}/);
+  assert.match(page, /if \(at === 'imprimer' \|\| at === 'resultat'\) \{ delete conv\.project\.success; setTourStep\('slice'\); \}/, 'plateau changé : découpe à refaire');
+  assert.match(page, /projectUI\.modelQueue = \[\]; \/\/ les pièces suivantes du même choix ne sont pas posées sans celle-ci/);
 });

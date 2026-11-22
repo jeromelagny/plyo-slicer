@@ -446,7 +446,9 @@
       body.appendChild(ui.button('Essaie avec le bateau de test', h.samplePart, 'link'));
       // Rouverte depuis la barre : une autre pièce, c'est un autre projet (celui-ci reste dans « Mes projets ») ; ou on revient.
       if (ctx.editing === 'part' && project.part && project.part.name) {
-        body.appendChild(ui.el('p', 'muted small', 'Une autre pièce ouvre un nouveau projet, avec la même machine et la même bobine ; celui-ci reste dans « Mes projets ».'));
+        // Plusieurs pièces pour une même impression : elles rejoignent ce plateau. Sinon, une autre pièce est un autre projet.
+        if (h.addPart) body.appendChild(ui.button('Ajouter une pièce à ce plateau', h.addPart, 'btn ghost sm', 'plus'));
+        body.appendChild(ui.el('p', 'muted small', 'Une autre pièce choisie ici ouvre un nouveau projet, avec la même machine et la même bobine ; celui-ci reste dans « Mes projets ».'));
         body.appendChild(ui.button('Garder « ' + project.part.name + ' »', h.cancelEdit, 'link'));
       }
       if (ctx.oldPart) {

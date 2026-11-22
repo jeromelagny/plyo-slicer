@@ -240,7 +240,12 @@
   // Lot UX 4 : la fiche tient toujours sur une ligne (les onglets ne bougent plus) ; elle se déplie seulement d'un clic.
   function compactFiche() { return true; }
   // Titre du panneau : le nom de la pièce du projet, sinon « Nouveau projet ».
-  function projectTitle(project) { var p = project || {}; return p.part && p.part.name ? String(p.part.name) : 'Nouveau projet'; }
+  // Plusieurs pièces sur le plateau (part.extra) : « chat.stl + 2 pièces ».
+  function projectTitle(project) {
+    var p = project || {}, n = p.part && Array.isArray(p.part.extra) ? p.part.extra.length : 0;
+    if (!(p.part && p.part.name)) return 'Nouveau projet';
+    return String(p.part.name) + (n ? ' + ' + n + (n > 1 ? ' pièces' : ' pièce') : '');
+  }
 
   // Ce qui occupe le premier bloc du corps : les choix (étapes 1 à 3, ou « changer » le filament) ou le contenu des étapes 4 à 6.
   function contentFor(step, editing) {
