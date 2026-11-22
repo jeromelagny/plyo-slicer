@@ -78,7 +78,7 @@ test('UX-07 : à l’ouverture, le plateau attaché rouvre sa conversation, sino
 
 test('notes d’étape : une note qui porte une action ou une erreur survit au changement d’étape, trois au plus', () => {
   const page = read('index.html');
-  assert.ok(/if \(step !== journeyUI\.lastStep\) \{ clearStepNotes\(\);/.test(page));
+  assert.ok(/if \(step !== journeyUI\.lastStep\) \{\s*clearStepNotes\(\);/.test(page));
   const fn = page.slice(page.indexOf('function clearStepNotes'), page.indexOf('function renderProject'));
   assert.ok(fn.includes('!b.disabled') && fn.includes("classList.contains('error')") && fn.includes('slice(-KEPT_NOTES)'));
   assert.ok(/var KEPT_NOTES = 3;/.test(page));

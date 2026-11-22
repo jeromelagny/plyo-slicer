@@ -249,10 +249,12 @@
 
   /* Corps défilant : accueil puis conversation */
   .body { flex: 1; overflow-y: auto; padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
-  .tabs { flex: none; display: flex; border-bottom: 1px solid var(--border); }
-  .tab { flex: 1; background: transparent; border: 0; border-bottom: 3px solid transparent; padding: var(--s3) var(--s2); color: var(--muted); font: inherit; font-size: var(--fs-lg); cursor: pointer; }
-  .tab.on { color: var(--accent-text); font-weight: 700; border-bottom-color: var(--accent); }
-  .tab-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); margin-left: 6px; vertical-align: middle; }
+  /* Le fil sous la carte d'étape : séparé d'un filet dès qu'il a des échanges ; masqué pendant l'accueil du débutant. */
+  #view-chat:has(#thread:not(.hidden)) { border-top: 1px solid var(--border); padding-top: var(--s3); }
+  #body:has(#view-guide.welcoming) #view-chat { display: none; }
+  #step-recap { display: flex; flex-direction: column; gap: var(--s1); }
+  #step-recap:empty, #guide-notes:empty { display: none; }
+  .note-step { font-weight: 600; white-space: nowrap; }
   .view { display: flex; flex-direction: column; gap: var(--s3); }
   .view.hidden { display: none; }
   #guide-notes { display: flex; flex-direction: column; gap: var(--s2); }
@@ -557,26 +559,23 @@
 
   <div class="journey" id="journey"><div id="journey-fiche"></div></div>
 
-  <div class="tabs" role="tablist" id="tabs">
-    <button class="tab on" id="tab-guide" role="tab" aria-selected="true" type="button">Étapes</button>
-    <button class="tab" id="tab-chat" role="tab" aria-selected="false" type="button">Poser une question<span class="tab-dot hidden" id="tab-dot" aria-label="Nouvelle réponse"></span></button>
-  </div>
-
   <div class="body" id="body">
     <!-- Premiers pas : étape du parcours en cours -->
-    <div class="view" id="view-guide" role="tabpanel" aria-labelledby="tab-guide">
+    <!-- Un seul fil (parcours débutant, lot 5) : la barre d'étapes, la carte de l'étape en cours avec ses retours, puis les
+         échanges avec l'assistant dessous. -->
+    <div class="view" id="view-guide">
     <div id="welcome-slot"></div>
     <div id="journey-bar"></div>
-    <section class="step-card"><div id="resume-slot"></div><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="bed-slot"></div><div id="project-card"></div></div></section>
+    <section class="step-card"><div id="step-recap"></div><div id="resume-slot"></div><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="bed-slot"></div><div id="project-card"></div></div></section>
+    <div id="guide-notes"></div>
     <div id="spool-slot"></div>
     <div id="design-slot"></div>
     <div id="tour-slot"></div>
     <div id="outcome-slot"></div>
     <div id="preflight-slot"></div>
-    <div id="guide-notes"></div>
     </div>
 
-    <div class="view hidden" id="view-chat" role="tabpanel" aria-labelledby="tab-chat">
+    <div class="view" id="view-chat">
     <!-- Conversation (avant l'accueil : des notes seules s'affichent au-dessus de lui) -->
     <div class="thread hidden" id="thread"></div>
 
@@ -585,7 +584,6 @@
       <div class="hello">
         <h2>Bonjour !</h2>
         <p id="hello-text">Pose-moi ta question ici : un réglage, un problème d’impression, une photo de défaut à analyser.</p>
-        <button class="link hidden" id="hello-guide" type="button">Me guider pas à pas (onglet « Étapes »)</button>
         <div id="hello-spool"></div>
       </div>
       <div class="home-more hidden" id="goals-wrap">
@@ -812,22 +810,17 @@
   function scrollDown() { bodyEl.scrollTop = bodyEl.scrollHeight; }
   // Une réponse longue reste lue depuis son début : on cale son haut dans la zone visible (jamais son bas), et un badge
   // invite à défiler tant que la réponse dépasse en bas.
-  // Onglets Guide / Discussion
+  // Un seul fil (lot 5) : la carte d'étape en haut, les échanges dessous, tout visible. `viewUI.tab` dit seulement où l'on
+  // regarde ('guide' : l'étape, 'chat' : les échanges), pour y placer les messages et y faire défiler ; plus d'onglet à
+  // ouvrir ni de point « Nouvelle réponse ».
   var viewUI = { tab: 'guide', unread: false };
   function applyTab(event) {
     viewUI = PlyoJourney.tabAfter(viewUI, event);
-    var chat = viewUI.tab === 'chat';
-    $('view-guide').classList.toggle('hidden', chat);
-    $('view-chat').classList.toggle('hidden', !chat);
-    [['tab-guide', !chat], ['tab-chat', chat]].forEach(function (t) { $(t[0]).classList.toggle('on', t[1]); $(t[0]).setAttribute('aria-selected', String(t[1])); });
-    $('tab-dot').classList.toggle('hidden', !viewUI.unread);
+    viewUI.unread = false;
     if (event === 'show-chat' || event === 'send') scrollDown(); else if (event === 'show-guide' || event === 'reset') bodyEl.scrollTop = 0;
     updateMoreBadge();
-    journeyUI.ficheOpen = false;
-    if (conv) renderProject(); // la fiche se réduit dans la Discussion et reprend sa place dans le Guide
+    if (conv && event !== 'answer') { journeyUI.ficheOpen = false; renderProject(); }
   }
-  $('tab-guide').addEventListener('click', function () { applyTab('show-guide'); });
-  $('tab-chat').addEventListener('click', function () { applyTab('show-chat'); });
   var answerBox = null; // la réponse en cours d'écriture, puis la réponse affichée
   var moreBadge = $('more-badge');
   function scrollToAnswerTop(node) { answerBox = node; node.scrollIntoView({ block: 'start' }); updateMoreBadge(); }
@@ -886,6 +879,13 @@
   function placeInOpenTab(node) {
     if (viewUI.tab === 'guide') {
       node.querySelectorAll('.btn:not(.ghost)').forEach(function (b) { b.classList.add('ghost'); });
+      // Retour d'une action qui vient de faire passer à l'étape suivante (« bateau.stl est sur le plateau ») : en tête de la carte,
+      // avec le nom de l'étape qui l'a provoqué, et non perdu sous l'étape suivante.
+      if (journeyUI.leftStep) {
+        node.insertBefore(el('span', 'note-step', PlyoThread.STEP_LABELS[journeyUI.leftStep] + ' :'), node.firstChild);
+        $('step-recap').appendChild(node);
+        return node;
+      }
       $('guide-notes').appendChild(node);
       node.scrollIntoView({ block: 'nearest' });
       return node;
@@ -1861,7 +1861,7 @@
     settleMissing();
   }
   // Zone fixe (fiche, barre, ligne d'action) + contenu de l'étape en cours (premier bloc du corps qui défile).
-  var journeyUI = { ficheOpen: false, lastStep: null };
+  var journeyUI = { ficheOpen: false, lastStep: null, leftStep: null };
   var openRisks = 0; // risques de la vérification non ignorés
   var plateChecked = ''; // résultat de la vérification de la découpe en cours : 'clean', 'open', 'ignored' ; '' tant qu'elle n'a pas eu lieu
   var preflightFix = null; // lance « Tout corriger » de la carte de vérification affichée (rend faux s'il n'y a rien à faire)
@@ -1939,7 +1939,8 @@
   // plus anciennes partent. Un autre projet repart d'une zone vide (startConversation, restoreConversation).
   var KEPT_NOTES = 3;
   function clearStepNotes() {
-    var box = $('guide-notes');
+    var box = $('guide-notes'), recap = $('step-recap');
+    Array.prototype.slice.call(recap.children).forEach(function (n) { var tag = n.querySelector('.note-step'); if (tag) tag.remove(); box.appendChild(n); });
     var kept = Array.prototype.filter.call(box.children, function (n) {
       var live = Array.prototype.some.call(n.querySelectorAll('button'), function (b) { return !b.disabled; });
       return live || n.classList.contains('error');
@@ -1977,7 +1978,12 @@
     if (projectUI.endNote && projectUI.endNoteConv !== conv) staleEndNote();
     else if (projectUI.endNote && step === 'resultat' && endQuestionNow()) dropEndNote();
     if (step !== 'imprimer') { projectUI.sentConv = null; projectUI.exported = null; } // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
-    if (step !== journeyUI.lastStep) { clearStepNotes(); journeyUI.lastStep = step; threadNote('Étape « ' + PlyoThread.STEP_LABELS[step] + ' »', 'etapes'); if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; coloursUI.picker = null; coloursUI.error = ''; coloursUI.reopen = false; coloursUI.unfolded = false; } }
+    if (step !== journeyUI.lastStep) {
+      clearStepNotes();
+      // En avançant d'une étape, ce qui est dit tout de suite (même tour) vient de l'étape quittée : rangé dans le récapitulatif.
+      var order = PlyoJourney.STEPS.map(function (x) { return x.key; });
+      if (journeyUI.lastStep && order.indexOf(step) > order.indexOf(journeyUI.lastStep)) { journeyUI.leftStep = journeyUI.lastStep; setTimeout(function () { journeyUI.leftStep = null; }, 0); }
+      journeyUI.lastStep = step; threadNote('Étape « ' + PlyoThread.STEP_LABELS[step] + ' »', 'etapes'); if (step === 'filament') { projectUI.spools.printer = null; canvasUI.preset = null; canvasUI.useList = false; canvasUI.manual.preset = null; canvasUI.manual.confirmed = false; canvasUI.manual.form = false; coloursUI.picker = null; coloursUI.error = ''; coloursUI.reopen = false; coloursUI.unfolded = false; } }
     ensureColoursMapping(step);
     if (projectUI.spoolHint === conv && step !== 'filament') { projectUI.spoolHint = null; spoolHint(); }
     var compact = !journeyUI.ficheOpen && PlyoJourney.compactFiche({ folded: viewUI.tab === 'chat', heightPx: window.innerHeight, step: PlyoJourney.currentStep(conv.project) });
@@ -1994,7 +2000,6 @@
     PlyoProjectCard.renderBedQuestion($('bed-slot'), ui, { question: bedQ, editing: bedUI.editing, waiting: !!bedUI.token, handlers: bedHandlers });
     PlyoProjectCard.renderSpoolEditor($('spool-slot'), ui, { spool: projectUI.spool, handlers: projectHandlers });
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth, onRevisit: barBusy() ? null : revisitStep });
-    $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
     var intentNow = step === 'preparer' ? intentState(step, plateSliced()) : null;
     $('journey-action').parentNode.classList.toggle('act-after', !!(intentNow && intentNow.mode === 'ready'));
     PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers });
@@ -2033,10 +2038,8 @@
       intent: intentState(step, plateSliced()), intentDone: intentDoneText(step), spoolAsk: spoolAsk(), spoolNo: !!(sendOf() && sendOf().failed), endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
       machine: conv.project.printer ? { name: PlyoJourney.shortMachine(conv.project.printer) || conv.project.printer.name || conv.project.printer.preset, reachable: projectUI.reachable[conv.project.printer.preset] === undefined ? null : projectUI.reachable[conv.project.printer.preset] } : null });
     $('hello-text').textContent = fr(PlyoJourney.chatHello(PlyoProject.nextStep(conv.project) === 'ready'));
+    // Sous la carte d'étape, l'accueil ne répète pas son action (« Ajouter ma pièce ») : un seul fil, un seul bouton par geste.
     $('hello-spool').textContent = '';
-    // Le bouton sous « Bonjour » mène à la vraie prochaine étape : la pièce d'abord, puis la bobine.
-    if (step === 'piece') $('hello-spool').appendChild(button('Ajouter ma pièce', function () { applyTab('show-guide'); projectHandlers.importPart(); }, 'btn ghost sm', 'folder'));
-    else if (spoolMissing()) $('hello-spool').appendChild(chooseSpoolButton());
     ensureRecheck(step);
     updateIntentMenu();
     $('goals-wrap').classList.toggle('hidden', PlyoProject.nextStep(conv.project) !== 'ready');
@@ -4263,7 +4266,6 @@
     if (conv) renderProject(); // la fiche montre ou cache les températures modifiables
     noteLine(PlyoJourney.startChangeNote(level), 'ok', 'check');
   });
-  $('hello-guide').addEventListener('click', function () { applyTab('show-guide'); });
   $('m-help').addEventListener('click', openHelp);
   $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
   $('m-login').addEventListener('click', function () { menu.classList.add('hidden'); openLogin(); });
@@ -5156,10 +5158,12 @@
     projectUI.newProjectFile = false;
     if (msg.replaced > 0) showReplaced(msg, old);
     var entry = record({ kind: 'model', msg: msg, reduced: false });
-    renderModel(entry, false);
+    // Un seul fil (lot 5) : une première pièce bien posée est dite dans la carte d'étape (après le changement d'étape, qui
+    // efface les messages), pas une deuxième fois dans les échanges ; elle reste dans l'historique du projet.
+    var inStep = msg.fits !== false && firstPose && !FS.modelAddedText(msg).warn;
+    if (!inStep) renderModel(entry, false);
     if (msg.fits === false) showTooBig(entry);
-    // Dans « Étapes » aussi : la pièce et sa taille (après le changement d'étape, qui efface les messages).
-    else if (firstPose && !FS.modelAddedText(msg).warn) noteLine(FS.modelAddedText(msg).text, 'ok', 'check', 'guide');
+    else if (inStep) noteLine(FS.modelAddedText(msg).text, 'ok', 'check', 'guide');
   }
   // Nouveau projet : l'ancienne pièce a été retirée. La ligne et son « Annuler » restent visibles d'une étape à l'autre, jusqu'à la découpe.
   function dropReplaced() { var b = $('project-alert').querySelector('.part-replaced'); if (b) b.remove(); }
@@ -6307,15 +6311,14 @@
     if (state.needs_printer && !setup.phase && !setup.offered) startSetup();
     renderSetupFlow();
     if (first && state.level === 'expert' && !state.greeted) window.orca.postMessage({ type: 'firststeps_set', patch: { greeted: true } });
-    // « Je connais déjà » (UX-02) : le panneau s'ouvre sur « Poser une question » ; le parcours guidé reste dans « Étapes ».
-    if (first && state.level === 'expert') applyTab('start-chat');
+    // Un seul fil (lot 5) : plus d'onglet « Poser une question » où ouvrir le confirmé ; son champ de saisie est prêt.
+    if (first && state.level === 'expert') noteInput.focus();
     updateStartMenu();
   }
   function updateStartMenu() {
     // Préférence à coche : « Me guider pas à pas » est cochée sauf en mode « Je connais déjà » ; le clic bascule, comme avant.
     $('m-start').setAttribute('aria-checked', String(fsState.level !== 'expert'));
     $('m-start').title = fr(PlyoJourney.startMenuLabel(fsState.level));
-    $('hello-guide').classList.toggle('hidden', fsState.level !== 'expert');
     document.body.classList.toggle('novice', fsState.level !== 'expert');
     renderWelcome();
   }
@@ -7284,7 +7287,7 @@
       // Corriger à l'étape Résultat, c'est préparer la prochaine impression : la découpe est à refaire.
       if (msg.ok && msg.undo_id && currentTourStep() === 'after') {
         projectUI.fixedAfter = conv;
-        if (viewUI.tab === 'chat') noteLine('Ces réglages demandent une nouvelle découpe : retourne à l’onglet « Étapes » pour redécouper et réimprimer.', '', 'info');
+        if (viewUI.tab === 'chat') noteLine('Ces réglages demandent une nouvelle découpe : l’étape Préparer, en haut du panneau, la relance.', '', 'info');
       }
     } else if (msg.type === 'calib_started') {
       onCalibStarted(msg);

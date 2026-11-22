@@ -73,10 +73,11 @@ test('« Ajouter mon imprimante » vient sous la liste des machines, plus dans l
   assert.ok(read('journey-view.js').includes('extra'), 'la ligne d’action garde la possibilité d’un lien');
 });
 
-test('le panneau a deux onglets, et les messages d’étape vont dans le Guide', () => {
+// Parcours débutant, lot 5 (22/11) : un seul fil. La carte d'étape en haut, les échanges dessous, plus d'onglets.
+test('un seul fil : la carte d’étape puis les échanges, sans onglets ; les messages d’étape restent avec l’étape', () => {
   const page = read('index.html');
-  assert.ok(page.includes('id="tab-guide"') && page.includes('id="tab-chat"'), 'onglets');
-  assert.ok(page.includes('id="view-guide"') && page.includes('id="view-chat"'), 'deux vues');
+  assert.ok(!page.includes('id="tab-guide"') && !page.includes('id="tab-chat"') && !page.includes('id="tab-dot"'), 'plus d’onglets ni de point « Nouvelle réponse »');
+  assert.ok(page.indexOf('id="view-guide"') < page.indexOf('id="view-chat"') && page.includes('<div class="view" id="view-chat">'), 'les échanges sous l’étape, toujours visibles');
   assert.ok(page.includes('id="guide-notes"'), 'messages d’étape');
   assert.ok(/function noteLine\(text, tone, iconName, where\)/.test(page), 'noteLine accepte une destination');
   for (const text of ['Je pose « \' + file.name', 'advance.text', 'SEND_TEXTS.waiting']) // lot 10 : « Orca te demande de confirmer » vient de preflight.js
@@ -88,20 +89,20 @@ test('la question de l’étape et ses choix sont dans la même carte, à l’in
   const guide = page.slice(page.indexOf('id="view-guide"'), page.indexOf('id="view-chat"'));
   assert.ok(guide.includes('id="journey-action"'), 'la ligne d’action est dans le Guide');
   assert.ok(guide.indexOf('id="journey-action"') < guide.indexOf('id="project-card"'), 'la question vient avant ses choix');
-  const fixedZone = page.slice(page.indexOf('id="journey"'), page.indexOf('id="tabs"'));
-  assert.ok(!fixedZone.includes('journey-action'), 'plus de ligne d’action dans la zone fixe, au-dessus des onglets');
+  const fixedZone = page.slice(page.indexOf('id="journey"'), page.indexOf('id="body"'));
+  assert.ok(!fixedZone.includes('journey-action'), 'plus de ligne d’action dans la zone fixe, au-dessus du fil');
   assert.ok(!/journey-fold|toggleFold/.test(read('journey-view.js') + page), 'plus de flèche de repli');
 });
 
-test('la barre des étapes est seulement dans l’onglet Étapes, la fiche reste au-dessus des deux onglets', () => {
+test('la barre des étapes vient avant la carte de l’étape, la fiche reste au-dessus du fil', () => {
   const page = read('index.html');
   const guide = page.slice(page.indexOf('id="view-guide"'), page.indexOf('id="view-chat"'));
-  const fixedZone = page.slice(page.indexOf('id="journey"'), page.indexOf('id="tabs"'));
-  assert.ok(guide.includes('id="journey-bar"'), 'la barre est dans l’onglet Étapes');
+  const fixedZone = page.slice(page.indexOf('id="journey"'), page.indexOf('id="body"'));
+  assert.ok(guide.includes('id="journey-bar"'), 'la barre est avec l’étape');
   assert.ok(guide.indexOf('id="journey-bar"') < guide.indexOf('class="step-card"'), 'la barre vient avant la carte de l’étape');
-  assert.ok(!fixedZone.includes('journey-bar'), 'plus de barre au-dessus des onglets');
-  assert.ok(fixedZone.includes('id="journey-fiche"'), 'la fiche reste au-dessus des onglets');
-  assert.ok(page.includes('PlyoJourney.tabLabel('), 'le nom de l’onglet porte la progression');
+  assert.ok(!fixedZone.includes('journey-bar'), 'pas de barre dans la zone fixe');
+  assert.ok(fixedZone.includes('id="journey-fiche"'), 'la fiche reste en tête');
+  assert.ok(!page.includes('PlyoJourney.tabLabel('), 'la progression est dans la barre, plus dans un nom d’onglet');
 });
 
 test('une machine qui ne répond pas : on peut revérifier, et on ne promet pas un envoi différé qui n’existe pas', () => {
@@ -257,7 +258,7 @@ test('Résultat n’est pas une impasse : on peut réimprimer, et « démarré �
   const page = read('index.html');
   assert.ok(/reprint: function \(\) \{[^}]*setTourStep\(/.test(page));
   assert.ok(/if \(step !== 'imprimer'\) \{ projectUI\.sentConv = null;/.test(page));
-  assert.ok(page.includes('retourne à l’onglet « Étapes »') && page.includes('id="tab-guide"'), 'le renvoi vise un onglet qui existe');
+  assert.ok(page.includes('l’étape Préparer, en haut du panneau, la relance') && !page.includes('retourne à l’onglet « Étapes »'), 'le renvoi vise l’étape, plus un onglet');
 });
 
 test('reprise d’un projet : le même fichier est reposé sans proposer un nouveau projet', () => {

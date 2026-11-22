@@ -119,14 +119,14 @@ test('tabAfter : envoyer ouvre la Discussion, une réponse ailleurs allume le po
   assert.deepEqual(J.tabAfter(null, 'send'), { tab: 'chat', unread: false });
 });
 
-test('chatHello : l’accueil de « Poser une question » invite à poser une question, jamais à choisir son imprimante', () => {
+test('chatHello : l’accueil sous la carte d’étape invite à poser une question, jamais à choisir son imprimante', () => {
   for (const ready of [true, false]) {
     const t = J.chatHello(ready);
     assert.ok(/question/i.test(t), 'parle de question');
     assert.ok(!/choisis d’abord|ton imprimante/i.test(t), 'ne reprend pas la consigne des étapes');
   }
-  assert.match(J.chatHello(false), /Étapes/);
-  assert.ok(!/Étapes/.test(J.chatHello(true)));
+  // Lot 5 : un seul fil, plus de renvoi vers un onglet « Étapes ».
+  assert.ok(!/Étapes|onglet/.test(J.chatHello(false)) && !/Étapes|onglet/.test(J.chatHello(true)));
 });
 
 test('confirmation en un toucher : la machine et le filament proposés deviennent le bouton de la ligne d’action', () => {

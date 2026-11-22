@@ -422,14 +422,15 @@
   }
   function startChangeNote(level) {
     return level === 'expert'
-      ? 'C’est noté : au prochain lancement, le panneau reste fermé. Il est à un clic sur « Assistant », en haut, et s’ouvre sur « Poser une question ». L’onglet « Étapes » garde le parcours guidé.'
+      ? 'C’est noté : au prochain lancement, le panneau reste fermé. Il est à un clic sur « Assistant », en haut, avec le parcours en étapes et ta discussion.'
       : 'C’est noté : au prochain lancement, le panneau s’ouvre sur le parcours en étapes.';
   }
 
   // Texte d'accueil de l'onglet « Poser une question » (conversation vide). Sans projet complet, il renvoie vers « Étapes ».
   function chatHello(ready) {
-    var base = 'Pose-moi ta question ici : un réglage, un problème d’impression, une photo de défaut à analyser.';
-    return ready ? base : base + ' Pour avancer pas à pas, passe par l’onglet « Étapes ».';
+    // Un seul fil (lot 5) : l'accueil est sous la carte d'étape, il ne renvoie plus à un onglet. `ready` gardé pour l'appel.
+    void ready;
+    return 'Une question ? Écris-la en bas : un réglage, un problème d’impression, une photo de défaut à analyser.';
   }
 
   // Ce qu'il manque à la fiche pour appliquer une correction (`missing` : printer, part, filament, dans cet ordre) : le

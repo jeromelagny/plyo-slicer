@@ -32,11 +32,12 @@ test('UX-02 : changer d’avis depuis le menu, et le panneau qui le dit', () => 
   assert.equal(J.startMenuLabel('expert'), 'Me guider pas à pas, panneau ouvert au lancement');
   assert.equal(J.startMenuLabel('beginner'), 'Je connais déjà : panneau fermé au lancement');
   assert.equal(J.startMenuLabel('skipped'), 'Je connais déjà : panneau fermé au lancement');
-  assert.match(J.startChangeNote('expert'), /reste fermé.*un clic sur « Assistant ».*« Poser une question ».*« Étapes »/);
+  // Un seul fil (parcours débutant, lot 5) : plus d'onglet à nommer.
+  assert.match(J.startChangeNote('expert'), /reste fermé.*un clic sur « Assistant ».*le parcours en étapes et ta discussion/);
   assert.match(J.startChangeNote('beginner'), /s’ouvre sur le parcours en étapes/);
   const page = read('index.html');
-  assert.match(page, /if \(first && state\.level === 'expert'\) applyTab\('start-chat'\)/);
-  assert.match(page, /id="hello-guide"[^>]*>Me guider pas à pas \(onglet « Étapes »\)</);
+  assert.match(page, /if \(first && state\.level === 'expert'\) noteInput\.focus\(\);/);
+  assert.ok(!page.includes('id="hello-guide"'), 'plus de lien vers un onglet « Étapes »');
   assert.match(page, /type: 'firststeps_set', patch: \{ level: level \}/);
   // Côté slicer : panneau fermé au lancement pour « expert » seulement ; l'accueil le dit.
   assert.match(cpp('PlyoFirstSteps.cpp'), /ProjectLogic::opens_panel_at_startup\(Json::str\(load_state\(\), "level"\)\)/);

@@ -49,7 +49,7 @@
 
   // Ce que la discussion a appris de l'impression (print_outcome de l'assistant) → les gestes de l'onglet Étapes à rejouer,
   // dans l'ordre, et la phrase dite dans la discussion. Seulement aux étapes Imprimer et Résultat, jamais deux fois.
-  var OUTCOME_SAID = { started: 'C’est noté dans les Étapes : ton impression est lancée.', success: 'C’est noté dans les Étapes : impression réussie. Je retiens ces réglages.', failed: 'C’est noté dans les Étapes : impression ratée. Montre-moi une photo du défaut, je te propose quoi changer.' };
+  var OUTCOME_SAID = { started: 'C’est noté dans tes étapes : ton impression est lancée.', success: 'C’est noté dans tes étapes : impression réussie. Je retiens ces réglages.', failed: 'C’est noté dans tes étapes : impression ratée. Montre-moi une photo du défaut, je te propose quoi changer.' };
   function outcomeMoves(step, outcome, already) {
     if (!OUTCOME_SAID[outcome] || (step !== 'imprimer' && step !== 'resultat')) return { moves: [], text: '' };
     var moves = step === 'imprimer' ? ['started'] : [];
