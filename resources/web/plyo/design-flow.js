@@ -21,7 +21,10 @@
     login: 'Me connecter pour créer une pièce',
     attach: 'Joindre un croquis ou une photo',
     attached: 'Image jointe',
-    remove: 'retirer'
+    remove: 'retirer',
+    // 403 plan_required de /api/design : la formule gratuite n'ouvre pas les pièces sur mesure.
+    planRequired: 'Les pièces sur mesure font partie de Plyo+.',
+    plans: 'Voir les formules'
   };
   var MAX_IMAGES = 2;
 
@@ -57,7 +60,7 @@
     return (base || 'Piece') + '.stl';
   }
 
-  // ui : { el, button, icon } ; st : designUI ; h : { input(text), submit(), answer(i, choice), cancel(), retouch(), login() }.
+  // ui : { el, button, icon } ; st : designUI ; h : { input(text), submit(), answer(i, choice), cancel(), retouch(), login(), plans() }.
   function render(slot, ui, st, h) {
     slot.textContent = '';
     var box = ui.el('div', 'project-body design-box');
@@ -105,6 +108,7 @@
     if ((st.images || []).length < MAX_IMAGES && h.attach) box.appendChild(ui.button(TEXT.attach, h.attach, 'link', 'clip'));
     var acts = ui.el('div', 'printer-actions');
     if (st.needsLogin) acts.appendChild(ui.button(TEXT.login, h.login, 'btn sm main-choice', 'login'));
+    else if (st.planRequired && h.plans) acts.appendChild(ui.button(TEXT.plans, h.plans, 'btn sm main-choice'));
     else acts.appendChild(ui.button(st.retouch ? TEXT.retouchGo : TEXT.go, h.submit, 'btn sm main-choice', 'wand'));
     acts.appendChild(ui.button('Annuler', h.cancel, 'link'));
     box.appendChild(acts);

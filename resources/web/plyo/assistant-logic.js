@@ -132,7 +132,7 @@
 
   // Ce que voit l'utilisateur pour chaque erreur, et l'action proposée : retry (renvoie la même demande, même
   // identifiant), edit (« Modifier ma demande » : texte et photos remis dans le champ, rien n'est renvoyé), credits,
-  // login, photo. Une demande qui échouerait de la même façon (à reformuler, trop lourde) n'a jamais « Réessayer ».
+  // login, photo, plans (« Voir les formules »). Une demande qui échouerait de la même façon (à reformuler, trop lourde) n'a jamais « Réessayer ».
   var ERRORS = {
     // `more` : dit après la date de recharge (index.html, showError) ; ce qui reste gratuit sans jauge (aide du panneau).
     insufficient_credits: { text: 'Ta jauge du mois est pleine : je ne peux pas lancer de nouvelle demande pour l’instant.', more: 'En attendant, les étapes, les explications des réglages (le « ? ») et « Montre-moi où il est » restent gratuits.', action: 'credits' },
@@ -151,7 +151,10 @@
     internal: { text: 'Un souci technique m’a empêché de répondre. Réessaie dans un instant.', action: 'retry' },
     // Après plusieurs essais espacés (inProgressDelay) : la même demande, ou une autre de ce compte, tourne encore.
     request_in_progress: { text: 'Une demande est encore en cours chez moi : la tienne n’a pas pu partir. Réessaie dans une minute : tu ne paieras pas deux fois.', action: 'retry' },
-    invalid_image: { text: 'Cette photo n’est pas lisible (JPEG, PNG ou WebP) : reprends-la.', action: 'photo' }
+    invalid_image: { text: 'Cette photo n’est pas lisible (JPEG, PNG ou WebP) : reprends-la.', action: 'photo' },
+    // 403 plan_required : fonction réservée aux abonnés (plyo-api). Pour l'assistant, seulement plusieurs photos dans une
+    // même demande en formule gratuite ; « plans » ouvre « Mon utilisation », où sont décrites les formules.
+    plan_required: { text: 'Plusieurs photos dans une même demande font partie de Plyo+. Avec la formule gratuite, envoie une photo à la fois.', action: 'plans' }
   };
   // Annuler ferme le flux : le service facture l'usage déjà publié par l'IA, sans ligne « final » (plyo-api, diagnose/route.ts).
   var CANCEL_TEXT = 'Demande annulée. Ce que l’IA a déjà fait peut compter sur ta jauge.';
