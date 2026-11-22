@@ -26,6 +26,16 @@
     return m ? m[3] + '/' + m[2] : '';
   }
 
+  // Nom d'une bobine choisie d'un clic (« Oui, du PLA ») : la matière et le jour (« PLA du 22 novembre » ; jamais de « / »,
+  // interdit dans un nom de fichier), unique parmi les bobines connues de la machine (`names`) : le slicer reprendrait une
+  // bobine du même nom. `day` : la date en mots (PlyoLogic.dayText).
+  function autoName(material, day, names) {
+    var base = cleanName(String(material || '') + (day ? ' du ' + day : '')), taken = (Array.isArray(names) ? names : []).map(function (n) { return cleanName(n).toLowerCase(); });
+    var name = base;
+    for (var i = 2; taken.indexOf(name.toLowerCase()) >= 0; i++) name = base + ' (' + i + ')';
+    return name;
+  }
+
   // Bobines de la machine (Spools::list, la dernière réussite d'abord) → lignes du choix, avec leur dernier résultat.
   function choiceRows(items) {
     if (!Array.isArray(items)) return [];
@@ -221,7 +231,7 @@
     if (all || list.length <= RANGES_SHOWN + 1) return { shown: list, hidden: 0 };
     return { shown: list.slice(0, RANGES_SHOWN), hidden: list.length - RANGES_SHOWN };
   }
-  var api = { RANGES_SHOWN: RANGES_SHOWN, rangeButtons: rangeButtons, BRANDS_WAIT_MS: BRANDS_WAIT_MS, NAME_HELP: NAME_HELP, nameError: nameError, nameErrorText: nameErrorText, cleanName: cleanName, shortDate: shortDate, choiceRows: choiceRows,
+  var api = { autoName: autoName, RANGES_SHOWN: RANGES_SHOWN, rangeButtons: rangeButtons, BRANDS_WAIT_MS: BRANDS_WAIT_MS, NAME_HELP: NAME_HELP, nameError: nameError, nameErrorText: nameErrorText, cleanName: cleanName, shortDate: shortDate, choiceRows: choiceRows,
     resumeText: resumeText, printRestoredText: printRestoredText, restoreLabel: restoreLabel, doneText: doneText, adoptQuestion: adoptQuestion, offersAdopt: offersAdopt, declineAdopt: declineAdopt,
     needsSpool: needsSpool, isFilamentQuestion: isFilamentQuestion,
     BRAND_QUESTION: BRAND_QUESTION, BRAND_HELP: BRAND_HELP, BRANDS_SHOWN: BRANDS_SHOWN, brandButtons: brandButtons, cleanBrand: cleanBrand, brandChoice: brandChoice,

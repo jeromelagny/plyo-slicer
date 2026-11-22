@@ -65,6 +65,9 @@
       if (cv.mode === 'colours') return cv.reopened ? { label: 'C’est bon', kind: 'closeColours', enabled: !cv.busy } : { label: 'Utiliser ces bobines', kind: 'confirmCanvas', enabled: !!cv.complete && !cv.busy };
       return { label: '', kind: 'none', enabled: false };
     }
+    // Une nouvelle bobine en un clic : la matière proposée (PLA) en bouton plein ; la marque, le nom et les températures de
+    // l'étiquette attendent « Préciser ma bobine ». Aussi en « changer » le filament.
+    if (c.quickSpool) return { label: 'Oui, du ' + c.quickSpool, kind: 'quickSpool', enabled: true };
     // « changer » le filament en cours : on répond avec les choix, ou « Garder cette bobine ».
     if (c.editing) return { label: '', kind: 'none', enabled: false };
     // Températures de la bobine : garder celles conseillées, ou entrer celles de l'étiquette (formulaire de l'étape).
@@ -151,7 +154,7 @@
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return 'Ta pièce n’est plus sur le plateau';
     switch (step) {
       case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : 'Choisis ton imprimante';
-      case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : 'Quelle bobine ?';
+      case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : c.quickSpool ? 'Ta bobine est en ' + c.quickSpool + ' ?' : 'Quelle bobine ?';
       case 'piece': return 'Ajoute la pièce à imprimer';
       case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
         if (!c.sliced && c.intent === 'repeat') return 'Même usage que ta dernière pièce ?';

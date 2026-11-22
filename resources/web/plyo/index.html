@@ -1099,7 +1099,8 @@
   // qu'il cherche ; `picker` : état de la question ; `choice` : la réponse, PlyoSpools.brandChoice ; `brandOpen` : le confirmé
   // l'a ouverte ; `suggested` : le nom prérempli, remplacé tant que tu ne l'as pas changé), puis nom.
   function freshNewSpool() {
-    return { open: false, material: '', name: '', error: '', focus: false, brands: null, brandsFor: '', picker: freshPicker(), choice: null, brandOpen: false, suggested: '' };
+    // precise : « Préciser ma bobine » ouvert (matière, marque, nom, températures) ; sinon elle se choisit d'un clic (« Oui, du PLA »).
+    return { open: false, precise: false, material: '', name: '', error: '', focus: false, brands: null, brandsFor: '', picker: freshPicker(), choice: null, brandOpen: false, suggested: '' };
   }
   function freshPicker() { return { showAll: false, picked: null, other: false, otherText: '', error: '' }; }
   // Emplacements (Canvas, CFS, IFS, U1) à l'étape Filament : lecture, proposition, application, plan d'envoi.
@@ -1879,7 +1880,20 @@
     else if (conv && PlyoJourney.tempsPending(p) && !ctx.editing) ctx.temps = { nozzle: p.filament.nozzle_temp, bed: p.filament.bed_temp };
     var st = conv ? intentState(PlyoJourney.currentStep(conv.project), ctx.sliced) : null;
     if (st) ctx.intent = st.mode;
+    var quick = conv ? quickSpoolMaterial(PlyoJourney.currentStep(conv.project), ctx) : '';
+    if (quick) ctx.quickSpool = quick;
     return ctx;
+  }
+  // « Oui, du PLA » : la matière proposée quand l'écran « Une nouvelle bobine » se montre en un clic (mêmes conditions que
+  // renderChoices : liste des bobines lue, pas de bobine reproposée, ni emplacements, ni températures, ni plateau d'abord).
+  function quickSpoolMaterial(step, ctx) {
+    var p = conv.project, ns = projectUI.newSpool, pr = p.printer;
+    if (ns.precise || ctx.canvas || ctx.temps || ctx.bedFirst || !pr || pr.proposed) return '';
+    if (!(step === 'filament' || projectUI.editing === 'filament') || PlyoJourney.contentFor(step, projectUI.editing) !== 'choices') return '';
+    if (p.filament && p.filament.proposed && p.filament.spool && !projectUI.showKinds) return '';
+    var items = projectUI.spools.printer === pr.preset ? projectUI.spools.items : null;
+    if (!Array.isArray(items) || !(ns.open || !PlyoSpools.choiceRows(items).length)) return '';
+    return 'PLA';
   }
   // Étape Filament, une fois la matière (ou l'emplacement) choisie : les températures conseillées sont prises, et on demande
   // celles de l'étiquette de la bobine. « Garder … » (ligne d'action) ou le formulaire valident l'étape.
@@ -1995,7 +2009,7 @@
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds,
-        spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, beginner: fsState.level !== 'expert', handlers: projectHandlers });
+        spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, quickSpool: !projectUI.newSpool.precise, beginner: fsState.level !== 'expert', handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers, novice: fsState.level !== 'expert',
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()), spoolAsk: spoolAsk(), spoolNo: !!(sendOf() && sendOf().failed), endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
@@ -2429,6 +2443,7 @@
     else if (kind === 'applyIntent') applyIntent(false);
     else if (kind === 'repeatIntent') intentHandlers.repeat();
     else if (kind === 'confirmFilament') projectHandlers.confirmFilament();
+    else if (kind === 'quickSpool') projectHandlers.quickSpool(journeyCtx().quickSpool);
     else if (kind === 'fix') { if (!(preflightFix && preflightFix())) noteLine('Coche d’abord au moins une correction dans la carte, ou ignore-la.', '', 'info', 'guide'); }
   }
   window.addEventListener('resize', function () { if (conv) renderProject(); });
@@ -2791,6 +2806,16 @@
       renderProject();
     },
     typeSpoolName: function (text) { projectUI.newSpool.name = text; },
+    // En un clic : réglages courants de la matière (profil générique), nom du jour (« PLA du 22 novembre »), températures du
+    // profil gardées sans question. La bobine est retenue comme une autre : ce qui marche la suit.
+    quickSpool: function (material) {
+      if (!material) return;
+      var rows = projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : [];
+      chooseSpool(PlyoSpools.autoName(material, dayOf(new Date().toISOString()), rows.map(function (r) { return r.name; })), material);
+      if (projectUI.pending && projectUI.pending.kind === 'spool') projectUI.pending.quick = true;
+    },
+    // « Préciser ma bobine » : le parcours détaillé, PLA déjà choisi (« changer » pour une autre matière), puis la marque et le nom.
+    preciseSpool: function () { projectUI.newSpool.precise = true; projectHandlers.pickMaterial('PLA'); },
     createSpool: function () {
       var ns = projectUI.newSpool;
       ns.error = PlyoSpools.nameError(ns.name);
@@ -2940,7 +2965,8 @@
     if (pend.kind === 'filament') {
       conv.project.filament = { type: pend.type, preset: msg.filament_preset, nozzle_temp: msg.nozzle_temp, bed_temp: msg.bed_temp };
       // Une bobine qui avait déjà son préréglage sur cette machine garde ses températures : rien à redemander.
-      if (pend.spool) { conv.project.filament.spool = pend.spool; if (!pend.fresh) conv.project.filament.temps_ok = true; }
+      // Choisie d'un clic : les températures du profil sont gardées sans question (« Préciser ma bobine » les demande).
+      if (pend.spool) { conv.project.filament.spool = pend.spool; if (!pend.fresh || pend.quick) conv.project.filament.temps_ok = true; }
       // Marque de la bobine (rappelée dans la fiche) et origine de son profil.
       if (pend.spool && pend.brand) { conv.project.filament.brand = pend.brand; if (pend.range) conv.project.filament.range = pend.range; if (pend.brandProfile) conv.project.filament.brand_profile = true; }
       projectUI.editing = null;
@@ -2952,6 +2978,7 @@
       projectChanged(); // d'abord : le changement d'étape efface les messages de l'étape
       if (pend.note) noteLine(pend.note, 'ok', 'check', 'guide'); // bobine rattachée depuis la carte « Orca est passé sur … »
       if (pend.spool) announceSpool(pend); // le nom de la bobine vaut mieux que celui du préréglage
+      if (pend.spool && pend.quick && pend.fresh) noteLine('Bobine « ' + pend.spool.name + ' » : je pars des réglages courants du ' + pend.type + ' (buse ' + (msg.nozzle_temp != null ? msg.nozzle_temp : '?') + ' °C, plateau ' + (msg.bed_temp != null ? msg.bed_temp : '?') + ' °C). Ton étiquette dit autre chose ? Change-les depuis la fiche, en haut.', 'ok', 'check', 'guide');
       // Nouvelle bobine, pour le confirmé (UX-34) : la calibration directe, à un clic.
       if (pend.spool && pend.fresh && fsState.level === 'expert') {
         var cal = noteLine('Nouvelle bobine : tu peux la calibrer (débit, température, rétraction).', '', 'target', 'guide');
@@ -3040,7 +3067,7 @@
     projectUI.newSpool = freshNewSpool();
     projectUI.spools.printer = null; // relue la prochaine fois (une bobine de plus, un préréglage de plus)
     projectUI.pending = { kind: 'filament', type: pend.type, spool: { id: msg.id, name: msg.name }, fresh: msg.preset_created === undefined ? !!msg.created : !!msg.preset_created, success: msg.success || null, printRestored: msg.print_restored || null, profileBefore: pend.profileBefore,
-      brand: typeof msg.brand === 'string' ? msg.brand : '', range: typeof msg.range === 'string' ? msg.range : '', brandProfile: msg.brand_profile === true };
+      brand: typeof msg.brand === 'string' ? msg.brand : '', range: typeof msg.range === 'string' ? msg.range : '', brandProfile: msg.brand_profile === true, quick: !!pend.quick };
     window.orca.postMessage({ type: 'project_state' }); // lit le préréglage choisi et ses températures
   }
   // Après le choix : la phrase de reprise (dernière impression réussie), et le retour aux réglages réussis s'ils ont changé.

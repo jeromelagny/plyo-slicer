@@ -8,8 +8,10 @@
   // ui : { el, button, icon, rich } (les aides du panneau).
   // ctx : { project, printers (liste ou null), reachable {preset: bool}, error {printer?, filament?}, editing, compact, handlers }.
   // handlers : { pickPrinter(preset, name), keepProposed(), setupPrinter(), pickSpool(row), toggleNewSpool(), pickMaterial(type),
-  //              typeSpoolName(text), createSpool(), setTemps(nozzle, bed), importPart(), change(line), expand() }
-  // ctx.spools : lignes de PlyoSpools.choiceRows (null tant que le slicer ne les a pas données) ; ctx.newSpool : voir renderNewSpool.
+  //              typeSpoolName(text), createSpool(), quickSpool(material), preciseSpool(), setTemps(nozzle, bed), importPart(),
+  //              change(line), expand() }
+  // ctx.spools : lignes de PlyoSpools.choiceRows (null tant que le slicer ne les a pas données) ; ctx.newSpool : voir renderNewSpool ;
+  // ctx.quickSpool : la nouvelle bobine se choisit d'un clic (« Préciser ma bobine » pas encore ouvert).
   // Aucun bouton plein ici : la ligne d'action (journey-view.js) porte le bouton plein de l'étape. Quand elle n'en a pas, le
   // bouton marqué « main-choice » (au plus un par écran) prend l'aspect plein (index.html, CSS).
   function projectOf(ctx) { return ctx.project || root.PlyoProject.emptyProject(); }
@@ -265,6 +267,22 @@
     var h = ctx.handlers, ns = ctx.newSpool || {}, S = root.PlyoSpools;
     var box = ui.el('div', 'new-spool');
     box.appendChild(ui.el('p', 'intent-q', 'Une nouvelle bobine'));
+    // En un clic (ctx.quickSpool) : « Oui, du PLA » est le bouton plein de la ligne d'action ; les autres matières choisissent
+    // aussi d'un clic (réglages courants de la matière, nom du jour). Marque, nom et températures de l'étiquette : « Préciser ».
+    if (ctx.quickSpool && h.quickSpool) {
+      box.appendChild(ui.el('p', 'muted small', 'Sa matière est écrite sur l’étiquette. Pas sûr ? C’est presque toujours du PLA.'));
+      var others = ui.el('div', 'printer-actions');
+      (ns.allMaterials ? MATERIALS.slice(1) : MATERIALS.slice(1, 2)).forEach(function (k) {
+        others.appendChild(ui.button(k, function () { h.quickSpool(k); }, 'btn ghost sm'));
+      });
+      if (!ns.allMaterials && h.moreMaterials) others.appendChild(ui.button('Autres matières', h.moreMaterials, 'btn ghost sm'));
+      box.appendChild(others);
+      box.appendChild(ui.el('p', 'muted small', MATERIAL_WORDS));
+      box.appendChild(ui.button('Préciser ma bobine (marque, nom, températures)', h.preciseSpool, 'link'));
+      if (closable) box.appendChild(ui.button('Annuler', h.toggleNewSpool, 'link'));
+      body.appendChild(box);
+      return;
+    }
     if (ns.material && h.resetMaterial && ctx.beginner !== false) {
       // Une question à la fois : la matière répondue se replie en une ligne, la suivante prend la place.
       var mat = ui.el('div', 'project-row project-sub');
@@ -319,7 +337,7 @@
     // tant que rien de ce qui est montré ne change.
     var ns0 = ctx.newSpool || {}, pk0 = ns0.picker || {};
     var key = JSON.stringify([step, project.filament, ctx.editing, ctx.spools, ns0.open, ns0.material, ns0.error, ctx.error, ctx.showKinds, ctx.noCanvas, ctx.noSlots, ctx.manualLink, ctx.slotRemark, ctx.relink,
-      ns0.brands, ns0.choice, ns0.brandOpen, ns0.allMaterials, pk0.showAll, pk0.picked && pk0.picked.brand, pk0.other, pk0.error, ctx.beginner]);
+      ns0.brands, ns0.choice, ns0.brandOpen, ns0.allMaterials, ctx.quickSpool, pk0.showAll, pk0.picked && pk0.picked.brand, pk0.other, pk0.error, ctx.beginner]);
     var active = typeof document !== 'undefined' ? document.activeElement : null;
     if (active && active.dataset && active.dataset.spoolName && slot.contains(active) && slot.choicesKey === key) return;
     slot.choicesKey = key;
