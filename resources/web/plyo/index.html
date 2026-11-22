@@ -427,6 +427,8 @@
   .gallery-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: var(--s2) var(--s3); min-height: 64px; border-radius: var(--r-md); border: 1px solid color-mix(in srgb, var(--fg) 26%, var(--bg)); background: var(--raised); color: var(--fg); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
   .gallery-card:hover { border-color: var(--accent); background: var(--accent-soft); }
   .gallery-card > .ic { color: var(--accent-text); }
+  .gallery-card .gallery-img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-sm); background: var(--surface); margin-bottom: 4px; }
+  .gallery-card .gallery-credit { font-size: var(--fs-xs); font-weight: 400; color: var(--muted); }
   .gallery-card .gallery-cat { font-size: var(--fs-xs); font-weight: 400; color: var(--muted); text-transform: capitalize; }
   .pick-card > .ai-mark { position: absolute; top: 6px; right: 6px; margin: 0; }
   .machine-cards { display: flex; flex-direction: column; gap: var(--s2); align-items: stretch; }
@@ -2060,7 +2062,7 @@
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds,
-        spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, quickSpool: !projectUI.newSpool.precise, gallery: projectUI.gallery ? PlyoJourney.GALLERY : null, beginner: fsState.level !== 'expert', handlers: projectHandlers });
+        spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, quickSpool: !projectUI.newSpool.precise, gallery: projectUI.gallery ? PlyoJourney.galleryList(projectUI.galleryItems) : null, beginner: fsState.level !== 'expert', handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers, novice: fsState.level !== 'expert',
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()), intentDone: intentDoneText(step), spoolAsk: spoolAsk(), spoolNo: !!(sendOf() && sendOf().failed), endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
@@ -2971,7 +2973,7 @@
     importPart: function () { pickFiles(); },
     samplePart: function () { importSample('benchy'); },
     // Galerie (lot 7) : la grille remplace les choix de l'étape Pièce le temps de choisir.
-    galleryOpen: function () { projectUI.gallery = true; renderProject(); },
+    galleryOpen: function () { projectUI.gallery = true; if (!projectUI.galleryItems) window.orca.postMessage({ type: 'gallery_get' }); renderProject(); },
     galleryClose: function () { projectUI.gallery = false; renderProject(); },
     pickSample: function (sample) { projectUI.gallery = false; importSample(sample); },
     keepOldPart: function () {
@@ -4675,7 +4677,7 @@
     if (!conv || projectUI.placing) return;
     applyTab('show-guide');
     if (conv.project.part && conv.project.part.name) { noteLine('« ' + conv.project.part.name + ' » est déjà sur le plateau.', '', 'info', 'guide'); return; }
-    var g = PlyoJourney.GALLERY.filter(function (x) { return x.sample === sample; })[0];
+    var g = PlyoJourney.galleryList(projectUI.galleryItems).filter(function (x) { return x.sample === sample; })[0];
     if (!g) return;
     projectUI.placing = noteLine(sample === 'benchy' ? 'Je pose le petit bateau de test sur le plateau…' : 'Je pose « ' + g.name + ' » sur le plateau…', '', 'cube', 'guide');
     window.orca.postMessage({ type: 'model_add', sample: sample, project: conv.project, conv: conv.id,
@@ -7368,6 +7370,9 @@
       calibHistory = Array.isArray(msg.items) ? msg.items : [];
     } else if (msg.type === 'phone_batch_ready') {
       pollPhone(); // la fenêtre QR s'est fermée sur un envoi : on le traite sans attendre le prochain tour
+    } else if (msg.type === 'gallery') {
+      projectUI.galleryItems = Array.isArray(msg.items) ? msg.items : [];
+      if (conv && projectUI.gallery) renderProject();
     } else if (msg.type === 'design_lib') {
       onDesignLib(msg);
     } else if (msg.type === 'model_added') {

@@ -1,6 +1,7 @@
 #include "PlyoModelImport.hpp"
 #include "PlyoColours.hpp"
 #include "PlyoFiles.hpp"
+#include "PlyoGalleryLogic.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoOrcaWindows.hpp"
 #include "PlyoPlateActions.hpp"
@@ -19,9 +20,12 @@
 #include <boost/beast/core/detail/base64.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/log/trivial.hpp>
+#include <boost/nowide/fstream.hpp>
 
 #include <cctype>
 #include <cmath>
+#include <cstdint>
+#include <iterator>
 #include <fstream>
 #include <vector>
 
@@ -147,6 +151,8 @@ nlohmann::json add(const std::string& name, const std::string& base64, const nlo
     return place(path, fs::path(name).filename().string(), project, replace);
 }
 
+namespace {
+
 // Galerie du panneau (parcours débutant, lot 7) : des modèles déjà livrés avec Orca (resources/handy_models), donc déjà
 // redistribués avec l'application, chacun d'un seul fichier. `sample` (clé du panneau) → clé de la table d'Orca et nom affiché.
 // « benchy » : le petit bateau de test d'avant la galerie, même pièce.
@@ -165,6 +171,51 @@ constexpr GalleryModel GALLERY[] = {
     {"orca_tolerance_test", "orca_tolerance_test", "Test de tolérance"},
 };
 
+// Galerie remplie à la main (resources/plyo/galerie) : le manifeste, ses entrées vérifiées, et les fichiers lus d'un bloc.
+fs::path gallery_dir() { return fs::path(Slic3r::resources_dir()) / "plyo" / "galerie"; }
+
+std::string read_small(const fs::path& path, std::uintmax_t max_bytes)
+{
+    boost::system::error_code ec;
+    const std::uintmax_t      size = fs::file_size(path, ec);
+    if (ec || size == 0 || size > max_bytes)
+        return std::string();
+    boost::nowide::ifstream file(path.string(), std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+nlohmann::json gallery_entries()
+{
+    const fs::path       dir      = gallery_dir();
+    const nlohmann::json manifest = nlohmann::json::parse(read_small(dir / "galerie.json", 256 * 1024), nullptr, false);
+    return GalleryLogic::entries(manifest, [&dir](const std::string& name) {
+        boost::system::error_code ec;
+        return fs::is_regular_file(dir / name, ec);
+    });
+}
+
+} // namespace
+
+nlohmann::json gallery()
+{
+    nlohmann::json out = nlohmann::json::array();
+    for (nlohmann::json e : gallery_entries()) {
+        const std::string image = Json::str(e, "image");
+        e.erase("file");
+        e.erase("image");
+        // Vignette : 300 Ko au plus, envoyée au panneau en data: (la page n'a pas accès aux fichiers).
+        const std::string bytes = image.empty() ? std::string() : read_small(gallery_dir() / image, 300 * 1024);
+        if (!bytes.empty()) {
+            std::string encoded(boost::beast::detail::base64::encoded_size(bytes.size()), '\0');
+            encoded.resize(boost::beast::detail::base64::encode(encoded.data(), bytes.data(), bytes.size()));
+            const bool png = boost::algorithm::to_lower_copy(fs::path(image).extension().string()) == ".png";
+            e["image"]     = std::string(png ? "data:image/png;base64," : "data:image/jpeg;base64,") + encoded;
+        }
+        out.push_back(e);
+    }
+    return out;
+}
+
 nlohmann::json add_sample(const std::string& sample, const nlohmann::json& project, bool replace)
 {
     // Même pose qu'un fichier choisi, sans copie (le fichier est déjà sur l'ordinateur, dans les ressources de l'application).
@@ -173,8 +224,13 @@ nlohmann::json add_sample(const std::string& sample, const nlohmann::json& proje
     for (const GalleryModel& g : GALLERY)
         if (sample == g.sample)
             pick = &g;
-    if (pick == nullptr)
+    if (pick == nullptr) {
+        // Un modèle ajouté à la galerie (resources/plyo/galerie), vérifié de nouveau au moment de le poser.
+        for (const nlohmann::json& e : gallery_entries())
+            if (Json::str(e, "id") == sample)
+                return place(gallery_dir() / Json::str(e, "file"), Json::str(e, "name"), project, replace);
         return {{"ok", false}, {"text", missing}};
+    }
     for (const auto& model : Slic3r::GUI::MenuFactory::handy_models()) {
         if (std::string(model.key) != pick->orca_key || model.file_names.empty())
             continue;

@@ -19,9 +19,14 @@ constexpr size_t MAX_BYTES = 150 * 1024 * 1024;
 // annuler avec PlateActions::undo). Si le fichier ne s'ouvre pas, le plateau reste comme avant.
 nlohmann::json add(const std::string& name, const std::string& base64, const nlohmann::json& project = nlohmann::json(), bool replace = false);
 
-// Pièce d'essai fournie avec l'application (`sample` : « benchy », le petit bateau de test), posée comme `add` pose un
-// fichier choisi : même réponse ({ok, name, count, size_mm, bed_mm, fits, replaced…}), ou {ok: false, text} si elle manque.
+// Pièce de la galerie (`sample` : « benchy », le petit bateau de test, un autre modèle livré avec Orca, ou l'identifiant d'un
+// modèle de resources/plyo/galerie), posée comme `add` pose un fichier choisi : même réponse ({ok, name, count, size_mm,
+// bed_mm, fits, replaced…}), ou {ok: false, text} si elle manque.
 nlohmann::json add_sample(const std::string& sample, const nlohmann::json& project = nlohmann::json(), bool replace = false);
+
+// Modèles ajoutés à la galerie (resources/plyo/galerie/galerie.json, vérifiés par GalleryLogic::entries) pour le panneau :
+// [{id, name, category, what, author, license, source, image (data:… de la vignette, si elle existe)}].
+nlohmann::json gallery();
 
 // Adapte au projet le dernier 3MF posé par `add` (réglages d'impression du fichier, voir Project::adapt_file). Sert quand le
 // filament est choisi après la pièce. {} si aucun 3MF n'a été posé ou si le fichier n'a pas de réglages.

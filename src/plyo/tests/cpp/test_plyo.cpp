@@ -5,6 +5,7 @@
 #include "../../PlyoBedLogic.hpp"
 #include "../../PlyoBrandsLogic.hpp"
 #include "../../PlyoFiles.hpp"
+#include "../../PlyoGalleryLogic.hpp"
 #include "../../PlyoJson.hpp"
 #include "../../PlyoSanitize.hpp"
 #include "../../PlyoDiscoveryLogic.hpp"
@@ -5674,4 +5675,43 @@ TEST_CASE("Lot 8 parcours · sentinelle : repli de la barre de réglages et vole
     REQUIRE_FALSE(body.empty());
     CHECK(body.find("sidebar_layout.is_collapsed = collapse;") != std::string::npos);
     CHECK(body.find("update_sidebar();") != std::string::npos);
+}
+
+// --- Galerie de l'étape « Ta pièce » (parcours débutant, lot 7) ---
+
+TEST_CASE("GalleryLogic::license_ok : seulement les licences qui permettent de livrer le fichier avec Plyo")
+{
+    using Plyo::GalleryLogic::license_ok;
+    for (const char* ok : {"CC0", "CC0 1.0", "CC BY", "CC BY 4.0", "cc by-sa 4.0", "CC BY-ND 3.0", "Domaine public", "Public Domain"})
+        CHECK(license_ok(ok));
+    for (const char* refused : {"", "CC BY-NC 4.0", "CC BY-NC-SA 4.0", "CC BY-NC-ND", "Standard Digital File License", "MIT", "CC BY 5.0", "CC BY 4.0 et plus"})
+        CHECK_FALSE(license_ok(refused));
+}
+
+TEST_CASE("GalleryLogic::entries : entrées vérifiées, fichiers présents, licence et auteur obligatoires")
+{
+    const std::set<std::string> files = {"crochet.3mf", "crochet.png", "vase.stl", "boite.stl", "chat.stl"};
+    const auto exists = [&](const std::string& f) { return files.count(f) > 0; };
+    const json manifest = json::array({
+        {{"id", "crochet"}, {"file", "crochet.3mf"}, {"name", "Crochet mural"}, {"category", "utile"}, {"author", "Alice"}, {"license", "CC BY 4.0"},
+         {"image", "crochet.png"}, {"what", "Se visse au mur."}, {"source", "https://makerworld.com/fr/models/1"}},
+        {{"id", "vase"}, {"file", "vase.stl"}, {"name", "Vase"}, {"category", "déco"}, {"author", "Bob"}, {"license", "CC0"}, {"image", "absente.png"}},
+        {{"id", "vase"}, {"file", "boite.stl"}, {"name", "Doublon"}, {"category", "utile"}, {"author", "Bob"}, {"license", "CC0"}},
+        {{"id", "boite"}, {"file", "boite.stl"}, {"name", "Boîte"}, {"category", "utile"}, {"author", "Bob"}, {"license", "CC BY-NC 4.0"}},
+        {{"id", "chat"}, {"file", "chat.stl"}, {"name", "Chat"}, {"category", "jouet"}, {"author", ""}, {"license", "CC BY"}},
+        {{"id", "fuite"}, {"file", "../../secret.stl"}, {"name", "Fuite"}, {"category", "utile"}, {"author", "X"}, {"license", "CC0"}},
+        {{"id", "absent"}, {"file", "absent.stl"}, {"name", "Absent"}, {"category", "utile"}, {"author", "X"}, {"license", "CC0"}},
+        {{"id", "Majuscule"}, {"file", "vase.stl"}, {"name", "Id refusé"}, {"category", "utile"}, {"author", "X"}, {"license", "CC0"}},
+        {{"id", "cat"}, {"file", "vase.stl"}, {"name", "Catégorie inconnue"}, {"category", "figurine"}, {"author", "X"}, {"license", "CC0"}},
+        "pas un objet"});
+    const json out = Plyo::GalleryLogic::entries(manifest, exists);
+    REQUIRE(out.size() == 2);
+    CHECK(out[0]["id"] == "crochet");
+    CHECK(out[0]["image"] == "crochet.png");
+    CHECK(out[0]["author"] == "Alice");
+    CHECK(out[0]["source"] == "https://makerworld.com/fr/models/1");
+    CHECK(out[1]["id"] == "vase");
+    CHECK_FALSE(out[1].contains("image")); // vignette absente : retirée, le modèle reste
+    CHECK(Plyo::GalleryLogic::entries(json{{"models", manifest}}, exists).size() == 2);
+    CHECK(Plyo::GalleryLogic::entries(json("abîmé"), exists).empty());
 }

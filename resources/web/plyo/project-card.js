@@ -417,9 +417,12 @@
         body.appendChild(ui.el('p', 'muted small', 'Des modèles fournis avec Plyo Slicer, prêts à imprimer.'));
         var grid = ui.el('div', 'gallery-grid');
         ctx.gallery.forEach(function (g) {
-          var card = ui.button(g.name, function () { h.pickSample(g.sample); }, 'gallery-card', 'cube');
+          var card = ui.button(g.name, function () { h.pickSample(g.sample); }, 'gallery-card' + (g.image ? ' with-image' : ''), g.image ? null : 'cube');
+          // Vignette (data: vérifiée par PlyoJourney.galleryList) en tête de la carte ; l'auteur et la licence dessous (attribution).
+          if (g.image) { var img = ui.el('img', 'gallery-img'); img.src = g.image; img.alt = ''; card.insertBefore(img, card.firstChild); }
           card.appendChild(ui.el('span', 'gallery-cat', g.category));
-          card.title = g.what;
+          if (g.credit) card.appendChild(ui.el('span', 'gallery-credit', g.credit));
+          card.title = g.what || g.name;
           grid.appendChild(card);
         });
         body.appendChild(grid);

@@ -169,6 +169,8 @@ peuvent pas être vérifiés sur la machine :
 - `resources/web/plyo/` : page web du panneau et ses tests.
 - `resources/plyo/catalog-keys.json` (généré par `generate_catalog.py`) et `resources/plyo/policy.json` : catalogue des
   réglages modifiables et politique (exclusions, niveaux de risque).
+- `resources/plyo/galerie/` : modèles de la galerie de l'étape « Ta pièce », leurs vignettes et leur manifeste
+  `galerie.json` (licences qui autorisent la redistribution seulement, auteur affiché ; voir son `LISEZMOI.md`).
 - `docs/plyo/` : cette liste.
 - `.github/workflows/plyo_windows.yml` : installateur Windows, lancé à la main (voir le tableau).
 - `.github/workflows/plyo_tests.yml` : tests de Plyo en intégration continue (voir le tableau).

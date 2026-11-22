@@ -506,7 +506,22 @@
     { sample: 'autodesk_fdm_test', name: 'Test complet', category: 'test', what: 'Ponts, surplombs, petits détails : tout en une pièce.' }
   ];
 
-  var api = { GALLERY: GALLERY, BAR: BAR, barKey: barKey, machineCards: machineCards, machineStatus: machineStatus, WELCOME: WELCOME, showsWelcome: showsWelcome, machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  // Galerie montrée : les modèles ajoutés dans resources/plyo/galerie (message « gallery » du slicer, déjà vérifiés : licence,
+  // auteur, fichier) d'abord, avec leur vignette, leur auteur et leur licence ; puis ceux livrés avec Orca. `items` : null
+  // tant que le slicer n'a pas répondu.
+  var CATEGORIES = ['utile', 'jouet', 'déco', 'test'];
+  function galleryList(items) {
+    var extra = (Array.isArray(items) ? items : []).filter(function (m) {
+      return m && typeof m.id === 'string' && /^[a-z0-9-]{2,40}$/.test(m.id) && typeof m.name === 'string' && m.name && CATEGORIES.indexOf(m.category) >= 0;
+    }).map(function (m) {
+      var image = typeof m.image === 'string' && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(m.image) ? m.image : '';
+      return { sample: m.id, name: m.name, category: m.category, what: typeof m.what === 'string' ? m.what : '', image: image,
+        credit: (typeof m.author === 'string' && m.author ? 'par ' + m.author : '') + (typeof m.license === 'string' && m.license ? ' · ' + m.license : '') };
+    });
+    return extra.concat(GALLERY);
+  }
+
+  var api = { galleryList: galleryList, GALLERY: GALLERY, BAR: BAR, barKey: barKey, machineCards: machineCards, machineStatus: machineStatus, WELCOME: WELCOME, showsWelcome: showsWelcome, machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor, projectTitle: projectTitle };
   root.PlyoJourney = api;

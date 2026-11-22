@@ -356,3 +356,25 @@ test('lot 8 · mode Simple : menu à coche, appliqué par le slicer avec les fon
   assert.match(first, /s\["layout"\]      = "simple";/);
   assert.match(cpp('PlyoSanitize.cpp'), /\{"layout", "advanced"\}/);
 });
+
+test('lot 7 · galerie remplie à la main : modèles vérifiés par le slicer d’abord, vignette et attribution, puis ceux d’Orca', () => {
+  assert.deepEqual(J.galleryList(null), J.GALLERY);
+  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  const list = J.galleryList([
+    { id: 'crochet-mural', name: 'Crochet mural', category: 'utile', what: 'Se visse au mur.', author: 'Alice', license: 'CC BY 4.0', image: png },
+    { id: 'vase', name: 'Vase', category: 'déco', author: 'Bob', license: 'CC0', image: 'javascript:alert(1)' },
+    { id: 'MAUVAIS', name: 'x', category: 'utile' }, { id: 'sans-categorie', name: 'x', category: 'figurine' }, null]);
+  assert.deepEqual(list.slice(0, 2).map((g) => [g.sample, g.credit, g.image]), [['crochet-mural', 'par Alice · CC BY 4.0', png], ['vase', 'par Bob · CC0', '']]);
+  assert.equal(list.length, 2 + J.GALLERY.length);
+  const slot = fakeUi().el('div');
+  Card.renderChoices(slot, fakeUi(), { project: { printer: null, part: null, filament: null }, gallery: list, handlers: new Proxy({}, { get: () => () => {} }) });
+  const first = buttons(slot)[0];
+  assert.equal(first.className, 'gallery-card with-image');
+  assert.ok(all(first).some((n) => n.tag === 'img' && n.src === png));
+  assert.match(textOf(first), /par Alice · CC BY 4\.0/);
+  assert.equal(JSON.parse(fs.readFileSync(new URL('../../../plyo/galerie/galerie.json', import.meta.url), 'utf8')).length, 0, 'galerie vide livrée');
+  const page = read('index.html');
+  assert.match(page, /if \(!projectUI\.galleryItems\) window\.orca\.postMessage\(\{ type: 'gallery_get' \}\);/);
+  const cpp = fs.readFileSync(new URL('../../../../src/plyo/PlyoAssistant.cpp', import.meta.url), 'utf8');
+  assert.match(cpp, /send\(\{\{"type", "gallery"\}, \{"items", ModelImport::gallery\(\)\}\}\);/);
+});

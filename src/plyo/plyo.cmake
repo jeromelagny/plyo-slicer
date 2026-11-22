@@ -109,6 +109,8 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoColours.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoColoursLogic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoColoursLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoGalleryLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoGalleryLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalog.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalog.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalogPolicy.cpp

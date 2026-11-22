@@ -662,6 +662,9 @@ void handle_page_message(const nlohmann::json& data)
                 added["sample"] = sample;
             added["type"]        = "model_added";
             send(added);
+        } else if (type == "gallery_get") {
+            // Galerie de l'étape « Ta pièce » : les modèles ajoutés dans resources/plyo/galerie (vérifiés), avec leur vignette.
+            send({{"type", "gallery"}, {"items", ModelImport::gallery()}});
         } else if (type == "design_lib_get") {
             // Pièces sur mesure : manifold-3d (Apache-2.0), livrée dans resources/web/plyo/vendor/manifold et chargée par le
             // panneau à la première pièce créée (la page est chargée comme texte : elle ne peut pas lire ce fichier elle-même).
