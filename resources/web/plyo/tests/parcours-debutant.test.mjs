@@ -297,3 +297,23 @@ test('lot 6 · sans machine : pièce posée tout de suite, installation à l’�
   assert.match(page, /button\(w\.expertLink, function \(\) \{ setJourneyLevel\('expert'\); renderWelcome\(\); \}, 'link'\)/);
   assert.match(page, /var pro = button\('Passer en mode confirmé', function \(\) \{ pro\.remove\(\); setJourneyLevel\('expert'\); \}, 'link'\);/);
 });
+
+// ---------- Lot 7 : galerie de modèles ----------
+
+test('lot 7 · galerie : modèles livrés avec Orca, mêmes clés côté panneau et côté slicer, posés comme le bateau de test', () => {
+  const cpp = fs.readFileSync(new URL('../../../../src/plyo/PlyoModelImport.cpp', import.meta.url), 'utf8');
+  for (const g of J.GALLERY) {
+    assert.match(cpp, new RegExp('\\{"' + g.sample + '", "[a-z0-9_]+", "'), g.sample + ' connu du slicer');
+    assert.ok(['utile', 'jouet', 'déco', 'test'].includes(g.category), g.sample);
+    assert.ok(g.name && g.what, g.sample);
+  }
+  const slot = fakeUi().el('div'), picked = [];
+  Card.renderChoices(slot, fakeUi(), { project: { printer: null, part: null, filament: null }, gallery: J.GALLERY,
+    handlers: new Proxy({}, { get: (_, k) => k === 'pickSample' ? (s) => picked.push(s) : () => {} }) });
+  assert.deepEqual(labels(slot), [...J.GALLERY.map((g) => g.name), 'Retour']);
+  buttons(slot)[1].on.click();
+  assert.deepEqual(picked, ['cali_cat']);
+  const page = read('index.html');
+  assert.match(page, /window\.orca\.postMessage\(\{ type: 'model_add', sample: sample, project: conv\.project, conv: conv\.id,/);
+  assert.match(page, /pickSample: function \(sample\) \{ projectUI\.gallery = false; importSample\(sample\); \}/);
+});

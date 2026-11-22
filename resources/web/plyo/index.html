@@ -423,6 +423,11 @@
   .pick-card:hover { border-color: var(--accent); background: var(--accent-soft); }
   .pick-card > .ic:first-child { color: var(--accent-text); }
   .pick-card { position: relative; }
+  .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--s2); }
+  .gallery-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: var(--s2) var(--s3); min-height: 64px; border-radius: var(--r-md); border: 1px solid color-mix(in srgb, var(--fg) 26%, var(--bg)); background: var(--raised); color: var(--fg); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+  .gallery-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .gallery-card > .ic { color: var(--accent-text); }
+  .gallery-card .gallery-cat { font-size: var(--fs-xs); font-weight: 400; color: var(--muted); text-transform: capitalize; }
   .pick-card > .ai-mark { position: absolute; top: 6px; right: 6px; margin: 0; }
   .machine-cards { display: flex; flex-direction: column; gap: var(--s2); align-items: stretch; }
   .machine-card { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: var(--s2); width: 100%; min-height: 52px; padding: var(--s2) var(--s3); border-radius: var(--r-md); border: 1px solid color-mix(in srgb, var(--fg) 26%, var(--bg)); background: var(--raised); color: var(--fg); font-weight: 600; text-align: left; cursor: pointer; }
@@ -958,6 +963,7 @@
     if (typeof intentUI !== 'undefined') { intentUI.idk = false; intentUI.manual = null; }
     if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
     conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
+    if (typeof projectUI !== 'undefined') projectUI.gallery = false;
     conv.project.assistant = {}; // réglages que l'assistant posera pour ce projet (les autres modifications sont les tiennes)
     if (typeof renderProject === 'function') renderProject();
     if (typeof applyMachineQuestion === 'function') { projectUI.showList = false; projectUI.showKinds = false; applyMachineQuestion(); }
@@ -2053,7 +2059,7 @@
     else if (PlyoJourney.contentFor(step, projectUI.editing) === 'choices')
       PlyoProjectCard.renderChoices($('project-card'), ui, { project: conv.project, printers: projectUI.printers && PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), reachable: projectUI.reachable,
         error: projectUI.error, noCanvas: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() === 'canvas', noSlots: !!(canvasUI.state && !canvasUI.state.ok && canvasWanted(step) && !canvasUI.useList) && slotWordsKey() !== 'canvas', manualLink: manualWanted(step), slotRemark: slotRemark(), relink: !!(knownPrinter() && knownPrinter().slots_reason === 'link_incomplete'), oldPart: projectUI.oldPart && !projectUI.waitingFile ? projectUI.oldPart.label : '', editing: projectUI.editing, showOthers: projectUI.showOthers, showList: projectUI.showList, showKinds: projectUI.showKinds,
-        spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, quickSpool: !projectUI.newSpool.precise, beginner: fsState.level !== 'expert', handlers: projectHandlers });
+        spools: conv.project.printer && projectUI.spools.printer === conv.project.printer.preset && projectUI.spools.items ? PlyoSpools.choiceRows(projectUI.spools.items) : null, newSpool: projectUI.newSpool, quickSpool: !projectUI.newSpool.precise, gallery: projectUI.gallery ? PlyoJourney.GALLERY : null, beginner: fsState.level !== 'expert', handlers: projectHandlers });
     else PlyoJourneySteps.render($('project-card'), ui, { step: step, ctx: journeyCtx(), summary: printSummary(), handlers: stepHandlers, novice: fsState.level !== 'expert',
       sent: projectUI.sentConv === conv, sentArmed: projectUI.sentArmed === conv, exported: projectUI.exported && projectUI.exported.conv === conv ? projectUI.exported.text : '', canvas: PlyoCanvas.mapLabel(conv.project.canvas, PlyoCanvas.isImposed(conv.project.canvas)), slotsNote: PlyoCanvas.printNote(conv.project.canvas), slotRemark: slotRemark(), refused: canvasUI.refusedConv === conv ? canvasUI.refused : '', offerPlain: canvasUI.refusedPlain !== false,
       intent: intentState(step, plateSliced()), intentDone: intentDoneText(step), spoolAsk: spoolAsk(), spoolNo: !!(sendOf() && sendOf().failed), endAsk: step === 'resultat' ? endQuestionNow() : null, endDone: step === 'resultat' ? endOutcome() : '',
@@ -2962,7 +2968,11 @@
       });
     },
     importPart: function () { pickFiles(); },
-    samplePart: function () { importSample(); },
+    samplePart: function () { importSample('benchy'); },
+    // Galerie (lot 7) : la grille remplace les choix de l'étape Pièce le temps de choisir.
+    galleryOpen: function () { projectUI.gallery = true; renderProject(); },
+    galleryClose: function () { projectUI.gallery = false; renderProject(); },
+    pickSample: function (sample) { projectUI.gallery = false; importSample(sample); },
     keepOldPart: function () {
       var old = projectUI.oldPart;
       projectUI.oldPart = null;
@@ -4642,12 +4652,15 @@
 
   // « Pas encore de fichier ? » : le slicer pose le petit bateau de test fourni avec lui, comme un fichier choisi (même réponse
   // model_added : fiche du projet, nom de la pièce, étape suivante ; il remplace aussi la pièce du projet précédent).
-  function importSample() {
+  // `sample` : clé d'un modèle de la galerie (PlyoJourney.GALLERY), « benchy » pour le bateau de test.
+  function importSample(sample) {
     if (!conv || projectUI.placing) return;
     applyTab('show-guide');
     if (conv.project.part && conv.project.part.name) { noteLine('« ' + conv.project.part.name + ' » est déjà sur le plateau.', '', 'info', 'guide'); return; }
-    projectUI.placing = noteLine('Je pose le petit bateau de test sur le plateau…', '', 'cube', 'guide');
-    window.orca.postMessage({ type: 'model_add', sample: 'benchy', project: conv.project, conv: conv.id,
+    var g = PlyoJourney.GALLERY.filter(function (x) { return x.sample === sample; })[0];
+    if (!g) return;
+    projectUI.placing = noteLine(sample === 'benchy' ? 'Je pose le petit bateau de test sur le plateau…' : 'Je pose « ' + g.name + ' » sur le plateau…', '', 'cube', 'guide');
+    window.orca.postMessage({ type: 'model_add', sample: sample, project: conv.project, conv: conv.id,
       replace: PlyoProject.replacesPlate(conv.project, projectUI.oldPart, projectUI.newProjectFile) });
   }
 

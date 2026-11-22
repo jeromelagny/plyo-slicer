@@ -799,9 +799,9 @@ test('lot 1 · UX-01 : sans fichier, le petit bateau de test se pose comme une p
   // Lot 6 : sous la zone de dépôt et les cartes, le bateau reste un simple lien.
   assert.match(card, /ui\.button\('Essaie avec le bateau de test', h\.samplePart, 'link'\)/);
   const fn = page.slice(page.indexOf('function importSample'), page.indexOf('// Glisser-déposer sur le panneau'));
-  assert.match(fn, /postMessage\(\{ type: 'model_add', sample: 'benchy', project: conv\.project, conv: conv\.id,/, 'même chemin que model_add : plateau attaché à la conversation');
+  assert.match(fn, /postMessage\(\{ type: 'model_add', sample: sample, project: conv\.project, conv: conv\.id,/, 'même chemin que model_add : plateau attaché à la conversation');
   assert.match(fn, /replace: PlyoProject\.replacesPlate\(/);
-  assert.match(page, /samplePart: function \(\) \{ importSample\(\); \}/);
+  assert.match(page, /samplePart: function \(\) \{ importSample\('benchy'\); \}/);
   // Réponse : model_added, traitée comme une pièce choisie ; s'il manque, une issue.
   const added = page.slice(page.indexOf('function onModelAdded'), page.indexOf('function dropReplaced'));
   assert.match(added, /if \(!msg\.ok && msg\.sample\) \{[\s\S]*?button\('Choisir un fichier', function \(\) \{ pickFiles\(\); \}, 'link'\)/);
@@ -809,8 +809,10 @@ test('lot 1 · UX-01 : sans fichier, le petit bateau de test se pose comme une p
   assert.match(assistant, /sample\.empty\(\) \? ModelImport::add\([\s\S]*?: ModelImport::add_sample\(sample, project,/);
   assert.match(assistant, /added\["sample"\] = sample;/);
   const imp = cppSrc('PlyoModelImport.cpp');
-  assert.match(imp, /handy_models\(\)[\s\S]*?"3dbenchy"/, 'le fichier vient de la table des modèles d’Orca, pas d’un nom en dur');
-  assert.match(imp, /return place\(path, "Petit bateau de test \(3DBenchy\)", project, replace\);/);
+  // Lot 7 : le bateau est le premier modèle de la galerie ; le fichier vient toujours de la table des modèles d'Orca.
+  assert.match(imp, /\{"benchy", "3dbenchy", "Petit bateau de test \(3DBenchy\)"\}/);
+  assert.match(imp, /handy_models\(\)\) \{\s*if \(std::string\(model\.key\) != pick->orca_key/, 'le fichier vient de la table des modèles d’Orca, pas d’un nom en dur');
+  assert.match(imp, /return place\(path, pick->name, project, replace\);/);
 });
 
 test('lot 1 · UX-06 : l’envoi est gardé dans le projet, plus en mémoire par objet', () => {

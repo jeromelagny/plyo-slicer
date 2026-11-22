@@ -493,7 +493,18 @@
   };
   function showsWelcome(fs) { return !!(fs && fs.seen && fs.level !== 'expert' && !fs.greeted); }
 
-  var api = { BAR: BAR, barKey: barKey, machineCards: machineCards, machineStatus: machineStatus, WELCOME: WELCOME, showsWelcome: showsWelcome, machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  // Galerie de l'étape 1 (lot 7) : modèles livrés avec Orca (mêmes clés que GALLERY de PlyoModelImport.cpp), posés comme le
+  // bateau de test. Catégories : utile, jouet, déco, test. La sélection de 20 à 30 modèles testés reste à faire.
+  var GALLERY = [
+    { sample: 'benchy', name: 'Petit bateau', category: 'test', what: 'Le test le plus connu : il montre vite ce qui va et ce qui coince.' },
+    { sample: 'cali_cat', name: 'Chat', category: 'jouet', what: 'Petit chat, rapide à imprimer.' },
+    { sample: 'stanford_bunny', name: 'Lapin', category: 'déco', what: 'Un lapin tout en courbes.' },
+    { sample: 'voron_cube', name: 'Cube de test', category: 'test', what: 'Vérifie les dimensions et les angles.' },
+    { sample: 'orca_tolerance_test', name: 'Test de tolérance', category: 'test', what: 'Montre si les pièces s’emboîtent.' },
+    { sample: 'autodesk_fdm_test', name: 'Test complet', category: 'test', what: 'Ponts, surplombs, petits détails : tout en une pièce.' }
+  ];
+
+  var api = { GALLERY: GALLERY, BAR: BAR, barKey: barKey, machineCards: machineCards, machineStatus: machineStatus, WELCOME: WELCOME, showsWelcome: showsWelcome, machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor, projectTitle: projectTitle };
   root.PlyoJourney = api;

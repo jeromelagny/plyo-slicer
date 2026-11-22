@@ -147,23 +147,44 @@ nlohmann::json add(const std::string& name, const std::string& base64, const nlo
     return place(path, fs::path(name).filename().string(), project, replace);
 }
 
+// Galerie du panneau (parcours débutant, lot 7) : des modèles déjà livrés avec Orca (resources/handy_models), donc déjà
+// redistribués avec l'application, chacun d'un seul fichier. `sample` (clé du panneau) → clé de la table d'Orca et nom affiché.
+// « benchy » : le petit bateau de test d'avant la galerie, même pièce.
+struct GalleryModel
+{
+    const char* sample;
+    const char* orca_key;
+    const char* name;
+};
+constexpr GalleryModel GALLERY[] = {
+    {"benchy", "3dbenchy", "Petit bateau de test (3DBenchy)"},
+    {"cali_cat", "cali_cat", "Chat de calibration (Cali Cat)"},
+    {"stanford_bunny", "stanford_bunny", "Lapin de Stanford"},
+    {"voron_cube", "voron_cube", "Cube de test Voron"},
+    {"autodesk_fdm_test", "autodesk_fdm_test", "Test d'impression Autodesk"},
+    {"orca_tolerance_test", "orca_tolerance_test", "Test de tolérance"},
+};
+
 nlohmann::json add_sample(const std::string& sample, const nlohmann::json& project, bool replace)
 {
-    // Le petit bateau de test (3DBenchy) fourni avec Orca : même pose qu'un fichier choisi, sans copie (le fichier est déjà
-    // sur l'ordinateur, dans les ressources de l'application).
-    const char* const missing = "Je ne trouve pas le petit bateau de test dans les fichiers de Plyo.";
-    if (sample != "benchy")
+    // Même pose qu'un fichier choisi, sans copie (le fichier est déjà sur l'ordinateur, dans les ressources de l'application).
+    const char* const missing = "Je ne trouve pas cette pièce dans les fichiers de Plyo.";
+    const GalleryModel* pick = nullptr;
+    for (const GalleryModel& g : GALLERY)
+        if (sample == g.sample)
+            pick = &g;
+    if (pick == nullptr)
         return {{"ok", false}, {"text", missing}};
     for (const auto& model : Slic3r::GUI::MenuFactory::handy_models()) {
-        if (std::string(model.key) != "3dbenchy" || model.file_names.empty())
+        if (std::string(model.key) != pick->orca_key || model.file_names.empty())
             continue;
         const fs::path            path = fs::path(Slic3r::resources_dir()) / "handy_models" / model.file_names.front();
         boost::system::error_code ec;
         if (!fs::exists(path, ec))
             break;
-        return place(path, "Petit bateau de test (3DBenchy)", project, replace);
+        return place(path, pick->name, project, replace);
     }
-    BOOST_LOG_TRIVIAL(warning) << "Plyo: petit bateau de test introuvable dans les ressources";
+    BOOST_LOG_TRIVIAL(warning) << "Plyo: modèle de la galerie introuvable dans les ressources : " << pick->orca_key;
     return {{"ok", false}, {"text", missing}};
 }
 

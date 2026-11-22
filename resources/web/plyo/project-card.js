@@ -337,7 +337,7 @@
     // tant que rien de ce qui est montré ne change.
     var ns0 = ctx.newSpool || {}, pk0 = ns0.picker || {};
     var key = JSON.stringify([step, project.filament, ctx.editing, ctx.spools, ns0.open, ns0.material, ns0.error, ctx.error, ctx.showKinds, ctx.noCanvas, ctx.noSlots, ctx.manualLink, ctx.slotRemark, ctx.relink,
-      ns0.brands, ns0.choice, ns0.brandOpen, ns0.allMaterials, ctx.quickSpool, pk0.showAll, pk0.picked && pk0.picked.brand, pk0.other, pk0.error, ctx.beginner]);
+      ns0.brands, ns0.choice, ns0.brandOpen, ns0.allMaterials, ctx.quickSpool, !!ctx.gallery, pk0.showAll, pk0.picked && pk0.picked.brand, pk0.other, pk0.error, ctx.beginner]);
     var active = typeof document !== 'undefined' ? document.activeElement : null;
     if (active && active.dataset && active.dataset.spoolName && slot.contains(active) && slot.choicesKey === key) return;
     slot.choicesKey = key;
@@ -411,6 +411,22 @@
       if (ctx.editing === 'filament' && !fi) body.appendChild(ui.button('Annuler', h.cancelEdit, 'link'));
       renderManualLink(body, ui, ctx);
     } else {
+      // Galerie ouverte (lot 7) : les modèles fournis, un clic pose le modèle (même chemin que le bateau de test).
+      if (ctx.gallery && ctx.gallery.length && h.pickSample) {
+        body.appendChild(ui.el('p', 'intent-q', 'Galerie'));
+        body.appendChild(ui.el('p', 'muted small', 'Des modèles fournis avec Plyo Slicer, prêts à imprimer.'));
+        var grid = ui.el('div', 'gallery-grid');
+        ctx.gallery.forEach(function (g) {
+          var card = ui.button(g.name, function () { h.pickSample(g.sample); }, 'gallery-card', 'cube');
+          card.appendChild(ui.el('span', 'gallery-cat', g.category));
+          card.title = g.what;
+          grid.appendChild(card);
+        });
+        body.appendChild(grid);
+        body.appendChild(ui.button('Retour', h.galleryClose, 'link'));
+        slot.appendChild(body);
+        return;
+      }
       // La pièce d'abord (lot 6), même sans imprimante : une grande zone où déposer le fichier (un clic l'ouvre aussi), puis
       // d'où peut venir la pièce : mes fichiers, la galerie (modèles fournis, h.galleryOpen), ou une pièce dessinée par l'IA.
       var drop = ui.button('Dépose ta pièce ici', h.importPart, 'drop-zone main-choice', 'cube');
