@@ -35,8 +35,9 @@
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); } 70% { box-shadow: 0 0 0 9px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
   @media (prefers-reduced-motion: reduce) { .pulse.on { animation: none; } }
   .slots { display: flex; gap: 6px; margin-top: 10px; }
-  .slot { width: 40px; height: 40px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 22%, var(--bg)); display: grid; place-items: center; color: var(--accent); }
+  .slot { width: 48px; height: 48px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 22%, var(--bg)); display: grid; place-items: center; color: var(--accent); }
   .slot svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; display: block; }
   .hint { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
   .error { color: var(--danger); }
   footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 28px 22px; }
@@ -103,13 +104,26 @@
     if (window.wx && window.wx.postMessage) window.wx.postMessage(JSON.stringify(message));
   }
 
-  function setPhotos(count) {
+  // Photos prises sur le téléphone : leur miniature (`thumbs` du service, data:image/jpeg vérifiée), sinon l'icône.
+  var shown = '';
+  function setPhotos(count, thumbs) {
+    var list = Array.isArray(thumbs) ? thumbs : [], key = count + '|' + list.map(function (t) { return String(t).length; }).join(',');
+    if (key === shown) return; // rien de neuf : pas de clignotement toutes les 2 secondes
+    shown = key;
     slots.textContent = '';
     for (var i = 0; i < count; i++) {
       var slot = document.createElement('div');
       slot.className = 'slot';
-      // Icône « camera » du jeu dessiné du panneau (ICONS dans index.html), jamais d'émoji.
-      slot.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg>';
+      var t = typeof list[i] === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(list[i]) ? list[i] : '';
+      if (t) {
+        var img = document.createElement('img');
+        img.alt = 'Photo ' + (i + 1);
+        img.src = t;
+        slot.appendChild(img);
+      } else {
+        // Icône « camera » du jeu dessiné du panneau (ICONS dans index.html), jamais d'émoji.
+        slot.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg>';
+      }
       slots.appendChild(slot);
     }
   }
@@ -134,7 +148,7 @@
           statusLine.textContent = 'Photos reçues : l’assistant les analyse…';
           return toSlicer({ command: 'phone_done' });
         }
-        setPhotos(s.photo_count);
+        setPhotos(s.photo_count, s.thumbs);
         if (s.status === 'waiting') return;
         pulse.classList.add('on');
         // Ce qu'il reste à faire sur le téléphone, avec le nom du bouton.

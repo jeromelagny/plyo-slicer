@@ -470,3 +470,10 @@ test('page téléphone (audit du 22/11) : fenêtre du QR au même titre que le t
   assert.match(cpp, /if \(Json::str\(payload, "command"\) == "pick_files"\) \{\s*m_closing = true;\s*EndModal\(wxID_NO\);/);
   assert.match(fs.readFileSync(new URL('../../../../src/plyo/PlyoAssistant.cpp', import.meta.url), 'utf8'), /else if \(result == wxID_NO\)[^\n]*\n\s*send\(\{\{"type", "phone_pick_files"\}\}\);/);
 });
+
+test('fenêtre du QR : les miniatures des photos prises, vérifiées, sans clignoter', () => {
+  const phone = read('phone.html');
+  assert.match(phone, /setPhotos\(s\.photo_count, s\.thumbs\);/);
+  assert.match(phone, /\/\^data:image\\\/jpeg;base64,\[A-Za-z0-9\+\\\/=\]\+\$\/\.test\(list\[i\]\)/, 'seulement une image JPEG en data:');
+  assert.match(phone, /if \(key === shown\) return;/);
+});
