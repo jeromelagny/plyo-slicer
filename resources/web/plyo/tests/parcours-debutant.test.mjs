@@ -441,3 +441,16 @@ test('plusieurs pièces : une pièce plus grande que le plateau est dite après 
   assert.match(page, /var measuredElsewhere = !PlyoProject\.hasPrinter\(conv\.project\) && !!\(conv\.project\.printer && conv\.project\.printer\.preset\) && conv\.project\.printer\.preset !== orcaPrinterName\(\);/);
   assert.match(page, /if \(tooBig\.length\) noteLine\(PlyoJourney\.arrangeTooBigText\(tooBig\), 'warn', 'alert', 'guide'\);/);
 });
+
+test('machine à une seule bobine : les couleurs d’un fichier ne sont pas reprises, et le panneau le dit', () => {
+  assert.equal(J.coloursIgnoredText('supp_telephone.3mf', 7), '« supp_telephone.3mf » prévoit 7 couleurs, mais ta machine imprime une bobine à la fois : tout sera imprimé avec ta bobine.');
+  const cpp = fs.readFileSync(new URL('../../../../src/plyo/PlyoColours.cpp', import.meta.url), 'utf8');
+  const rule = cpp.slice(cpp.indexOf('bool single_spool_machine()'), cpp.indexOf('void one_filament('));
+  for (const need of ['nozzles->values.size() > 1', 'is_bbl_vendor()', 'Canvas::translator_of(printer.config).empty()', 'Slots::manual_get('])
+    assert.ok(rule.includes(need), need);
+  assert.match(cpp, /if \(single_spool_machine\(\)\) \{[\s\S]{0,400}one_filament\(\*plater, added\);/);
+  assert.match(cpp, /return \{\{"file_colours", nlohmann::json::array\(\)\}, \{"colours_ignored", static_cast<int>\(valid\)\}\};/);
+  const imp = fs.readFileSync(new URL('../../../../src/plyo/PlyoModelImport.cpp', import.meta.url), 'utf8');
+  assert.match(imp, /result\["colours_ignored"\] = colours\["colours_ignored"\];/);
+  assert.match(read('index.html'), /if \(msg\.colours_ignored > 1\) \{/);
+});

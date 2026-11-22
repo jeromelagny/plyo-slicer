@@ -120,6 +120,8 @@ nlohmann::json place(const fs::path& path, const std::string& shown_name, const 
         const nlohmann::json colours = Colours::from_file(path.string(), added);
         if (!Json::arr(colours, "file_colours").empty())
             result["file_colours"] = colours["file_colours"];
+        if (colours.contains("colours_ignored")) // machine à une seule bobine : le panneau le dit
+            result["colours_ignored"] = colours["colours_ignored"];
         const nlohmann::json adaptation = Project::adapt_file(path.string(), project);
         if (!adaptation.empty())
             result["adaptation"] = adaptation;

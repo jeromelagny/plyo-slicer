@@ -405,6 +405,37 @@ bool parts_match(Slic3r::GUI::Plater& plater, const std::vector<size_t>& added, 
 
 // Couleurs du fichier données aux parties de ces pièces (parts_match vrai). Les couleurs du projet doivent déjà exister : Orca
 // ramène à la première tout numéro qui les dépasse dès que leur nombre change (ObjectList::update_filament_values_for_items).
+// Machine connue pour n'imprimer qu'une bobine à la fois (retour d'essai, 22/11 : 7 couleurs d'un 3MF reprises sur une
+// CR-10 SE) : une seule tête, aucun système d'emplacements lu par Plyo (CFS, Canvas, IFS, U1) ni saisi à la main, et pas
+// une Bambu Lab (un AMS y est possible sans que Plyo le lise). Dans le doute, la machine n'est pas « à une bobine ».
+bool single_spool_machine()
+{
+    const Slic3r::Preset& printer = bundle().printers.get_edited_preset();
+    if (const auto* nozzles = printer.config.option<Slic3r::ConfigOptionFloats>("nozzle_diameter"); nozzles != nullptr && nozzles->values.size() > 1)
+        return false;
+    if (bundle().is_bbl_vendor() || !Canvas::translator_of(printer.config).empty())
+        return false;
+    return Json::arr(Slots::manual_get(bundle().printers.get_selected_preset_name()), "trays").empty();
+}
+
+// Une bobine : les pièces posées prennent toutes le filament 1 (pièce et parties), comme « Changer de filament » d'Orca.
+// Orca a pu lire la couleur de chaque partie d'un projet Bambu Studio ou Orca : elle ne vaut rien sans bobine pour elle.
+void one_filament(Slic3r::GUI::Plater& plater, const std::vector<size_t>& added)
+{
+    auto&                             objects = plater.model().objects;
+    Slic3r::GUI::ObjectDataViewModel* model   = wxGetApp().obj_list()->GetModel();
+    for (size_t idx : added) {
+        if (idx >= objects.size())
+            continue;
+        Slic3r::ModelObject& object = *objects[idx];
+        object.config.set_key_value("extruder", new Slic3r::ConfigOptionInt(1));
+        for (Slic3r::ModelVolume* volume : object.volumes)
+            if (volume->config.has("extruder"))
+                volume->config.erase("extruder");
+        model->SetExtruder(wxString::Format("%d", 1), model->GetItemById(static_cast<int>(idx)));
+    }
+}
+
 void assign_parts(Slic3r::GUI::Plater& plater, const std::vector<size_t>& added, const CL::FileColours& file)
 {
     auto&                             objects = plater.model().objects;
@@ -478,6 +509,17 @@ nlohmann::json from_file(const std::string& path_utf8, const std::vector<size_t>
         valid += c.empty() ? 0 : 1;
     if (valid < 2)
         return none; // une couleur (ou aucune) : la pièce prend la bobine choisie, comme avant
+    if (single_spool_machine()) {
+        // Une seule bobine : rien n'est ajouté au projet, tout s'imprime dans la bobine choisie ; le panneau le dit.
+        {
+            Slic3r::GUI::Plater::SuppressSnapshots quiet(plater);
+            one_filament(*plater, added);
+        }
+        wxGetApp().obj_list()->Refresh();
+        plater->update();
+        BOOST_LOG_TRIVIAL(info) << "Plyo: couleurs du 3MF non reprises (" << valid << ") : machine à une seule bobine";
+        return {{"file_colours", nlohmann::json::array()}, {"colours_ignored", static_cast<int>(valid)}};
+    }
 
     // Les pièces de la plaque qui n'arrivent pas avec ce fichier gardent leurs couleurs.
     std::vector<size_t> others;

@@ -5347,6 +5347,12 @@
     if (msg.fits === false) showTooBig(entry);
     else if (adding) noteLine('« ' + msg.name + ' » ajoutée : ' + (1 + conv.project.part.extra.length) + ' pièces sur le plateau.', 'ok', 'check', 'guide');
     else if (inStep) noteLine(FS.modelAddedText(msg).text, 'ok', 'check', 'guide');
+    // Fichier en plusieurs couleurs sur une machine à une seule bobine (PlyoColours, single_spool_machine) : tout s'imprime avec
+    // ta bobine, dit une fois ; une machine qui a en fait plusieurs bobines se déclare d'un clic.
+    if (msg.colours_ignored > 1) {
+      var mono = noteLine(PlyoJourney.coloursIgnoredText(msg.name, msg.colours_ignored), '', 'palette', 'guide');
+      mono.appendChild(button('Ma machine a plusieurs bobines', function () { mono.remove(); openManual(); }, 'link'));
+    }
     nextQueuedModel();
   }
   // Nouveau projet : l'ancienne pièce a été retirée. La ligne et son « Annuler » restent visibles d'une étape à l'autre, jusqu'à la découpe.
