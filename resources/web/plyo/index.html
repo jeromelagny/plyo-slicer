@@ -415,6 +415,15 @@
   .bed-ask { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s3); }
   .bed-ask p { margin: 0; }
   .bed-choices { display: flex; flex-direction: column; gap: var(--s2); }
+  .drop-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s1); width: 100%; min-height: 112px; padding: var(--s4) var(--s3); border: 2px dashed color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: var(--r-md); background: var(--accent-soft); color: var(--accent-text); font: inherit; font-size: var(--fs-lg); font-weight: 700; cursor: pointer; text-align: center; }
+  .drop-zone:hover, .drop-zone:focus-visible { border-color: var(--accent); }
+  .drop-zone .drop-sub { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); }
+  .pick-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: var(--s2); }
+  .pick-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: var(--s2); min-height: 60px; border-radius: var(--r-md); border: 1px solid color-mix(in srgb, var(--fg) 26%, var(--bg)); background: var(--raised); color: var(--fg); font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; text-align: center; }
+  .pick-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .pick-card > .ic:first-child { color: var(--accent-text); }
+  .pick-card { position: relative; }
+  .pick-card > .ai-mark { position: absolute; top: 6px; right: 6px; margin: 0; }
   .machine-cards { display: flex; flex-direction: column; gap: var(--s2); align-items: stretch; }
   .machine-card { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: var(--s2); width: 100%; min-height: 52px; padding: var(--s2) var(--s3); border-radius: var(--r-md); border: 1px solid color-mix(in srgb, var(--fg) 26%, var(--bg)); background: var(--raised); color: var(--fg); font-weight: 600; text-align: left; cursor: pointer; }
   .machine-card:hover { border-color: var(--accent); background: var(--accent-soft); }
@@ -798,7 +807,7 @@
     b.appendChild(txt(label));
     // Action lourde de l'assistant IA (photo lue, pièce dessinée) : une petite étincelle et une bulle d'aide, sans texte en
     // plus. Le coût n'est pas répété sur chaque bouton (effet taximètre) : la jauge reste dans l'en-tête.
-    if (/(^|\s)ai(\s|$)/.test(b.className)) {
+    if (/(^|\s)ai-action(\s|$)/.test(b.className)) {
       var mark = icon('spark', 12);
       mark.classList.add('ai-mark');
       b.appendChild(mark);
@@ -1005,7 +1014,7 @@
     detachPlate();
     projectUI.oldPart = previousPart();
     // Nouveau projet : imprimante et filament du précédent proposés, jamais appliqués sans confirmation.
-    startConversation(conv && PlyoProject.nextStep(conv.project) !== 'printer' ? PlyoProject.proposeFrom(conv.project) : null);
+    startConversation(conv && PlyoProject.hasPrinter(conv.project) ? PlyoProject.proposeFrom(conv.project) : null);
     // Retouches d'impression faites à la main dans le projet quitté (UX-31) : la question vient une fois le plateau détaché.
     if (typeof askRetouches === 'function') askRetouches(1500);
   }
@@ -1480,8 +1489,8 @@
       document.querySelectorAll('#thread .photo-ask').forEach(function (n) { n.remove(); });
       var line = noteLine('Une photo de ta pièce m’aide à trouver la cause.', 'photo-ask', 'camera', 'chat');
       var photoActs = el('div', 'photo-acts');
-      photoActs.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { openPhone(); }, 'btn sm ai'));
-      photoActs.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { pickFiles(); }, 'btn ghost sm ai'));
+      photoActs.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { openPhone(); }, 'btn sm ai-action'));
+      photoActs.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { pickFiles(); }, 'btn ghost sm ai-action'));
       line.appendChild(photoActs);
     }
     noteInput.value = prefill || '';
@@ -1880,7 +1889,11 @@
     ctx.endAsk = !!endQ;
     if (endQ) ctx.ended = endQ.verdict;
     else if (conv && PlyoJourney.currentStep(conv.project) === 'resultat' && endOutcome()) ctx.ended = endOutcome();
-    if (p.printer && p.printer.proposed) ctx.proposal = { name: p.printer.name || p.printer.preset };
+    if (p.printer && p.printer.proposed) {
+      ctx.proposal = { name: PlyoJourney.shortMachine(p.printer) || p.printer.name || p.printer.preset };
+      // Deuxième projet : la bobine d'avant aussi, dite sur la même ligne (« Sur K1C, avec PLA blanc ? »).
+      if (p.filament && p.filament.proposed && p.filament.spool && p.filament.spool.name && !projectUI.showList) ctx.spoolProposal = { name: p.filament.spool.name };
+    }
     // La bobine du projet précédent ; « Une autre bobine » ouvre la liste : plus de « Oui, … » en double au-dessus d'elle.
     else if (p.filament && p.filament.proposed && p.filament.spool && p.filament.spool.name && !projectUI.showKinds) ctx.proposal = { name: p.filament.spool.name };
     var cctx = conv ? canvasCtx(PlyoJourney.currentStep(conv.project)) : null;
@@ -1966,6 +1979,10 @@
       renderWelcome();
       if (conv) renderProject();
     }, 'btn'));
+    // « Je débute / Je connais déjà » : une ligne ici plutôt qu'une question dans la fenêtre d'accueil (lot 6).
+    var expert = el('p', 'muted small', w.expertAsk + ' ');
+    expert.appendChild(button(w.expertLink, function () { setJourneyLevel('expert'); renderWelcome(); }, 'link'));
+    card.appendChild(expert);
     slot.appendChild(card);
   }
   function renderProject() {
@@ -1980,6 +1997,7 @@
     if (step !== 'imprimer') { projectUI.sentConv = null; projectUI.exported = null; } // « L'impression a démarré » vaut pour l'envoi de cette étape, pas pour le suivant
     if (step !== journeyUI.lastStep) {
       clearStepNotes();
+      if (step === 'machine') setTimeout(function () { maybeStartSetup(); renderSetupFlow(); }, 0);
       // En avançant d'une étape, ce qui est dit tout de suite (même tour) vient de l'étape quittée : rangé dans le récapitulatif.
       var order = PlyoJourney.STEPS.map(function (x) { return x.key; });
       if (journeyUI.lastStep && order.indexOf(step) > order.indexOf(journeyUI.lastStep)) { journeyUI.leftStep = journeyUI.lastStep; setTimeout(function () { journeyUI.leftStep = null; }, 0); }
@@ -2002,7 +2020,10 @@
     PlyoJourneyView.renderBar($('journey-bar'), ui, { project: conv.project, widthPx: window.innerWidth, onRevisit: barBusy() ? null : revisitStep });
     var intentNow = step === 'preparer' ? intentState(step, plateSliced()) : null;
     $('journey-action').parentNode.classList.toggle('act-after', !!(intentNow && intentNow.mode === 'ready'));
-    PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers });
+    // Machine et bobine sur un seul écran (lot 6) : à l'étape de la bobine, la machine est rappelée, « changer » à côté.
+    var onMachine = step === 'filament' && !projectUI.editing && PlyoProject.hasPrinter(conv.project) ? PlyoJourney.shortMachine(conv.project.printer) : '';
+    PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
+      extra: onMachine ? { label: 'Sur ' + onMachine + ' · changer', onClick: function () { projectHandlers.change('printer'); } } : null });
     ensureCanvasRead(step);
     ensureManualRead(step);
     ensureColoursRead(step);
@@ -2059,10 +2080,9 @@
   function revisitStep(key) {
     if (!conv || barBusy()) return;
     applyTab('show-guide');
-    if (key === 'machine') projectHandlers.change('printer');
-    else if (key === 'filament') projectHandlers.change('filament');
+    // Étapes de la barre (lot 6) : « Machine et bobine » rouvre le choix de la machine (la bobine suit) ; « Ta pièce » le fichier.
+    if (key === 'materiel') projectHandlers.change('printer');
     else if (key === 'piece') projectHandlers.importPart();
-    else if (key === 'preparer') { delete conv.project.success; setTourStep('slice'); }
     if (key !== 'piece') $('project-card').scrollIntoView({ block: 'nearest' });
   }
   var journeyHandlers = {
@@ -2087,7 +2107,7 @@
     if (!needs) return;
     var tip = noteLine(needs, '', 'info', 'chat');
     var p = conv.project, missing = [];
-    if (PlyoProject.nextStep(p) === 'printer') missing.push('printer');
+    if (!PlyoProject.hasPrinter(p)) missing.push('printer');
     if (!(p.filament && !p.filament.proposed && p.filament.preset)) missing.push('filament');
     var go = completeProjectButton(missing, 'C’est noté. Montre-moi ta pièce dans la discussion : je te dirai quoi corriger.');
     if (go) tip.appendChild(go);
@@ -2462,6 +2482,7 @@
     else if (kind === 'started') { if (conv) stepHandlers.started(); }
     else if (kind === 'keepTemps') confirmTemps();
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
+    else if (kind === 'confirmBoth') { projectUI.confirmSpool = conv; projectHandlers.keepProposed(); } // la bobine suit, une fois la machine prise
     else if (kind === 'pickOnly') { var only = journeyCtx().onlyMachine; if (only) projectHandlers.pickPrinter(only.preset, only.label); } // comme un clic sur sa carte
     else if (kind === 'setupPrinter') projectHandlers.setupPrinter();
     else if (kind === 'applyIntent') applyIntent(false);
@@ -3055,6 +3076,8 @@
     if (!sameMachine) conv.project.filament = null; // le filament dépend de la machine : « comme avant » est reproposé pour celle-ci
     projectUI.showList = false;
     projectChanged();
+    // « Oui, on continue » : la bobine d'avant est prise à son tour, comme « Oui, <bobine> ».
+    if (projectUI.confirmSpool === conv) { projectUI.confirmSpool = null; var fp = conv.project.filament; if (fp && fp.proposed && fp.spool) projectHandlers.confirmFilament(); }
     // Le panneau a changé la machine d'Orca : il le dit, et l'autre machine reste à un clic.
     if (projectUI.switchedFrom) {
       var tip = noteLine('Plyo Slicer était sur « ' + projectUI.switchedFrom + ' » : je l’ai mis sur ' + pend.name + ', ta machine.', '', 'info', 'guide');
@@ -3262,7 +3285,7 @@
     if (!c || c.conv !== conv) { projectUI.completing = null; return; }
     var p = conv.project, next = PlyoProject.nextStep(p);
     var still = PlyoJourney.stillMissing(p, c.missing);
-    if (next === 'printer' || projectUI.pending) return; // la machine se choisit à l'étape Machine
+    if (!PlyoProject.hasPrinter(p) || projectUI.pending) return; // la machine se choisit à son étape (après la pièce, lot 6)
     if (still.indexOf('filament') >= 0) {
       // Une seule fois : « Annuler » dans le choix de la bobine n'y ramène pas de force.
       if (next !== 'filament' && projectUI.editing !== 'filament' && !c.opened) { c.opened = true; projectHandlers.change('filament'); }
@@ -4259,13 +4282,19 @@
   // Changer d'avis sur « Je connais déjà » (UX-02) : panneau fermé ou ouvert au prochain lancement.
   $('m-start').addEventListener('click', function () {
     menu.classList.add('hidden');
-    var level = fsState.level === 'expert' ? 'beginner' : 'expert';
+    setJourneyLevel(fsState.level === 'expert' ? 'beginner' : 'expert');
+  });
+  // Débutant ou confirmé : depuis le menu, la ligne de l'accueil du panneau (lot 6 : la fenêtre d'accueil ne le demande plus) ou
+  // l'offre faite quand ton vocabulaire montre de l'expérience (levelNotice). Jamais changé sans ton clic.
+  function setJourneyLevel(level) {
     fsState.level = level;
-    window.orca.postMessage({ type: 'firststeps_set', patch: { level: level } });
+    var patch = { level: level };
+    if (level === 'expert') { fsState.greeted = true; patch.greeted = true; } // l'accueil du débutant n'a plus lieu d'être
+    window.orca.postMessage({ type: 'firststeps_set', patch: patch });
     updateStartMenu();
     if (conv) renderProject(); // la fiche montre ou cache les températures modifiables
     noteLine(PlyoJourney.startChangeNote(level), 'ok', 'check');
-  });
+  }
   $('m-help').addEventListener('click', openHelp);
   $('m-logout').addEventListener('click', function () { menu.classList.add('hidden'); logout(); });
   $('m-login').addEventListener('click', function () { menu.classList.add('hidden'); openLogin(); });
@@ -4382,16 +4411,13 @@
   // Un projet = une pièce, et la pièce vient après l'imprimante et le filament (fiche « Mon projet »).
   function sendModel(file) {
     applyTab('show-guide'); // la pièce se pose et se vérifie dans le Guide
-    var step = PlyoProject.nextStep(conv.project);
+    // La pièce d'abord (lot 6) : posée tout de suite, sur la machine en cours d'Orca si aucune n'est encore choisie ; elle reste
+    // au choix de la machine, et un 3MF est adapté une fois machine et bobine choisies (needsAdaptation). Une pièce reprise du
+    // plateau sans machine choisie cède la place au fichier déposé (retirée à l'import, avec « Annuler »).
     var adopted = conv.project.part && conv.project.part.fromPlate;
-    if (step === 'printer' && (adopted || !(conv.project.part && conv.project.part.name))) { // la machine d'abord : l'adaptation d'un 3MF en dépend
-      // Le fichier déposé est prioritaire sur ce qui traîne sur le plateau : l'ancienne pièce est retirée à l'import, avec « Annuler ».
-      if (adopted) conv.project.part = null;
-      projectUI.waitingFile = file;
+    if (adopted && !PlyoProject.hasPrinter(conv.project)) {
+      conv.project.part = null;
       if (tourSignals && tourSignals.objects > 0) projectUI.newProjectFile = true;
-      renderProject();
-      noteLine('« ' + file.name + ' » attend : choisis d’abord ton imprimante, je le pose ensuite.', '', 'info', 'guide');
-      return;
     }
     var part = conv.project.part && conv.project.part.name;
     if (part && file.name !== part) { offerNewProject(file); return; }
@@ -5157,6 +5183,9 @@
     if (projectUI.reposing) { projectUI.reposing = false; renderProject(); noteLine('« ' + msg.name + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); }
     projectUI.newProjectFile = false;
     if (msg.replaced > 0) showReplaced(msg, old);
+    // Pas encore de machine choisie : la taille est mesurée sur le plateau de la machine en cours d'Orca, peut-être pas la tienne.
+    // Rien n'est annoncé trop grand ici : la découpe remesure sur ta machine (dropTooBig au choix de la machine).
+    if (msg.fits === false && !PlyoProject.hasPrinter(conv.project)) msg = Object.assign({}, msg, { fits: true });
     var entry = record({ kind: 'model', msg: msg, reduced: false });
     // Un seul fil (lot 5) : une première pièce bien posée est dite dans la carte d'étape (après le changement d'étape, qui
     // efface les messages), pas une deuxième fois dans les échanges ; elle reste dans l'historique du projet.
@@ -5557,9 +5586,9 @@
     sheet.appendChild(status);
     var footer = el('footer');
     // Libellés courts et parallèles : les deux boutons tiennent côte à côte à 320 px.
-    var photoBtn = button('Photo', null, 'btn ai', 'camera');
+    var photoBtn = button('Photo', null, 'btn ai-action', 'camera');
     photoBtn.title = fr('Ajouter une photo depuis l’ordinateur · Action de l’assistant IA');
-    var phoneBtn = button('Téléphone', null, 'btn ghost ai', 'phone');
+    var phoneBtn = button('Téléphone', null, 'btn ghost ai-action', 'phone');
     phoneBtn.title = fr('Prendre la photo avec ton téléphone · Action de l’assistant IA');
     var action = button('', null, 'btn full hidden');
     var back = button('Remettre ma pièce', null, 'link');
@@ -5998,8 +6027,8 @@
     box.appendChild(status);
     // Montrer la pièce : les deux mêmes boutons que partout (avec leur coût).
     var photos = el('div', 'row-acts');
-    photos.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { noteInput.value = Logic.retryPrompt(item, note); openPhone(); }, 'link ai', 'camera'));
-    photos.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { noteInput.value = Logic.retryPrompt(item, note); pickFiles(); }, 'link ai', 'camera'));
+    photos.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { noteInput.value = Logic.retryPrompt(item, note); openPhone(); }, 'link ai-action', 'camera'));
+    photos.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { noteInput.value = Logic.retryPrompt(item, note); pickFiles(); }, 'link ai-action', 'camera'));
     box.appendChild(photos);
     slot.appendChild(box);
   }
@@ -6304,11 +6333,18 @@
     if (sig !== onTourSignals.last) { onTourSignals.last = sig; renderProject(); }
   }
 
+  // Aucune imprimante installée : la recherche sur le Wi-Fi démarre d'elle-même en arrivant à l'étape Machine, une fois par session.
+  function maybeStartSetup() {
+    if (!fsState.needs_printer || setup.phase || setup.offered) return;
+    if (!conv || PlyoJourney.currentStep(conv.project) !== 'machine') return;
+    startSetup();
+  }
   function onFirstSteps(state) {
     var first = !fsState.hasOwnProperty('seen');
     fsState = state;
     // Aucune imprimante installée (premier lancement) : l'assistant commence par elle, une fois par session.
-    if (state.needs_printer && !setup.phase && !setup.offered) startSetup();
+    // La pièce d'abord (lot 6) : l'installation attend l'étape « Machine et bobine » (maybeStartSetup).
+    maybeStartSetup();
     renderSetupFlow();
     if (first && state.level === 'expert' && !state.greeted) window.orca.postMessage({ type: 'firststeps_set', patch: { greeted: true } });
     // Un seul fil (lot 5) : plus d'onglet « Poser une question » où ouvrir le confirmé ; son champ de saisie est prêt.
@@ -6478,6 +6514,11 @@
     if (move === 'down') { noteLine('Je reprends les explications détaillées.', '', 'info', 'chat'); return; }
     if (move !== 'up') return;
     var line = noteLine('Tu as l’air d’avoir de l’expérience : je te réponds plus court.', '', 'info', 'chat');
+    // Le niveau du parcours se déduit aussi de l'usage (lot 6) : proposé d'un clic, jamais changé en silence.
+    if (fsState.level !== 'expert') {
+      var pro = button('Passer en mode confirmé', function () { pro.remove(); setJourneyLevel('expert'); }, 'link');
+      line.appendChild(pro);
+    }
     var keep = button('Garde les explications détaillées', function () {
       habits = PlyoMachines.chooseLevel(habits, 'detailed');
       saveHabits();

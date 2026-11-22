@@ -411,15 +411,19 @@
       if (ctx.editing === 'filament' && !fi) body.appendChild(ui.button('Annuler', h.cancelEdit, 'link'));
       renderManualLink(body, ui, ctx);
     } else {
-      body.appendChild(ui.el('p', 'muted small', 'Glisse ici le fichier 3D de ta pièce (STL ou 3MF), ou choisis-le sur ton ordinateur. Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
-      var pacts = ui.el('div', 'printer-actions');
-      pacts.appendChild(ui.button('Choisir un fichier', h.importPart, 'btn ghost sm main-choice', 'folder'));
-      // Pas de fichier : l'assistant dessine une pièce simple (« Crée-moi une pièce »), le choix secondaire de l'écran.
-      if (h.designOpen) pacts.appendChild(ui.button('Je n’ai pas de fichier : crée-moi une pièce', h.designOpen, 'btn ghost sm ai', 'wand'));
-      body.appendChild(pacts);
-      // Un débutant n'a souvent aucun fichier : le petit bateau de test fourni avec le slicer se pose comme une pièce choisie
-      // (un essai, d'où un simple lien sous les deux choix).
-      body.appendChild(ui.button('Pas encore de fichier ? Essaie avec le petit bateau de test', h.samplePart, h.designOpen ? 'link' : 'btn ghost sm'));
+      // La pièce d'abord (lot 6), même sans imprimante : une grande zone où déposer le fichier (un clic l'ouvre aussi), puis
+      // d'où peut venir la pièce : mes fichiers, la galerie (modèles fournis, h.galleryOpen), ou une pièce dessinée par l'IA.
+      var drop = ui.button('Dépose ta pièce ici', h.importPart, 'drop-zone main-choice', 'cube');
+      drop.appendChild(ui.el('span', 'drop-sub', 'Fichier 3D (STL ou 3MF), ou clique pour le choisir'));
+      body.appendChild(drop);
+      var from = ui.el('div', 'pick-cards');
+      from.appendChild(ui.button('Mes fichiers', h.importPart, 'pick-card', 'folder'));
+      if (h.galleryOpen) from.appendChild(ui.button('Galerie', h.galleryOpen, 'pick-card', 'palette'));
+      if (h.designOpen) from.appendChild(ui.button('Créer avec l’IA', h.designOpen, 'pick-card ai-action', 'wand'));
+      body.appendChild(from);
+      body.appendChild(ui.el('p', 'muted small', 'Un 3MF d’un autre créateur sera adapté à ta machine et à ton filament.'));
+      // Un essai sans rien chercher : le petit bateau de test fourni avec le slicer, posé comme une pièce choisie.
+      body.appendChild(ui.button('Essaie avec le bateau de test', h.samplePart, 'link'));
       if (ctx.oldPart) {
         body.appendChild(ui.el('p', 'muted small', '« ' + ctx.oldPart + ' », la pièce de ton projet précédent, est encore sur le plateau de Plyo Slicer. Si tu choisis un fichier, elle sera retirée, et tu pourras annuler.'));
         body.appendChild(ui.button('Garder cette pièce', h.keepOldPart, 'link'));

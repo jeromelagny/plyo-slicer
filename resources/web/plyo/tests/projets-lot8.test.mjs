@@ -120,10 +120,10 @@ test('UX-26 (révisé) : plus de « (utilise ta jauge) » sur les boutons, les a
     assert.ok(page.includes("button('" + label + "'"), label);
   assert.ok(page.includes('Ou choisis un objectif</p>'));
   assert.equal(L.noteHint(0, 500), 'Entrée pour envoyer');
-  // Repère des actions lourdes : la classe « ai » ajoute l'étincelle et la bulle d'aide.
+  // Repère des actions lourdes : la classe « ai-action » ajoute l'étincelle et la bulle d'aide.
   assert.ok(page.includes("if (!b.title) b.title = fr('Action de l’assistant IA');"));
-  assert.ok(read('project-card.js').includes("crée-moi une pièce', h.designOpen, 'btn ghost sm ai', 'wand')"));
-  assert.ok(page.includes("button(PlyoJourney.PHOTO_PHONE, function () { openPhone(); }, 'btn sm ai')"));
+  assert.ok(read('project-card.js').includes("ui.button('Créer avec l’IA', h.designOpen, 'pick-card ai-action', 'wand')"));
+  assert.ok(page.includes("button(PlyoJourney.PHOTO_PHONE, function () { openPhone(); }, 'btn sm ai-action')"));
   // « Chercher une autre piste » ne fait que préremplir le champ : gratuit, sans mention.
   assert.ok(page.includes("button('Chercher une autre piste', function"));
 });

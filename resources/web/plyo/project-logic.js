@@ -13,14 +13,19 @@
     return !!entry && typeof entry === 'object' && !entry.proposed && typeof entry[field] === 'string' && entry[field] !== '';
   }
 
-  // Première étape à faire : 'printer' | 'filament' | 'part' | 'ready' (même ordre que ProjectLogic::missing en C++).
+  // Première étape à faire : 'part' | 'printer' | 'filament' | 'ready'. La pièce d'abord (parcours débutant, lot 6) : elle se
+  // pose sur la machine en cours d'Orca et reste au choix de la machine. ProjectLogic::missing (C++) garde son ordre : il ne
+  // sert qu'à lister ce qui manque dans un refus.
   function nextStep(project) {
     var p = project && typeof project === 'object' ? project : {};
-    if (!chosen(p.printer, 'preset')) return 'printer';
     if (!chosen(p.part, 'name')) return 'part';
+    if (!chosen(p.printer, 'preset')) return 'printer';
     if (!chosen(p.filament, 'preset')) return 'filament';
     return 'ready';
   }
+
+  // Machine choisie (pas seulement proposée) : la pièce passant d'abord, « nextStep === 'printer' » ne le dit plus.
+  function hasPrinter(project) { return chosen(project && project.printer, 'preset'); }
 
   function copy(entry) { return entry ? JSON.parse(JSON.stringify(entry)) : null; }
 
@@ -128,7 +133,7 @@
     return msg.same_printer ? 'open' : 'attach';
   }
 
-  var api = { opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, openRetryStep: openRetryStep, openGiveUpText: openGiveUpText, OPEN_RETRY_MS: OPEN_RETRY_MS, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, projectFileText: projectFileText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  var api = { hasPrinter: hasPrinter, opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, openRetryStep: openRetryStep, openGiveUpText: openGiveUpText, OPEN_RETRY_MS: OPEN_RETRY_MS, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, projectFileText: projectFileText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

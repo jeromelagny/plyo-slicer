@@ -9,17 +9,22 @@ const P = require('../project-logic.js');
 const printer = { preset: 'Elegoo Centauri Carbon 2 0.4 nozzle', name: 'Centauri Carbon 2' };
 const filament = { type: 'PLA', preset: 'Generic PLA @ECC2', nozzle_temp: 215, bed_temp: 60 };
 
-test('nextStep suit l’ordre imprimante, pièce, filament, puis ready', () => {
-  assert.equal(P.nextStep(P.emptyProject()), 'printer');
+// Parcours débutant, lot 6 : la pièce d'abord, même sans imprimante (avant : imprimante, pièce, filament).
+test('nextStep suit l’ordre pièce, imprimante, filament, puis ready', () => {
+  assert.equal(P.nextStep(P.emptyProject()), 'part');
+  assert.equal(P.nextStep({ printer: null, filament: null, part: { name: 'a.stl' } }), 'printer');
   assert.equal(P.nextStep({ printer: printer, filament: null, part: null }), 'part');
   assert.equal(P.nextStep({ printer: printer, filament: null, part: { name: 'a.stl' } }), 'filament');
   assert.equal(P.nextStep({ printer: printer, filament: filament, part: null }), 'part');
   assert.equal(P.nextStep({ printer: printer, filament: filament, part: { name: 'a.stl' } }), 'ready');
+  assert.equal(P.hasPrinter({ printer: printer }), true);
+  assert.equal(P.hasPrinter({ printer: Object.assign({ proposed: true }, printer) }), false);
+  assert.equal(P.hasPrinter(null), false);
 });
 
 test('nextStep accepte un projet absent ou abîmé', () => {
-  assert.equal(P.nextStep(null), 'printer');
-  assert.equal(P.nextStep('abc'), 'printer');
+  assert.equal(P.nextStep(null), 'part');
+  assert.equal(P.nextStep('abc'), 'part');
 });
 
 test('proposeFrom reprend imprimante et bobine à confirmer, sans pièce', () => {
@@ -27,7 +32,8 @@ test('proposeFrom reprend imprimante et bobine à confirmer, sans pièce', () =>
   assert.equal(p.printer.proposed, true);
   assert.equal(p.filament.proposed, true);
   assert.equal(p.part, null);
-  assert.equal(P.nextStep(p), 'printer');
+  assert.equal(P.nextStep(p), 'part', 'la pièce d’abord, puis machine et bobine proposées');
+  assert.equal(P.nextStep(Object.assign({}, p, { part: { name: 'b.stl' } })), 'printer');
 });
 
 test('confirm retire la marque « proposé »', () => {

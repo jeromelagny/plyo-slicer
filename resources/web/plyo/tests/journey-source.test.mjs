@@ -269,10 +269,12 @@ test('reprise d’un projet : le même fichier est reposé sans proposer un nouv
   assert.ok(/kind === 'importPart'\) pickFiles\(\)/.test(page), 'le bouton de l’étape ouvre le choix de fichier');
 });
 
-test('un fichier déposé est prioritaire : le plateau ne le remplace pas, et il est posé dès la machine choisie', () => {
+// Lot 6 : la pièce d'abord ; un fichier déposé est posé tout de suite, même sans machine choisie.
+test('un fichier déposé est prioritaire : le plateau ne le remplace pas, et il est posé tout de suite', () => {
   const page = read('index.html');
   assert.ok(/projectUI\.waitingFile \|\| resumeUI\.waiting \? null : PlyoProject\.partFromPlate\(/.test(page));
-  assert.ok(/if \(adopted\) conv\.project\.part = null/.test(page), 'une pièce seulement vue sur le plateau cède la place');
+  assert.ok(/if \(adopted && !PlyoProject\.hasPrinter\(conv\.project\)\) \{\s*conv\.project\.part = null;/.test(page), 'une pièce seulement vue sur le plateau cède la place');
+  assert.ok(!page.includes('attend : choisis d’abord ton imprimante'), 'plus d’attente de la machine');
   assert.ok(read('project-card.js').includes('Garder cette pièce'), 'l’ancienne pièce reste récupérable, et le panneau le dit');
 });
 
@@ -657,29 +659,28 @@ test('barre : une étape faite se rouvre au clic, à Entrée et à Espace ; l’
   const opened = [];
   V.renderBar(slot, fakeUi(), { project, widthPx: 400, onRevisit: (k) => opened.push(k) });
   const goes = all(slot).filter((n) => n.attrs.role === 'button');
-  assert.deepEqual(goes.map((n) => n.attrs['aria-label']), ['Revenir à l’étape Machine', 'Revenir à l’étape Pièce', 'Revenir à l’étape Filament', 'Revenir à l’étape Préparer']);
+  // Lot 6 : trois étapes affichées ; le Résultat est l'écran de fin de « Imprimer ».
+  assert.deepEqual(goes.map((n) => n.attrs['aria-label']), ['Revenir à l’étape Ta pièce', 'Revenir à l’étape Machine et bobine']);
   assert.ok(goes.every((n) => n.attrs.tabindex === '0' && n.className === 'journey-go'));
   goes[0].on.click();
   let prevented = 0;
-  goes[2].on.keydown({ key: 'Enter', preventDefault() { prevented++; } });
-  goes[3].on.keydown({ key: ' ', preventDefault() { prevented++; } });
-  goes[1].on.keydown({ key: 'a', preventDefault() { prevented++; } });
-  assert.deepEqual(opened, ['machine', 'filament', 'preparer']);
+  goes[1].on.keydown({ key: 'Enter', preventDefault() { prevented++; } });
+  goes[1].on.keydown({ key: ' ', preventDefault() { prevented++; } });
+  goes[0].on.keydown({ key: 'a', preventDefault() { prevented++; } });
+  assert.deepEqual(opened, ['piece', 'materiel', 'materiel']);
   assert.equal(prevented, 2);
   const segs = slot.children[0].children;
-  assert.equal(segs[4].children.some((c) => c.attrs && c.attrs.role === 'button'), false, 'Imprimer (fait) ne se rouvre pas');
-  assert.equal(segs[5].attrs['aria-current'], 'step', 'Résultat en cours');
-  assert.ok(!all(segs[5]).some((n) => n.attrs.role === 'button'));
+  assert.equal(segs.length, 3);
+  assert.equal(segs[2].attrs['aria-current'], 'step', 'Imprimer (son écran de fin, Résultat) en cours');
+  assert.ok(!all(segs[2]).some((n) => n.attrs.role === 'button'));
   assert.ok(segs.every((s) => s.attrs.role === 'listitem'), 'la barre reste une liste');
 });
 
 test('barre : chaque étape rouverte reprend le geste existant de la fiche', () => {
   const page = read('index.html');
   const fn = page.slice(page.indexOf('function revisitStep'), page.indexOf('var journeyHandlers'));
-  assert.match(fn, /key === 'machine'\) projectHandlers\.change\('printer'\)/);
-  assert.match(fn, /key === 'filament'\) projectHandlers\.change\('filament'\)/);
+  assert.match(fn, /key === 'materiel'\) projectHandlers\.change\('printer'\)/);
   assert.match(fn, /key === 'piece'\) projectHandlers\.importPart\(\)/);
-  assert.match(fn, /key === 'preparer'\) \{ delete conv\.project\.success; setTourStep\('slice'\); \}/);
   assert.match(page, /renderBar\(\$\('journey-bar'\), ui, \{[^}]*onRevisit: barBusy\(\) \? null : revisitStep/);
   assert.match(page, /\.journey-go \{[^}]*cursor: pointer/);
 });
@@ -795,8 +796,8 @@ test('reprise 2 : une fenêtre principale recréée (changement de langue) ne co
 
 test('lot 1 · UX-01 : sans fichier, le petit bateau de test se pose comme une pièce choisie', () => {
   const card = read('project-card.js'), page = read('index.html');
-  // 16/11 : avec « crée-moi une pièce » en choix secondaire, le bateau devient un lien (un écran, peu de choix).
-  assert.match(card, /ui\.button\('Pas encore de fichier \? Essaie avec le petit bateau de test', h\.samplePart, h\.designOpen \? 'link' : 'btn ghost sm'\)/);
+  // Lot 6 : sous la zone de dépôt et les cartes, le bateau reste un simple lien.
+  assert.match(card, /ui\.button\('Essaie avec le bateau de test', h\.samplePart, 'link'\)/);
   const fn = page.slice(page.indexOf('function importSample'), page.indexOf('// Glisser-déposer sur le panneau'));
   assert.match(fn, /postMessage\(\{ type: 'model_add', sample: 'benchy', project: conv\.project, conv: conv\.id,/, 'même chemin que model_add : plateau attaché à la conversation');
   assert.match(fn, /replace: PlyoProject\.replacesPlate\(/);
@@ -865,8 +866,8 @@ test('lot 1 · UX-04 et UX-05 : Résultat en cours, puis « Oui, c’est réussi
   assert.doesNotMatch(page, /'Envoyer une photo'|Envoyer une photo du résultat/);
   const chat = page.slice(page.indexOf('function openChatAbout'), page.indexOf('function onCanvasSent'));
   // Lot UX 5 : dans la discussion, les deux façons d'envoyer la photo sont des boutons, comme à l'étape Résultat (téléphone en plein).
-  assert.match(chat, /button\(PlyoJourney\.PHOTO_PHONE, function \(\) \{ openPhone\(\); \}, 'btn sm ai'\)/);
-  assert.match(chat, /button\(PlyoJourney\.PHOTO_COMPUTER, function \(\) \{ pickFiles\(\); \}, 'btn ghost sm ai'\)/);
+  assert.match(chat, /button\(PlyoJourney\.PHOTO_PHONE, function \(\) \{ openPhone\(\); \}, 'btn sm ai-action'\)/);
+  assert.match(chat, /button\(PlyoJourney\.PHOTO_COMPUTER, function \(\) \{ pickFiles\(\); \}, 'btn ghost sm ai-action'\)/);
 });
 
 test('lot 1 · UX-15 : le lot des questions d’intention a son « Annuler », qui ramène au résumé', () => {

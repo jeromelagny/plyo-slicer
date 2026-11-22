@@ -5,10 +5,19 @@
 (function (root) {
   var P = root.PlyoProject || (typeof require !== 'undefined' ? require('./project-logic.js') : null);
 
+  // Étapes internes, dans l'ordre du parcours (la pièce d'abord). La barre en montre trois (BAR) : les projets enregistrés gardent
+  // leurs étapes internes et se rouvrent au bon endroit.
   var STEPS = [
-    { key: 'machine', label: 'Machine' }, { key: 'piece', label: 'Pièce' }, { key: 'filament', label: 'Filament' },
+    { key: 'piece', label: 'Pièce' }, { key: 'machine', label: 'Machine' }, { key: 'filament', label: 'Filament' },
     { key: 'preparer', label: 'Préparer' }, { key: 'imprimer', label: 'Imprimer' }, { key: 'resultat', label: 'Résultat' }
   ];
+  // Barre affichée (lot 6) : 1. Ta pièce, 2. Machine et bobine (un seul écran), 3. Imprimer (le Résultat en est l'écran de fin).
+  var BAR = [
+    { key: 'piece', label: 'Ta pièce', of: ['piece'] },
+    { key: 'materiel', label: 'Machine et bobine', of: ['machine', 'filament'] },
+    { key: 'imprimer', label: 'Imprimer', of: ['preparer', 'imprimer', 'resultat'] }
+  ];
+  function barKey(step) { var b = BAR.filter(function (x) { return x.of.indexOf(step) >= 0; })[0]; return b ? b.key : 'piece'; }
   var BY_FICHE = { printer: 'machine', filament: 'filament', part: 'piece' };
   var BY_STEP = { slice: 'preparer', print: 'imprimer', after: 'resultat' };
 
@@ -26,20 +35,20 @@
   }
 
   function steps(project) {
-    var current = currentStep(project), seen = false;
-    return STEPS.map(function (s) {
+    var current = barKey(currentStep(project)), seen = false;
+    return BAR.map(function (s) {
       var state = s.key === current ? 'current' : (seen ? 'todo' : 'done');
       if (s.key === current) seen = true;
       return { key: s.key, label: s.label, state: state };
     });
   }
 
-  // Nom de l'onglet Étapes avec la progression (« Étapes · 4/6 ») : la barre n'est visible que dans cet onglet.
+  // Progression en mots (« Étapes · 2/3 »), sur les trois étapes de la barre.
   function tabLabel(project) {
     if (!project) return 'Étapes';
-    var current = currentStep(project);
-    var i = STEPS.findIndex(function (s) { return s.key === current; });
-    return 'Étapes · ' + (i + 1) + '/' + STEPS.length;
+    var current = barKey(currentStep(project));
+    var i = BAR.findIndex(function (s) { return s.key === current; });
+    return 'Étapes · ' + (i + 1) + '/' + BAR.length;
   }
 
   function tempText(t) { return (t.nozzle != null ? t.nozzle + ' °C' : '?') + ' / ' + (t.bed != null ? t.bed + ' °C' : '?'); }
@@ -106,6 +115,8 @@
     }
     // Débutant : la question de la plaque passe d'abord, seule ; pas d'autre bouton à côté.
     if (c.bedFirst && (step === 'machine' || step === 'piece' || step === 'filament')) return { label: '', kind: 'none', enabled: false };
+    // Deuxième projet : machine et bobine d'avant, confirmées ensemble d'un toucher (« Sur K1C, avec PLA blanc ? »).
+    if (step === 'machine' && c.proposal && c.spoolProposal) return { label: 'Oui, on continue', kind: 'confirmBoth', enabled: true };
     // Machine et bobine proposées (dernière machine, bobine du projet précédent) : confirmer d'un toucher.
     if (step === 'machine' && c.proposal) return { label: 'Oui, sur ' + c.proposal.name, kind: 'confirmMachine', enabled: true };
     // Liste des machines : une seule carte, « Oui, c'est elle » ; aucune, l'installation (la recherche sur le Wi-Fi d'abord).
@@ -158,9 +169,9 @@
     if (c.bedFirst && (step === 'machine' || step === 'piece' || step === 'filament')) return 'D’abord, une question sur ton imprimante';
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return 'Ta pièce n’est plus sur le plateau';
     switch (step) {
-      case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : c.onlyMachine ? 'Imprimer sur ' + c.onlyMachine.name + ' ?' : c.noMachine ? 'Ajoute ton imprimante' : 'Choisis ton imprimante';
+      case 'machine': return c.proposal && c.spoolProposal ? 'Sur ' + c.proposal.name + ', avec ' + c.spoolProposal.name + ' ?' : c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : c.onlyMachine ? 'Imprimer sur ' + c.onlyMachine.name + ' ?' : c.noMachine ? 'Ajoute ton imprimante' : 'Choisis ton imprimante';
       case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : c.quickSpool ? 'Ta bobine est en ' + c.quickSpool + ' ?' : 'Quelle bobine ?';
-      case 'piece': return 'Ajoute la pièce à imprimer';
+      case 'piece': return 'Quelle pièce veux-tu imprimer ?';
       case 'preparer': if (!c.sliced && c.intent === 'asking') return c.intentOne ? 'Une question sur ta pièce' : 'Quelques questions sur ta pièce';
         if (!c.sliced && c.intent === 'auto') return 'Je prépare ta pièce…';
         if (!c.sliced && c.intent === 'repeat') return 'Même usage que ta dernière pièce ?';
@@ -311,7 +322,7 @@
 
   // Barre des étapes : une étape faite parmi les quatre premières se rouvre d'un clic (en mode « changer ») ; Imprimer et
   // Résultat, l'étape en cours et celles à venir, non.
-  var REVISIT = ['machine', 'piece', 'filament', 'preparer'];
+  var REVISIT = ['piece', 'materiel']; // étapes de la barre (BAR)
   function canRevisit(s) { return !!s && s.state === 'done' && REVISIT.indexOf(s.key) >= 0; }
   function revisitLabel(s) { return 'Revenir à l’étape ' + s.label; }
 
@@ -443,8 +454,8 @@
     return m.indexOf('part') >= 0 ? 'Choisir ma pièce' : '';
   }
   function fixNeeds(project) {
-    var next = P.nextStep(project), p = project || {};
-    var printer = next === 'printer', filament = !(p.filament && !p.filament.proposed && p.filament.preset);
+    var p = project || {};
+    var printer = !P.hasPrinter(p), filament = !(p.filament && !p.filament.proposed && p.filament.preset);
     if (printer && filament) return 'Pour que j’applique une correction, il me faudra ta machine et ta bobine.';
     if (printer) return 'Pour que j’applique une correction, il me faudra ta machine.';
     if (filament) return 'Pour que j’applique une correction, il me faudra ta bobine.';
@@ -454,9 +465,9 @@
   // Ce qui manque encore parmi `missing` (printer, part, filament) une fois la fiche changée : un message qui demandait de les
   // choisir n'est plus vrai quand cette liste est vide (N2).
   function stillMissing(project, missing) {
-    var p = project || {}, next = P.nextStep(p);
+    var p = project || {};
     return (Array.isArray(missing) ? missing : []).filter(function (k) {
-      return k === 'printer' ? next === 'printer' : k === 'filament' ? !(p.filament && !p.filament.proposed && p.filament.preset) : k === 'part' ? !(p.part && p.part.name) : false;
+      return k === 'printer' ? !P.hasPrinter(p) : k === 'filament' ? !(p.filament && !p.filament.proposed && p.filament.preset) : k === 'part' ? !(p.part && p.part.name) : false;
     });
   }
   // Phrase dite quand la fiche est complète (N2) : une fiche de réglages encore à appliquer dans la discussion passe avant
@@ -476,11 +487,13 @@
       { icon: 'check', text: 'Pour répondre, clique sur le bouton qui te correspond. Pas sûr ? Il y a toujours « Je ne sais pas ».' },
       { icon: 'wand', text: 'Je règle Plyo Slicer pour toi : tu n’as pas besoin de toucher à la partie de gauche.' }
     ],
-    go: 'C’est parti'
+    go: 'C’est parti',
+    expertAsk: 'Tu connais déjà l’impression 3D ?',
+    expertLink: 'Je connais déjà : moins de questions'
   };
   function showsWelcome(fs) { return !!(fs && fs.seen && fs.level !== 'expert' && !fs.greeted); }
 
-  var api = { machineCards: machineCards, machineStatus: machineStatus, WELCOME: WELCOME, showsWelcome: showsWelcome, machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { BAR: BAR, barKey: barKey, machineCards: machineCards, machineStatus: machineStatus, WELCOME: WELCOME, showsWelcome: showsWelcome, machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor, projectTitle: projectTitle };
   root.PlyoJourney = api;

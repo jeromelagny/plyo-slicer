@@ -130,7 +130,7 @@ test('lot 3 · une seule machine : « Imprimer sur … ? » et « Oui, c’est e
 function renderMachine(printers, extra) {
   const slot = fakeUi().el('div'), calls = [];
   const handlers = new Proxy({}, { get: (_, k) => (...a) => calls.push([k, ...a]) });
-  Card.renderChoices(slot, fakeUi(), Object.assign({ project: { printer: null, part: null, filament: null }, printers, reachable: { 'Ma K1C': true }, handlers }, extra));
+  Card.renderChoices(slot, fakeUi(), Object.assign({ project: { printer: null, part: { name: 'a.stl' }, filament: null }, printers, reachable: { 'Ma K1C': true }, handlers }, extra));
   return { slot, calls };
 }
 
@@ -237,4 +237,63 @@ test('lot 5 · un seul fil : l’étape, ses retours en tête de carte, puis les
   const fn = page.slice(page.indexOf('function applyTab'), page.indexOf('var answerBox'));
   assert.doesNotMatch(fn, /classList\.toggle\('hidden'/);
   assert.match(fn, /viewUI\.unread = false;/);
+});
+
+// ---------- Lot 6 : parcours en 3 étapes, la pièce d'abord ----------
+
+test('lot 6 · projets enregistrés avec l’ancien ordre : rouverts à la bonne étape', () => {
+  const printer = { preset: 'Ma K1C', name: 'K1C' }, part = { name: 'a.stl' };
+  const filament = { type: 'PLA', preset: 'Generic PLA', temps_ok: true, spool: { id: 's1', name: 'Sunlu PLA' } };
+  const bar = (p) => J.steps(p).find((s) => s.state === 'current').key;
+  // Ancien format : machine choisie, pas encore de pièce (l'ancienne étape 2) → étape 1, la pièce.
+  assert.equal(J.currentStep({ printer, part: null, filament: null }), 'piece');
+  assert.equal(bar({ printer, part: null, filament: null }), 'piece');
+  // Machine et pièce, pas de bobine → étape 2.
+  assert.equal(J.currentStep({ printer, part, filament: null }), 'filament');
+  assert.equal(bar({ printer, part, filament: null }), 'materiel');
+  // Températures pas encore vérifiées (ancien parcours détaillé) → toujours l'étape 2.
+  assert.equal(bar({ printer, part, filament: Object.assign({}, filament, { temps_ok: false }) }), 'materiel');
+  // project.step d'avant : slice, print, after (et « done » des toutes premières versions) → étape 3.
+  for (const step of [undefined, 'done', 'slice', 'print', 'after']) assert.equal(bar({ printer, part, filament, step }), 'imprimer', String(step));
+  assert.equal(J.currentStep({ printer, part, filament, step: 'after' }), 'resultat', 'le Résultat reste l’écran de fin');
+  // Projet du deuxième lancement (machine et bobine proposées, sans pièce) → la pièce d'abord.
+  assert.equal(bar(P.proposeFrom({ printer, part, filament })), 'piece');
+});
+
+const P = require('../project-logic.js');
+
+test('lot 6 · deuxième projet : machine et bobine d’avant sur une ligne, confirmées d’un toucher', () => {
+  const ctx = { proposal: { name: 'K1C' }, spoolProposal: { name: 'PLA blanc' } };
+  assert.equal(J.prompt('machine', ctx), 'Sur K1C, avec PLA blanc ?');
+  assert.deepEqual(J.primaryAction('machine', ctx), { label: 'Oui, on continue', kind: 'confirmBoth', enabled: true });
+  const page = read('index.html');
+  assert.match(page, /else if \(kind === 'confirmBoth'\) \{ projectUI\.confirmSpool = conv; projectHandlers\.keepProposed\(\); \}/);
+  assert.match(page, /if \(projectUI\.confirmSpool === conv\) \{ projectUI\.confirmSpool = null; var fp = conv\.project\.filament; if \(fp && fp\.proposed && fp\.spool\) projectHandlers\.confirmFilament\(\); \}/);
+  assert.match(page, /extra: onMachine \? \{ label: 'Sur ' \+ onMachine \+ ' · changer'/);
+});
+
+test('lot 6 · étape 1 : zone de dépôt, mes fichiers, galerie (si elle existe), créer avec l’IA, bateau de test', () => {
+  const slot = fakeUi().el('div'), calls = [];
+  const handlers = new Proxy({}, { get: (_, k) => k === 'galleryOpen' ? undefined : (...a) => calls.push([k, ...a]) });
+  Card.renderChoices(slot, fakeUi(), { project: { printer: null, part: null, filament: null }, handlers });
+  assert.deepEqual(labels(slot), ['Dépose ta pièce ici', 'Mes fichiers', 'Créer avec l’IA', 'Essaie avec le bateau de test'], 'galerie masquée tant qu’elle n’existe pas');
+  buttons(slot)[0].on.click();
+  assert.deepEqual(calls.pop(), ['importPart']);
+  const withGallery = fakeUi().el('div');
+  Card.renderChoices(withGallery, fakeUi(), { project: { printer: null, part: null, filament: null }, handlers: new Proxy({}, { get: () => () => {} }) });
+  assert.ok(labels(withGallery).includes('Galerie'));
+});
+
+test('lot 6 · sans machine : pièce posée tout de suite, installation à l’étape 2, accueil réduit à la recherche Wi-Fi', () => {
+  const page = read('index.html');
+  assert.match(page, /if \(msg\.fits === false && !PlyoProject\.hasPrinter\(conv\.project\)\) msg = Object\.assign\(\{\}, msg, \{ fits: true \}\);/);
+  assert.match(page, /if \(!conv \|\| PlyoJourney\.currentStep\(conv\.project\) !== 'machine'\) return;\s*startSetup\(\);/);
+  assert.match(page, /if \(step === 'machine'\) setTimeout\(function \(\) \{ maybeStartSetup\(\); renderSetupFlow\(\); \}, 0\);/);
+  assert.match(read('welcome.html'), /if \(withSetup\) show\('setup'\);/);
+  const cpp = fs.readFileSync(new URL('../../../../src/plyo/PlyoFirstSteps.cpp', import.meta.url), 'utf8');
+  assert.match(cpp, /if \(PrinterSetup::needs_printer\(\)\)\s*show_welcome\(wxGetApp\(\)\.mainframe, true\);\s*else\s*skip_welcome\(\);/);
+  // « Je connais déjà » : une ligne de l'accueil du panneau, et une offre quand le vocabulaire le montre.
+  assert.equal(J.WELCOME.expertLink, 'Je connais déjà : moins de questions');
+  assert.match(page, /button\(w\.expertLink, function \(\) \{ setJourneyLevel\('expert'\); renderWelcome\(\); \}, 'link'\)/);
+  assert.match(page, /var pro = button\('Passer en mode confirmé', function \(\) \{ pro\.remove\(\); setJourneyLevel\('expert'\); \}, 'link'\);/);
 });

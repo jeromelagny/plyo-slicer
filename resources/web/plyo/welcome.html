@@ -68,7 +68,7 @@
         <div class="avatar" aria-hidden="true">P</div>
         <h1>D’abord, présentons ton imprimante</h1>
       </div>
-      <p>Juste après, dans le panneau à droite, je cherche ton imprimante sur le Wi-Fi de ta maison. Pour que je la trouve&nbsp;:</p>
+      <p>Dans le panneau à droite, tu choisis d’abord ta pièce, puis je cherche ton imprimante sur le Wi-Fi de ta maison. Pour que je la trouve&nbsp;:</p>
       <ol class="tips">
         <li><b>1</b><div><strong>Allume-la</strong><span class="soft">L’écran de l’imprimante doit être actif.</span></div></li>
         <li><b>2</b><div><strong>Connecte-la au Wi-Fi</strong><span class="soft">Sur son écran&nbsp;: Réglages, puis Réseau ou Wi-Fi. Choisis ta box et entre le mot de passe du Wi-Fi.</span></div></li>
@@ -102,7 +102,9 @@
   function done(choice) { toSlicer({ command: 'welcome_choice', choice: choice }); }
 
   // Appelé par Plyo une fois la page chargée : true quand aucune imprimante n'est installée (le panneau la cherche ensuite).
-  window.plyoWelcomeSetup = function (setup) { withSetup = !!setup; };
+  // Parcours débutant, lot 6 : la fenêtre n'est montrée que pour préparer cette recherche ; elle s'ouvre donc sur ses conseils
+  // (« Je débute / Je connais déjà » est une ligne de l'accueil du panneau).
+  window.plyoWelcomeSetup = function (setup) { withSetup = !!setup; if (withSetup) show('setup'); };
 
   document.getElementById('beginner').addEventListener('click', function () { show(withSetup ? 'setup' : 'tour'); });
   document.getElementById('expert').addEventListener('click', function () { done('expert'); });

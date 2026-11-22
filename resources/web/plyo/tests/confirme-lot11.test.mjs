@@ -38,7 +38,8 @@ test('UX-02 : changer d’avis depuis le menu, et le panneau qui le dit', () => 
   const page = read('index.html');
   assert.match(page, /if \(first && state\.level === 'expert'\) noteInput\.focus\(\);/);
   assert.ok(!page.includes('id="hello-guide"'), 'plus de lien vers un onglet « Étapes »');
-  assert.match(page, /type: 'firststeps_set', patch: \{ level: level \}/);
+  // Lot 6 : un seul geste (setJourneyLevel) pour le menu, la ligne de l'accueil du panneau et l'offre faite d'après l'usage.
+  assert.match(page, /var patch = \{ level: level \};[\s\S]{0,200}type: 'firststeps_set', patch: patch/);
   // Côté slicer : panneau fermé au lancement pour « expert » seulement ; l'accueil le dit.
   assert.match(cpp('PlyoFirstSteps.cpp'), /ProjectLogic::opens_panel_at_startup\(Json::str\(load_state\(\), "level"\)\)/);
   assert.match(cpp('PlyoProjectLogic.cpp'), /return level != "expert";/);

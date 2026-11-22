@@ -12,13 +12,17 @@ const filament = { type: 'PLA', preset: 'Generic PLA @ECC2', nozzle_temp: 215, b
 const part = { name: 'flexyring.stl' };
 const full = (extra) => Object.assign({ printer: printer, filament: filament, part: part }, extra || {});
 
-test('les six étapes sont dans l’ordre voulu', () => {
-  assert.deepEqual(J.STEPS.map((s) => s.key), ['machine', 'piece', 'filament', 'preparer', 'imprimer', 'resultat']);
-  assert.deepEqual(J.STEPS.map((s) => s.label), ['Machine', 'Pièce', 'Filament', 'Préparer', 'Imprimer', 'Résultat']);
+// Lot 6 : six étapes internes, la pièce d'abord ; la barre en montre trois (BAR).
+test('les six étapes internes sont dans l’ordre voulu, la barre en montre trois', () => {
+  assert.deepEqual(J.STEPS.map((s) => s.key), ['piece', 'machine', 'filament', 'preparer', 'imprimer', 'resultat']);
+  assert.deepEqual(J.STEPS.map((s) => s.label), ['Pièce', 'Machine', 'Filament', 'Préparer', 'Imprimer', 'Résultat']);
+  assert.deepEqual(J.BAR.map((s) => s.label), ['Ta pièce', 'Machine et bobine', 'Imprimer']);
+  assert.deepEqual(J.STEPS.map((s) => J.barKey(s.key)), ['piece', 'materiel', 'materiel', 'imprimer', 'imprimer', 'imprimer']);
 });
 
 test('currentStep suit la fiche puis project.step', () => {
-  assert.equal(J.currentStep(null), 'machine');
+  assert.equal(J.currentStep(null), 'piece');
+  assert.equal(J.currentStep({ part: part }), 'machine');
   assert.equal(J.currentStep({ printer: printer }), 'piece');
   assert.equal(J.currentStep({ printer: printer, part: part }), 'filament');
   assert.equal(J.currentStep({ printer: printer, filament: filament }), 'piece');
@@ -35,8 +39,11 @@ test('une conversation ancienne (step absent ou done) est à Préparer', () => {
 
 test('steps marque les étapes faites, l’étape en cours et celles à venir', () => {
   const s = J.steps(full({ step: 'print' }));
-  assert.deepEqual(s.map((x) => x.state), ['done', 'done', 'done', 'done', 'current', 'todo']);
-  assert.equal(s[4].label, 'Imprimer');
+  assert.deepEqual(s.map((x) => x.state), ['done', 'done', 'current']);
+  assert.equal(s[2].label, 'Imprimer');
+  // Le Résultat est l'écran de fin de l'étape 3, pas une étape de la barre.
+  assert.deepEqual(J.steps(full({ step: 'after' })).map((x) => x.state), ['done', 'done', 'current']);
+  assert.deepEqual(J.steps({ part: part }).map((x) => x.state), ['done', 'current', 'todo']);
 });
 
 test('primaryAction : un seul bouton, pas de bouton pour les trois choix', () => {
@@ -167,11 +174,11 @@ test('étape Préparer avec les questions d’intention : pas de bouton pendant 
   assert.match(J.prompt('preparer', { sliced: false, intent: 'ready' }), /propose/i);
 });
 
-test('tabLabel : l’onglet Étapes porte la progression', () => {
-  assert.equal(J.tabLabel({}), 'Étapes · 1/6');
+test('tabLabel : la progression sur les trois étapes de la barre', () => {
+  assert.equal(J.tabLabel({}), 'Étapes · 1/3');
   const ready = { printer: { preset: 'CC2' }, part: { name: 'bague' }, filament: { preset: 'PLA', temps_ok: true } };
-  assert.equal(J.tabLabel(ready), 'Étapes · 4/6');
-  assert.equal(J.tabLabel(Object.assign({ step: 'after' }, ready)), 'Étapes · 6/6');
+  assert.equal(J.tabLabel(ready), 'Étapes · 3/3');
+  assert.equal(J.tabLabel(Object.assign({ step: 'after' }, ready)), 'Étapes · 3/3');
   assert.equal(J.tabLabel(null), 'Étapes');
 });
 
@@ -386,13 +393,12 @@ test('fiche : la ligne filament montre le nom de la bobine quand il y en a une',
   assert.equal(J.filledRows(p).filter(r => r.line === 'filament')[0].text, 'PLA');
 });
 
-test('barre : seules les étapes faites parmi Machine, Pièce, Filament et Préparer se rouvrent', () => {
+test('barre : seules les étapes faites « Ta pièce » et « Machine et bobine » se rouvrent', () => {
   const at = (step) => J.steps(full({ step }));
   const open = (list) => list.filter(J.canRevisit).map((s) => s.key);
-  assert.deepEqual(open(at('slice')), ['machine', 'piece', 'filament'], 'Préparer en cours ne se rouvre pas');
-  assert.deepEqual(open(at('print')), ['machine', 'piece', 'filament', 'preparer']);
-  assert.deepEqual(open(at('after')), ['machine', 'piece', 'filament', 'preparer'], 'Imprimer fait ne se rouvre pas');
-  assert.deepEqual(open(J.steps({ printer })), ['machine']);
+  assert.deepEqual(open(at('slice')), ['piece', 'materiel'], 'Imprimer en cours ne se rouvre pas');
+  assert.deepEqual(open(at('after')), ['piece', 'materiel']);
+  assert.deepEqual(open(J.steps({ part })), ['piece']);
   assert.deepEqual(open(J.steps(null)), [], 'étapes à venir et étape en cours : rien');
   assert.equal(J.revisitLabel({ label: 'Pièce' }), 'Revenir à l’étape Pièce');
 });
@@ -462,7 +468,7 @@ test('Résultat : en cours tant qu’aucune fin n’est connue, puis le bouton p
   // Arrêt ou erreur : la carte pose sa question ; une fois répondue, « Nouvelle pièce ».
   assert.equal(J.primaryAction('resultat', { ended: 'cancelled', endAsk: true }).kind, 'none');
   assert.equal(J.primaryAction('resultat', { ended: 'error' }).kind, 'newPart');
-  // « Raté » dit : la photo du téléphone (repère « ai » au rendu, journey-view.js), sans le coût dans le libellé.
+  // « Raté » dit : la photo du téléphone (repère « ai-action » au rendu, journey-view.js), sans le coût dans le libellé.
   const failed = J.primaryAction('resultat', { failed: true });
   assert.equal(failed.kind, 'photo');
   assert.equal(failed.label, 'Photo avec mon téléphone');
@@ -472,7 +478,7 @@ test('Résultat : en cours tant qu’aucune fin n’est connue, puis le bouton p
     const a = J.primaryAction('resultat', c);
     if (a.kind === 'photo') assert.doesNotMatch(a.label, /jauge/);
   }
-  assert.match(fs.readFileSync(new URL('../journey-view.js', import.meta.url), 'utf8'), /action\.kind === 'photo' \? 'btn sm ai' : 'btn sm'/);
+  assert.match(fs.readFileSync(new URL('../journey-view.js', import.meta.url), 'utf8'), /action\.kind === 'photo' \? 'btn sm ai-action' : 'btn sm'/);
 });
 
 test('photos : deux libellés uniques, avec leur coût', () => {

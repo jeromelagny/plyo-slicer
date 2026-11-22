@@ -26,7 +26,7 @@ test('réponses aux questions, cotes et nom de fichier', () => {
 
 test('page : entrée à l’étape Pièce, bibliothèque chargée à la demande, pose comme un fichier, retouche qui remplace', () => {
   const page = read('index.html'), card = read('project-card.js');
-  assert.match(card, /ui\.button\('Je n’ai pas de fichier : crée-moi une pièce', h\.designOpen, 'btn ghost sm ai', 'wand'\)/);
+  assert.match(card, /ui\.button\('Créer avec l’IA', h\.designOpen, 'pick-card ai-action', 'wand'\)/); // lot 6 : une carte de l'étape Pièce
   assert.match(page, /<!--plyo-include:design-builder\.js-->\n<!--plyo-include:design-flow\.js-->/);
   assert.match(page, /window\.orca\.postMessage\(\{ type: 'design_lib_get' \}\)/);
   assert.match(page, /replace\(\/import\\\.meta\\\.url\/g, '"plyo:\/\/manifold\.js"'\)/);

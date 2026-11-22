@@ -13,7 +13,7 @@ test('débutant : la question de la plaque passe seule, avant la pièce ou la bo
     assert.equal(J.prompt(step, { bedFirst: true }), 'D’abord, une question sur ton imprimante');
     assert.equal(J.primaryAction(step, { bedFirst: true, proposal: { name: 'Bobine' } }).kind, 'none');
   }
-  assert.equal(J.prompt('piece', {}), 'Ajoute la pièce à imprimer');
+  assert.equal(J.prompt('piece', {}), 'Quelle pièce veux-tu imprimer ?'); // lot 6 : la pièce d'abord
   assert.equal(J.primaryAction('filament', { proposal: { name: 'Bobine' } }).kind, 'confirmFilament');
   const page = read('index.html');
   assert.match(page, /projectUI\.bedFirst = !!bedQ && !bedUI\.editing && fsState\.level !== 'expert';/);

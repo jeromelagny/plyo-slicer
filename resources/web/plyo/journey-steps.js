@@ -187,7 +187,7 @@
     } else if (opts.step === 'resultat') {
       var after = ui.el('div', 'printer-actions'), J = root.PlyoJourney || (typeof require !== 'undefined' ? require('./journey-logic.js') : null);
       // Les deux photos portent le même nom partout, avec leur coût : la lecture de la photo utilise la jauge.
-      var computer = function () { return ui.button(J.PHOTO_COMPUTER, h.photo, 'btn ghost sm ai', 'camera'); };
+      var computer = function () { return ui.button(J.PHOTO_COMPUTER, h.photo, 'btn ghost sm ai-action', 'camera'); };
       if (!c.success && opts.endAsk) {
         // La machine a dit comment l'impression a fini : sa question remplace « Ça a marché ? ». Une fin normale : « Oui,
         // c'est réussi » est le bouton de la ligne d'action, la carte garde « Non ». Après une erreur, « Non, c'est raté »

@@ -86,6 +86,18 @@ void show_welcome(wxWindow* parent, bool with_setup_tips)
     BOOST_LOG_TRIVIAL(info) << "Plyo: accueil terminé (" << dialog.choice() << ")";
 }
 
+// Premier lancement avec une imprimante déjà installée (parcours débutant, lot 6) : pas de fenêtre. « Je débute / Je connais
+// déjà » est une ligne de l'accueil du panneau ; le niveau part de « débutant », comme après « Je débute ».
+void skip_welcome()
+{
+    nlohmann::json s = load_state();
+    s["seen"]        = true;
+    s["level"]       = "beginner";
+    s["tour_step"]   = "model";
+    store_state(s);
+    BOOST_LOG_TRIVIAL(info) << "Plyo: premier lancement, imprimante déjà installée : pas de fenêtre d'accueil";
+}
+
 std::function<void(const nlohmann::json&)> s_focus_listener;
 std::string                                s_focused_key;
 const Slic3r::Preset::Type                 TAB_TYPES[] = {Slic3r::Preset::TYPE_PRINT, Slic3r::Preset::TYPE_FILAMENT, Slic3r::Preset::TYPE_PRINTER};
@@ -164,8 +176,14 @@ public:
             const bool welcome = m_first_run;
             // L'accueil est modal : le panneau s'ouvre à sa fermeture, selon la réponse (« Je connais déjà » : fermé).
             wxGetApp().CallAfter([welcome] {
+                // La fenêtre d'accueil ne sert plus qu'à préparer la recherche d'une première imprimante (lot 6).
                 if (welcome)
-                    guarded("l'accueil", [] { show_welcome(wxGetApp().mainframe, PrinterSetup::needs_printer()); });
+                    guarded("l'accueil", [] {
+                        if (PrinterSetup::needs_printer())
+                            show_welcome(wxGetApp().mainframe, true);
+                        else
+                            skip_welcome();
+                    });
                 guarded("l'ouverture du panneau", [] { open_panel_at_startup(); });
             });
         }
