@@ -26,7 +26,9 @@ test('débutant : « découper » expliqué, et où lire le nom exact de son imp
 
 test('un écran, peu de choix : machine proposée sans « pas dans la liste » ni « Mes machines », rangé dans le menu', () => {
   const page = read('index.html'), card = read('project-card.js');
-  assert.match(page, /extra: step === 'machine' && !\(conv\.project\.printer && conv\.project\.printer\.proposed && !projectUI\.showList\)/);
+  // Parcours débutant, lot 3 : machine proposée sans « Ajouter mon imprimante » (il vient sous la liste, rouverte par « Une autre machine »).
+  assert.match(page, /renderActionLine\(\$\('journey-action'\), ui, \{ step: step, ctx: journeyCtx\(\), handlers: journeyHandlers \}\);/);
+  assert.match(card, /if \(proposed && !ctx\.showList\) \{\s*\/\/[^\n]*\n\s*body\.appendChild\(ui\.button\('Une autre machine', h\.toggleList, 'btn ghost sm'\)\);\s*\}/);
   assert.ok(!card.includes("'Mes machines…'"));
   assert.match(page, /id="m-machines" role="menuitem" data-icon="printer">Mes machines</);
   assert.match(page, /\.project-body > \.btn \{ align-self: flex-start; \}/);

@@ -413,6 +413,11 @@
   .bed-ask { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s3); }
   .bed-ask p { margin: 0; }
   .bed-choices { display: flex; flex-direction: column; gap: var(--s2); }
+  .machine-cards { display: flex; flex-direction: column; gap: var(--s2); align-items: stretch; }
+  .machine-card { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: var(--s2); width: 100%; min-height: 52px; padding: var(--s2) var(--s3); border-radius: var(--r-md); border: 1px solid color-mix(in srgb, var(--fg) 26%, var(--bg)); background: var(--raised); color: var(--fg); font-weight: 600; text-align: left; cursor: pointer; }
+  .machine-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .machine-card > .ic { grid-row: span 2; color: var(--accent-text); }
+  .machine-card .machine-sub { grid-column: 2; font-size: var(--fs-sm); font-weight: 400; color: var(--muted); }
   .bed-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
   .bed-choice .muted { padding-left: 2px; }
   .bed-choice .btn { width: 100%; justify-content: flex-start; text-align: left; }
@@ -1138,6 +1143,8 @@
     var preset = projectPrinterPreset(), bed = bedInfo();
     var choiceStep = step === 'machine' || step === 'piece' || step === 'filament';
     if (!bed || !(bedUI.editing || choiceStep)) return null;
+    // Débutant : le plateau du profil, sans question ; la fiche le montre avec « changer » (seul geste qui le change).
+    if (fsState.level !== 'expert' && !bedUI.editing) return null;
     if (!PlyoMachines.bedAsks(bed, { preset: preset, orcaPrinter: orcaPrinterName(), habits: habits, editing: bedUI.editing, shown: !!bedUI.shown[preset] })) return null;
     // Vue une fois dans « Étapes » (pas cachée derrière « Poser une question ») : elle reste jusqu'à la réponse, le temps de la session.
     if (!bedUI.shown[preset] && viewUI.tab !== 'chat') {
@@ -1880,9 +1887,19 @@
     else if (conv && PlyoJourney.tempsPending(p) && !ctx.editing) ctx.temps = { nozzle: p.filament.nozzle_temp, bed: p.filament.bed_temp };
     var st = conv ? intentState(PlyoJourney.currentStep(conv.project), ctx.sliced) : null;
     if (st) ctx.intent = st.mode;
+    machineCtx(ctx);
     var quick = conv ? quickSpoolMaterial(PlyoJourney.currentStep(conv.project), ctx) : '';
     if (quick) ctx.quickSpool = quick;
     return ctx;
+  }
+  // Étape Machine, liste montrée (pas de machine proposée) : une seule carte (`onlyMachine`, « Oui, c'est elle ») ou aucune
+  // (`noMachine`, « Ajouter mon imprimante »). Mêmes cartes que renderChoices (PlyoJourney.machineCards).
+  function machineCtx(ctx) {
+    var p = conv && conv.project;
+    if (!p || PlyoProject.nextStep(p) !== 'printer' || ctx.bedFirst || !projectUI.printers || (p.printer && p.printer.proposed && !projectUI.showList)) return;
+    var mc = PlyoJourney.machineCards(PlyoMachines.visiblePrinters(projectUI.printers, habits.hidden), projectUI.showOthers);
+    if (mc.cards.length === 1 && !mc.folded) ctx.onlyMachine = { preset: mc.cards[0].preset, label: mc.cards[0].label, name: PlyoJourney.shortMachine(mc.cards[0]) };
+    else if (!mc.cards.length && !mc.folded) ctx.noMachine = true;
   }
   // « Oui, du PLA » : la matière proposée quand l'écran « Une nouvelle bobine » se montre en un clic (mêmes conditions que
   // renderChoices : liste des bobines lue, pas de bobine reproposée, ni emplacements, ni températures, ni plateau d'abord).
@@ -1978,8 +1995,7 @@
     $('tab-guide').textContent = PlyoJourney.tabLabel(conv.project);
     var intentNow = step === 'preparer' ? intentState(step, plateSliced()) : null;
     $('journey-action').parentNode.classList.toggle('act-after', !!(intentNow && intentNow.mode === 'ready'));
-    PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers,
-      extra: step === 'machine' && !(conv.project.printer && conv.project.printer.proposed && !projectUI.showList) ? { label: 'Ma machine n’est pas dans la liste', icon: 'plus', onClick: projectHandlers.setupPrinter } : null });
+    PlyoJourneyView.renderActionLine($('journey-action'), ui, { step: step, ctx: journeyCtx(), handlers: journeyHandlers });
     ensureCanvasRead(step);
     ensureManualRead(step);
     ensureColoursRead(step);
@@ -2440,6 +2456,8 @@
     else if (kind === 'started') { if (conv) stepHandlers.started(); }
     else if (kind === 'keepTemps') confirmTemps();
     else if (kind === 'confirmMachine') projectHandlers.keepProposed();
+    else if (kind === 'pickOnly') { var only = journeyCtx().onlyMachine; if (only) projectHandlers.pickPrinter(only.preset, only.label); } // comme un clic sur sa carte
+    else if (kind === 'setupPrinter') projectHandlers.setupPrinter();
     else if (kind === 'applyIntent') applyIntent(false);
     else if (kind === 'repeatIntent') intentHandlers.repeat();
     else if (kind === 'confirmFilament') projectHandlers.confirmFilament();
@@ -3869,7 +3887,11 @@
     setup.linkBox = null;
     setup.change = null;
     var choice = PlyoMachines.nozzleChoice(match.nozzles);
+    // Débutant : la buse livrée (0,4 mm) sans question ; l'écran de fin le dit, « Changer de buse » reste dans la fiche.
+    var novice = fsState.level !== 'expert' && !choice.auto ? PlyoMachines.noviceNozzle(match.nozzles) : '';
+    setup.nozzleAuto = !!novice;
     if (choice.auto) installModel(choice.auto);
+    else if (novice) installModel(novice);
     else setupPhase('nozzle');
   }
   // « Changer de buse » (fiche) : la même question pour la machine du projet, puis la même installation (une autre variante du
@@ -3881,6 +3903,7 @@
     applyTab('show-guide');
     setupPhase('nozzle');
   }
+  var NOZZLE_AUTO_TEXT = 'J’ai pris la buse de 0,4 mm, celle livrée avec presque toutes les imprimantes. Tu en as monté une autre ? « Changer de buse », dans ta fiche en haut du panneau.';
   function installModel(nozzle) {
     setup.nozzle = nozzle;
     setupPhase('installing');
@@ -3993,6 +4016,7 @@
     } else if (setup.phase === 'link') {
       box.appendChild(el('h3', '', setup.pick.model + ' est installée'));
       box.appendChild(el('p', '', 'Dernière étape : je la relie pour que tes impressions partent directement dessus.'));
+      if (setup.nozzleAuto) box.appendChild(el('p', 'muted small', NOZZLE_AUTO_TEXT));
       // La liaison écrit dans son propre bloc : gardé d'un affichage à l'autre, et lancée une seule fois.
       if (!setup.linkBox) {
         setup.linkBox = el('div', 'printer-status');
@@ -4004,6 +4028,7 @@
       box.appendChild(el('h3', '', 'Ton imprimante est prête'));
       box.appendChild(rich(setup.found ? 'Elle est installée et reliée : à l’étape Imprimer, `Envoyer et imprimer` lui enverra tes impressions.' :
         'Elle est installée. Pour imprimer : à l’étape Imprimer, `Exporter le fichier`, puis copie-le sur la clé USB ou la carte SD de ton imprimante.'));
+      if (setup.nozzleAuto) box.appendChild(el('p', 'muted small', NOZZLE_AUTO_TEXT));
       acts.appendChild(button('Continuer', endSetup, 'btn sm', 'check'));
       later = null;
     }

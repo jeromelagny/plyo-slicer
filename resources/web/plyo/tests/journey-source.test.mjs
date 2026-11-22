@@ -64,11 +64,13 @@ test('le champ de question est discret : une ligne, et plus de phrase d’averti
   assert.ok(!page.includes('class="disclaimer"'), 'avertissement retiré du composeur');
 });
 
-test('« Ma machine n’est pas dans la liste » est dans la ligne d’action fixe, plus dans la liste qui défile', () => {
-  // Lot 8 (UX-10) : la liste le nomme (« juste au-dessus ») sans en refaire un bouton.
-  assert.ok(!/ui\.button\('Ma machine n’est pas dans la liste'/.test(read('project-card.js')));
-  assert.ok(read('project-card.js').includes('clique sur « Ma machine n’est pas dans la liste », juste au-dessus'));
-  assert.ok(read('journey-view.js').includes('extra'));
+// Parcours débutant, lot 3 (22/11) : le cas normal d'abord. « Ma machine n'est pas dans la liste » (lien de la ligne d'action,
+// UX-10) devient « Ajouter mon imprimante », sous les cartes ; sans machine, c'est le bouton plein de la ligne d'action.
+test('« Ajouter mon imprimante » vient sous la liste des machines, plus dans la ligne d’action', () => {
+  const card = read('project-card.js');
+  assert.ok(!card.includes('Ma machine n’est pas dans la liste') && !read('index.html').includes('Ma machine n’est pas dans la liste'));
+  assert.ok(card.indexOf("ui.button('Ajouter mon imprimante', h.setupPrinter, 'btn ghost sm', 'plus')") > card.indexOf("'machine-card'"));
+  assert.ok(read('journey-view.js').includes('extra'), 'la ligne d’action garde la possibilité d’un lien');
 });
 
 test('le panneau a deux onglets, et les messages d’étape vont dans le Guide', () => {

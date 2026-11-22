@@ -356,18 +356,21 @@
         body.appendChild(ui.button('Une autre machine', h.toggleList, 'btn ghost sm'));
       } else if (list === null || list === undefined) body.appendChild(ui.el('p', 'muted small', 'Je cherche tes imprimantes…'));
       else {
-        var groups = root.PlyoJourney.groupPrinters(list);
-        var acts = ui.el('div', 'printer-actions');
-        var add = function (p) {
-          var label = p.label + (p.linked ? (ctx.reachable && ctx.reachable[p.preset] === true ? ' ● connectée' : ' · reliée') : '');
-          acts.appendChild(ui.button(label, function () { h.pickPrinter(p.preset, p.label); }, 'btn ghost sm'));
-        };
-        groups.main.forEach(add);
-        if (!groups.main.length && !groups.others.length) body.appendChild(ui.el('p', 'muted small', 'Aucune imprimante pour l’instant : clique sur « Ma machine n’est pas dans la liste », juste au-dessus.'));
-        // Machines non reliées (carte SD, clé USB) : visibles comme les autres tant qu'il y en a peu, sinon repliées.
-        if (groups.others.length && (groups.others.length <= 3 || ctx.showOthers)) groups.others.forEach(add);
-        else if (groups.others.length) acts.appendChild(ui.button('Autres machines installées (' + groups.others.length + ')', h.toggleOthers, 'link'));
-        body.appendChild(acts);
+        // Le cas normal d'abord : les machines trouvées, en grandes cartes (nom, puis « reliée » ou « clé USB ») ; ajouter une
+        // imprimante vient dessous, en secondaire. Aucune : « Ajouter mon imprimante » est le bouton plein de la ligne d'action.
+        var J = root.PlyoJourney, mc = J.machineCards(list, ctx.showOthers);
+        if (!mc.cards.length && !mc.folded) body.appendChild(ui.el('p', 'muted small', 'Aucune imprimante pour l’instant. Ajoute la tienne : je la cherche sur ton Wi-Fi, ou tu la choisis dans la liste des modèles.'));
+        else {
+          var cards = ui.el('div', 'machine-cards');
+          mc.cards.forEach(function (p) {
+            var card = ui.button(J.shortMachine(p), function () { h.pickPrinter(p.preset, p.label); }, 'machine-card', p.linked ? 'wifi' : 'printer');
+            card.appendChild(ui.el('span', 'machine-sub', J.machineStatus(p, ctx.reachable && ctx.reachable[p.preset])));
+            cards.appendChild(card);
+          });
+          if (mc.folded) cards.appendChild(ui.button('Autres machines installées (' + mc.folded + ')', h.toggleOthers, 'link'));
+          body.appendChild(cards);
+          body.appendChild(ui.button('Ajouter mon imprimante', h.setupPrinter, 'btn ghost sm', 'plus'));
+        }
       }
     } else if (wantsFilament && proposedFilament && !ctx.showKinds) {
       // « Sunlu PLA+ noir, comme la dernière fois ? » : le bouton « Oui » est dans la ligne d'action.

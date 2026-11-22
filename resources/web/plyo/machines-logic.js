@@ -142,6 +142,9 @@
   // Tailles proposées par le profil du modèle (« 0.4 », « 0.6 »…). Une seule : installée sans question (`auto`). Plusieurs : la
   // question, 0,4 mm d'abord et marquée comme la plus courante, puis les autres de la plus fine à la plus grosse.
   // `current` (« Changer de buse ») : la buse du profil en cours, signalée dans la liste.
+  // Débutant : la buse livrée avec presque toutes les imprimantes (0,4 mm), installée sans question quand le modèle la propose ;
+  // « Changer de buse » reste dans la fiche. '' : pas de 0,4 mm, la question est posée.
+  function noviceNozzle(nozzles) { return (Array.isArray(nozzles) ? nozzles : []).map(String).indexOf('0.4') >= 0 ? '0.4' : ''; }
   function nozzleChoice(nozzles, current) {
     var list = (Array.isArray(nozzles) ? nozzles : []).map(String).filter(function (n, i, all) { return nozzleText(n) && all.indexOf(n) === i; });
     if (list.length <= 1) return { auto: list[0] || '' };
@@ -240,7 +243,7 @@
     return row;
   }
 
-  var api = { nozzleText: nozzleText, nozzleChoice: nozzleChoice, nozzleChangeOffer: nozzleChangeOffer, BEDS: BEDS, BED_UNKNOWN: BED_UNKNOWN, bedName: bedName, bedTypes: bedTypes,
+  var api = { noviceNozzle: noviceNozzle, nozzleText: nozzleText, nozzleChoice: nozzleChoice, nozzleChangeOffer: nozzleChangeOffer, BEDS: BEDS, BED_UNKNOWN: BED_UNKNOWN, bedName: bedName, bedTypes: bedTypes,
     bedAnswer: bedAnswer, rememberBed: rememberBed, bedAsks: bedAsks, bedQuestion: bedQuestion, bedUnknownText: bedUnknownText, bedChosenText: bedChosenText,
     bedRevertLabel: bedRevertLabel, bedRow: bedRow, levelOf: levelOf, guessLevel: guessLevel, levelChange: levelChange, chooseLevel: chooseLevel, askIntent: askIntent, noteIntent: noteIntent,
     offerStopAsking: offerStopAsking, stopAsking: stopAsking, machineThatFits: machineThatFits, visiblePrinters: visiblePrinters, isKnownHost: isKnownHost, machineQuestion: machineQuestion, habitFor: habitFor, rememberFilament: rememberFilament, replaceMachine: replaceMachine,

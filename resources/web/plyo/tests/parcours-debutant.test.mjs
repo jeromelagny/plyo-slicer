@@ -101,3 +101,61 @@ test('lot 2 · page : nom du jour, températures du profil gardées sans questio
   for (const cond of ['ns.precise', 'ctx.canvas', 'ctx.temps', 'ctx.bedFirst', 'pr.proposed', '!projectUI.showKinds', 'ns.open || !PlyoSpools.choiceRows(items).length'])
     assert.ok(fn.includes(cond), cond);
 });
+
+// ---------- Lot 3 : étape Machine, le cas normal d'abord ----------
+
+const K1 = { preset: 'Ma K1C', name: 'Ma K1C', linked: true }, K2 = { preset: 'Ma K2', name: 'Ma K2', linked: true };
+const USB = (n) => ({ preset: 'Ender ' + n, name: 'Ender ' + n, linked: false });
+
+test('lot 3 · cartes : machines reliées puis clé USB, au-delà de trois sans liaison repliées', () => {
+  assert.deepEqual(J.machineCards([K1, USB(1)], false).cards.map((c) => c.label), ['K1C', 'Ender 1']);
+  const many = J.machineCards([K1, USB(1), USB(2), USB(3), USB(4)], false);
+  assert.deepEqual([many.cards.length, many.folded], [1, 4]);
+  assert.equal(J.machineCards([K1, USB(1), USB(2), USB(3), USB(4)], true).cards.length, 5);
+  assert.equal(J.machineStatus({ linked: true }, true), '● connectée');
+  assert.equal(J.machineStatus({ linked: true }, undefined), 'reliée');
+  assert.equal(J.machineStatus({ linked: false }, true), 'clé USB');
+});
+
+test('lot 3 · une seule machine : « Imprimer sur … ? » et « Oui, c’est elle » ; aucune : « Ajouter mon imprimante » en plein', () => {
+  assert.equal(J.prompt('machine', { onlyMachine: { name: 'K1C' } }), 'Imprimer sur K1C ?');
+  assert.deepEqual(J.primaryAction('machine', { onlyMachine: { name: 'K1C' } }), { label: 'Oui, c’est elle', kind: 'pickOnly', enabled: true });
+  assert.equal(J.prompt('machine', { noMachine: true }), 'Ajoute ton imprimante');
+  assert.deepEqual(J.primaryAction('machine', { noMachine: true }), { label: 'Ajouter mon imprimante', kind: 'setupPrinter', enabled: true });
+  assert.equal(J.primaryAction('machine', {}).kind, 'none', 'plusieurs machines : on clique sur sa carte');
+  assert.equal(J.primaryAction('machine', { proposal: { name: 'K1C' } }).label, 'Oui, sur K1C', 'machine proposée : inchangé');
+});
+
+function renderMachine(printers, extra) {
+  const slot = fakeUi().el('div'), calls = [];
+  const handlers = new Proxy({}, { get: (_, k) => (...a) => calls.push([k, ...a]) });
+  Card.renderChoices(slot, fakeUi(), Object.assign({ project: { printer: null, part: null, filament: null }, printers, reachable: { 'Ma K1C': true }, handlers }, extra));
+  return { slot, calls };
+}
+
+test('lot 3 · liste : les cartes d’abord (nom, état), « Ajouter mon imprimante » dessous ; liste vide sans renvoi « au-dessus »', () => {
+  const { slot, calls } = renderMachine([K1, K2, USB(1)]);
+  const cards = buttons(slot).filter((b) => b.className === 'machine-card');
+  assert.deepEqual(cards.map(textOf), ['K1C● connectée', 'K2reliée', 'Ender 1clé USB']);
+  assert.equal(labels(slot).at(-1), 'Ajouter mon imprimante');
+  cards[1].on.click();
+  assert.deepEqual(calls.pop(), ['pickPrinter', 'Ma K2', 'K2']);
+  const empty = renderMachine([]);
+  assert.deepEqual(labels(empty.slot), [], 'le bouton plein est dans la ligne d’action');
+  assert.match(textOf(empty.slot), /Ajoute la tienne : je la cherche sur ton Wi-Fi/);
+  assert.doesNotMatch(textOf(empty.slot), /au-dessus/);
+});
+
+test('lot 3 · débutant : buse 0,4 mm et plateau du profil sans question, « changer » dans la fiche ; confirmé inchangé', () => {
+  const M = require('../machines-logic.js');
+  assert.equal(M.noviceNozzle(['0.2', '0.4', '0.6']), '0.4');
+  assert.equal(M.noviceNozzle([0.4, 0.6]), '0.4');
+  assert.equal(M.noviceNozzle(['0.6', '0.8']), '', 'sans 0,4 mm, la question reste');
+  const page = read('index.html');
+  assert.match(page, /var novice = fsState\.level !== 'expert' && !choice\.auto \? PlyoMachines\.noviceNozzle\(match\.nozzles\) : '';/);
+  assert.match(page, /else if \(novice\) installModel\(novice\);\s*else setupPhase\('nozzle'\);/);
+  assert.match(page, /if \(fsState\.level !== 'expert' && !bedUI\.editing\) return null;/);
+  // La fiche garde le plateau avec « changer » (bedUI.editing rouvre la question) et « Changer de buse ».
+  assert.match(page, /changeBed: function \(\) \{ bedUI\.editing = true;/);
+  assert.match(read('project-card.js'), /ui\.button\('Changer de buse', h\.changeNozzle, 'link'\)/);
+});

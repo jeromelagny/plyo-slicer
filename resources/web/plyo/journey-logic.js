@@ -106,6 +106,9 @@
     if (c.bedFirst && (step === 'machine' || step === 'piece' || step === 'filament')) return { label: '', kind: 'none', enabled: false };
     // Machine et bobine proposées (dernière machine, bobine du projet précédent) : confirmer d'un toucher.
     if (step === 'machine' && c.proposal) return { label: 'Oui, sur ' + c.proposal.name, kind: 'confirmMachine', enabled: true };
+    // Liste des machines : une seule carte, « Oui, c'est elle » ; aucune, l'installation (la recherche sur le Wi-Fi d'abord).
+    if (step === 'machine' && c.onlyMachine) return { label: 'Oui, c’est elle', kind: 'pickOnly', enabled: true };
+    if (step === 'machine' && c.noMachine) return { label: 'Ajouter mon imprimante', kind: 'setupPrinter', enabled: true };
     if (step === 'filament' && c.proposal) return { label: 'Oui, ' + c.proposal.name, kind: 'confirmFilament', enabled: true };
     return { label: '', kind: 'none', enabled: false };
   }
@@ -153,7 +156,7 @@
     if (c.bedFirst && (step === 'machine' || step === 'piece' || step === 'filament')) return 'D’abord, une question sur ton imprimante';
     if (c.plateEmpty && (step === 'preparer' || step === 'imprimer')) return 'Ta pièce n’est plus sur le plateau';
     switch (step) {
-      case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : 'Choisis ton imprimante';
+      case 'machine': return c.proposal ? 'Imprimer sur ' + c.proposal.name + ' ?' : c.onlyMachine ? 'Imprimer sur ' + c.onlyMachine.name + ' ?' : c.noMachine ? 'Ajoute ton imprimante' : 'Choisis ton imprimante';
       case 'filament': return c.proposal ? c.proposal.name + ', comme la dernière fois ?' : c.quickSpool ? 'Ta bobine est en ' + c.quickSpool + ' ?' : 'Quelle bobine ?';
       case 'piece': return 'Ajoute la pièce à imprimer';
       case 'preparer': if (!c.sliced && c.intent === 'asking') return 'Quelques questions sur ta pièce';
@@ -382,6 +385,15 @@
     return out;
   }
 
+  // Cartes de l'étape Machine : les machines reliées, puis celles sans liaison (clé USB, carte SD) tant qu'il y en a peu
+  // (sinon repliées derrière « Autres machines installées (n) », `folded`). `list` : profils visibles (groupPrinters).
+  function machineCards(list, showOthers) {
+    var g = groupPrinters(list), many = g.others.length > 3 && !showOthers;
+    return { cards: g.main.concat(many ? [] : g.others), folded: many ? g.others.length : 0 };
+  }
+  // Ce que dit une carte sous le nom : « ● connectée », « reliée » (Wi-Fi), « clé USB » (pas de liaison).
+  function machineStatus(card, reachable) { return !card.linked ? 'clé USB' : reachable === true ? '● connectée' : 'reliée'; }
+
   // Onglets Guide / Discussion : { tab: 'guide'|'chat', unread }. `send` ouvre la Discussion ; `answer` (une réponse arrive)
   // allume le point rouge si on est sur le Guide ; `show-chat` l'éteint ; `reset` (nouvelle conversation) revient au Guide.
   // `home: 'chat'` (UX-02) : le confirmé (« Je connais déjà ») commence sur « Poser une question » ('start-chat'), et un nouveau
@@ -464,7 +476,7 @@
   };
   function showsWelcome(fs) { return !!(fs && fs.seen && fs.level !== 'expert' && !fs.greeted); }
 
-  var api = { WELCOME: WELCOME, showsWelcome: showsWelcome, machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
+  var api = { machineCards: machineCards, machineStatus: machineStatus, WELCOME: WELCOME, showsWelcome: showsWelcome, machineText: machineText, stillMissing: stillMissing, completionText: completionText, FICHE_WAITS: FICHE_WAITS, resultState: resultState, PHOTO_PHONE: PHOTO_PHONE, PHOTO_COMPUTER: PHOTO_COMPUTER, completeLabel: completeLabel, fixNeeds: fixNeeds, shortMachine: shortMachine, canRevisit: canRevisit, revisitLabel: revisitLabel, endQuestion: endQuestion, endAction: endAction, endAsk: endAsk, afterSliceFollow: afterSliceFollow, watchText: watchText, tempsPending: tempsPending, profileChangeNote: profileChangeNote, baseName: baseName, shouldRecheck: shouldRecheck, machineLabel: machineLabel, divergenceNames: divergenceNames, chatHello: chatHello, tabAfter: tabAfter, startMenuLabel: startMenuLabel, startChangeNote: startChangeNote, filledRows: filledRows, groupPrinters: groupPrinters, contentFor: contentFor, STEPS: STEPS, currentStep: currentStep, steps: steps, tabLabel: tabLabel, primaryAction: primaryAction, prompt: prompt,
     afterPreflight: afterPreflight, advanceNote: advanceNote, resetStepOnChange: resetStepOnChange, barMode: barMode, compactFiche: compactFiche,
     ficheSummary: ficheSummary, suggestionsFor: suggestionsFor, projectTitle: projectTitle };
   root.PlyoJourney = api;
