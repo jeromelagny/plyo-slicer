@@ -109,12 +109,21 @@ test('UX-14 : plus jamais « enregistre le préréglage » dans les textes visib
   assert.ok(/AutoSave::flush_spool\(\) == SpoolsLogic::Flush::Refuse/.test(cpp));
 });
 
-test('UX-26 : chaque bouton qui lance une demande à l’IA le dit, aucune action gratuite ne le dit', () => {
+// Parcours débutant, lot 1 (22/11) : la mention répétée « (utilise ta jauge) » donnait l'impression de payer chaque réponse
+// (effet taximètre). Les boutons gardent leur libellé seul ; la jauge reste dans l'en-tête, et les actions lourdes (photo lue,
+// pièce dessinée) portent une petite étincelle « Action de l'assistant IA ».
+test('UX-26 (révisé) : plus de « (utilise ta jauge) » sur les boutons, les actions IA lourdes ont leur repère', () => {
   const page = read('index.html');
+  const sources = [page, ...['assistant-logic.js', 'journey-logic.js', 'preflight.js', 'journey-steps.js', 'project-card.js', 'design-flow.js'].map(read)].join('\n');
+  assert.doesNotMatch(sources, /\(utilise ta jauge\)/);
   for (const label of ['Conseille-moi des réglages pour cette pièce', 'Et dans mon cas, je mets combien ?', 'En parler à l’assistant', 'Envoyer mes réponses', 'Renvoyer ma question'])
-    assert.ok(page.includes(label + ' (utilise ta jauge)'), label);
-  assert.ok(page.includes('Ou choisis un objectif (utilise ta jauge)'));
-  assert.equal(L.noteHint(0, 500), 'Entrée pour envoyer (utilise ta jauge)');
+    assert.ok(page.includes("button('" + label + "'"), label);
+  assert.ok(page.includes('Ou choisis un objectif</p>'));
+  assert.equal(L.noteHint(0, 500), 'Entrée pour envoyer');
+  // Repère des actions lourdes : la classe « ai » ajoute l'étincelle et la bulle d'aide.
+  assert.ok(page.includes("if (!b.title) b.title = fr('Action de l’assistant IA');"));
+  assert.ok(read('project-card.js').includes("crée-moi une pièce', h.designOpen, 'btn ghost sm ai', 'wand')"));
+  assert.ok(page.includes("button(PlyoJourney.PHOTO_PHONE, function () { openPhone(); }, 'btn sm ai')"));
   // « Chercher une autre piste » ne fait que préremplir le champ : gratuit, sans mention.
   assert.ok(page.includes("button('Chercher une autre piste', function"));
 });

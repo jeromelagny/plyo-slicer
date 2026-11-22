@@ -109,7 +109,7 @@
     var acts = ui.el('div', 'printer-actions');
     if (st.needsLogin) acts.appendChild(ui.button(TEXT.login, h.login, 'btn sm main-choice', 'login'));
     else if (st.planRequired && h.plans) acts.appendChild(ui.button(TEXT.plans, h.plans, 'btn sm main-choice'));
-    else acts.appendChild(ui.button(st.retouch ? TEXT.retouchGo : TEXT.go, h.submit, 'btn sm main-choice', 'wand'));
+    else acts.appendChild(ui.button(st.retouch ? TEXT.retouchGo : TEXT.go, h.submit, 'btn sm main-choice ai', 'wand'));
     acts.appendChild(ui.button('Annuler', h.cancel, 'link'));
     box.appendChild(acts);
     box.appendChild(ui.el('p', 'muted small', TEXT.cost));

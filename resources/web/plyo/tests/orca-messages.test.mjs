@@ -10,7 +10,7 @@ const PF = require('../preflight.js');
 const J = require('../journey-logic.js');
 const read = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
 const kinds = (v) => v.actions.map((a) => a.kind);
-const ASK = 'Demander à l’assistant (utilise ta jauge)';
+const ASK = 'Demander à l’assistant';
 
 test('cas fréquents : une explication Plyo par code, la pièce nommée, et toujours une suite', () => {
   const codes = ['no_layers', 'empty_first_layer', 'nothing_to_print', 'print_empty', 'plate_empty', 'layer_height_over_nozzle', 'vase_several_objects',

@@ -65,6 +65,7 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .hidden { display: none !important; }
   .ic { display: inline-block; flex: none; vertical-align: -3px; }
+  .ic.ai-mark { margin-left: 2px; opacity: .7; }
   .muted { color: var(--muted); }
   .small { font-size: var(--fs-sm); }
 
@@ -582,7 +583,7 @@
         <div id="hello-spool"></div>
       </div>
       <div class="home-more hidden" id="goals-wrap">
-        <p class="label">Ou choisis un objectif (utilise ta jauge)</p>
+        <p class="label">Ou choisis un objectif</p>
         <div class="chips" id="goals">
           <button class="chip" type="button">Je veux une surface du dessus bien lisse</button>
           <button class="chip" type="button">Je veux imprimer plus vite</button>
@@ -606,8 +607,8 @@
         <button class="icon-btn" id="btn-files" type="button" title="Joindre des photos ou un modèle 3D (STL, 3MF…)" aria-label="Joindre un fichier"></button>
         <button class="icon-btn" id="btn-phone" type="button" title="Prendre des photos avec mon téléphone" aria-label="Photos avec le téléphone"></button>
         <button class="icon-btn hidden" id="btn-mic" type="button" title="Dicter ta demande à la voix" aria-label="Dicter ta demande à la voix"></button>
-        <span class="hint" id="note-hint">Entrée pour envoyer (utilise ta jauge)</span>
-        <button class="send" id="btn-send" type="button" title="Envoyer à l’assistant (utilise ta jauge) · Entrée envoie, Maj + Entrée va à la ligne" aria-label="Envoyer à l’assistant (utilise ta jauge)"></button>
+        <span class="hint" id="note-hint">Entrée pour envoyer</span>
+        <button class="send" id="btn-send" type="button" title="Envoyer à l’assistant · Entrée envoie, Maj + Entrée va à la ligne" aria-label="Envoyer à l’assistant"></button>
       </div>
     </div>
     <input id="file-input" type="file" accept="image/*,.stl,.3mf,.obj,.step,.stp,.amf" multiple hidden>
@@ -734,6 +735,7 @@
     x: '<path d="M6 6l12 12M18 6L6 18"/>',
     eye: '<path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     wand: '<path d="M4 20L15 9M14 4v3M19 9h-3M18 5l-2 2M10 4l.5 1.5M20 14l-1.5-.5"/>',
+    spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16v4M17 18h4"/>',
     stop: '<rect x="7" y="7" width="10" height="10" rx="1.5"/>',
     chevron: '<path d="M9 6l6 6-6 6"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
@@ -790,6 +792,14 @@
     b.type = 'button';
     if (iconName) b.appendChild(icon(iconName, 14));
     b.appendChild(txt(label));
+    // Action lourde de l'assistant IA (photo lue, pièce dessinée) : une petite étincelle et une bulle d'aide, sans texte en
+    // plus. Le coût n'est pas répété sur chaque bouton (effet taximètre) : la jauge reste dans l'en-tête.
+    if (/(^|\s)ai(\s|$)/.test(b.className)) {
+      var mark = icon('spark', 12);
+      mark.classList.add('ai-mark');
+      b.appendChild(mark);
+      if (!b.title) b.title = fr('Action de l’assistant IA');
+    }
     if (onClick) b.addEventListener('click', onClick);
     return b;
   }
@@ -1461,8 +1471,8 @@
       document.querySelectorAll('#thread .photo-ask').forEach(function (n) { n.remove(); });
       var line = noteLine('Une photo de ta pièce m’aide à trouver la cause.', 'photo-ask', 'camera', 'chat');
       var photoActs = el('div', 'photo-acts');
-      photoActs.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { openPhone(); }, 'btn sm'));
-      photoActs.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { pickFiles(); }, 'btn ghost sm'));
+      photoActs.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { openPhone(); }, 'btn sm ai'));
+      photoActs.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { pickFiles(); }, 'btn ghost sm ai'));
       line.appendChild(photoActs);
     }
     noteInput.value = prefill || '';
@@ -5140,7 +5150,7 @@
     var said = FS.modelAddedText(msg);
     var dims = msg.size_mm.join(' × ') + ' mm';
     function adviceButton() {
-      var ask = button('Conseille-moi des réglages pour cette pièce (utilise ta jauge)', function () {
+      var ask = button('Conseille-moi des réglages pour cette pièce', function () {
         ask.disabled = true;
         send('Je viens de poser « ' + msg.name + ' » sur le plateau (' + dims + '). Quels réglages me conseilles-tu pour l’imprimer ? ' +
           'Si tu as besoin de savoir à quoi sert la pièce, demande-le-moi d’abord.');
@@ -5458,10 +5468,10 @@
     sheet.appendChild(status);
     var footer = el('footer');
     // Libellés courts et parallèles : les deux boutons tiennent côte à côte à 320 px.
-    var photoBtn = button('Photo', null, 'btn', 'camera');
-    photoBtn.title = fr('Ajouter une photo depuis l’ordinateur (utilise ta jauge)');
-    var phoneBtn = button('Téléphone', null, 'btn ghost', 'phone');
-    phoneBtn.title = fr('Prendre la photo avec ton téléphone (utilise ta jauge)');
+    var photoBtn = button('Photo', null, 'btn ai', 'camera');
+    photoBtn.title = fr('Ajouter une photo depuis l’ordinateur · Action de l’assistant IA');
+    var phoneBtn = button('Téléphone', null, 'btn ghost ai', 'phone');
+    phoneBtn.title = fr('Prendre la photo avec ton téléphone · Action de l’assistant IA');
     var action = button('', null, 'btn full hidden');
     var back = button('Remettre ma pièce', null, 'link');
     footer.appendChild(photoBtn);
@@ -5899,8 +5909,8 @@
     box.appendChild(status);
     // Montrer la pièce : les deux mêmes boutons que partout (avec leur coût).
     var photos = el('div', 'row-acts');
-    photos.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { noteInput.value = Logic.retryPrompt(item, note); openPhone(); }, 'link', 'camera'));
-    photos.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { noteInput.value = Logic.retryPrompt(item, note); pickFiles(); }, 'link', 'camera'));
+    photos.appendChild(button(PlyoJourney.PHOTO_PHONE, function () { noteInput.value = Logic.retryPrompt(item, note); openPhone(); }, 'link ai', 'camera'));
+    photos.appendChild(button(PlyoJourney.PHOTO_COMPUTER, function () { noteInput.value = Logic.retryPrompt(item, note); pickFiles(); }, 'link ai', 'camera'));
     box.appendChild(photos);
     slot.appendChild(box);
   }
@@ -6057,7 +6067,7 @@
     acts.appendChild(fixAll);
     box.appendChild(acts);
     box.appendChild(fail);
-    var talk = button('En parler à l’assistant (utilise ta jauge)', function () {
+    var talk = button('En parler à l’assistant', function () {
       closeCard();
       send('Avant d’imprimer, Plyo me signale : ' + risks.map(function (r) { return r.text; }).join(' ') + ' Que me conseilles-tu ?');
     }, 'link');
@@ -6254,7 +6264,7 @@
     }
     var acts = el('div', 'row-acts');
     acts.appendChild(button('Montre-moi où il est', function () { showSetting(msg.key); }, 'btn ghost sm', 'eye'));
-    if (!archived || reopened) acts.appendChild(button('Et dans mon cas, je mets combien ? (utilise ta jauge)', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }, 'btn ghost sm'));
+    if (!archived || reopened) acts.appendChild(button('Et dans mon cas, je mets combien ?', function () { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }, 'btn ghost sm'));
     box.appendChild(acts);
     thread.appendChild(box);
     if (archived) scrollDown(); else scrollToAnswerTop(box); // lue depuis son titre, comme une réponse de l'IA
@@ -6356,7 +6366,7 @@
     var acts = el('div', 'row-acts');
     function settle() { box.remove(); delete entry.pending; scheduleSave(); }
     var id = function () { return Logic.resendRequestId(entry.pending, new Date(), Logic.newRequestId(window.crypto)); };
-    acts.appendChild(button('Renvoyer ma question (utilise ta jauge)', function () {
+    acts.appendChild(button('Renvoyer ma question', function () {
       var rid = id();
       if (!view.photos) { settle(); send(entry.text || '', { photos: [], shown: true, me: entry, requestId: rid }); return; }
       // Photos d'origine perdues : le texte revient dans le champ, tu rejoins tes photos, puis tu envoies (même identifiant).
@@ -6947,7 +6957,7 @@
     var qs = entry.data.questions;
     var picks = entry.answers || {};
     var wrap = el('div', 'questions');
-    var sendBtn = button('Envoyer mes réponses (utilise ta jauge)', null, 'btn sm');
+    var sendBtn = button('Envoyer mes réponses', null, 'btn sm');
     qs.forEach(function (q, i) {
       wrap.appendChild(el('p', 'q', q.text));
       var row = el('div', 'chips');

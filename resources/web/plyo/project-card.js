@@ -393,7 +393,7 @@
       var pacts = ui.el('div', 'printer-actions');
       pacts.appendChild(ui.button('Choisir un fichier', h.importPart, 'btn ghost sm main-choice', 'folder'));
       // Pas de fichier : l'assistant dessine une pièce simple (« Crée-moi une pièce »), le choix secondaire de l'écran.
-      if (h.designOpen) pacts.appendChild(ui.button('Je n’ai pas de fichier : crée-moi une pièce', h.designOpen, 'btn ghost sm', 'wand'));
+      if (h.designOpen) pacts.appendChild(ui.button('Je n’ai pas de fichier : crée-moi une pièce', h.designOpen, 'btn ghost sm ai', 'wand'));
       body.appendChild(pacts);
       // Un débutant n'a souvent aucun fichier : le petit bateau de test fourni avec le slicer se pose comme une pièce choisie
       // (un essai, d'où un simple lien sous les deux choix).

@@ -849,11 +849,11 @@ test('lot 1 · UX-04 et UX-05 : Résultat en cours, puis « Oui, c’est réussi
   S.render(finished, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', endAsk: J.endQuestion('finished', 'K2', 'a.gcode'), handlers: h });
   assert.ok(!labels(finished).includes('Oui, c’est réussi'));
   assert.ok(labels(finished).includes('Non, c’est raté'));
-  assert.ok(labels(finished).includes('Photo depuis l’ordinateur (utilise ta jauge)'));
+  assert.ok(labels(finished).includes('Photo depuis l’ordinateur'));
   // « Raté » dit : les photos, avec leur coût, et le changement d'avis.
   const failed = fakeUi().el('div');
   S.render(failed, fakeUi(), { step: 'resultat', ctx: {}, spoolAsk: 'Sunlu PLA', spoolNo: true, handlers: h });
-  assert.ok(labels(failed).includes('Photo depuis l’ordinateur (utilise ta jauge)'));
+  assert.ok(labels(failed).includes('Photo depuis l’ordinateur'));
   assert.ok(labels(failed).includes('Oui, c’est réussi'));
   assert.ok(!labels(failed).some((l) => l === 'Ajouter une photo depuis l’ordinateur' || l === 'Envoyer une photo'));
   const page = read('index.html');
@@ -862,8 +862,8 @@ test('lot 1 · UX-04 et UX-05 : Résultat en cours, puis « Oui, c’est réussi
   assert.doesNotMatch(page, /'Envoyer une photo'|Envoyer une photo du résultat/);
   const chat = page.slice(page.indexOf('function openChatAbout'), page.indexOf('function onCanvasSent'));
   // Lot UX 5 : dans la discussion, les deux façons d'envoyer la photo sont des boutons, comme à l'étape Résultat (téléphone en plein).
-  assert.match(chat, /button\(PlyoJourney\.PHOTO_PHONE, function \(\) \{ openPhone\(\); \}, 'btn sm'\)/);
-  assert.match(chat, /button\(PlyoJourney\.PHOTO_COMPUTER, function \(\) \{ pickFiles\(\); \}, 'btn ghost sm'\)/);
+  assert.match(chat, /button\(PlyoJourney\.PHOTO_PHONE, function \(\) \{ openPhone\(\); \}, 'btn sm ai'\)/);
+  assert.match(chat, /button\(PlyoJourney\.PHOTO_COMPUTER, function \(\) \{ pickFiles\(\); \}, 'btn ghost sm ai'\)/);
 });
 
 test('lot 1 · UX-15 : le lot des questions d’intention a son « Annuler », qui ramène au résumé', () => {

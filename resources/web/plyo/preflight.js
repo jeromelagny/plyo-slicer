@@ -193,7 +193,7 @@
   // Chaque problème : { source, code, level, text, opt_key?, scope?, object_ref?, object_name?, fix? }. Le code vient des types
   // et identifiants d'Orca, jamais de son texte : c'est lui qui choisit l'explication. Le texte d'Orca n'est que montré (entre
   // guillemets) et passé à l'assistant.
-  var ASK_LABEL = 'Demander à l’assistant (utilise ta jauge)';
+  var ASK_LABEL = 'Demander à l’assistant';
   // Sans compte (N7) : le bouton le dit ; la question est gardée et part après la connexion (afterLogin, index.html).
   var ASK_LOGIN_LABEL = 'Me connecter pour demander à l’assistant';
   var ARRANGE_ACT = { kind: 'plate', action: 'arrange', label: 'Ranger le plateau' };

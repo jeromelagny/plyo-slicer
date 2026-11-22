@@ -31,7 +31,7 @@ test('échec d’envoi : chaque famille a sa phrase, son titre et ses suites, ja
     assert.doesNotMatch(v.text + v.title, /a démarré|impression démarre/, code);
   }
   const labels = PF.uploadFailureView({ code: 'unreachable' }, 'K1C').actions.map((a) => a.label);
-  assert.deepEqual(labels, ['Réessayer l’envoi', 'Vérifier la liaison de mon imprimante', 'Exporter le fichier pour une carte SD ou une clé USB', 'Demander à l’assistant (utilise ta jauge)']);
+  assert.deepEqual(labels, ['Réessayer l’envoi', 'Vérifier la liaison de mon imprimante', 'Exporter le fichier pour une carte SD ou une clé USB', 'Demander à l’assistant']);
 });
 
 test('échec inconnu ou refus avant l’envoi : la phrase de Plyo d’abord, le texte d’Orca cité en détail, et part (nettoyé) dans la question', () => {

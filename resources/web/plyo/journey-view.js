@@ -53,7 +53,7 @@
       for (var d = 0; d < 3; d++) busy.appendChild(ui.el('i'));
       promptEl.appendChild(busy); // au bout de la consigne, sur sa ligne
     } else if (action.kind !== 'none') {
-      var b = ui.button(action.label, function () { if (action.enabled) opts.handlers.run(action.kind); }, 'btn sm');
+      var b = ui.button(action.label, function () { if (action.enabled) opts.handlers.run(action.kind); }, action.kind === 'photo' ? 'btn sm ai' : 'btn sm');
       if (!action.enabled) b.disabled = true;
       line.appendChild(b);
     }

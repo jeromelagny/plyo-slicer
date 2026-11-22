@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const J = require('../journey-logic.js');
@@ -283,8 +284,9 @@ test('Résultat : une fois réussi, la suite devient l’action principale', () 
   assert.ok(J.prompt('resultat', { success: true }).includes('réussi'));
 });
 
-test('suggestions : celles qui partent à l’IA le disent ; « changer » le filament n’offre pas de découper en même temps', () => {
-  for (const key of ['imprimer', 'resultat']) for (const s of J.suggestionsFor(key)) if (s.kind === 'ask') assert.ok(/jauge/.test(s.label), s.label);
+// Parcours débutant, lot 1 : plus de « (utilise ta jauge) » dans les libellés (effet taximètre) ; la jauge reste dans l'en-tête.
+test('suggestions : aucune ne répète le coût ; « changer » le filament n’offre pas de découper en même temps', () => {
+  for (const key of ['imprimer', 'resultat']) for (const s of J.suggestionsFor(key)) assert.doesNotMatch(s.label, /jauge/, s.label);
   assert.equal(J.primaryAction('preparer', { editing: true }).kind, 'none');
 });
 
@@ -460,21 +462,22 @@ test('Résultat : en cours tant qu’aucune fin n’est connue, puis le bouton p
   // Arrêt ou erreur : la carte pose sa question ; une fois répondue, « Nouvelle pièce ».
   assert.equal(J.primaryAction('resultat', { ended: 'cancelled', endAsk: true }).kind, 'none');
   assert.equal(J.primaryAction('resultat', { ended: 'error' }).kind, 'newPart');
-  // « Raté » dit : la photo du téléphone, qui annonce qu'elle utilise la jauge.
+  // « Raté » dit : la photo du téléphone (repère « ai » au rendu, journey-view.js), sans le coût dans le libellé.
   const failed = J.primaryAction('resultat', { failed: true });
   assert.equal(failed.kind, 'photo');
-  assert.equal(failed.label, 'Photo avec mon téléphone (utilise ta jauge)');
+  assert.equal(failed.label, 'Photo avec mon téléphone');
   assert.equal(J.prompt('resultat', { failed: true }), 'Dommage. Montre-moi ta pièce en photo');
-  // Aucun bouton plein de Résultat ne dépense sans le dire.
+  // Le seul bouton plein de Résultat qui dépense est la photo : le rendu lui donne le repère des actions de l'assistant.
   for (const c of [{}, { ended: 'finished', endAsk: true }, { ended: 'error', endAsk: true }, { ended: 'cancelled' }, { failed: true }, { success: true }]) {
     const a = J.primaryAction('resultat', c);
-    if (a.kind === 'photo') assert.match(a.label, /jauge/);
+    if (a.kind === 'photo') assert.doesNotMatch(a.label, /jauge/);
   }
+  assert.match(fs.readFileSync(new URL('../journey-view.js', import.meta.url), 'utf8'), /action\.kind === 'photo' \? 'btn sm ai' : 'btn sm'/);
 });
 
 test('photos : deux libellés uniques, avec leur coût', () => {
-  assert.equal(J.PHOTO_PHONE, 'Photo avec mon téléphone (utilise ta jauge)');
-  assert.equal(J.PHOTO_COMPUTER, 'Photo depuis l’ordinateur (utilise ta jauge)');
+  assert.equal(J.PHOTO_PHONE, 'Photo avec mon téléphone');
+  assert.equal(J.PHOTO_COMPUTER, 'Photo depuis l’ordinateur');
 });
 
 test('défaut d’une pièce : montré gratuitement en photo, plus de demande payée pour se faire réclamer une photo', () => {

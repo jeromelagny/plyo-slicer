@@ -107,8 +107,9 @@
     return { label: '', kind: 'none', enabled: false };
   }
 
-  // Libellés uniques des deux façons d'envoyer une photo : la lecture de la photo par l'IA utilise la jauge.
-  var PHOTO_PHONE = 'Photo avec mon téléphone (utilise ta jauge)', PHOTO_COMPUTER = 'Photo depuis l’ordinateur (utilise ta jauge)';
+  // Libellés uniques des deux façons d'envoyer une photo. La lecture de la photo par l'IA utilise la jauge : le bouton porte le
+  // repère discret des actions de l'assistant (classe « ai »), pas de mention dans le texte (effet taximètre).
+  var PHOTO_PHONE = 'Photo avec mon téléphone', PHOTO_COMPUTER = 'Photo depuis l’ordinateur';
 
   // État de l'étape Résultat (ctx : success, failed, ended, endAsk) :
   // 'success' (réussite dite), 'failed' (« raté » dit), 'finished' (la machine a fini, ta réponse est attendue),
@@ -257,7 +258,7 @@
     switch (step) {
       case 'machine': case 'piece': case 'filament': return [{ label: 'Une impression ratée ? Montre-la-moi', kind: 'open', value: 'failed' }];
       case 'preparer': return [{ label: 'Vérifier ma plaque', kind: 'open', value: 'check' }, { label: 'Voir mes réglages actuels', kind: 'open', value: 'values' }];
-      case 'imprimer': return [{ label: 'Que vérifier avant de lancer ? (utilise ta jauge)', kind: 'ask', value: 'Que dois-je vérifier sur mon imprimante juste avant de lancer l’impression ?' },
+      case 'imprimer': return [{ label: 'Que vérifier avant de lancer ?', kind: 'ask', value: 'Que dois-je vérifier sur mon imprimante juste avant de lancer l’impression ?' },
         { label: 'Températures de ma bobine', kind: 'open', value: 'limits' }];
       case 'resultat': return [{ label: 'Mes pièces', kind: 'open', value: 'parts' }, { label: 'Montrer le défaut en photo', kind: 'open', value: 'defect' }];
       default: return [];
