@@ -4733,7 +4733,16 @@
   function nextQueuedModel() {
     var next = projectUI.modelQueue && projectUI.modelQueue.shift();
     if (next) { importModel(next, true); return; }
-    if (projectUI.arrangeAfter) { projectUI.arrangeAfter = false; plateAction('arrange', null, null, null, true); }
+    if (projectUI.arrangeAfter) {
+      projectUI.arrangeAfter = false;
+      var tooBig = projectUI.tooBigNames || [];
+      projectUI.tooBigNames = [];
+      plateAction('arrange', function (ok) {
+        // Une pièce plus grande que le plateau : Orca ne peut rien ranger. On le dit (la carte « trop grande » propose de la réduire).
+        if (tooBig.length) noteLine(PlyoJourney.arrangeTooBigText(tooBig), 'warn', 'alert', 'guide');
+        else if (!ok) noteLine('Je n’ai pas pu ranger les pièces sur le plateau. Dans Plyo Slicer, le bouton « Organiser » (touche A) le fait aussi.', 'warn', 'alert', 'guide');
+      }, null, null, true);
+    } else projectUI.tooBigNames = [];
   }
   // « L'ajouter à ce plateau » : une pièce de plus dans ce projet (la première vient en tête de `files`, les autres dans la file).
   function addToPlate(file) {
@@ -5325,9 +5334,11 @@
     if (projectUI.reposing) { projectUI.reposing = false; renderProject(); noteLine('« ' + msg.name + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); }
     projectUI.newProjectFile = false;
     if (msg.replaced > 0) showReplaced(msg, old);
-    // Pas encore de machine choisie : la taille est mesurée sur le plateau de la machine en cours d'Orca, peut-être pas la tienne.
-    // Rien n'est annoncé trop grand ici : la découpe remesure sur ta machine (dropTooBig au choix de la machine).
-    if (msg.fits === false && !PlyoProject.hasPrinter(conv.project)) msg = Object.assign({}, msg, { fits: true });
+    // Machine pas encore confirmée : la taille est mesurée sur le plateau de la machine en cours d'Orca. On ne la tait que si
+    // le projet en vise une autre (machine proposée différente) ; sinon c'est bien la tienne, et « trop grande » est vrai.
+    var measuredElsewhere = !PlyoProject.hasPrinter(conv.project) && !!(conv.project.printer && conv.project.printer.preset) && conv.project.printer.preset !== orcaPrinterName();
+    if (msg.fits === false && measuredElsewhere) msg = Object.assign({}, msg, { fits: true });
+    if (msg.fits === false) projectUI.tooBigNames = (projectUI.tooBigNames || []).concat([msg.name]); // dit après le rangement
     var entry = record({ kind: 'model', msg: msg, reduced: false });
     // Un seul fil (lot 5) : une première pièce bien posée est dite dans la carte d'étape (après le changement d'étape, qui
     // efface les messages), pas une deuxième fois dans les échanges ; elle reste dans l'historique du projet.

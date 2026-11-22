@@ -287,7 +287,7 @@ test('lot 6 · étape 1 : zone de dépôt, mes fichiers, galerie (si elle existe
 
 test('lot 6 · sans machine : pièce posée tout de suite, installation à l’étape 2, accueil réduit à la recherche Wi-Fi', () => {
   const page = read('index.html');
-  assert.match(page, /if \(msg\.fits === false && !PlyoProject\.hasPrinter\(conv\.project\)\) msg = Object\.assign\(\{\}, msg, \{ fits: true \}\);/);
+  assert.match(page, /if \(msg\.fits === false && measuredElsewhere\) msg = Object\.assign\(\{\}, msg, \{ fits: true \}\);/);
   assert.match(page, /if \(!conv \|\| PlyoJourney\.currentStep\(conv\.project\) !== 'machine'\) return;\s*startSetup\(\);/);
   assert.match(page, /if \(step === 'machine'\) setTimeout\(function \(\) \{ maybeStartSetup\(\); renderSetupFlow\(\); \}, 0\);/);
   assert.match(read('welcome.html'), /if \(withSetup\) show\('setup'\);/);
@@ -425,9 +425,19 @@ test('plusieurs pièces pour une même impression : posées sur le même plateau
   const page = read('index.html');
   assert.match(page, /if \(models\.length\) \{ projectUI\.modelQueue = models\.slice\(1\); sendModel\(models\[0\]\); \}/, 'plus de poses en parallèle');
   assert.match(page, /replace: adding \? false : PlyoProject\.replacesPlate\(/, 'une pièce ajoutée ne remplace rien');
-  assert.match(page, /if \(projectUI\.arrangeAfter\) \{ projectUI\.arrangeAfter = false; plateAction\('arrange', null, null, null, true\); \}/);
+  assert.match(page, /if \(projectUI\.arrangeAfter\) \{\s*projectUI\.arrangeAfter = false;[\s\S]{0,200}plateAction\('arrange', function \(ok\) \{/);
   assert.match(page, /acts\.appendChild\(button\('L’ajouter à ce plateau', function \(\) \{ slot\.textContent = ''; addToPlate\(file\); \}, 'btn sm'\)\);/);
   assert.match(page, /if \(projectUI\.addingPart && part\) \{ addToPlate\(file\); return; \}/);
   assert.match(page, /if \(at === 'imprimer' \|\| at === 'resultat'\) \{ delete conv\.project\.success; setTourStep\('slice'\); \}/, 'plateau changé : découpe à refaire');
   assert.match(page, /projectUI\.modelQueue = \[\]; \/\/ les pièces suivantes du même choix ne sont pas posées sans celle-ci/);
+});
+
+test('plusieurs pièces : une pièce plus grande que le plateau est dite après le rangement, jamais tue sur ta machine', () => {
+  assert.equal(J.arrangeTooBigText(['evier.stl']), '« evier.stl » est plus grande que le plateau : je ne peux pas ranger les pièces tant qu’elle dépasse. Réduis-la ou imprime-la à part.');
+  assert.match(J.arrangeTooBigText(['a.stl', 'b.stl']), /^« a\.stl », « b\.stl » sont plus grandes .* Réduis-les ou imprime-les à part\.$/);
+  assert.equal(J.arrangeTooBigText([]), '');
+  const page = read('index.html');
+  // « Trop grande » n'est tu que si le projet vise une autre machine que celle d'Orca (essai du 22/11 : 221,8 mm sur 220).
+  assert.match(page, /var measuredElsewhere = !PlyoProject\.hasPrinter\(conv\.project\) && !!\(conv\.project\.printer && conv\.project\.printer\.preset\) && conv\.project\.printer\.preset !== orcaPrinterName\(\);/);
+  assert.match(page, /if \(tooBig\.length\) noteLine\(PlyoJourney\.arrangeTooBigText\(tooBig\), 'warn', 'alert', 'guide'\);/);
 });
