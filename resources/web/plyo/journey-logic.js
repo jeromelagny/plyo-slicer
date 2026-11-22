@@ -36,8 +36,10 @@
 
   function steps(project) {
     var current = barKey(currentStep(project)), seen = false;
+    var noPart = !(project && project.part && project.part.name);
     return BAR.map(function (s) {
       var state = s.key === current ? 'current' : (seen ? 'todo' : 'done');
+      if (s.key === 'piece' && state === 'done' && noPart) state = 'todo'; // machine et bobine d'abord, venu de la discussion
       if (s.key === current) seen = true;
       return { key: s.key, label: s.label, state: state };
     });

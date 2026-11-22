@@ -16,8 +16,15 @@
   // Première étape à faire : 'part' | 'printer' | 'filament' | 'ready'. La pièce d'abord (parcours débutant, lot 6) : elle se
   // pose sur la machine en cours d'Orca et reste au choix de la machine. ProjectLogic::missing (C++) garde son ordre : il ne
   // sert qu'à lister ce qui manque dans un refus.
+  // `part_later` : venu de la discussion (« Choisir ma machine et ma bobine »), on corrige la bobine sans pièce : machine et
+  // bobine d'abord, la pièce ensuite.
   function nextStep(project) {
     var p = project && typeof project === 'object' ? project : {};
+    if (p.part_later === true && !chosen(p.part, 'name')) {
+      if (!chosen(p.printer, 'preset')) return 'printer';
+      if (!chosen(p.filament, 'preset')) return 'filament';
+      return 'part';
+    }
     if (!chosen(p.part, 'name')) return 'part';
     if (!chosen(p.printer, 'preset')) return 'printer';
     if (!chosen(p.filament, 'preset')) return 'filament';

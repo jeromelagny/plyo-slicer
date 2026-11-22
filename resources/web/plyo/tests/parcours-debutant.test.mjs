@@ -317,3 +317,16 @@ test('lot 7 · galerie : modèles livrés avec Orca, mêmes clés côté panneau
   assert.match(page, /window\.orca\.postMessage\(\{ type: 'model_add', sample: sample, project: conv\.project, conv: conv\.id,/);
   assert.match(page, /pickSample: function \(sample\) \{ projectUI\.gallery = false; importSample\(sample\); \}/);
 });
+
+test('depuis la discussion, corriger sa bobine n’attend pas de pièce : machine et bobine d’abord', () => {
+  const printer = { preset: 'Ma K1C', name: 'K1C' }, filament = { type: 'PLA', preset: 'Generic PLA', temps_ok: true };
+  assert.equal(P.nextStep({ part_later: true }), 'printer');
+  assert.equal(P.nextStep({ part_later: true, printer }), 'filament');
+  assert.equal(P.nextStep({ part_later: true, printer, filament }), 'part');
+  assert.equal(P.nextStep({ part_later: true, printer, filament, part: { name: 'a.stl' } }), 'ready');
+  assert.equal(J.currentStep({ part_later: true }), 'machine');
+  assert.deepEqual(J.steps({ part_later: true, printer }).map((s) => s.state), ['todo', 'current', 'todo'], 'la pièce n’est pas cochée sans pièce');
+  const page = read('index.html');
+  assert.match(page, /if \(missing\.indexOf\('part'\) < 0 && !\(conv\.project\.part && conv\.project\.part\.name\)\) \{ conv\.project\.part_later = true;/);
+  assert.match(page, /delete conv\.project\.part_later;/);
+});

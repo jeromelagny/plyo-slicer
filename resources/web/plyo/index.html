@@ -3283,6 +3283,8 @@
     return button(label, function () {
       if (conv !== mine) return;
       projectUI.completing = { conv: conv, missing: missing.slice(), done: doneText || PlyoJourney.FICHE_WAITS };
+      // Corriger sa bobine n'attend pas de pièce : machine et bobine d'abord, la pièce ensuite (PlyoProject.nextStep).
+      if (missing.indexOf('part') < 0 && !(conv.project.part && conv.project.part.name)) { conv.project.part_later = true; projectChanged(); }
       applyTab('show-guide');
       followCompletion();
       $('project-card').scrollIntoView({ block: 'nearest' });
@@ -5192,7 +5194,7 @@
     else if (firstPose || msg.replaced > 0) delete conv.project.file_colours;
     coloursUI.posed = conv;
     threadNote((firstPose ? 'Pièce posée : « ' : 'Pièce remplacée : « ') + msg.name + ' »' + (Array.isArray(msg.size_mm) ? ', ' + msg.size_mm.map(function (x) { return Math.round(x); }).join(' × ') + ' mm' : '') + (msg.fits === false ? ' (trop grande pour le plateau)' : '') + '.', 'etapes');
-    if (firstPose) { conv.project.part = { name: msg.name }; projectChanged(); } else scheduleSave();
+    if (firstPose) { conv.project.part = { name: msg.name }; delete conv.project.part_later; projectChanged(); } else scheduleSave();
     if (projectUI.reposing) { projectUI.reposing = false; renderProject(); noteLine('« ' + msg.name + ' » est de nouveau sur le plateau.', 'ok', 'check', 'guide'); }
     projectUI.newProjectFile = false;
     if (msg.replaced > 0) showReplaced(msg, old);
