@@ -226,7 +226,7 @@
   .step-card { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
   /* Consigne sur toute la largeur, son bouton dessous, toujours au même endroit ; un lien éventuel en dernier. */
   .journey-action { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); }
-  .journey-prompt { font-weight: 700; font-size: var(--fs-lg); line-height: 1.35; }
+  .journey-prompt { font-weight: 700; font-size: 16px; line-height: 1.35; }
   .journey-action > .btn { order: 1; }
   .journey-action > .journey-extra { order: 2; }
   .journey-action:empty { display: none; }
@@ -249,12 +249,34 @@
 
   /* Corps défilant : accueil puis conversation */
   .body { flex: 1; overflow-y: auto; padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
-  /* Le fil sous la carte d'étape : séparé d'un filet dès qu'il a des échanges ; masqué pendant l'accueil du débutant. */
-  #view-chat:has(#thread:not(.hidden)) { border-top: 1px solid var(--border); padding-top: var(--s3); }
+  /* Hiérarchie visuelle (maquette validée le 22/11) : cinq rôles, un traitement chacun. La couleur ne dit que deux choses :
+     agis ici (accent) et attention (ambre, rouge). Le reste passe par la taille, le relief et la position.
+     1. À faire maintenant : la carte d'étape, seule en relief, liseré d'accent ; son petit titre pour le débutant. */
+  .step-card { border-left: 4px solid var(--accent); box-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 14px rgba(0, 0, 0, .06); }
+  :root[data-orca-theme="dark"] .step-card { background: var(--raised); box-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
+  .step-kicker { display: none; margin: 0; font-size: var(--fs-xs); letter-spacing: .07em; text-transform: uppercase; font-weight: 700; color: var(--accent-text); }
+  body.novice .step-kicker { display: block; }
+  /* 2. Déjà fait : lignes grises et petites (au-dessus de la carte, ou les retours juste dessous), coche en accent, leurs
+     gestes (« Annuler », « voir ») en liens discrets. Une alerte ou une erreur garde sa couleur. */
+  #step-recap:not(:empty) { margin-bottom: calc(-1 * var(--s1)); }
+  #step-recap .note-line, #guide-notes > .note-line:not(.warn):not(.error) { color: var(--muted); font-size: var(--fs-sm); }
+  #step-recap .note-line > .ic, #guide-notes > .note-line.ok > .ic { color: var(--accent-text); }
+  #step-recap .note-step { color: var(--muted); font-weight: 600; }
+  #view-guide > div:empty { display: none; } /* emplacements vides : pas de grand vide entre la carte et la discussion */
+  #step-recap .note-line .btn, #guide-notes > .note-line:not(.warn):not(.error):not(.retouches-card) .btn { min-height: 0; padding: 0; border: 0; background: none; color: var(--muted); font-weight: 400; font-size: var(--fs-sm); text-decoration: underline; }
+  /* 3. À surveiller : un encadré ambre (risque, machine qui ne répond pas, points ignorés), jamais pour une simple info. */
+  .printer-step.warn { padding: var(--s2) var(--s3); border-radius: var(--r-md); border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); background: var(--warn-soft); }
+  /* 4. Plus tard / à côté : replié, gris (question sur un autre projet, détails : .fold-detail). */
+  /* 5. Discussion : une zone à part, titrée, tes messages à droite, les réponses de l'assistant en bulles teintées. */
+  .disc-head { display: none; align-items: center; gap: var(--s2); font-size: var(--fs-xs); letter-spacing: .07em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+  .disc-head::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+  #view-chat:has(#thread:not(.hidden)) .disc-head { display: flex; }
+  .thread > .ai { background: color-mix(in srgb, var(--accent) 7%, var(--bg)); border-radius: 2px var(--r-md) var(--r-md) var(--r-md); padding: var(--s2) var(--s3); }
+  :root[data-orca-theme="dark"] .thread > .ai { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
   #body:has(#view-guide.welcoming) #view-chat { display: none; }
   #step-recap { display: flex; flex-direction: column; gap: var(--s1); }
   #step-recap:empty, #guide-notes:empty { display: none; }
-  .note-step { font-weight: 600; white-space: nowrap; }
+  .note-step { font-weight: 600; }
   .fold-detail { flex-basis: 100%; font-size: var(--fs-sm); }
   .fold-detail summary { cursor: pointer; color: var(--muted); text-decoration: underline; }
   .fold-detail p { margin: var(--s1) 0 0; }
@@ -284,7 +306,7 @@
   /* Messages */
   .thread { display: flex; flex-direction: column; gap: var(--s4); }
   .me { align-self: flex-end; max-width: 86%; display: flex; flex-direction: column; gap: var(--s1); align-items: flex-end; }
-  .me .text { background: var(--accent-soft); padding: var(--s2) var(--s3); border-radius: var(--r-md) var(--r-md) 2px var(--r-md); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .me .text { background: var(--surface); border: 1px solid var(--border); padding: var(--s2) var(--s3); border-radius: var(--r-md) var(--r-md) 2px var(--r-md); white-space: pre-wrap; overflow-wrap: anywhere; }
   .me .from { font-size: var(--fs-xs); color: var(--muted); display: inline-flex; gap: var(--s1); align-items: center; }
   /* Photos alignées à droite, comme le texte de la demande : 3 par ligne au plus, les dernières se calent à droite. */
   .thumbs { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s1); max-width: calc(3 * 64px + 2 * var(--s1)); }
@@ -586,7 +608,8 @@
     <div class="view" id="view-guide">
     <div id="welcome-slot"></div>
     <div id="journey-bar"></div>
-    <section class="step-card"><div id="step-recap"></div><div id="resume-slot"></div><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="bed-slot"></div><div id="project-card"></div></div></section>
+    <div id="step-recap"></div>
+    <section class="step-card"><p class="step-kicker">À faire maintenant</p><div id="resume-slot"></div><div id="journey-action"></div><div id="project-slot"><div id="project-alert"></div><div id="bed-slot"></div><div id="project-card"></div></div></section>
     <div id="guide-notes"></div>
     <div id="spool-slot"></div>
     <div id="design-slot"></div>
@@ -596,6 +619,7 @@
     </div>
 
     <div class="view" id="view-chat">
+    <div class="disc-head" id="disc-head">Discussion</div>
     <!-- Conversation (avant l'accueil : des notes seules s'affichent au-dessus de lui) -->
     <div class="thread hidden" id="thread"></div>
 
@@ -902,7 +926,9 @@
       // Retour d'une action qui vient de faire passer à l'étape suivante (« bateau.stl est sur le plateau ») : en tête de la carte,
       // avec le nom de l'étape qui l'a provoqué, et non perdu sous l'étape suivante.
       if (journeyUI.leftStep) {
-        if (!$('step-recap').children.length) node.insertBefore(el('span', 'note-step', PlyoJourney.BAR.filter(function (b) { return b.key === journeyUI.leftStep; })[0].label + ' :'), node.firstChild);
+        // L'étiquette fait partie de la phrase (« Ta pièce : … ») : pas une colonne à part qui écraserait le texte.
+        var said = node.querySelector('.note-text');
+        if (!$('step-recap').children.length && said) said.insertBefore(el('span', 'note-step', PlyoJourney.BAR.filter(function (b) { return b.key === journeyUI.leftStep; })[0].label + ' : '), said.firstChild);
         $('step-recap').appendChild(node);
         return node;
       }
@@ -3081,7 +3107,8 @@
       projectChanged(); // d'abord : le changement d'étape efface les messages de l'étape
       if (pend.note) noteLine(pend.note, 'ok', 'check', 'guide'); // bobine rattachée depuis la carte « Orca est passé sur … »
       if (pend.spool) announceSpool(pend); // le nom de la bobine vaut mieux que celui du préréglage
-      if (pend.spool && pend.quick && pend.fresh) noteLine('Bobine « ' + pend.spool.name + ' » : je pars des réglages courants du ' + pend.type + ' (buse ' + (msg.nozzle_temp != null ? msg.nozzle_temp : '?') + ' °C, plateau ' + (msg.bed_temp != null ? msg.bed_temp : '?') + ' °C). Ton étiquette dit autre chose ? Change-les depuis la fiche, en haut.', 'ok', 'check', 'guide');
+      // « Déjà fait » : une ligne courte ; les températures se changent depuis la fiche, en haut.
+      if (pend.spool && pend.quick && pend.fresh) noteLine('« ' + pend.spool.name + ' » : réglages courants du ' + pend.type + ' (buse ' + (msg.nozzle_temp != null ? msg.nozzle_temp : '?') + ' °C, plateau ' + (msg.bed_temp != null ? msg.bed_temp : '?') + ' °C).', 'ok', 'check', 'guide');
       // Nouvelle bobine, pour le confirmé (UX-34) : la calibration directe, à un clic.
       if (pend.spool && pend.fresh && fsState.level === 'expert') {
         var cal = noteLine('Nouvelle bobine : tu peux la calibrer (débit, température, rétraction).', '', 'target', 'guide');

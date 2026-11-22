@@ -227,8 +227,8 @@ test('lot 4 · page : la réponse du débutant applique et découpe ; « Ajuster
 
 test('lot 5 · un seul fil : l’étape, ses retours en tête de carte, puis les échanges ; pas de doublon de la pièce posée', () => {
   const page = read('index.html');
-  const card = page.slice(page.indexOf('<section class="step-card">'), page.indexOf('</section>', page.indexOf('<section class="step-card">')));
-  assert.ok(card.indexOf('id="step-recap"') >= 0 && card.indexOf('id="step-recap"') < card.indexOf('id="journey-action"'), 'récapitulatif en tête de la carte');
+  // Hiérarchie visuelle (22/11) : le récapitulatif « déjà fait » juste au-dessus de la carte « à faire maintenant ».
+  assert.ok(page.indexOf('<div id="step-recap"></div>\n    <section class="step-card"><p class="step-kicker">À faire maintenant</p>') > 0, 'récapitulatif juste au-dessus de la carte');
   assert.ok(page.indexOf('id="guide-notes"') < page.indexOf('id="preflight-slot"'), 'les retours de l’étape juste sous sa carte');
   // Étiquette : l'étape de la barre quittée (« Ta pièce : … »), seulement en changeant d'étape de la barre.
   assert.match(page, /if \(from && order\.indexOf\(to\) > order\.indexOf\(from\)\) \{ journeyUI\.leftStep = from; setTimeout/);
@@ -383,8 +383,19 @@ test('lot 7 · galerie remplie à la main : modèles vérifiés par le slicer d�
 test('allègement : accueil seulement sans pièce ni machine, une étiquette d’étape, pas de doublon des réglages remis', () => {
   const page = read('index.html');
   assert.match(page, /var bare = !\(conv\.project\.part && conv\.project\.part\.name\) && !PlyoProject\.hasPrinter\(conv\.project\);\s*if \(!thread\.children\.length\) home\.classList\.toggle\('hidden', !bare\);/);
-  assert.match(page, /if \(!\$\('step-recap'\)\.children\.length\) node\.insertBefore\(el\('span', 'note-step'/);
+  assert.match(page, /if \(!\$\('step-recap'\)\.children\.length && said\) said\.insertBefore\(el\('span', 'note-step'/);
   assert.match(page, /if \(!text \|\| \(restored && !pend\.success\.differs\)\) return;/);
   assert.match(page, /if \(r\.summary\) foldDetail\(line, 'Voir lesquels', r\.summary\);/);
   assert.match(page, /else if \(profileNote && !pend\.spool\) noteLine/);
+});
+
+test('hiérarchie visuelle : cinq rôles, la couleur réservée à « agis ici » et « attention »', () => {
+  const page = read('index.html');
+  assert.match(page, /\.step-card \{ border-left: 4px solid var\(--accent\); box-shadow:/, 'à faire maintenant : en relief');
+  assert.match(page, /body\.novice \.step-kicker \{ display: block; \}/, 'son petit titre pour le débutant seulement');
+  assert.match(page, /#step-recap \.note-line, #guide-notes > \.note-line:not\(\.warn\):not\(\.error\) \{ color: var\(--muted\); font-size: var\(--fs-sm\); \}/, 'déjà fait : gris');
+  assert.match(page, /\.printer-step\.warn \{ padding: [^}]*background: var\(--warn-soft\); \}/, 'à surveiller : encadré ambre');
+  assert.match(page, /<div class="disc-head" id="disc-head">Discussion<\/div>/);
+  assert.match(page, /#view-chat:has\(#thread:not\(\.hidden\)\) \.disc-head \{ display: flex; \}/, 'titre seulement quand il y a des échanges');
+  assert.match(page, /\.thread > \.ai \{ background: color-mix\(in srgb, var\(--accent\) 7%, var\(--bg\)\);/, 'réponses en bulles teintées');
 });
