@@ -145,7 +145,8 @@ test('UX-24 : fenêtre du téléphone : consigne selon l’adresse du service, i
   assert.match(phone, /Ton téléphone a juste besoin d’Internet \(Wi-Fi ou données mobiles\)\./);
   assert.match(phone, /\/\^https:\\\/\\\/\/i\.test\(/);
   const page = read('index.html');
-  assert.match(page, /body: JSON\.stringify\(\{ purpose: purpose \}\)/);
+  // Audit de la page du téléphone (22/11) : le nom du projet part avec le but ; « sketch » quand « Créer avec l'IA » est ouvert.
+  assert.match(page, /body: JSON\.stringify\(\{ purpose: purpose, label: label \}\)/);
   assert.match(page, /'\/purpose', \{ method: 'PUT'/);
-  assert.match(page, /function phonePurpose\(\) \{ return calibCard && calibCard\.awaiting \? 'calibration' : 'defect'; \}/);
+  assert.match(page, /if \(calibCard && calibCard\.awaiting\) return 'calibration';\s*return designUI\.open && designUI\.conv === conv && !designUI\.retouch \? 'sketch' : 'defect';/);
 });

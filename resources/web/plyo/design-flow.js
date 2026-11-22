@@ -20,6 +20,7 @@
     cost: 'Utilise ta jauge, comme une question à l’assistant.',
     login: 'Me connecter pour créer une pièce',
     attach: 'Joindre un croquis ou une photo',
+    phone: 'Photographier avec mon téléphone',
     attached: 'Image jointe',
     remove: 'retirer',
     // 403 plan_required de /api/design : la formule gratuite n'ouvre pas les pièces sur mesure.
@@ -106,6 +107,8 @@
       box.appendChild(row);
     });
     if ((st.images || []).length < MAX_IMAGES && h.attach) box.appendChild(ui.button(TEXT.attach, h.attach, 'link', 'clip'));
+    // Un croquis sur papier se photographie : la page du téléphone demande alors « Montre-moi ton croquis ».
+    if ((st.images || []).length < MAX_IMAGES && h.phone && !st.retouch) box.appendChild(ui.button(TEXT.phone, h.phone, 'link', 'phone'));
     var acts = ui.el('div', 'printer-actions');
     if (st.needsLogin) acts.appendChild(ui.button(TEXT.login, h.login, 'btn sm main-choice', 'login'));
     else if (st.planRequired && h.plans) acts.appendChild(ui.button(TEXT.plans, h.plans, 'btn sm main-choice'));

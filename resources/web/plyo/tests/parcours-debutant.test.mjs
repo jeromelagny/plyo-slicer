@@ -454,3 +454,19 @@ test('machine à une seule bobine : les couleurs d’un fichier ne sont pas repr
   assert.match(imp, /result\["colours_ignored"\] = colours\["colours_ignored"\];/);
   assert.match(read('index.html'), /if \(msg\.colours_ignored > 1\) \{/);
 });
+
+test('page téléphone (audit du 22/11) : fenêtre du QR au même titre que le téléphone, croquis vers « Créer avec l’IA »', () => {
+  const phone = read('phone.html');
+  assert.match(phone, /var TITLES = \{ defect: 'Montre-moi le défaut', calibration: 'Montre-moi ton test', sketch: 'Montre-moi ton croquis' \};/);
+  assert.match(phone, /<li>Appuie sur « Envoyer à Plyo »<\/li>/);
+  assert.match(phone, /toSlicer\(\{ command: 'pick_files' \}\)/);
+  const page = read('index.html');
+  assert.match(page, /if \(phonePurpose\(\) === 'sketch' && phoneQueue\.length\) \{ receiveSketch\(phoneQueue\.shift\(\)\); return; \}/);
+  assert.match(page, /window\.orca\.postMessage\(\{ type: 'phone', link: \{ id: link\.id, qr_svg: link\.qr_svg, purpose: link\.purpose, label: link\.label \|\| '' \} \}\);/);
+  assert.match(page, /msg\.type === 'phone_pick_files'/);
+  assert.match(read('design-flow.js'), /phone: 'Photographier avec mon téléphone',/);
+  const cpp = fs.readFileSync(new URL('../../../../src/plyo/PlyoPhoneDialog.cpp', import.meta.url), 'utf8');
+  assert.match(cpp, /\{"purpose", Json::str\(m_link, "purpose", 20\)\}/);
+  assert.match(cpp, /if \(Json::str\(payload, "command"\) == "pick_files"\) \{\s*m_closing = true;\s*EndModal\(wxID_NO\);/);
+  assert.match(fs.readFileSync(new URL('../../../../src/plyo/PlyoAssistant.cpp', import.meta.url), 'utf8'), /else if \(result == wxID_NO\)[^\n]*\n\s*send\(\{\{"type", "phone_pick_files"\}\}\);/);
+});

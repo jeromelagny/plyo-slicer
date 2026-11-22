@@ -4571,6 +4571,7 @@
     var keep = retouch ? (designUI.conv === conv && designUI.part) || (conv.project.design && conv.project.design.part) || null : null;
     designUI = { open: true, conv: conv, retouch: !!retouch, text: '', images: [], busy: false, questions: [], answers: [], conversation: [], part: keep, message: '', failed: false, needsLogin: !session, placing: null };
     renderProject();
+    syncPhonePurpose(); // lien téléphone déjà ouvert : sa page demande maintenant le croquis
   }
   var designLib = { promise: null };
   // manifold-3d, lue par le slicer dans ses ressources (la page est chargée comme texte) : module ES rendu classique, puis
@@ -4681,6 +4682,17 @@
     line.appendChild(button(PlyoDesignFlow.TEXT.change, function () { designStart(true); }, 'btn ghost sm', 'wand'));
   }
   // Croquis ou photo joint à la description : réduit à 1 600 px au plus (JPEG), pour rester sous la limite du service.
+  // Croquis venu du téléphone : joint au formulaire « Créer avec l'IA », comme « Joindre un croquis ou une photo ».
+  function receiveSketch(batch) {
+    var room = PlyoDesignFlow.MAX_IMAGES - designUI.images.length, photos = batch.photos.slice(0, Math.max(0, room));
+    photos.forEach(function (p, i) { designUI.images.push({ name: 'Photo du téléphone' + (photos.length > 1 ? ' ' + (i + 1) : ''), media_type: p.media_type, data: p.data }); });
+    if (batch.message && !String(designUI.text || '').trim()) designUI.text = batch.message;
+    applyTab('show-guide');
+    renderProject();
+    var kept = photos.length, extra = batch.photos.length - kept;
+    noteLine(kept ? (kept > 1 ? kept + ' photos du téléphone jointes à ta pièce.' : 'Photo du téléphone jointe à ta pièce.') + (extra > 0 ? ' Je garde ' + PlyoDesignFlow.MAX_IMAGES + ' images au plus.' : '')
+      : 'Ta pièce a déjà ' + PlyoDesignFlow.MAX_IMAGES + ' images : retire-en une pour joindre celle du téléphone.', kept ? 'ok' : 'warn', kept ? 'check' : 'alert', 'guide');
+  }
   function designAttach() {
     // Dans la page, caché : WebKit (macOS) ne signale pas toujours le fichier choisi par un champ resté hors de la page.
     var pick = document.createElement('input');
@@ -4716,6 +4728,7 @@
   var designHandlers = {
     input: function (t) { designUI.text = t; },
     attach: designAttach,
+    phone: function () { openPhone(); }, // le croquis photographié arrive ici (receiveSketch)
     removeImage: function (i) { designUI.images.splice(i, 1); renderProject(); },
     submit: designSubmit,
     plans: openUsage,
@@ -4726,7 +4739,7 @@
       designUI.questions = []; designUI.answers = [];
       designSubmit();
     },
-    cancel: function () { designUI.open = false; designUI.busy = false; renderProject(); },
+    cancel: function () { designUI.open = false; designUI.busy = false; renderProject(); syncPhonePurpose(); },
     login: function () { openLogin(); }
   };
   // Pièces suivantes d'un même choix (ou ajoutées à ce plateau) : posées sans remplacer, puis le plateau est rangé par Orca.
@@ -5501,10 +5514,11 @@
       var purpose = phonePurpose();
       if (!phoneLink && !phoneCreating) {
         // Le but du lien choisit la consigne de la page du téléphone ; un service qui l'ignore crée un lien « défaut ».
-        phoneCreating = apiFetch('/api/phone-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: purpose }) })
+        var label = phoneLabel();
+        phoneCreating = apiFetch('/api/phone-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: purpose, label: label }) })
           .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
           .then(function (created) {
-            phoneLink = { id: created.id, qr_svg: created.qr_svg, purpose: purpose };
+            phoneLink = { id: created.id, qr_svg: created.qr_svg, purpose: purpose, label: label };
             $('phone-linked').classList.remove('hidden');
             clearInterval(phoneTimer);
             phoneTimer = setInterval(pollPhone, PHONE_POLL_MS);
@@ -5514,20 +5528,27 @@
       }
       var ready = phoneLink ? Promise.resolve(phoneLink) : phoneCreating;
       ready
-        .then(function (link) { syncPhonePurpose(); window.orca.postMessage({ type: 'phone', link: { id: link.id, qr_svg: link.qr_svg } }); })
+        // La fenêtre du QR dit le même but et le même projet que la page du téléphone.
+        .then(function (link) { syncPhonePurpose(); window.orca.postMessage({ type: 'phone', link: { id: link.id, qr_svg: link.qr_svg, purpose: link.purpose, label: link.label || '' } }); })
         .catch(function () { showError('network', openPhone, null, true); });
     });
   }
-  // Ce que le téléphone doit photographier : une carte de calibration qui attend sa photo la reçoit (drainPhoneQueue),
-  // sinon l'envoi part à l'assistant comme un défaut.
-  function phonePurpose() { return calibCard && calibCard.awaiting ? 'calibration' : 'defect'; }
+  // Ce que le téléphone doit photographier : une carte de calibration qui attend sa photo la reçoit (drainPhoneQueue), le
+  // formulaire « Créer avec l'IA » ouvert reçoit un croquis ; sinon l'envoi part à l'assistant comme un défaut.
+  function phonePurpose() {
+    if (calibCard && calibCard.awaiting) return 'calibration';
+    return designUI.open && designUI.conv === conv && !designUI.retouch ? 'sketch' : 'defect';
+  }
+  // Nom du projet montré en tête de la page du téléphone (jamais d'information de l'imprimante).
+  function phoneLabel() { return conv && conv.project.part && conv.project.part.name ? PlyoJourney.projectTitle(conv.project) : ''; }
   // Le lien vaut pour toute la conversation : sa consigne suit l'usage du moment. Un service qui ne connaît pas cette
   // route (404) ou une panne ne change rien : la page du téléphone garde sa consigne.
   function syncPhonePurpose() {
-    var want = phonePurpose();
-    if (!phoneLink || !session || phoneLink.purpose === want) return;
+    var want = phonePurpose(), label = phoneLabel();
+    if (!phoneLink || !session || (phoneLink.purpose === want && (phoneLink.label || '') === label)) return;
     phoneLink.purpose = want;
-    apiFetch('/api/phone-sessions/' + encodeURIComponent(phoneLink.id) + '/purpose', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: want }) }).catch(function () {});
+    phoneLink.label = label;
+    apiFetch('/api/phone-sessions/' + encodeURIComponent(phoneLink.id) + '/purpose', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: want, label: label }) }).catch(function () {});
   }
 
   // Coupe le lien (nouvelle conversation, déconnexion, lien expiré). `close` : prévenir le serveur.
@@ -5583,6 +5604,8 @@
   function drainPhoneQueue() {
     // Une carte de calibration qui attend sa photo la reçoit à la place d'une nouvelle demande.
     if (calibCard && calibCard.awaiting && phoneQueue.length) { calibCard.receivePhotos(phoneQueue.shift().photos); return; }
+    // « Créer avec l'IA » ouvert : le croquis photographié rejoint la description (deux images au plus), rien ne part encore.
+    if (phonePurpose() === 'sketch' && phoneQueue.length) { receiveSketch(phoneQueue.shift()); return; }
     if (busy || !lastValues || !phoneQueue.length) return;
     var next = phoneQueue.shift();
     send(next.message, { photos: next.photos, fromPhone: true });
@@ -7496,6 +7519,10 @@
       onCalibStarted(msg);
     } else if (msg.type === 'calib_history') {
       calibHistory = Array.isArray(msg.items) ? msg.items : [];
+    } else if (msg.type === 'phone_pick_files') {
+      // Fenêtre du QR fermée par « Choisir des photos sur l'ordinateur » : un bouton ici (le choix de fichiers demande un clic).
+      var pickLine = noteLine('Choisis tes photos sur l’ordinateur :', '', 'camera', phonePurpose() === 'sketch' ? 'guide' : undefined);
+      pickLine.appendChild(button('Choisir mes photos', function () { pickLine.remove(); if (phonePurpose() === 'sketch') designAttach(); else pickFiles(); }, 'btn ghost sm', 'folder'));
     } else if (msg.type === 'phone_batch_ready') {
       pollPhone(); // la fenêtre QR s'est fermée sur un envoi : on le traite sans attendre le prochain tour
     } else if (msg.type === 'gallery') {

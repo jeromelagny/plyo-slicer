@@ -607,6 +607,8 @@ void handle_page_message(const nlohmann::json& data)
                 }
                 if (result == wxID_OK)
                     send({{"type", "phone_batch_ready"}});
+                else if (result == wxID_NO) // « Choisir des photos sur l'ordinateur »
+                    send({{"type", "phone_pick_files"}});
             }
         } else if (type == "calib_start") {
             // Calibration guidée : lancée seulement par un bouton du panneau (« Lancer le test » d'une proposition, ou « Calibrer cette bobine »).
