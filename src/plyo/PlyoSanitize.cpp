@@ -7,9 +7,12 @@ using nlohmann::json;
 
 json first_steps(const json& stored)
 {
-    json s = {{"seen", false}, {"level", nullptr}, {"tour_step", nullptr}, {"greeted", false}, {"share_outcomes", false}};
+    // layout : disposition de la fenêtre (mode Simple, lot 8) ; « advanced » par défaut, pour ne rien changer à qui utilise déjà Plyo.
+    json s = {{"seen", false}, {"level", nullptr}, {"tour_step", nullptr}, {"greeted", false}, {"share_outcomes", false}, {"layout", "advanced"}};
     if (!stored.is_object())
         return s;
+    if (Json::str(stored, "layout", 20) == "simple")
+        s["layout"] = "simple";
     for (const char* key : {"seen", "greeted", "share_outcomes"})
         s[key] = Json::boolean(stored, key, false);
     for (const char* key : {"level", "tour_step"}) {

@@ -330,3 +330,29 @@ test('depuis la discussion, corriger sa bobine n’attend pas de pièce : machin
   assert.match(page, /if \(missing\.indexOf\('part'\) < 0 && !\(conv\.project\.part && conv\.project\.part\.name\)\) \{ conv\.project\.part_later = true;/);
   assert.match(page, /delete conv\.project\.part_later;/);
 });
+
+// ---------- Lot 8 : mode Simple ----------
+
+test('lot 8 · mode Simple : menu à coche, appliqué par le slicer avec les fonctions publiques d’Orca, sans toucher Orca', () => {
+  const page = read('index.html');
+  assert.match(page, /id="m-layout" role="menuitemcheckbox"[^>]*>Disposition simple</);
+  assert.match(page, /\$\('m-layout'\)\.setAttribute\('aria-checked', String\(fsState\.layout === 'simple'\)\);/);
+  assert.match(page, /window\.orca\.postMessage\(\{ type: 'firststeps_set', patch: \{ layout: layout \} \}\);/);
+  assert.match(page, /fsState\.layout = 'advanced'; patch\.layout = 'advanced';/, '« Je connais déjà » rend l’écran d’Orca');
+  const cpp = (f) => fs.readFileSync(new URL('../../../../src/plyo/' + f, import.meta.url), 'utf8');
+  const a = cpp('PlyoAssistant.cpp');
+  assert.match(a, /if \(simple \|\| changed\)\s*plater->collapse_sidebar\(simple\);/);
+  assert.match(a, /const int width = s_panel->FromDIP\(simple \? 480 : 380\);/);
+  assert.match(a, /if \(patch\.contains\("layout"\)\)[^\n]*\n\s*apply_layout\(true\);/);
+  assert.match(a, /apply_layout\(false\); \/\/ mode Simple/);
+  assert.match(a, /layout_simple\(\) && plater->is_sidebar_collapsed\(\)\)\s*plater->collapse_sidebar\(false\);/, 'panneau fermé : la barre revient');
+  // Les fonctions d'Orca utilisées existent (sentinelle : une mise à jour d'Orca qui les renomme se voit ici).
+  const plater = fs.readFileSync(new URL('../../../../src/slic3r/GUI/Plater.hpp', import.meta.url), 'utf8');
+  assert.match(plater, /bool is_sidebar_collapsed\(\) const;/);
+  assert.match(plater, /void collapse_sidebar\(bool collapse\);/);
+  // Nouvelle installation : Simple (sauf « Je connais déjà ») ; qui utilise déjà Plyo garde l'écran d'Orca (défaut « advanced »).
+  const first = cpp('PlyoFirstSteps.cpp');
+  assert.match(first, /s\["layout"\] = dialog\.choice\(\) == "expert" \? "advanced" : "simple";/);
+  assert.match(first, /s\["layout"\]      = "simple";/);
+  assert.match(cpp('PlyoSanitize.cpp'), /\{"layout", "advanced"\}/);
+});

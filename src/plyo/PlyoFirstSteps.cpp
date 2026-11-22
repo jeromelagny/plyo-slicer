@@ -80,6 +80,7 @@ void show_welcome(wxWindow* parent, bool with_setup_tips)
     dialog.ShowModal();
     s          = load_state();
     s["level"] = dialog.choice();
+    s["layout"] = dialog.choice() == "expert" ? "advanced" : "simple"; // mode Simple (lot 8) pour une nouvelle installation
     if (dialog.choice() == "beginner")
         s["tour_step"] = "model";
     store_state(s);
@@ -94,6 +95,7 @@ void skip_welcome()
     s["seen"]        = true;
     s["level"]       = "beginner";
     s["tour_step"]   = "model";
+    s["layout"]      = "simple"; // mode Simple (lot 8) pour une nouvelle installation
     store_state(s);
     BOOST_LOG_TRIVIAL(info) << "Plyo: premier lancement, imprimante déjà installée : pas de fenêtre d'accueil";
 }

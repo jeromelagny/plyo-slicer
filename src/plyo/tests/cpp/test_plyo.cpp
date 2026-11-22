@@ -187,6 +187,11 @@ TEST_CASE("Sanitize::first_steps garde seulement les valeurs du bon type")
     CHECK(s["share_outcomes"] == false);
     CHECK_FALSE(s.contains("autre"));
     CHECK(Plyo::Sanitize::first_steps(json::array()) == Plyo::Sanitize::first_steps(json::object()));
+    // Mode Simple (lot 8) : « simple » ou la disposition d'Orca, jamais autre chose.
+    CHECK(s["layout"] == "advanced");
+    CHECK(Plyo::Sanitize::first_steps({{"layout", "simple"}})["layout"] == "simple");
+    CHECK(Plyo::Sanitize::first_steps({{"layout", "plein écran"}})["layout"] == "advanced");
+    CHECK(Plyo::Sanitize::first_steps({{"layout", 1}})["layout"] == "advanced");
 }
 
 TEST_CASE("Sanitize::memory écarte les fiches abîmées (anciennes versions) et garde les bonnes")
@@ -5655,4 +5660,18 @@ TEST_CASE("Lot 21 · les couleurs du fichier sont gardées dans la fiche du proj
     // Rechargement : ce qui a été gardé repasse tel quel.
     const nlohmann::json once = sanitize(p);
     CHECK(sanitize(once)["file_colours"] == once["file_colours"]);
+}
+
+TEST_CASE("Lot 8 parcours · sentinelle : repli de la barre de réglages et volet du panneau (mode Simple)")
+{
+    // Si ce test échoue, Orca a changé le repli de sa barre de réglages : reprendre apply_layout (PlyoAssistant.cpp), qui
+    // l'appelle pour le mode Simple sans modifier Orca.
+    const std::string hpp = read_file(repo_root() / "src/slic3r/GUI/Plater.hpp");
+    CHECK(hpp.find("bool is_sidebar_collapsed() const;") != std::string::npos);
+    CHECK(hpp.find("void collapse_sidebar(bool collapse);") != std::string::npos);
+    const std::string cpp  = read_file(repo_root() / "src/slic3r/GUI/Plater.cpp");
+    const std::string body = between(cpp, "void Plater::priv::collapse_sidebar(bool collapse)", "void Plater::priv::update_sidebar(");
+    REQUIRE_FALSE(body.empty());
+    CHECK(body.find("sidebar_layout.is_collapsed = collapse;") != std::string::npos);
+    CHECK(body.find("update_sidebar();") != std::string::npos);
 }

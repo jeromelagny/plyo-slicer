@@ -559,6 +559,7 @@
       <hr>
       <div class="group" role="presentation">Préférences</div>
       <button type="button" id="m-level" role="menuitemcheckbox" aria-checked="false" data-icon="check">Réponses courtes</button>
+      <button type="button" id="m-layout" role="menuitemcheckbox" aria-checked="false" data-icon="check" title="Coché : seulement le plateau et l’assistant ; la barre de réglages de Plyo Slicer est repliée">Disposition simple</button>
       <button type="button" id="m-start" role="menuitemcheckbox" aria-checked="true" data-icon="check">Me guider pas à pas (panneau ouvert au lancement)</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
@@ -4296,12 +4297,27 @@
     menu.classList.add('hidden');
     setJourneyLevel(fsState.level === 'expert' ? 'beginner' : 'expert');
   });
+  // Mode Simple (lot 8) : le slicer replie sa barre de réglages et élargit le panneau (PlyoAssistant.cpp, apply_layout) ;
+  // « Avancé » rend l'écran d'Orca tel quel. Un geste ici seulement (et « Je connais déjà », qui passe en Avancé).
+  $('m-layout').addEventListener('click', function () {
+    menu.classList.add('hidden');
+    var layout = fsState.layout === 'simple' ? 'advanced' : 'simple';
+    fsState.layout = layout;
+    window.orca.postMessage({ type: 'firststeps_set', patch: { layout: layout } });
+    updateStartMenu();
+    noteLine(LAYOUT_NOTES[layout], 'ok', 'check');
+  });
+  var LAYOUT_NOTES = {
+    simple: 'Disposition simple : la barre de réglages de Plyo Slicer est repliée, tu vois ta pièce et moi. Pour la rouvrir : « Disposition simple » dans le menu ⋯, ou Maj + Tab.',
+    advanced: 'Disposition complète : la barre de réglages de Plyo Slicer est de retour, à gauche.'
+  };
   // Débutant ou confirmé : depuis le menu, la ligne de l'accueil du panneau (lot 6 : la fenêtre d'accueil ne le demande plus) ou
   // l'offre faite quand ton vocabulaire montre de l'expérience (levelNotice). Jamais changé sans ton clic.
   function setJourneyLevel(level) {
     fsState.level = level;
     var patch = { level: level };
-    if (level === 'expert') { fsState.greeted = true; patch.greeted = true; } // l'accueil du débutant n'a plus lieu d'être
+    // Confirmé : l'accueil du débutant n'a plus lieu d'être, et l'écran d'Orca revient tel quel (disposition complète).
+    if (level === 'expert') { fsState.greeted = true; patch.greeted = true; fsState.layout = 'advanced'; patch.layout = 'advanced'; }
     window.orca.postMessage({ type: 'firststeps_set', patch: patch });
     updateStartMenu();
     if (conv) renderProject(); // la fiche montre ou cache les températures modifiables
@@ -6369,6 +6385,7 @@
   function updateStartMenu() {
     // Préférence à coche : « Me guider pas à pas » est cochée sauf en mode « Je connais déjà » ; le clic bascule, comme avant.
     $('m-start').setAttribute('aria-checked', String(fsState.level !== 'expert'));
+    $('m-layout').setAttribute('aria-checked', String(fsState.layout === 'simple'));
     $('m-start').title = fr(PlyoJourney.startMenuLabel(fsState.level));
     document.body.classList.toggle('novice', fsState.level !== 'expert');
     renderWelcome();

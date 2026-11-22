@@ -46,7 +46,8 @@ test('le menu ne garde que l’essentiel', () => {
   const ids = [...menu.matchAll(/id="(m-[a-z-]+)"/g)].map((m) => m[1]).sort();
   // Lot 8 (UX-37) : « Mes pièces » revient dans le menu, sous « Mes projets ». Lot 11 (UX-02) : changer d'avis sur « Je connais déjà ».
   // 16/11 (un écran, peu de choix) : « Mes machines » quitte l'étape Machine pour le menu.
-  assert.deepEqual(ids, ['m-account-sep', 'm-convs', 'm-email', 'm-help', 'm-intent', 'm-level', 'm-login', 'm-logout', 'm-machines', 'm-new', 'm-parts', 'm-start', 'm-undo', 'm-usage']);
+  // Parcours débutant, lot 8 : « Disposition simple » (mode Simple qui replie la barre de réglages d'Orca).
+  assert.deepEqual(ids, ['m-account-sep', 'm-convs', 'm-email', 'm-help', 'm-intent', 'm-layout', 'm-level', 'm-login', 'm-logout', 'm-machines', 'm-new', 'm-parts', 'm-start', 'm-undo', 'm-usage']);
   for (const gone of ['m-check', 'm-values', 'm-setup', 'm-limits', 'm-tour']) assert.ok(!page.includes("$('" + gone + "')"), gone + ' encore écouté');
 });
 

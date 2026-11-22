@@ -7,7 +7,8 @@
 // jamais faire planter la lecture. Sans dépendance à Orca (testé par src/plyo/tests/cpp).
 namespace Plyo { namespace Sanitize {
 
-// premiers-pas.json : seen, greeted, share_outcomes (booléens) ; level, tour_step (texte court ou null).
+// premiers-pas.json : seen, greeted, share_outcomes (booléens) ; level, tour_step (texte court ou null) ; layout ("simple" ou
+// "advanced", par défaut).
 nlohmann::json first_steps(const nlohmann::json& stored);
 
 // memoire.json : { machine : [ fiche {date, changes:[…], …} ] }.

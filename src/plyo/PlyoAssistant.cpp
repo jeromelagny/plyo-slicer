@@ -99,6 +99,36 @@ int                  s_project_changes = 0; // appels à on_project_changed() (f
 wxWeakRef<SideButton> s_topbar_button;
 wxMenuItem*          s_view_menu_item = nullptr; // entrée du menu Affichage, lue seulement par le banc d'essai
 
+// Mode Simple (parcours débutant, lot 8) : la barre de réglages d'Orca repliée et le panneau plus large, par des fonctions
+// publiques d'Orca (Plater::collapse_sidebar, celle du bouton de repli et de Maj + Tab, et le volet AUI du panneau) : aucun
+// point de contact dans le code d'Orca. Orca ne retient pas ce repli : il est remis à chaque ouverture du panneau.
+// `changed` : l'utilisateur vient de choisir ; sinon (ouverture) la disposition d'Orca n'est touchée qu'en mode Simple.
+bool layout_simple() { return Json::str(FirstSteps::state(), "layout") == "simple"; }
+void apply_layout(bool changed)
+{
+    Plater* plater = Slic3r::GUI::wxGetApp().plater();
+    if (plater == nullptr || !s_panel)
+        return;
+    const bool simple = layout_simple();
+    if (simple || changed)
+        plater->collapse_sidebar(simple);
+    if (!simple && !changed)
+        return;
+    wxAuiManager* aui = wxAuiManager::GetManager(s_panel);
+    if (aui == nullptr)
+        return;
+    wxAuiPaneInfo& pane = aui->GetPane(s_panel);
+    if (!pane.IsOk())
+        return;
+    // Un volet ancré garde sa largeur : on l'impose le temps d'une mise en page (taille minimale et maximale), puis on rend
+    // la main (l'utilisateur peut toujours le redimensionner).
+    const int width = s_panel->FromDIP(simple ? 480 : 380);
+    pane.BestSize(wxSize(width, pane.best_size.y)).MinSize(wxSize(width, -1)).MaxSize(wxSize(width, -1));
+    aui->Update();
+    pane.MinSize(wxSize(s_panel->FromDIP(320), -1)).MaxSize(wxSize(-1, -1));
+    aui->Update();
+}
+
 // Bouton de la barre du haut : plein quand le panneau est ouvert, cerné quand il est fermé.
 void refresh_topbar_button()
 {
@@ -507,6 +537,10 @@ void handle_page_message(const nlohmann::json& data)
             send(done);
         } else if (type == "show_setting") {
             const std::string key = Json::str(data, "key");
+            // Mode Simple : la barre de réglages est repliée ; on la rouvre pour montrer le réglage (la disposition choisie reste,
+            // elle revient à la prochaine ouverture du panneau).
+            if (Plater* plater = Slic3r::GUI::wxGetApp().plater(); plater != nullptr && plater->is_sidebar_collapsed())
+                plater->collapse_sidebar(false);
             Highlight::show_setting(key, [key](const nlohmann::json& shown) {
                 nlohmann::json message = shown;
                 message["type"]        = "show_setting";
@@ -596,7 +630,10 @@ void handle_page_message(const nlohmann::json& data)
             send({{"type", "firststeps"}, {"state", state}});
         }
         else if (type == "firststeps_set") {
-            FirstSteps::set_state(Json::obj(data, "patch"));
+            const nlohmann::json patch = Json::obj(data, "patch");
+            FirstSteps::set_state(patch);
+            if (patch.contains("layout")) // « Disposition simple » du menu ⋯ : appliquée tout de suite
+                apply_layout(true);
             send({{"type", "firststeps"}, {"state", FirstSteps::state()}});
         } else if (type == "tour_signals") {
             nlohmann::json signals = FirstSteps::tour_signals();
@@ -1030,8 +1067,12 @@ void toggle_assistant(Plater* plater)
         // le panneau rouvert, qui commence une conversation neuve, le détache.
         if (Slic3r::GUI::wxGetApp().is_closing())
             ProjectFiles::stop();
-        else
+        else {
             ProjectFiles::panel_closed();
+            // Mode Simple : sans le panneau, la barre de réglages d'Orca revient (rien ne reste caché sans assistant).
+            if (Plater* plater = Slic3r::GUI::wxGetApp().plater(); plater != nullptr && layout_simple() && plater->is_sidebar_collapsed())
+                plater->collapse_sidebar(false);
+        }
         if (s_topbar_button)
             s_topbar_button->CallAfter([] { refresh_topbar_button(); });
     });
@@ -1053,6 +1094,7 @@ void toggle_assistant(Plater* plater)
             aui->Update();
         }
     }
+    apply_layout(false); // mode Simple : barre d'Orca repliée, panneau élargi
     refresh_topbar_button();
 }
 

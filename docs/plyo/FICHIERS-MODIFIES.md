@@ -142,6 +142,9 @@ Chacune est gardée par une sentinelle de `src/plyo/tests/cpp/test_plyo.cpp` :
 - bulles d'Orca (lot 16) : noms des types de `NotificationType` (sentinelle « Lot 16 · sentinelle ERR-11 »), contrôle de
   la tour de purge `GLVolumeCollection::check_wipe_tower_outside_state` et état `ModelInstance::print_volume_state` tenu par
   Orca (verdict « tient sur le plateau » de `Plyo::PlateActions::fits_on_plate`).
+- mode Simple (disposition du menu ⋯ du panneau) : `Plater::collapse_sidebar` et `Plater::is_sidebar_collapsed` (ceux du
+  bouton de repli et de Maj + Tab), appelés par `apply_layout` (`src/plyo/PlyoAssistant.cpp`) pour replier la barre de
+  réglages et élargir le volet du panneau (sentinelle « Lot 8 parcours · sentinelle »).
 
 ## Déplacements prévus (à faire avec l'imprimante concernée)
 
