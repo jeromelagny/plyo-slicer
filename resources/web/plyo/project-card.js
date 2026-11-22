@@ -364,7 +364,8 @@
           var cards = ui.el('div', 'machine-cards');
           mc.cards.forEach(function (p) {
             var card = ui.button(J.shortMachine(p), function () { h.pickPrinter(p.preset, p.label); }, 'machine-card', p.linked ? 'wifi' : 'printer');
-            card.appendChild(ui.el('span', 'machine-sub', J.machineStatus(p, ctx.reachable && ctx.reachable[p.preset])));
+            var on = !!p.linked && !!ctx.reachable && ctx.reachable[p.preset] === true;
+            card.appendChild(ui.el('span', 'machine-sub' + (on ? ' ok' : ''), J.machineStatus(p, ctx.reachable && ctx.reachable[p.preset])));
             cards.appendChild(card);
           });
           if (mc.folded) cards.appendChild(ui.button('Autres machines installées (' + mc.folded + ')', h.toggleOthers, 'link'));
