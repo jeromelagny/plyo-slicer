@@ -91,6 +91,7 @@
       if (msg.undone_id) { c.project.assistant = Logic.forgetBatch(c.project.assistant, BATCH_TAG + ':' + msg.undone_id); save(); }
     }
     if (msg.undone_id && undone[msg.undone_id]) { var u = undone[msg.undone_id]; delete undone[msg.undone_id]; u(msg); }
+    watchAfterApply(msg);
     var w = waiters[msg.request];
     if (!(msg.request in waiters)) return;
     delete waiters[msg.request];
@@ -159,6 +160,7 @@
     st.sliceTried = '';
     panel.post({ type: 'tour_signals' });
     // Plaque découpée mais refusée pour l'impression : ses erreurs ; sinon ses avertissements, expliqués.
+    remember(msg.issues);
     var list = PF.orcaCards(Array.isArray(msg.issues) ? msg.issues : [], { warnings: msg.ready_for_print !== false });
     st.issues = list.map(function (i) { return PF.orcaIssueView(i, { canUndo: !!(values() && values().can_undo), novice: !expert() }); });
     if (msg.ready_for_print === false) st.blockSig = 'shown';
@@ -175,9 +177,10 @@
       st.sliceTried = 'failed';
       render();
     } else if (msg.purpose === 'blocked') {
+      remember(issues);
       st.issues = PF.orcaCards(issues, {}).map(function (i) { return PF.orcaIssueView(i, { canUndo: !!(values() && values().can_undo), novice: !expert() }); });
       render();
-    }
+    } else onOrcaNoticeIssues(msg, issues);
   }
   function onSignals(msg) {
     var before = signals;
@@ -185,6 +188,7 @@
     var c = conv();
     if (!c) return;
     var st = state();
+    watchNotices(msg.notices);
     if (msg.sliced && st.slicing) stopSlicing();
     if (msg.sliced && st.sliceTried === 'auto') st.sliceTried = ''; // découpée : un prochain changement redécoupera de lui-même
     // Découpe demandée qui n'a pas démarré (Orca la refuse sans un mot) : on demande pourquoi, une fois.
@@ -630,6 +634,101 @@
     return noteBox(v.tone === 'error' ? 'error' : 'warn', 'alert', '**' + (v.title || 'Plyo Slicer signale un point') + '**\n' + v.text + (v.quote && !v.explained ? '\n« ' + v.quote + ' »' : ''), acts);
   }
   function issuesInto(body) { state().issues.forEach(function (v, i) { body.appendChild(issueBox(v, i)); }); }
+
+  // ---------- Ce que Plyo Slicer signale hors de la découpe (lot 5) ----------
+  // Avertissements après un lot appliqué (after_apply), bulles d'Orca sur le plateau (tour_signals.notices), fenêtres d'erreur
+  // d'Orca (orca_dialog) : dans « Je prépare… » ou « Tout est prêt », avec les autres cartes ; ailleurs, dans la discussion.
+  // Mêmes explications et mêmes gestes (preflight.js) que le panneau classique.
+  var orcaSeen = { known: {}, notices: [], noticeConv: null, noticeAsk: [], afterApply: null, dialogLine: null, dialogId: null };
+  function remember(issues) { (issues || []).forEach(function (i) { orcaSeen.known[PF.issueKey(i)] = true; }); }
+  function viewsOf(issues) { return PF.orcaCards(issues, { warnings: true }).map(function (i) { return PF.orcaIssueView(i, { canUndo: !!(values() && values().can_undo), novice: !expert() }); }); }
+  var shownCard = ''; // écran de l'étape 3 affiché (X.screen) : seuls « preparing » et « ready » montrent les cartes d'Orca
+  function inCardIssues() { return inStep3() && (shownCard === 'preparing' || shownCard === 'ready'); }
+  function showIssueViews(views) {
+    if (!views.length) return 0;
+    if (inCardIssues()) {
+      var st = state();
+      views.forEach(function (v) { if (!st.issues.some(function (x) { return x.title === v.title && x.text === v.text; })) st.issues.push(v); });
+      render();
+    } else views.forEach(issueNotice);
+    return views.length;
+  }
+  function runIssueAction(a, b, drop) {
+    if (a.kind === 'slice') { drop(); state().sliceTried = ''; slice(); }
+    else if (a.kind === 'show_setting') panel.post({ type: 'show_setting', key: a.key });
+    else if (a.kind === 'show_me') panel.post({ type: 'show_me', target: a.target });
+    else if (a.kind === 'ask') panel.send(a.prompt);
+    else if (a.kind === 'export') { drop(); exportFile(); }
+    else if (a.kind === 'preview') showPreview(b);
+    else if (a.kind === 'import') { var f = document.getElementById('file-input'); if (f) f.click(); }
+    else if (a.kind === 'undo_last') { b.disabled = true; ask({ type: 'undo' }, function (ok, t) { b.disabled = false; note(t || (ok ? 'Réglages d’avant remis.' : 'Je n’ai pas pu annuler.'), ok ? 'ok' : 'error'); if (ok) drop(); }); }
+    else if (a.kind === 'plate') { b.disabled = true; plateAction(a.action, function (ok) { b.disabled = false; if (ok) { drop(); slice(); } }); }
+    else if (a.kind === 'fix') { b.disabled = true; apply(Logic.confirmedChanges(a.changes), 'Correction demandée par Plyo Slicer', function (ok, text) { b.disabled = false; if (!ok) { note(text, 'error'); return; } note('Corrigé : ' + a.label.charAt(0).toLowerCase() + a.label.slice(1) + '.', 'ok'); drop(); slice(); }); }
+  }
+  // Une carte de Plyo Slicer dans la discussion, avec ses gestes.
+  function issueNotice(v) {
+    var box = null, drop = function () { if (box) box.remove(); };
+    var acts = [];
+    (v.actions || []).forEach(function (a) {
+      if (a.kind === 'dismiss') { acts.push({ label: a.label, run: drop }); return; }
+      var label = a.kind === 'ask' && !panel.session() ? PF.ASK_LOGIN_LABEL : a.label;
+      acts.push({ label: label, run: function (e) { runIssueAction(a, e && e.target && e.target.tagName === 'BUTTON' ? e.target : { disabled: false }, drop); } });
+    });
+    if (!(v.actions || []).some(function (a) { return a.kind === 'dismiss'; })) acts.push({ label: 'Fermer', run: drop });
+    box = panel.say('**' + (v.title || 'Plyo Slicer signale un point') + '**\n' + v.text + (v.quote && !v.explained ? '\n« ' + v.quote + ' »' : ''), v.tone === 'error' ? 'error' : 'warn', acts);
+    box.classList.add('orca-issue');
+    return box;
+  }
+  function askOrca(purpose) { if (conv()) panel.post({ type: 'orca_issues', purpose: purpose }); }
+  // Bulles d'Orca : une nouvelle est demandée en détail ; une bulle fermée par Orca pourra être redite si elle revient.
+  function watchNotices(codes) {
+    var c = conv();
+    if (!c || !Array.isArray(codes)) return;
+    if (orcaSeen.noticeConv !== c.id) { orcaSeen.noticeConv = c.id; orcaSeen.notices = []; }
+    var change = PF.noticeChange(orcaSeen.notices, codes);
+    orcaSeen.notices = codes.slice();
+    if (change.gone.length) Object.keys(orcaSeen.known).forEach(function (k) { if (change.gone.indexOf(k.split('|')[1]) >= 0) delete orcaSeen.known[k]; });
+    if (change.added.length) { orcaSeen.noticeAsk = change.added; askOrca('notices'); }
+  }
+  // Un lot appliqué : Orca peut le refuser ou prévenir (validation). On relit ce qu'il en dit, une fois le lot pris en compte.
+  function watchAfterApply(msg) {
+    if (!msg.ok || !msg.undo_id || !conv()) return;
+    orcaSeen.afterApply = { tries: 0, keys: (Array.isArray(msg.applied) ? msg.applied : []).map(function (a) { return a && a.id; }) };
+    setTimeout(function () { askOrca('after_apply'); }, 600);
+  }
+  function onOrcaNoticeIssues(msg, issues) {
+    if (msg.purpose === 'notices') {
+      if (msg.busy) { orcaSeen.notices = []; return; }
+      var shown = PF.noticeIssues(issues, orcaSeen.noticeAsk, orcaSeen.known);
+      remember(shown);
+      showIssueViews(viewsOf(shown));
+      return;
+    }
+    if (msg.purpose === 'after_apply') {
+      var wait = orcaSeen.afterApply;
+      if (!wait) return;
+      // Le lot n'est pas encore pris en compte par Orca : on relit un peu plus tard (cinq fois au plus).
+      if ((msg.pending || msg.busy) && wait.tries < 5) { wait.tries += 1; setTimeout(function () { askOrca('after_apply'); }, 700); return; }
+      orcaSeen.afterApply = null;
+      // Erreurs : toujours (la prochaine découpe serait refusée) ; avertissements : ceux des réglages du lot, ou nouveaux.
+      var said = issues.filter(function (i) { return i.source === 'validate_error' || (i.source === 'validate_warning' && (wait.keys.indexOf(i.opt_key) >= 0 || !orcaSeen.known[PF.issueKey(i)])); });
+      remember(issues);
+      showIssueViews(viewsOf(said));
+    }
+  }
+  // Fenêtre d'Orca (orca_dialog) : une ligne discrète tant qu'elle est ouverte ; une erreur fermée, qu'aucune autre carte
+  // n'explique, devient une carte qui cite son texte.
+  function onOrcaDialog(msg) {
+    if (msg.phase === 'open') {
+      if (orcaSeen.dialogLine) orcaSeen.dialogLine.remove();
+      orcaSeen.dialogId = msg.id;
+      orcaSeen.dialogLine = panel.say(PF.dialogWaitText(msg));
+      orcaSeen.dialogLine.classList.add('orca-wait');
+      return;
+    }
+    if (orcaSeen.dialogLine && orcaSeen.dialogId === msg.id) { orcaSeen.dialogLine.remove(); orcaSeen.dialogLine = null; }
+    if (PF.dialogCardWanted(msg)) showIssueViews([PF.dialogView(msg)]);
+  }
 
   // « Plyo Slicer est passé sur … » (machine ou filament changé hors du panneau) : sans rien décider à ta place.
   function divergenceInto(body) {
@@ -1422,22 +1521,46 @@
       return;
     }
     var q = Logic.outcomeQuestion(item, function (id) { var p = paramOf(id); return p.label === id ? null : p; });
+    // Comme la carte du classique : un mot facultatif (gardé sur l'ordinateur, jamais partagé) et la case « Partager
+    // anonymement » (décochée par défaut, retenue dans les premiers pas).
+    var said = ui.el('textarea', 'field');
+    said.maxLength = 200;
+    said.rows = 2;
+    said.placeholder = ui.fr('Un mot à ajouter ? (facultatif)');
+    said.setAttribute('aria-label', ui.fr('Un mot à ajouter sur le résultat (facultatif)'));
+    var share = ui.el('input');
+    share.type = 'checkbox';
+    share.checked = !!shareOutcomes;
+    share.addEventListener('change', function () { shareOutcomes = !!share.checked; panel.post({ type: 'firststeps_set', patch: { share_outcomes: shareOutcomes } }); });
+    var shareLabel = ui.el('label', 'check-line');
+    shareLabel.appendChild(share);
+    shareLabel.appendChild(ui.el('span', '', 'Partager anonymement ce résultat pour améliorer Plyo : les noms de tes profils d’imprimante et de filament, le problème, les réglages changés et le jour ; jamais ton compte ni de photo.'));
     var box = panel.say('**' + q.title + '**\n' + q.text + (q.changes.length ? '\n' + q.changes.map(function (x) { return '- ' + x; }).join('\n') : ''), 'info', [
-      { label: 'Oui, c’est réussi', run: function () { answerOutcome(item, 'ok', box); } },
-      { label: 'Non, c’est raté', run: function () { answerOutcome(item, 'bad', box); } },
-      { label: 'Pas encore imprimé', run: function () { answerOutcome(item, 'later', box); } }]);
+      { label: 'Oui, c’est réussi', run: function () { answerOutcome(item, 'ok', box, said.value.trim(), share.checked); } },
+      { label: 'Non, c’est raté', run: function () { answerOutcome(item, 'bad', box, said.value.trim(), share.checked); } },
+      { label: 'Pas encore imprimé', run: function () { answerOutcome(item, 'later', box, '', false); } }]);
+    box.classList.add('outcome-ask');
+    box.body.insertBefore(said, box.body.querySelector('.acts'));
+    box.body.appendChild(shareLabel);
   }
-  var outcomeAsked = {};
-  function answerOutcome(item, outcome, box) {
-    panel.post({ type: 'outcome_set', machine: item.machine, at: item.at, conv: item.conv, outcome: outcome, note: '' });
+  var outcomeAsked = {}, shareOutcomes = false;
+  function answerOutcome(item, outcome, box, said, shared) {
+    var word = outcome === 'later' ? '' : said || '';
+    // Le mot reste sur l'ordinateur (mémoire de la machine, journal) ; il n'est jamais partagé.
+    panel.post({ type: 'outcome_set', machine: item.machine, at: item.at, conv: item.conv, outcome: outcome, note: word });
     box.remove();
     if (outcome === 'later') { delete outcomeAsked[item.at]; panel.say('D’accord : je te redemanderai plus tard.'); return; }
+    // Envoi discret : une réponse { ok, duplicate } (déjà reçu) comme une erreur ne changent rien pour toi.
+    if (shared && panel.session()) panel.apiFetch('/api/outcomes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Logic.outcomePayload(item, outcome)) }).catch(function () {});
     if (outcome === 'ok') { note('Super ! Je m’en souviendrai pour mes prochains conseils sur cette imprimante.', 'ok'); return; }
-    outcomeBad(item);
+    outcomeBad(item, word);
   }
-  // « Ça n'a pas marché » : remettre les réglages d'avant là où la valeur essayée est encore en place (sans IA), ou une autre piste.
-  function outcomeBad(item) {
+  // « Ça n'a pas marché » : remettre les réglages d'avant là où la valeur essayée est encore en place (sans IA), les réglages
+  // réussis du filament (restore_reliable, comme le classique), ou une autre piste.
+  var reliableWaiter = null, reliableResult = null;
+  function outcomeBad(item, word) {
     var box = panel.say('Je relis tes réglages…', 'warn');
+    var status = ui.el('p', 'err hidden');
     panel.aiContext().then(function (ctx) {
       var plan = Logic.revertPlan(item, values() && values().params, ctx && ctx.snapshot ? ctx.snapshot : null);
       box.body.textContent = '';
@@ -1446,24 +1569,79 @@
       if (plan.changes.length) {
         var back = ui.button(plan.changes.length > 1 ? 'Remettre mes anciens réglages' : 'Remettre mon ancien réglage', function () {
           back.disabled = true;
-          var batches = Logic.batchesOf(plan.changes), ids = [];
-          (function next(i) {
-            if (i >= batches.length) { back.replaceWith(ui.el('span', 'done-line ok', 'Anciens réglages remis. La prochaine découpe en tiendra compte.')); return; }
-            apply(batches[i], 'Retour aux réglages d’avant' + (item.why ? ' (' + item.why + ')' : ''), function (ok, t, res) { if (!ok) { back.disabled = false; note(t, 'error'); return; } if (res && res.undo_id) ids.push(res.undo_id); next(i + 1); }, { msg: { revert: true } });
-          })(0);
+          status.classList.add('hidden');
+          applyBatches(Logic.batchesOf(plan.changes), 'Retour aux réglages d’avant' + (item.why ? ' (' + item.why + ')' : ''), { revert: true }, function (ok, t, ids) {
+            if (!ok) { back.disabled = false; status.textContent = ui.fr(t); status.classList.remove('hidden'); return; }
+            var done = ui.el('span', 'done-line ok', 'Anciens réglages remis. La prochaine découpe en tiendra compte.');
+            if (ids.length) done.appendChild(ui.button('Annuler', function () {
+              undoBatches(ids, function (okU, tu) { if (!okU) { status.textContent = ui.fr(tu); status.classList.remove('hidden'); return; } done.replaceWith(ui.el('span', 'done-line', 'Réglages essayés remis.')); });
+            }, 'link', 'undo'));
+            back.replaceWith(done);
+          });
         }, 'btn sm main', 'undo');
         acts.appendChild(back);
       }
-      acts.appendChild(ui.button('Chercher une autre piste', function () { panel.prefill(Logic.retryPrompt(item, '')); }, 'btn sm'));
+      // Réglages réussis : ceux du filament lors de la dernière impression réussie (bobine, ou imprimante + filament).
+      var reliableSlot = ui.el('div', 'reliable');
+      reliableWaiter = function (info) {
+        if (!info.available || !box.isConnected) return;
+        reliableSlot.appendChild(ui.el('p', 'hint', Logic.reliablePreview(info)));
+        if (info.count === 0) return;
+        var rb = ui.button(Sp.restoreLabel(info.date), function () {
+          rb.disabled = true;
+          status.classList.add('hidden');
+          reliableResult = function (res) {
+            if (!res.ok) { rb.disabled = false; status.textContent = ui.fr(res.text || 'Je n’ai pas pu remettre ces réglages.'); status.classList.remove('hidden'); return; }
+            var saved = Logic.savedText(res);
+            var done = ui.el('span', 'done-line ok', (res.text || 'Réglages réussis remis.') + (saved ? ' ' + saved : ''));
+            if (res.undo_id) done.appendChild(ui.button('Annuler', function () {
+              ask({ type: 'undo', undo_id: res.undo_id }, function (okU, tu) { if (!okU) { status.textContent = ui.fr(tu); status.classList.remove('hidden'); return; } done.replaceWith(ui.el('span', 'done-line', 'Réglages d’avant remis.')); });
+            }, 'link', 'undo'));
+            rb.replaceWith(done);
+          };
+          panel.post({ type: 'restore_reliable' });
+        }, 'btn sm', 'undo');
+        reliableSlot.appendChild(rb);
+      };
+      panel.post({ type: 'reliable_get' });
+      acts.appendChild(ui.button('Chercher une autre piste', function () { panel.prefill(Logic.retryPrompt(item, word || '')); }, 'btn sm'));
       box.body.appendChild(acts);
+      box.body.appendChild(reliableSlot);
+      box.body.appendChild(status);
     });
+  }
+  function onReliable(msg) { if (reliableWaiter) { var w = reliableWaiter; reliableWaiter = null; w(msg); } }
+  function onRestoreReliable(msg) {
+    var c = conv();
+    // Réglages posés par l'assistant pour ce projet (comme un lot appliqué) : jamais présentés comme tes modifications.
+    if (c && msg.ok && msg.undo_id && Array.isArray(msg.written) && c.project.assistant && typeof c.project.assistant === 'object') {
+      c.project.assistant = Logic.noteWritten(c.project.assistant, msg.written, BATCH_TAG + ':' + msg.undo_id);
+      save();
+    }
+    if (reliableResult) { var r = reliableResult; reliableResult = null; r(msg); }
+  }
+  // Lots d'une remise en arrière ou d'une réapplication, l'un après l'autre (comme postBatches du classique). `extra` : champs
+  // ajoutés à chaque lot (`revert`). `done(ok, texte, identifiants)` à la fin, ou au premier refus.
+  function applyBatches(batches, why, extra, done) {
+    var ids = [];
+    (function next(i) {
+      if (i >= batches.length) { done(true, '', ids); return; }
+      apply(batches[i], why, function (ok, t, res) { if (!ok) { done(false, t, ids); return; } if (res && res.undo_id) ids.push(res.undo_id); next(i + 1); }, extra ? { msg: extra } : null);
+    })(0);
+  }
+  // « Annuler » d'une remise en plusieurs lots : le plus récent d'abord.
+  function undoBatches(ids, done) {
+    (function next(i) {
+      if (i < 0) { done(true, ''); return; }
+      ask({ type: 'undo', undo_id: ids[i] }, function (ok, t) { if (!ok) { done(false, t); return; } next(i - 1); });
+    })(ids.length - 1);
   }
   function onOutcomeResult(msg) {
     var c = conv(), items = Array.isArray(msg.items) ? msg.items : [];
     if (!c || msg.conv !== c.id) return;
     if (items.length) { var s = X.sendRecord(c.project); s.corrections = items.map(function (it) { return it.at; }); save(); }
     if (msg.outcome === 'ok' && items.length) note(msg.reliable ? 'C’est noté : ces réglages ont marché. Je m’en souviendrai, et je les garde comme réglages réussis de ce filament.' : 'C’est noté : ces réglages ont marché, je m’en souviendrai pour mes prochains conseils.', 'ok');
-    if (msg.outcome === 'bad' && items.length) outcomeBad(Logic.mergeCorrections(items));
+    if (msg.outcome === 'bad' && items.length) outcomeBad(Logic.mergeCorrections(items), '');
   }
 
   // ---------- La carte de l'étape ----------
@@ -1479,6 +1657,7 @@
     var sc = X.screen(p, { intent: it && it.mode !== 'auto' ? it : null, sending: !!st.sending, exported: !!st.exported, failed: st.screen === 'failed', result: st.screen === 'result', later: st.screen === 'later' });
     setTimeout(drive, 0);
     void ctx;
+    shownCard = sc;
     switch (sc) {
       case 'usage': return usageCard(it);
       case 'preparing': return preparingCard();
@@ -1505,7 +1684,7 @@
     pn.on('result', onResult);
     pn.on('manual_edits', function (msg) { var list = manualWaiters; manualWaiters = []; list.forEach(function (f) { f(msg.items || []); }); });
     pn.on('habits', function (msg) { habits = Object.assign(M.emptyHabits(), msg.habits || {}); });
-    pn.on('firststeps', function (msg) { level = (msg.state || {}).level || ''; if (inStep3()) render(); });
+    pn.on('firststeps', function (msg) { level = (msg.state || {}).level || ''; shareOutcomes = !!(msg.state || {}).share_outcomes; if (inStep3()) render(); });
     pn.on('project_reachable', function (msg) { reachable[msg.preset] = !!msg.ok; });
     pn.on('values', function () { checkAdoptOffer(); if (inStep3()) render(); });
     pn.on('canvas_state', onCanvasState);
@@ -1521,6 +1700,9 @@
     pn.on('spool_failure_done', function (msg) { if (msg && !msg.ok && msg.text) note(msg.text, 'info'); });
     pn.on('outcome_pending', function (msg) { onOutcomePending(msg.items); });
     pn.on('outcome_result_done', onOutcomeResult);
+    pn.on('reliable', onReliable);
+    pn.on('restore_reliable_result', onRestoreReliable);
+    pn.on('orca_dialog', onOrcaDialog);
     pn.on('calib_started', onCalibStarted);
     pn.on('show_preview', onShowPreview);
     pn.on('open_calibration', onOpenCalibration);
@@ -1537,5 +1719,7 @@
   }
   (V2.plugins = V2.plugins || []).push(plug);
 
-  V2.imprimer = { answerExtras: answerExtras, afterAnswer: afterAnswer, printOutcome: printOutcome, intentPending: intentPending, state: function () { return state(); } };
+  V2.imprimer = { answerExtras: answerExtras, afterAnswer: afterAnswer, printOutcome: printOutcome, intentPending: intentPending, state: function () { return state(); },
+    // Pour le menu et les finitions (lot 5).
+    calibChooser: calibChooser, startCalib: startCalib, applyBatches: applyBatches, undoBatches: undoBatches, ask: ask, issueNotice: issueNotice };
 })(typeof window !== 'undefined' ? window : globalThis);

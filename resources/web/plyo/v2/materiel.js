@@ -33,7 +33,7 @@
       pick: null, material: 'PLA', moreMats: false, precise: false, name: '', nameSuggested: '', nameError: '', temps: { nozzle: '', bed: '' },
       brands: null, brandsFor: '', brandSel: '', rangeSel: '', otherBrand: '', brandTimer: null,
       spools: { printer: null, items: null },
-      canvas: { preset: null, state: null, loading: false, mapping: null, useList: false, error: '', readId: 0, applying: null, planKey: null },
+      canvas: { preset: null, state: null, loading: false, mapping: null, useList: false, error: '', readId: 0, applying: null, planKey: null, brands: { of: null, id: 0, items: null }, choice: {}, dismissed: {} },
       manual: { preset: null, state: null, loading: false, confirmed: false, form: false, draft: null, count: 2, error: '' },
       colours: { state: null, id: 0, picker: null, token: 0, next: 0, error: '', recheck: false, open: false, sent: null, unfolded: false },
       bed: { token: 0, next: 0 }, setup: freshSetup(), adoptNote: '', keepSpool: null };
@@ -502,7 +502,51 @@
     st.canvas.preset = msg.preset;
     st.canvas.state = msg;
     st.canvas.mapping = msg.ok ? proposal() : null;
+    ensureSlotBrands(msg);
     render();
+  }
+  // Marque des emplacements (lot 5, comme le classique) : ce que chaque emplacement annonce (marque, nom), rapproché d'un profil
+  // fourni par le slicer (slot_brands_get), une fois par lecture. « C'est bien cette bobine ? » : Oui prend le profil du
+  // fabricant à l'envoi des emplacements (canvas_apply) ; « Je ne sais pas » garde les réglages communs.
+  function ensureSlotBrands(sst) {
+    var st = state(), b = st.canvas.brands, p = project();
+    if (!sst || !sst.ok || b.of === sst || !p.printer) return;
+    b.of = sst; b.items = null; b.id += 1;
+    st.canvas.choice = {}; st.canvas.dismissed = {};
+    var slots = C.trays(sst).map(function (t) { return { key: Sp.slotKey(t), type: t.type, brand: t.brand || '', name: t.name || '' }; });
+    panel.post({ type: 'slot_brands_get', printer: p.printer.preset, id: b.id, slots: slots });
+  }
+  function onSlotBrands(msg) {
+    var b = state().canvas.brands;
+    if (msg.id !== b.id) return;
+    b.items = {};
+    (Array.isArray(msg.items) ? msg.items : []).forEach(function (it) { if (it && it.key) b.items[it.key] = it; });
+    render();
+  }
+  // Marque retenue pour un emplacement : la réponse de cette lecture, sinon celle déjà gardée dans le projet.
+  function slotChoice(key) {
+    var st = state();
+    if (st.canvas.choice[key]) return st.canvas.choice[key];
+    var e = (Array.isArray(project().canvas) ? project().canvas : []).filter(function (x) { return Sp.slotKey(x) === key && x.brand; })[0];
+    if (!e) return null;
+    return e.range ? { kind: 'brand', brand: e.brand, range: e.range, short: e.range, preset: e.preset } : { kind: 'other', brand: e.brand, range: '', short: '', preset: '' };
+  }
+  function slotBrandsInto(body, sst, words) {
+    var st = state(), items = st.canvas.brands.of === sst ? st.canvas.brands.items : null;
+    if (!items) return;
+    var trays = C.trays(sst), choices = {};
+    trays.forEach(function (t) { var k = Sp.slotKey(t), c = slotChoice(k); if (c) choices[k] = c; });
+    var offers = Sp.slotOffers(st.canvas.mapping, trays, items, choices, st.canvas.dismissed);
+    var q = Sp.slotQuestion(offers, words);
+    if (q) body.appendChild(noteBox('tip', 'spool', q, [
+      ui.button('Oui', function () { offers.forEach(function (o) { st.canvas.choice[o.key] = Sp.brandChoice({ brand: o.match.brand }, o.match); }); render(); }, 'btn sm main'),
+      ui.button('Je ne sais pas', function () { offers.forEach(function (o) { st.canvas.dismissed[o.key] = true; }); render(); }, 'btn sm')]));
+    (st.canvas.mapping || []).forEach(function (m) {
+      var t = trays.filter(function (x) { return x.canvas_id === m.canvas_id && x.tray_id === m.tray_id; })[0];
+      if (!t) return;
+      var c = choices[Sp.slotKey(t)];
+      if (c) body.appendChild(ui.el('p', 'hint', t.slot + ' · ' + Sp.slotBrandText(c)));
+    });
   }
   function onManualState(msg) {
     var st = state();
@@ -532,7 +576,9 @@
     render();
   }
   function canvasEntry(t, tray, st) {
+    var choice = slotChoice(Sp.slotKey(tray));
     var entry = { t: t, canvas_id: tray.canvas_id, tray_id: tray.tray_id, type: tray.type, color: tray.color };
+    if (choice && choice.brand && (choice.kind === 'brand' || choice.kind === 'brand_only' || choice.kind === 'other')) { entry.brand = choice.brand; if (choice.kind === 'brand') entry.range = choice.range; }
     if (st.system && st.system !== 'canvas') { entry.label = tray.slot; entry.imposable = st.imposable === true; entry.source = st.source; entry.system = st.system; entry.validated = st.validated === true; }
     return entry;
   }
@@ -543,7 +589,10 @@
       var tray = trays.filter(function (t) { return t.tray_id === m.tray_id && t.canvas_id === m.canvas_id; })[0];
       if (!tray) return;
       if (!tray.type && sst.system && sst.system !== 'canvas') unknown = tray;
-      entries.push({ t: m.t, type: tray.type, color: tray.color });
+      // Marque confirmée pour cet emplacement : son profil, vérifié par le slicer ; sinon le générique.
+      var choice = slotChoice(Sp.slotKey(tray)), sent = { t: m.t, type: tray.type, color: tray.color };
+      if (choice && choice.kind === 'brand' && choice.preset) sent.preset = choice.preset;
+      entries.push(sent);
       full.push(canvasEntry(m.t, tray, sst));
     });
     if (!entries.length || entries.length !== (mapping || []).length) { st.canvas.error = 'Choisis un emplacement pour chaque couleur.'; render(); return; }
@@ -1032,6 +1081,7 @@
         body.appendChild(holder);
       }
     }
+    if (mode === 'single' || mode === 'multi') slotBrandsInto(body, sst, w);
     if (sys === 'manual') body.appendChild(ui.button('J’ai changé', openManual, 'link'));
     body.appendChild(ui.button('Choisir un autre filament', useList, 'link muted'));
     var complete = mode === 'colours' ? Col.complete(colours(), mapping, trays) : C.complete(mapping);
@@ -1239,6 +1289,7 @@
     p.on('slots_manual_state', onManualState);
     p.on('slots_manual_saved', onManualSaved);
     p.on('colours', onColours);
+    p.on('slot_brands', onSlotBrands);
     p.on('colour_set', onColourSet);
     p.on('plate_action', onPlateAction);
     p.on('habits', function (msg) { habits = Object.assign(M.emptyHabits(), msg.habits || {}); });
@@ -1249,9 +1300,10 @@
       var ad = msg.adaptation;
       if (!ad) return;
       followSaved(ad.saved);
+      // La carte « J'ai adapté ce fichier » (liste, écartés, « Annuler ») est dans la discussion : v2/finitions.js.
       var n = Array.isArray(ad.adapted) ? ad.adapted.length : 0;
-      if (ad.error) note('Je n’ai pas pu adapter les réglages de ce fichier à ton projet : ' + ad.error, 'warn');
-      else if (n) note('J’ai adapté ce fichier à ton imprimante et à ton filament : ' + n + ' réglage' + (n > 1 ? 's' : '') + ' changé' + (n > 1 ? 's' : '') + '.', 'ok');
+      if (ad.error) thread('Adaptation du fichier impossible : ' + ad.error);
+      else if (n) thread('Fichier adapté : ' + n + ' réglage' + (n > 1 ? 's' : '') + ' changé' + (n > 1 ? 's' : '') + '.');
     });
     p.on('values', function (msg) {
       // Plateau, buse et modèle lus pour la machine en cours : la ligne « Buse · plateau » suit.
@@ -1271,5 +1323,10 @@
     state().pending = { kind: 'filament', type: material || (p.filament && p.filament.type) || '', spool: { id: spool.id, name: spool.name }, fresh: false, success: null, profileBefore: '' };
     panel.post({ type: 'project_state' });
   }
-  V2.materiel = { state: function () { return state(); }, printers: function () { return printers; }, pickPrinter: function (preset, name) { pickPrinter(preset, name); }, attachSpool: attachSpool };
+  // « Mes machines › Ajouter une machine » (menu, lot 5) : l'écran « Ajouter mon imprimante » de l'étape 2, rouverte au besoin.
+  function addPrinter() {
+    startSetup();
+    if (J.barKey(J.currentStep(project())) !== 'materiel' && panel.openStep) panel.openStep('materiel');
+  }
+  V2.materiel = { state: function () { return state(); }, printers: function () { return printers; }, pickPrinter: function (preset, name) { pickPrinter(preset, name); }, attachSpool: attachSpool, addPrinter: addPrinter };
 })(typeof window !== 'undefined' ? window : globalThis);

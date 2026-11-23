@@ -50,6 +50,7 @@ function bridge(cfg = {}) {
     else if (m.type === 'canvas_read') emit(Object.assign({ type: 'canvas_state', preset: m.preset, id: m.id, send: false }, cfg.canvas || { ok: false }));
     else if (m.type === 'colours_get') emit(Object.assign({ type: 'colours', id: m.id }, cfg.colours || { ok: true, pieces: [{ ref: '1', name: 'Pièce', t: 0 }], colours: [{ t: 0, color: '#FFFFFF' }] }));
     else if (m.type === 'slots_manual_get') emit({ type: 'slots_manual_state', preset: m.preset, ok: false });
+    else if (m.type === 'slot_brands_get') emit({ type: 'slot_brands', id: m.id, items: (cfg.slotBrands || []) });
     else if (m.type === 'canvas_apply') { orca.filament = 'CFS PLA'; emit({ type: 'canvas_applied', ok: true, presets: m.entries.map((e) => ({ t: e.t, preset: e.t === 0 ? 'CFS PLA' : 'CFS PLA ' + e.t })) }); }
   };
 }
@@ -319,5 +320,26 @@ test('lot 3 : l’étape rouverte depuis la barre : « Garder ces choix », ou u
     assert.equal(conv.project.filament.type, 'PETG');
     assert.equal(conv.project.step, 'slice', 'bobine changée après la découpe : la préparation est à refaire');
     assert.ok(!/rouverte/.test(texts(p.$('stepcard'))), 'retour à l’étape en cours');
+  } finally { p.stop(); }
+});
+
+test('lot 5 : marque d’un emplacement (slot_brands_get) : « C’est bien cette bobine ? », Oui prend le profil du fabricant à l’envoi des emplacements', async () => {
+  const canvas = JSON.parse(JSON.stringify(CFS));
+  Object.assign(canvas.canvases[0].trays[1], { brand: 'Creality', name: 'Hyper PLA' });
+  const slotBrands = [{ key: '0:1', match: { brand: 'Creality', preset: 'Creality Hyper PLA @K2', label: 'Creality Hyper PLA', short: 'Hyper PLA' } }];
+  const p = await start({ printers: [K2], orca: K2.preset, canvas, slotBrands, conversation: conversation(PART_ONLY) });
+  try {
+    await sleep(40);
+    const ask = sent(p, 'slot_brands_get').at(-1);
+    assert.equal(ask.printer, K2.preset);
+    assert.ok(ask.slots.some((x) => x.key === '0:1' && x.brand === 'Creality'));
+    p.$('stepcard').querySelectorAll('.slot')[1].click();
+    assert.match(texts(p.$('stepcard')), /annonce « Creality Hyper PLA » à l’emplacement 1B : c’est bien cette bobine \?/);
+    byText(p.$('stepcard'), /^Oui$/).click();
+    assert.match(texts(p.$('stepcard')), /1B · Marque : Creality Hyper PLA/);
+    p.$('card-primary').click();
+    await sleep(30);
+    assert.deepEqual(sent(p, 'canvas_apply').at(-1).entries, [{ t: 0, type: 'PLA', color: '#222222', preset: 'Creality Hyper PLA @K2' }]);
+    assert.equal(p.ctx.PlyoV2.panel.conv().project.canvas[0].brand, 'Creality');
   } finally { p.stop(); }
 });

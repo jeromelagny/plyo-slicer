@@ -85,6 +85,79 @@
   html .menu button:hover { background: var(--surface); }
   .menu hr { border: 0; border-top: 1px solid var(--border); margin: 5px 0; }
   .menu hr:first-child { display: none; }
+  #menu-items > hr:first-child { display: none; }
+  .menu svg.i { color: var(--muted); }
+  html .menu button[disabled] { opacity: .45; }
+  html .menu button[disabled]:hover { background: none; }
+  .menu .grow { flex: 1; min-width: 0; }
+  .menu .who { font-size: 12px; color: var(--muted); padding: 2px 10px 4px; overflow-wrap: anywhere; }
+  .menu .tg { margin-left: auto; width: 30px; height: 18px; border-radius: 9px; background: var(--raised); position: relative; flex: none; transition: background .15s; }
+  .menu .tg::after { content: ""; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--bg); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: left .15s; }
+  .menu .tg.on { background: var(--accent-fill); } .menu .tg.on::after { left: 14px; }
+
+  /* Fenêtres (v2/fenetres.js) : par-dessus le panneau, une à la fois. */
+  .ov { position: fixed; inset: 0; background: rgba(15, 20, 20, .38); display: grid; place-items: center; z-index: 50; padding: 16px; }
+  :root[data-orca-theme="dark"] .ov { background: rgba(0, 0, 0, .55); }
+  .modal { background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); width: 100%; max-width: 440px; max-height: calc(100vh - 32px); display: flex; flex-direction: column; padding: 18px 18px 14px; }
+  .modal.wide { max-width: 560px; }
+  .mhead { display: flex; align-items: flex-start; gap: 8px; }
+  .mhead h3 { margin: 4px 0 6px; font-size: 19px; letter-spacing: -.01em; flex: 1; min-width: 0; }
+  html .mhead .mx { width: 32px; height: 32px; margin: -4px -6px 0 0; }
+  .modal > p.sub { margin-bottom: 12px; font-size: 13px; }
+  .mbody { overflow: auto; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 2px; }
+  .mfoot { display: flex; align-items: center; gap: 10px; justify-content: flex-end; padding-top: 12px; flex-wrap: wrap; }
+  .mfoot .grow { flex: 1; }
+  h4.mh { margin: 6px 0 0; font-size: 14px; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
+  .li.cur { border-color: var(--accent); background: var(--accent-soft); }
+  .li .lic { color: var(--accent-text); display: flex; }
+  .li strong { display: block; font-size: 14px; overflow-wrap: anywhere; }
+  .li small { display: block; color: var(--muted); font-size: 12.5px; }
+  .li p { margin: 0; font-size: 13px; }
+  html .btn.danger { color: var(--danger-text); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+  html .btn.main, html .mfoot .btn.main { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent); }
+  .gbig { display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: 14px; background: var(--surface); }
+  .gbig .pct { font-size: 30px; font-weight: 700; letter-spacing: -.02em; }
+  .gbig small { color: var(--muted); font-size: 12.5px; }
+  .gbig .progress { margin: 6px 0 2px; }
+  .gbig.low .progress i { background: var(--warn); } .gbig.empty .progress i { background: var(--danger); }
+  .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  @media (max-width: 420px) { .plans { grid-template-columns: 1fr; } }
+  .plan { border: 1.5px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .plan.cur { border-color: var(--accent); background: var(--accent-soft); }
+  .plan h4 { margin: 0; font-size: 14px; }
+  .plan .hint { margin: 0; }
+  .jpart { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .jpart h4 { margin: 0; font-size: 14px; }
+  .jev { display: flex; gap: 10px; align-items: flex-start; }
+  .jev .thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; flex: none; }
+  .jev .thumb.ph { display: grid; place-items: center; background: var(--surface); color: var(--muted); }
+  .jev p { margin: 2px 0; font-size: 13px; }
+  .jtop { display: flex; justify-content: space-between; gap: 8px; align-items: center; color: var(--muted); }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); } .badge.bad, .badge.error { background: var(--danger-soft); color: var(--danger-text); } .badge.warn { background: var(--warn-soft); color: var(--warn-text); }
+  .machines { display: flex; flex-direction: column; gap: 8px; }
+  .machines .machine-row { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .machines .machine-row.off { opacity: .6; }
+  .machines .row-acts, .machines .printer-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .machines p { margin: 0; }
+  .machines .muted { color: var(--muted); } .machines .small { font-size: 12.5px; }
+  ol.welcome { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  ol.welcome li { display: flex; gap: 12px; align-items: center; }
+  ol.welcome b { width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; flex: none; }
+  .check-line { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .check-line input { margin: 2px 0 0; flex: none; accent-color: var(--accent-fill); }
+  .notice textarea.field { margin-top: 8px; font-size: 13px; padding: 8px 10px; }
+  .notice .check-line { margin-top: 8px; }
+  .ai-foot { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+  html .link.muted.flagged, html .ai-foot .link { font-size: 12.5px; color: var(--muted); font-weight: 500; display: inline-flex; align-items: center; gap: 5px; }
+  .feedback { display: flex; flex-direction: column; gap: 6px; }
+  .feedback .acts { margin-top: 0; align-items: center; }
+  details.fold-detail summary { cursor: pointer; color: var(--accent-text); font-weight: 600; font-size: 12.5px; margin-top: 6px; }
+  .notice .done-line { margin-top: 6px; }
+  .reliable { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .reliable .hint { margin: 0; }
+  .notice .link > svg, .done-line .link > svg { margin-right: 4px; vertical-align: -3px; }
 
   /* Barre des étapes */
   .stepper { display: flex; justify-content: space-between; align-items: center; gap: 3px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
@@ -112,7 +185,8 @@
   .chosen-line { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
   .chosen-line .ic { color: var(--accent-text); display: flex; }
   .chosen-line .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .stepcard .foot { padding: 14px 0 2px; background: var(--bg); position: sticky; bottom: -11px; z-index: 2; box-shadow: 0 -10px 12px -8px var(--bg); display: flex; flex-direction: column; gap: 8px; }
+  /* Bouton plein en bas de la carte, dans le fil (lot 5) : plus collé par-dessus le contenu, rien de la carte n'est masqué. */
+  .stepcard .foot { padding: 14px 0 2px; display: flex; flex-direction: column; gap: 8px; }
   .note { display: flex; gap: 10px; align-items: flex-start; border-radius: 12px; padding: 11px 13px; background: var(--surface); font-size: 13px; }
   .note.tip { background: var(--accent-soft); }
   .note.tip > svg { color: var(--accent-text); margin-top: 1px; }
@@ -345,6 +419,12 @@
   .calib-choose { display: flex; flex-direction: column; gap: 8px; }
 
   .composer { border-top: 1px solid var(--border); padding: 10px 12px 12px; }
+  /* « Tu regardes : … » (clic sur un réglage d'Orca) */
+  .focus-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; margin-bottom: 8px; border-radius: var(--pill); border: 1px solid var(--border); background: var(--surface); font-size: 12.5px; max-width: 100%; }
+  .focus-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .focus-chip > span { white-space: nowrap; color: var(--muted); }
+  html .focus-chip .go { color: var(--accent-text); font-weight: 600; white-space: nowrap; margin-left: auto; }
+  html .focus-chip .x { color: var(--muted); padding: 0 2px; font-size: 15px; line-height: 1; }
   .cbox { border: 1.5px solid var(--border); border-radius: 14px; padding: 8px 8px 6px 12px; background: var(--bg); }
   .cbox:focus-within { border-color: var(--accent); }
   .cbox textarea { width: 100%; border: 0; outline: 0; resize: none; background: none; min-height: 24px; font-size: 14px; display: block; }
@@ -367,6 +447,7 @@
     <button class="iconbtn" id="btn-more" type="button" title="Menu" aria-label="Menu" aria-haspopup="menu" aria-expanded="false"></button>
     <div class="menu hidden" id="menu" role="menu">
       <div id="menu-items"></div>
+      <hr>
       <button type="button" id="m-ui" role="menuitem">Revenir à l’ancien assistant</button>
     </div>
   </header>
@@ -377,6 +458,7 @@
     <div class="msgs" id="msgs" aria-live="polite"></div>
   </div>
   <div class="composer">
+    <div class="focus-chip hidden" id="focus-chip"><span>Tu regardes :</span><b id="focus-label"></b><button type="button" class="go" id="focus-explain">Explique-moi</button><button type="button" class="x" id="focus-close" title="Masquer" aria-label="Masquer">×</button></div>
     <div class="cbox">
       <div class="attached hidden" id="attached"></div>
       <textarea id="note" rows="1" maxlength="500" placeholder="Une question ? Décris-la avec tes mots…" aria-label="Ta question"></textarea>
@@ -419,6 +501,10 @@
 <!--plyo-include:v2/piece.js-->
 <!--plyo-include:v2/materiel.js-->
 <!--plyo-include:v2/imprimer.js-->
+<!--plyo-include:machines-view.js-->
+<!--plyo-include:v2/fenetres.js-->
+<!--plyo-include:v2/menu.js-->
+<!--plyo-include:v2/finitions.js-->
 <!--plyo-include:v2/panneau.js-->
 <script>
 (function () {
@@ -428,6 +514,8 @@
   [['phone-pill', 'phone', 16], ['btn-more', 'menu', 20], ['c-file', 'clip', 20], ['c-phone', 'phone', 20], ['c-mic', 'mic', 20], ['c-send', 'up', 16]].forEach(function (x) {
     document.getElementById(x[0]).appendChild(ui.icon(x[1], x[2]));
   });
+  var back = document.getElementById('m-ui');
+  back.insertBefore(ui.icon('undo', 16), back.firstChild);
   window.PlyoV2.start();
 })();
 </script>

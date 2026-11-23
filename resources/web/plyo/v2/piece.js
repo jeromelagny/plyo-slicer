@@ -827,5 +827,5 @@
   }
   (V2.plugins = V2.plugins || []).push(plug);
 
-  V2.piece = { addModels: addModels, answerExtras: answerExtras, state: function () { return state(); } };
+  V2.piece = { addModels: addModels, answerExtras: answerExtras, attachSketch: attachSketch, state: function () { return state(); } };
 })(typeof window !== 'undefined' ? window : globalThis);

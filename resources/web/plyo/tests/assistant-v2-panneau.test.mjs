@@ -198,7 +198,8 @@ test('lot 1 : un autre projet ouvert dans Orca repart sur une conversation neuve
     assert.equal(p.$('msgs').children.length, 0);
     assert.equal(p.$('hello').classList.contains('hidden'), false);
     assert.equal(p.$('stepper').querySelector('.st.cur').dataset.step, 'piece');
-    assert.equal(p.posted.at(-1).type, 'project_detach');
+    // Le plateau d'avant est détaché, puis, comme le classique (lot 5), le filament du fichier ouvert est demandé.
+    assert.deepEqual(p.posted.slice(-2).map((m) => m.type), ['project_detach', 'file_filament_get']);
   } finally { p.stop(); }
 });
 

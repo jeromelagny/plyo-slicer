@@ -42,6 +42,9 @@
     var opened = null;         // étape faite rouverte d'un clic
     var hold = null;           // étape gardée à l'écran bien que faite (pièce posée : « Envie d'ajuster ? », puis « Continuer »)
     var listeners = {};        // messages du slicer suivis par les écrans des étapes (PlyoV2.panel.on)
+    var email = '';            // adresse du compte (menu « Compte »)
+    var NOTICE_KEY = 'plyo.gaugeNotice';
+    var gaugeState = null, noticeShown = null; // message doux de la jauge : état vu juste avant, repli en mémoire
 
     var api = Client.createApi({ url: PLYO_API_URL, session: function () { return session; },
       saveSession: function (fresh) { session = fresh; post({ type: 'session_save', session: fresh }); } });
@@ -76,18 +79,23 @@
     // bobine du précédent sont proposées, jamais appliquées sans confirmation.
     function newConversation() {
       flushSave();
+      openRetryReset();
       unlinkPhone(true);
       attachments = [];
       renderAttachments();
       post({ type: 'project_detach' });
       startConversation(conv && P.hasPrinter(conv.project) ? P.proposeFrom(conv.project) : null);
+      // Retouches d'impression faites à la main dans le projet quitté : la question vient une fois le plateau détaché.
+      askRetouches(1500);
     }
+    function askRetouches(delay) { setTimeout(function () { post({ type: 'retouches_get' }); }, delay || 0); }
     // Conversation enregistrée qui redevient active. `attached` : panneau rouvert (ou bascule) sur la conversation dont le
     // plateau est encore attaché : rien n'est rechargé. Sinon (« Mes pièces récentes », « Mes projets ») son projet 3MF revient
     // sur le plateau, comme dans le panneau classique ; sans pièce, le plateau d'avant est seulement détaché.
     function restoreConversation(id, c, attached) {
       if (!c || !Array.isArray(c.entries) || busy) return;
       flushSave();
+      openRetryReset();
       if (!attached) unlinkPhone(true);
       conv = Conv.fromSaved(id, c);
       opened = null;
@@ -99,6 +107,45 @@
       conv.entries.forEach(function (entry) { try { renderEntry(entry, true); } catch (e) { /* élément abîmé : ignoré */ } });
       render();
       scrollDown();
+    }
+
+    // Ouverture refusée parce qu'Orca est occupé : on le dit une fois et on redemande toutes les 3 s tant que le projet est
+    // affiché, une minute au plus (comme le classique, project-logic.js).
+    var openRetry = { conv: null, tries: 0, timer: null };
+    function openRetryReset() { clearTimeout(openRetry.timer); openRetry = { conv: null, tries: 0, timer: null }; }
+    function onProjectOpened(msg) {
+      if (!conv || msg.conv !== conv.id) return;
+      var again = openRetry.conv === conv.id;
+      var step = P.openRetryStep(msg.reason, again ? openRetry.tries : 0);
+      if (step === 'done') openRetryReset();
+      var text = again && step !== 'give_up' ? '' : step === 'give_up' ? P.openGiveUpText() : msg.reason ? P.projectOpenedText(msg.reason) : '';
+      if (text) say(text, msg.reason === 'annule' ? 'info' : 'warn');
+      if (step === 'give_up') { openRetryReset(); return; }
+      if (step === 'retry') {
+        if (!again) openRetry = { conv: conv.id, tries: 0, timer: null };
+        openRetry.tries++;
+        clearTimeout(openRetry.timer);
+        var id = conv.id;
+        openRetry.timer = setTimeout(function () { if (conv && conv.id === id) post({ type: 'project_open', conv: id }); }, P.OPEN_RETRY_MS);
+        return;
+      }
+      if (P.restoresAfterOpen(msg.reason) && P.restorable(conv.project)) post({ type: 'project_restore', project: conv.project, discard_unsaved: false });
+    }
+    // Le plateau de la conversation d'avant n'est pas encore rangé (Orca découpe ou envoie) : dit une fois, redemandé toutes les 3 s.
+    var attachRetry = { conv: null, tries: 0, timer: null };
+    function onAttachRefused(msg) {
+      if (!conv || msg.conv !== conv.id) return;
+      if (attachRetry.conv !== conv.id) { attachRetry = { conv: conv.id, tries: 0, timer: null }; if (msg.text) say(msg.text, 'warn'); }
+      if (++attachRetry.tries > 20) return;
+      clearTimeout(attachRetry.timer);
+      var id = conv.id;
+      attachRetry.timer = setTimeout(function () { if (conv && conv.id === id && P.mayAttach(tourSignals)) post({ type: 'project_attach', conv: id }); }, 3000);
+    }
+    // Orca a vidé les réglages de la pièce sans changer de projet : la conversation rouvre son 3MF, ou le plateau lui est rattaché.
+    function onProjectDetached(msg) {
+      var next = P.afterDetached(msg, conv && conv.id);
+      if (next === 'open') post({ type: 'project_open', conv: conv.id });
+      else if (next === 'attach' && P.mayAttach(tourSignals)) post({ type: 'project_attach', conv: conv.id });
     }
 
     // Ouverture du panneau : le plateau encore attaché à une conversation (panneau rouvert, bascule) la rouvre ; sinon le
@@ -157,6 +204,8 @@
         // d'Orca, test de calibration proposé (v2/imprimer.js).
         if (V2.piece && V2.piece.answerExtras) V2.piece.answerExtras(entry, box, archived);
         if (V2.imprimer && V2.imprimer.answerExtras) V2.imprimer.answerExtras(entry, box, archived);
+        // « Signaler » : la réponse semble fausse ou inutile (v2/finitions.js, comme le classique).
+        if (V2.finitions && V2.finitions.answerFoot) V2.finitions.answerFoot(entry, box);
         addToThread(box);
         return;
       }
@@ -179,10 +228,15 @@
     // ---------- En-tête : jauge, téléphone, menu ----------
     function showLoggedIn(on) { $('gauge').classList.toggle('hidden', !on); }
     // Jauge du mois en pourcentage, comme dans le panneau classique (assistant-logic.js, gaugeView).
-    function setGauge(g) {
+    // `quiet` : relevé sans message doux (fenêtre « Mon utilisation », erreur « jauge pleine » déjà affichée).
+    function setGauge(g, quiet) {
       var v = Logic.gaugeView(g);
       if (!v) return;
       lastGauge = g;
+      var prev = gaugeState;
+      gaugeState = v.state;
+      if (quiet) { noticeShown = Logic.noticeKey(v.state, g); try { root.localStorage.setItem(NOTICE_KEY, noticeShown); } catch (e) { /* stockage indisponible */ } }
+      else setTimeout(function () { gaugeNotice(g, v, prev); }, 0);
       $('gauge-pct').textContent = ui.fr(v.label);
       $('gauge-fill').style.width = Math.max(3, v.pct) + '%';
       $('gauge').classList.toggle('low', v.state === 'low');
@@ -190,13 +244,24 @@
       $('gauge').title = ui.fr('Jauge IA : ' + v.label + ' utilisés ce mois-ci. Elle se recharge ' + v.resets + '.');
       $('gauge').setAttribute('aria-label', ui.fr('Jauge IA du mois : ' + v.label + ' utilisés'));
     }
+    // Message doux vers 80 %, puis quand la jauge est pleine : une seule fois par mois (comme le classique, assistant-logic.js).
+    function gaugeNotice(g, v, prev) {
+      var last = noticeShown;
+      try { last = root.localStorage.getItem(NOTICE_KEY) || last; } catch (e) { /* stockage indisponible : la mémoire suffit */ }
+      var kind = Logic.gaugeNotice(g, last, prev);
+      if (!kind || !thread.children.length) return;
+      noticeShown = Logic.noticeKey(kind, g);
+      try { root.localStorage.setItem(NOTICE_KEY, noticeShown); } catch (e) { /* idem */ }
+      say(kind === 'low' ? 'Tu as utilisé **' + v.label + '** de ta jauge ce mois-ci. Elle se recharge ' + v.resets + '.' : 'Ta jauge du mois est pleine. Elle se recharge ' + v.resets + '.', 'warn',
+        [{ label: 'Voir mon utilisation', run: function () { if (V2.menu) V2.menu.openUsage(); } }]);
+    }
     // Vérifie la session (et la renouvelle au besoin) ; met à jour la jauge. Résout à true si la session est valide.
     function refreshAccount() {
       return api.apiFetch('/api/me', { method: 'GET' })
         .then(function (r) {
           if (r.status === 401) { logout('Ta session a expiré : reconnecte-toi pour continuer.'); return false; }
           if (r.status === 503) { $('gauge-pct').textContent = ui.fr('Indisponible'); return false; }
-          return r.ok ? r.json().then(function (me) { setGauge(me.gauge); return true; }) : false;
+          return r.ok ? r.json().then(function (me) { email = me && me.email ? String(me.email) : ''; setGauge(me.gauge); return true; }) : false;
         })
         .catch(function () { $('gauge-pct').textContent = ui.fr('Hors ligne'); return false; });
     }
@@ -548,7 +613,7 @@
           onPartial: function (ev) { wait.live(ev); } });
       }).then(function (r) {
         if (r.error) {
-          if (r.error === 'insufficient_credits') setGauge(r.gauge);
+          if (r.error === 'insufficient_credits') setGauge(r.gauge, true);
           fail(r.error, r.data);
           return;
         }
@@ -583,6 +648,9 @@
       var text = view.text + (g && g.resets ? ' Elle se recharge ' + g.resets + '.' : '') + (view.more ? ' ' + view.more : '');
       var acts = [];
       if (view.action === 'login') acts.push({ label: 'Me reconnecter', run: openLogin, primary: true });
+      // plan_required : les formules (fenêtre de la v2, v2/menu.js) ; jauge pleine : « Mon utilisation ». Logique inchangée.
+      else if (view.action === 'plans') acts.push({ label: 'Voir les formules', run: function () { if (V2.menu) V2.menu.openPlans(); }, primary: true });
+      else if (view.action === 'credits') acts.push({ label: 'Voir mon utilisation', run: function () { if (V2.menu) V2.menu.openUsage(); }, primary: true });
       else if (view.action === 'photo') acts.push({ label: 'Choisir une autre photo', run: function () { box.remove(); fileInput.click(); }, primary: true });
       else if (view.action === 'edit') acts.push({ label: 'Modifier ma demande', run: function () { box.remove(); input.focus(); }, primary: true });
       else if (view.action === 'retry' && retry) acts.push({ label: 'Réessayer', run: function () { box.remove(); retry(); }, primary: true });
@@ -612,6 +680,16 @@
       show: function (key) { post({ type: 'show_setting', key: key }); },
       ask: function (label) { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }
     };
+    // « Tu regardes : … » : un clic sur un réglage d'Orca (focus_setting) ; « Explique-moi » ouvre sa fiche, gratuite.
+    var focusKey = null;
+    function showFocus(msg) {
+      focusKey = msg.key;
+      $('focus-label').textContent = ui.fr(msg.label || msg.key || '');
+      $('focus-chip').classList.toggle('hidden', !msg.key);
+    }
+    $('focus-explain').addEventListener('click', function () { if (focusKey) explain(focusKey); $('focus-chip').classList.add('hidden'); });
+    $('focus-close').addEventListener('click', function () { $('focus-chip').classList.add('hidden'); });
+
     function onExplain(msg) { addToThread(D.fiche(record({ kind: 'fiche', msg: msg }).msg, { archived: false, explainActions: ficheActions })); }
 
     // ---------- Messages du slicer ----------
@@ -644,8 +722,12 @@
         if (Logic.convLoaded(msg, false, false).restore) restoreConversation(msg.id, msg.conversation);
         else say('Ce projet n’existe plus : il a été supprimé, ou rangé pour faire de la place.', 'error');
       } else if (msg.type === 'project_changed') {
-        // Nouveau projet ou projet ouvert dans Orca : la conversation d'avant reste enregistrée.
+        // Nouveau projet ou projet ouvert dans Orca : la conversation d'avant reste enregistrée. Ce qu'Orca a laissé de côté en
+        // changeant de projet : retouches d'impression, filament du fichier (v2/finitions.js).
+        if (V2.fenetre) V2.fenetre.close();
         if (!busy) newConversation(); else projectSwitched = true;
+        post({ type: 'file_filament_get' });
+        askRetouches(300);
       } else if (msg.type === 'conv_save_failed') {
         var why = msg.reason || 'too_big';
         if (!saveFailedShown[why]) { saveFailedShown[why] = true; say(Logic.saveFailedText(why), 'error'); }
@@ -654,8 +736,29 @@
       } else if (msg.type === 'dictation') {
         onDictation(msg);
       } else if (msg.type === 'project_opened') {
-        // Plateau d'un projet rouvert : ce qui n'a pas marché est dit (pas retrouvé, Orca occupé, ouverture annulée).
-        if (conv && msg.conv === conv.id && msg.reason) say(P.projectOpenedText(msg.reason), msg.reason === 'annule' ? 'info' : 'warn');
+        // Plateau d'un projet rouvert : ce qui n'a pas marché est dit (pas retrouvé, annulé) ; Orca occupé : nouvelle demande.
+        onProjectOpened(msg);
+      } else if (msg.type === 'project_attach_refused') {
+        onAttachRefused(msg);
+      } else if (msg.type === 'project_attached') {
+        clearTimeout(attachRetry.timer); attachRetry = { conv: null, tries: 0, timer: null };
+      } else if (msg.type === 'project_detached') {
+        onProjectDetached(msg);
+      } else if (msg.type === 'project_file') {
+        // Le plateau trop lourd peut être celui de la conversation qu'on vient de quitter : dit aussi.
+        if (msg.kept === false) say(P.projectFileText(msg.reason, !(conv && msg.conv === conv.id)), 'warn');
+      } else if (msg.type === 'conv_pruned') {
+        // Un ancien projet effacé pour faire de la place : toujours dit, jamais en silence.
+        (Array.isArray(msg.names) ? msg.names : []).forEach(function (name) { say(Logic.prunedText(name)); });
+      } else if (msg.type === 'focus_setting') {
+        showFocus(msg);
+      } else if (msg.type === 'phone_pick_files') {
+        // Fenêtre du QR fermée par « Choisir des photos sur l'ordinateur » : un bouton ici (le choix de fichiers demande un clic).
+        var sketch = phonePurpose() === 'sketch';
+        var pick = say('Choisis tes photos sur l’ordinateur :', 'info', [{ label: 'Choisir mes photos', primary: true, run: function () {
+          pick.remove();
+          if (sketch && V2.piece && V2.piece.attachSketch) V2.piece.attachSketch(); else fileInput.click();
+        } }]);
       } else if (msg.type === 'phone_batch_ready') {
         pollPhone(); // la fenêtre du QR s'est fermée sur un envoi : on le traite sans attendre
       } else if (msg.type === 'explain') {
@@ -670,6 +773,12 @@
     // Ce que les écrans des étapes (lots suivants) utilisent du panneau.
     V2.panel = {
       post: post,
+      email: function () { return email; },
+      setHabits: function (h) { habits = Object.assign(root.PlyoMachines.emptyHabits(), h || {}); post({ type: 'habits_set', habits: habits }); (listeners.habits || []).forEach(function (fn) { fn({ type: 'habits', habits: habits }); }); },
+      logout: function () { logout('Tu es déconnecté. Tes projets restent sur cet ordinateur.'); },
+      openLogin: openLogin,
+      openStep: openStep,
+      askRetouches: askRetouches,
       iso: iso,
       record: record,
       setGauge: setGauge,
