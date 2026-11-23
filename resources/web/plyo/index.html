@@ -588,6 +588,7 @@
       <button type="button" id="m-level" role="menuitemcheckbox" aria-checked="false" data-icon="check">Réponses courtes</button>
       <button type="button" id="m-layout" role="menuitemcheckbox" aria-checked="false" data-icon="check" title="Coché : seulement le plateau et l’assistant ; la barre de réglages de Plyo Slicer est repliée">Disposition simple</button>
       <button type="button" id="m-start" role="menuitemcheckbox" aria-checked="true" data-icon="check">Me guider pas à pas (panneau ouvert au lancement)</button>
+      <button type="button" id="m-ui" role="menuitem" data-icon="spark" title="Le panneau se rouvre avec la nouvelle présentation ; ton projet reste ouvert. Retour possible depuis son menu.">Essayer le nouvel assistant</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
       <div class="who" id="m-email"></div>
@@ -4368,6 +4369,14 @@
     window.orca.postMessage({ type: 'firststeps_set', patch: { layout: layout } });
     updateStartMenu();
     noteLine(LAYOUT_NOTES[layout], 'ok', 'check');
+  });
+  // Assistant v2 : le slicer enregistre la version (clé « ui » des premiers pas) puis rouvre le panneau sur l'autre page ; le projet
+  // en cours suit (plateau attaché, repris à l'ouverture). Ce qui attend d'être enregistré part avant.
+  $('m-ui').addEventListener('click', function () {
+    menu.classList.add('hidden');
+    if (blockedWhileBusy()) return;
+    flushSave();
+    window.orca.postMessage({ type: 'firststeps_set', patch: { ui: 'v2' } });
   });
   var LAYOUT_NOTES = {
     simple: 'Disposition simple : la barre de réglages de Plyo Slicer est repliée, tu vois ta pièce et moi. Pour la rouvrir : « Disposition simple » dans le menu ⋯, ou Maj + Tab.',

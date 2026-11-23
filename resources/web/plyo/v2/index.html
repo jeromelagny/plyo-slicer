@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assistant Plyo</title>
+<style>
+  /* Assistant Plyo v2 — maquette : docs/plyo/maquette-assistant-plyo.html (colonne de droite).
+     Même pont window.orca et même stockage que le panneau classique (resources/web/plyo/index.html) ; la version affichée
+     se choisit par la clé « ui » des premiers pas (menu ⋯ des deux panneaux). Variables --orca-* injectées par OrcaSlicer. */
+  :root {
+    --bg: var(--orca-bg, #ffffff);
+    --fg: var(--orca-fg, #1d2527);
+    --muted: var(--orca-muted, #667074);
+    --border: var(--orca-border, #e1e5e4);
+    --accent: var(--orca-accent, #00897b);
+    --font: var(--orca-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    --accent-fill: #00796b;
+    --on-accent: #ffffff;
+    --accent-text: #00695c;
+    --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--bg));
+    --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
+    --raised: color-mix(in srgb, var(--fg) 8%, var(--bg));
+    --shadow: 0 10px 30px rgba(20, 30, 30, .14);
+    --r: 14px; --r-sm: 9px; --pill: 999px;
+    color-scheme: light;
+  }
+  :root[data-orca-theme="dark"] {
+    --accent-fill: #1f9488;
+    --accent-text: #6fd1c5;
+    --accent-soft: color-mix(in srgb, var(--accent) 18%, var(--bg));
+    --shadow: 0 10px 30px rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  html body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 13px; line-height: 1.5; display: flex; flex-direction: column; overflow: hidden; }
+  html button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hidden { display: none !important; }
+
+  .head { position: relative; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .pdot { width: 22px; height: 22px; border-radius: 7px; background: var(--accent-fill); color: var(--on-accent); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+  .head strong { font-size: 14px; }
+  .spacer { flex: 1; }
+  .icon-btn { width: 30px; height: 30px; border: 0; border-radius: var(--r-sm); background: transparent; cursor: pointer; display: grid; place-items: center; }
+  .icon-btn:hover { background: var(--raised); }
+  .menu { position: absolute; top: 46px; right: 10px; z-index: 10; min-width: 240px; padding: 6px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); box-shadow: var(--shadow); }
+  .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; text-align: left; cursor: pointer; }
+  .menu button:hover { background: var(--raised); }
+
+  .body { flex: 1; overflow: auto; padding: 16px; }
+  .card { border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); padding: 16px; }
+  .card h2 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0 0 12px; color: var(--muted); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 6px 14px; border-radius: var(--r-sm); font-weight: 600; cursor: pointer; border: 1px solid var(--accent-fill); background: var(--accent-fill); color: var(--on-accent); }
+  .btn:hover { filter: brightness(1.08); }
+</style>
+</head>
+<body>
+  <div class="head">
+    <span class="pdot" aria-hidden="true">P</span><strong>Assistant Plyo</strong><span class="spacer"></span>
+    <button class="icon-btn" id="btn-more" type="button" title="Plus d’options" aria-haspopup="menu" aria-label="Plus d’options">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
+    </button>
+    <div class="menu hidden" id="menu" role="menu">
+      <button type="button" id="m-ui" role="menuitem">Revenir à l’ancien assistant</button>
+    </div>
+  </div>
+  <div class="body">
+    <div class="card">
+      <h2>Le nouvel assistant arrive</h2>
+      <p>Cette présentation est en construction. Ton projet reste ouvert : tu peux revenir à l’ancien assistant à tout moment.</p>
+      <button class="btn" id="back" type="button">Revenir à l’ancien assistant</button>
+    </div>
+  </div>
+<!--plyo-config-->
+<script>
+(function () {
+  'use strict';
+  function $(id) { return document.getElementById(id); }
+  var menu = $('menu');
+  // Retour au panneau classique : le slicer enregistre la version puis rouvre le panneau ; le projet en cours le suit.
+  function backToClassic() {
+    menu.classList.add('hidden');
+    window.orca.postMessage({ type: 'firststeps_set', patch: { ui: 'classique' } });
+  }
+  $('btn-more').addEventListener('click', function (e) { e.stopPropagation(); menu.classList.toggle('hidden'); });
+  document.addEventListener('click', function (e) { if (!menu.contains(e.target)) menu.classList.add('hidden'); });
+  $('m-ui').addEventListener('click', backToClassic);
+  $('back').addEventListener('click', backToClassic);
+  window.orca.postMessage({ type: 'ready' });
+})();
+</script>
+</body>
+</html>

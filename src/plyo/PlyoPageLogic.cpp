@@ -13,13 +13,21 @@ constexpr const char* INCLUDE_OPEN  = "<!--plyo-include:";
 constexpr const char* INCLUDE_CLOSE = "-->";
 constexpr const char* CONFIG_MARKER = "<!--plyo-config-->";
 
+bool plain_name_char(unsigned char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-'; }
+
+// « nom.js », ou « dossier/nom.js » (un seul sous-dossier, ex. les scripts de vue de la v2) ; jamais « .. » ni chemin absolu.
 bool valid_script_name(const std::string& name)
 {
     const std::string ext = ".js";
     if (name.size() <= ext.size() || name.compare(name.size() - ext.size(), ext.size(), ext) != 0)
         return false;
-    return std::all_of(name.begin(), name.end() - ext.size(),
-                       [](unsigned char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-'; });
+    const std::string stem  = name.substr(0, name.size() - ext.size());
+    const size_t      slash = stem.find('/');
+    const std::string dir   = slash == std::string::npos ? std::string() : stem.substr(0, slash);
+    const std::string file  = slash == std::string::npos ? stem : stem.substr(slash + 1);
+    if (slash != std::string::npos && dir.empty())
+        return false;
+    return !file.empty() && std::all_of(dir.begin(), dir.end(), plain_name_char) && std::all_of(file.begin(), file.end(), plain_name_char);
 }
 
 // Une balise « </script » dans un texte inséré fermerait la balise qui l'entoure : « <\/script », identique pour JavaScript.
@@ -52,6 +60,8 @@ std::vector<std::string> include_names(const std::string& page)
     }
     return names;
 }
+
+std::string page_for_ui(const std::string& ui) { return ui == "v2" ? "v2/index.html" : "index.html"; }
 
 std::string origin_of(const std::string& url)
 {

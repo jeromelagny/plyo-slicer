@@ -193,6 +193,11 @@ TEST_CASE("Sanitize::first_steps garde seulement les valeurs du bon type")
     CHECK(Plyo::Sanitize::first_steps({{"layout", "simple"}})["layout"] == "simple");
     CHECK(Plyo::Sanitize::first_steps({{"layout", "plein écran"}})["layout"] == "advanced");
     CHECK(Plyo::Sanitize::first_steps({{"layout", 1}})["layout"] == "advanced");
+    // Version du panneau : « classique » par défaut, « v2 » seulement si demandé, jamais autre chose.
+    CHECK(s["ui"] == "classique");
+    CHECK(Plyo::Sanitize::first_steps({{"ui", "v2"}})["ui"] == "v2");
+    CHECK(Plyo::Sanitize::first_steps({{"ui", "v3"}})["ui"] == "classique");
+    CHECK(Plyo::Sanitize::first_steps({{"ui", 2}})["ui"] == "classique");
 }
 
 TEST_CASE("Sanitize::memory écarte les fiches abîmées (anciennes versions) et garde les bonnes")
@@ -4692,6 +4697,47 @@ TEST_CASE("Lot 12 · ARCH-11 : les scripts inclus viennent des marqueurs de la p
                              "<!--plyo-include:style.css--><!--plyo-include:mod-2.js--><!--plyo-include:c.js";
     CHECK(include_names(page) == std::vector<std::string>{"a.js", "mod-2.js"});
     CHECK(include_names("").empty());
+}
+
+TEST_CASE("Assistant v2 · un script peut venir d'un seul sous-dossier, jamais d'ailleurs")
+{
+    using Plyo::PageLogic::include_names;
+    const std::string page = "<!--plyo-include:v2/vue.js--><!--plyo-include:v2/../a.js--><!--plyo-include:/a.js-->"
+                             "<!--plyo-include:a/b/c.js--><!--plyo-include:V2/a.js--><!--plyo-include:v2/.js--><!--plyo-include:assistant-logic.js-->";
+    CHECK(include_names(page) == std::vector<std::string>{"v2/vue.js", "assistant-logic.js"});
+}
+
+TEST_CASE("Assistant v2 · la page du panneau suit la clé « ui » : classique par défaut")
+{
+    using Plyo::PageLogic::page_for_ui;
+    CHECK(page_for_ui("v2") == "v2/index.html");
+    CHECK(page_for_ui("classique") == "index.html");
+    CHECK(page_for_ui("") == "index.html");
+    CHECK(page_for_ui("../v2") == "index.html");
+    CHECK(page_for_ui(Plyo::Sanitize::first_steps(json::object())["ui"].get<std::string>()) == "index.html");
+    // La bascule rouvre le panneau, qui relit la clé : le choix de la page est fait à l'ouverture (load_page).
+    const std::string cpp = lot12_read(lot12_root() / "src" / "plyo" / "PlyoAssistant.cpp");
+    CHECK(cpp.find("PageLogic::page_for_ui(Json::str(FirstSteps::state(), \"ui\"") != std::string::npos);
+    CHECK(cpp.find("if (patch.contains(\"ui\"))") < cpp.find("reopen_panel();\n                return;"));
+}
+
+TEST_CASE("Assistant v2 · chaque marqueur de la page v2 désigne un fichier, et la page assemblée porte le jeton partout")
+{
+    const fs::path    web  = lot12_root() / "resources" / "web" / "plyo";
+    const std::string page = lot12_read(web / "v2" / "index.html");
+    REQUIRE_FALSE(page.empty());
+    const std::vector<std::string> names = Plyo::PageLogic::include_names(page);
+    CHECK(names.size() == count_of(page, "<!--plyo-include:"));
+    for (const std::string& name : names) {
+        INFO(name);
+        CHECK(fs::is_regular_file(web / name));
+    }
+    const auto        read = [&web](const std::string& name) { return lot12_read(web / name); };
+    const std::string out  = Plyo::PageLogic::assemble(page, read, "window.PLYO_API_URL = \"http://127.0.0.1:9\";", "", "CSP", "N");
+    CHECK(count_of(out, "<script") == count_of(out, "<script nonce=\"N\">"));
+    CHECK(out.find("<!--plyo-include:") == std::string::npos);
+    for (const char* attr : {" onclick=", " onload=", " onerror=", " onchange=", " oninput=", " onsubmit="})
+        CHECK(page.find(attr) == std::string::npos);
 }
 
 TEST_CASE("Lot 12 · ARCH-11 : chaque marqueur de la vraie page désigne un fichier du panneau")

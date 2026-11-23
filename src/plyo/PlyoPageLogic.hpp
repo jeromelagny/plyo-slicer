@@ -16,6 +16,9 @@ namespace Plyo { namespace PageLogic {
 // commentaire HTML, sans effet) : jamais de chemin (« ../ ») ni de fichier hors de resources/web/plyo.
 std::vector<std::string> include_names(const std::string& page);
 
+// Page du panneau selon la version choisie (clé « ui » des premiers pas) : « v2/index.html » pour « v2 », sinon la page classique.
+std::string page_for_ui(const std::string& ui);
+
 // Origine d'une adresse http(s) (« schéma://hôte[:port] », en minuscules, sans chemin), vide si l'adresse n'en est pas
 // une ou porte des caractères qui casseraient la politique (espace, « ; », guillemets…).
 std::string origin_of(const std::string& url);

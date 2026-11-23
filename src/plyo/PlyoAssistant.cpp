@@ -93,6 +93,9 @@ constexpr const char* PANE_NAME = "plyo:assistant";
 
 // Le panneau est détruit par Orca quand on le ferme ; wxWeakRef repasse alors à nullptr tout seul.
 wxWeakRef<DockPanel> s_panel;
+// Bascule de version du panneau : le panneau fermé se rouvre aussitôt (sa page est choisie à l'ouverture). Le plateau reste
+// attaché à la conversation pendant la fermeture : la page rouverte la reprend (project_resume_get), comme une réouverture.
+bool s_reopen = false;
 bool                 s_refresh_pending = false;
 int                  s_project_pauses  = 0; // gardes ProjectNotificationsPause en vie (fil principal seulement)
 int                  s_project_changes = 0; // appels à on_project_changed() (fil principal seulement)
@@ -166,9 +169,13 @@ std::string read_resource(const std::string& name)
 // scripts annexes sont insérés à la place de leurs marqueurs « <!--plyo-include:nom.js--> », dans l'ordre de la page, qui
 // est la seule liste (ARCH-11). La politique de sécurité du contenu est construite d'après l'adresse réelle du service, et
 // chaque balise <script> porte le jeton de cette page (PageLogic).
+// Version du panneau : clé « ui » des premiers pas (« classique » ou « v2 »). Page v2 absente ou illisible : la classique.
 std::string load_page()
 {
-    const std::string page = read_resource("index.html");
+    const std::string name = PageLogic::page_for_ui(Json::str(FirstSteps::state(), "ui", 20));
+    std::string       page = read_resource(name);
+    if (page.empty() && name != "index.html")
+        page = read_resource("index.html");
     if (page.empty())
         return "<h3>Assistant Plyo</h3><p>Page introuvable : resources/web/plyo/index.html</p>";
     const std::string nonce = PageLogic::new_nonce();
@@ -287,6 +294,15 @@ nlohmann::json project_refusal(const nlohmann::json& data)
         return nullptr;
     return {{"ok", false}, {"text", text}, {"can_restore", ProjectLogic::can_restore(project, printer, filament)},
             {"missing", edit ? std::vector<std::string>() : ProjectLogic::missing_for(project, filament_only)}};
+}
+
+// Ferme le panneau pour le rouvrir sur l'autre version (voir s_reopen).
+void reopen_panel()
+{
+    if (!s_panel)
+        return;
+    s_reopen = true;
+    s_panel->request_close();
 }
 
 void handle_page_message(const nlohmann::json& data)
@@ -636,6 +652,10 @@ void handle_page_message(const nlohmann::json& data)
             FirstSteps::set_state(patch);
             if (patch.contains("layout")) // « Disposition simple » du menu ⋯ : appliquée tout de suite
                 apply_layout(true);
+            if (patch.contains("ui")) { // « Essayer le nouvel assistant » / « Revenir à l'ancien » : le panneau se rouvre sur l'autre page
+                reopen_panel();
+                return;
+            }
             send({{"type", "firststeps"}, {"state", FirstSteps::state()}});
         } else if (type == "tour_signals") {
             nlohmann::json signals = FirstSteps::tour_signals();
@@ -1080,6 +1100,14 @@ void toggle_assistant(Plater* plater)
         }
         if (s_topbar_button)
             s_topbar_button->CallAfter([] { refresh_topbar_button(); });
+        if (s_reopen) {
+            s_reopen = false;
+            if (!Slic3r::GUI::wxGetApp().is_closing())
+                Slic3r::GUI::wxGetApp().CallAfter([] {
+                    if (!s_panel)
+                        toggle_assistant(Slic3r::GUI::wxGetApp().plater());
+                });
+        }
     });
     guard_navigation(panel);
     s_panel           = panel;
