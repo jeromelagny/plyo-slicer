@@ -230,4 +230,21 @@ nlohmann::json memory_for_ai(const nlohmann::json& memory)
     return out;
 }
 
+std::optional<double> filament_cost(const std::map<size_t, double>& volumes_mm3, const std::vector<double>& density, const std::vector<double>& cost_per_kg)
+{
+    double total = 0.0;
+    bool   used  = false;
+    for (const auto& [index, volume] : volumes_mm3) {
+        if (!(volume > 0.0))
+            continue;
+        if (index >= density.size() || index >= cost_per_kg.size() || !(density[index] > 0.0) || !(cost_per_kg[index] > 0.0))
+            return std::nullopt;
+        total += volume * density[index] * 0.001 * cost_per_kg[index] * 0.001; // mm³ × g/cm³ / 1000 = g ; g × €/kg / 1000 = €
+        used = true;
+    }
+    if (!used || !std::isfinite(total) || total <= 0.0)
+        return std::nullopt;
+    return total;
+}
+
 }} // namespace Plyo::ContextLogic

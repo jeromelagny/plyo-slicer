@@ -13,8 +13,8 @@
     var IDLE_TIMEOUT_MS = 60000;   // rien reçu depuis une minute : la demande est abandonnée (le service écrit « wait » toutes les 15 s)
     var ANSWER_MAX_MS = 285000;    // au-delà de l'échéance du service (270 s) : une réponse payée n'est jamais jetée ici
     var PHONE_POLL_MS = 3000;
-    // Actions de réponse que la v2 sait exécuter : aucune pour l'instant (aperçu et tests d'Orca viendront avec leurs écrans).
-    var CAPABILITIES = [];
+    // Actions de réponse que la v2 sait exécuter : les mêmes que le panneau classique (aperçu d'Orca, tests d'Orca : v2/imprimer.js).
+    var CAPABILITIES = Logic.CAPABILITIES.slice();
 
     var $ = function (id) { return document.getElementById(id); };
     var host = root.orca;
@@ -153,12 +153,16 @@
       if (entry.kind === 'answer') {
         var box = D.answer(entry, { params: lastValues && lastValues.params, archived: archived,
           onAnswer: function (text) { send(text); }, onChange: function () { scheduleSave(); } });
-        // Ordres sur le plateau et actions sur la pièce proposés par l'IA (v2/piece.js) ; les autres actions viennent avec leurs étapes.
+        // Ordres sur le plateau et actions sur la pièce proposés par l'IA (v2/piece.js) ; fiche de réglages à appliquer, actions
+        // d'Orca, test de calibration proposé (v2/imprimer.js).
         if (V2.piece && V2.piece.answerExtras) V2.piece.answerExtras(entry, box, archived);
+        if (V2.imprimer && V2.imprimer.answerExtras) V2.imprimer.answerExtras(entry, box, archived);
         addToThread(box);
         return;
       }
       if (entry.kind === 'note') { say(entry.text, entry.tone === 'error' ? 'error' : entry.tone === 'warn' ? 'warn' : 'info'); return; }
+      // Fiche d'un réglage (« C'est quoi la rétraction ? ») : gratuite, gardée avec la conversation.
+      if (entry.kind === 'fiche' && entry.msg) { addToThread(D.fiche(entry.msg, { archived: archived, explainActions: ficheActions })); return; }
       if (entry.kind === 'model' && entry.msg && entry.msg.name) say('Pièce posée sur le plateau : ' + entry.msg.name + '.');
     }
     function unansweredCard(entry) {
@@ -357,8 +361,11 @@
     var phone = { link: null, timer: null, creating: null, collecting: false, queue: [] };
     // Ce que le téléphone doit photographier : un croquis quand « Créer avec l'IA » est ouvert (v2/piece.js, `phoneRoute`),
     // sinon un défaut, envoyé à l'assistant. `phoneRoute` : { purpose() → 'sketch' | 'defect', take(envoi) → true si gardé }.
-    var phoneRoute = null;
-    function phonePurpose() { return phoneRoute && phoneRoute.purpose() || 'defect'; }
+    // Plusieurs écrans peuvent en avoir un (croquis de l'étape 1, photo d'un test de calibration) : le premier qui demande autre
+    // chose qu'un défaut l'emporte.
+    var phoneRoutes = [];
+    function phoneRoute() { return phoneRoutes.filter(function (r) { return r.purpose() !== 'defect'; })[0] || null; }
+    function phonePurpose() { var r = phoneRoute(); return r ? r.purpose() : 'defect'; }
     function phoneLabel() { return conv && conv.project.part && conv.project.part.name ? J.projectTitle(conv.project) : ''; }
     // Le lien vaut pour toute la conversation : sa consigne suit l'usage du moment (comme dans le classique).
     function syncPhonePurpose() {
@@ -421,7 +428,8 @@
           var sent = { message: batch.message, photos: batch.images.map(function (img) {
             return { media_type: img.media_type, data: img.data, preview: 'data:' + img.media_type + ';base64,' + img.data };
           }) };
-          if (phonePurpose() === 'sketch' && phoneRoute.take(sent)) return; // croquis joint au formulaire « Créer avec l'IA »
+          var route = phoneRoute();
+          if (route && route.take(sent)) return; // croquis joint au formulaire « Créer avec l'IA », photo d'un test de calibration
           phone.queue.push(sent);
           drainPhoneQueue();
         })
@@ -457,6 +465,9 @@
       var photos = opts.photos || attachments.slice();
       if (!note && !photos.length) { input.focus(); return; }
       if (!lastValues) { say('Je lis encore tes réglages : réessaie dans une seconde.'); return; }
+      // « C'est quoi la rétraction ? » : la fiche du réglage répond, gratuitement et sans compte (comme le classique).
+      var ficheKey = !opts.photos && !photos.length && !opts.shown ? root.PlyoFirstSteps.matchSettingQuestion(note, root.PLYO_FICHES) : null;
+      if (ficheKey) { addMe(note, [], false); clearNoteIfSent(note); explain(ficheKey); return; }
       if (!opts.photos) { attachments = []; renderAttachments(); clearNoteIfSent(note); }
       var me = opts.me || null;
       if (!opts.shown) me = addMe(note, photos, opts.fromPhone);
@@ -528,7 +539,9 @@
       aiContext().then(function (ctx) {
         var body = Client.diagnoseBody({ values: lastValues, ctx: ctx, history: conv.history.slice(-MAX_HISTORY), project: conv.project,
           projectForAI: root.PlyoThread.forAI(conv.project, J.currentStep(conv.project)),
-          note: note, calibrations: calibHistory, level: root.PlyoMachines.levelOf(habits), requestId: req.id, capabilities: CAPABILITIES });
+          note: note, calibrations: calibHistory, level: root.PlyoMachines.levelOf(habits), requestId: req.id, capabilities: CAPABILITIES,
+          // Questions d'intention affichées : l'IA peut y répondre d'après la phrase (v2/imprimer.js les reprend).
+          intentQuestions: V2.imprimer && V2.imprimer.intentPending ? V2.imprimer.intentPending() : null });
         return Client.diagnose({ apiFetch: api.apiFetch, body: body, photos: photos, signal: controller.signal, touch: touch,
           shrink: function (step) { return root.PlyoPhotos.shrinkAll(original, step).then(function (list) { photos = list; return list; }); },
           onRetry: function () { phase = 'retry'; sayWaiting(); },
@@ -554,9 +567,12 @@
         // Ligne de l'historique de cette réponse (non enregistrée avec l'entrée) : les ordres faits sur le plateau s'y ajoutent.
         Object.defineProperty(entry, 'hist', { value: hist, enumerable: false, writable: true });
         if (switched) { say(Logic.projectSwitchText(!!(a.commands && a.commands.length), true), 'warn'); return; }
+        // Suites d'une réponse neuve (v2/imprimer.js) : journal des pièces, réponses aux questions d'intention, fin d'impression dite.
+        if (V2.imprimer && V2.imprimer.afterAnswer && target === conv) V2.imprimer.afterAnswer(a, entry, { photos: photos });
         if (target !== conv) return;
         try { renderEntry(entry, false); }
         catch (e) { say('La réponse est arrivée mais n’a pas pu s’afficher. Rouvre ce projet depuis « Mes projets ».', 'error'); }
+        if (V2.imprimer && V2.imprimer.printOutcome) V2.imprimer.printOutcome(a.print_outcome);
       }
     }
 
@@ -589,6 +605,14 @@
     }
 
     $('hello').appendChild(D.hello(function (goal) { send(goal); }));
+
+    // Fiches des réglages (fiches.js, sinon l'aide du slicer) : gratuites. « Montre-moi où il est » ouvre le réglage dans Orca.
+    function explain(key) { post({ type: 'explain', key: key }); }
+    var ficheActions = {
+      show: function (key) { post({ type: 'show_setting', key: key }); },
+      ask: function (label) { send('Pour le réglage « ' + label + ' » : quelle valeur me conseilles-tu dans mon cas, et pourquoi ?'); }
+    };
+    function onExplain(msg) { addToThread(D.fiche(record({ kind: 'fiche', msg: msg }).msg, { archived: false, explainActions: ficheActions })); }
 
     // ---------- Messages du slicer ----------
     var saveFailedShown = {}, otherInstanceShown = false;
@@ -634,6 +658,11 @@
         if (conv && msg.conv === conv.id && msg.reason) say(P.projectOpenedText(msg.reason), msg.reason === 'annule' ? 'info' : 'warn');
       } else if (msg.type === 'phone_batch_ready') {
         pollPhone(); // la fenêtre du QR s'est fermée sur un envoi : on le traite sans attendre
+      } else if (msg.type === 'explain') {
+        onExplain(msg);
+      } else if (msg.type === 'show_setting') {
+        if (!msg.ok) say('Je n’ai pas trouvé ce réglage dans les onglets de Plyo.', 'error');
+        else if (msg.hidden) say('J’ai ouvert la bonne page. Si tu ne vois pas le réglage, active le bouton « Avancé » en haut des réglages.');
       }
       (listeners[msg.type] || []).forEach(function (fn) { fn(msg); });
     });
@@ -648,7 +677,16 @@
       held: function () { return hold; },
       tourSignals: function () { return tourSignals; },
       openPhone: openPhone,
-      setPhoneRoute: function (route) { phoneRoute = route; syncPhonePurpose(); },
+      explain: explain,
+      aiContext: aiContext,
+      habits: function () { return habits; },
+      gauge: function () { return lastGauge; },
+      // Photos depuis l'ordinateur pour la prochaine demande, avec une phrase déjà écrite dans le champ (diagnostic d'un raté).
+      pickPhotos: function (prefill) { if (prefill && !input.value.trim()) { input.value = prefill; growNote(); } fileInput.click(); },
+      prefill: function (text) { input.value = text || ''; growNote(); input.focus(); },
+      scrollDown: scrollDown,
+      addToThread: addToThread,
+      setPhoneRoute: function (route) { if (phoneRoutes.indexOf(route) < 0) phoneRoutes.push(route); syncPhonePurpose(); },
       syncPhone: syncPhonePurpose,
       openConversation: function (id) { if (busy) { say('Attends la fin de la réponse (ou annule-la) avant d’ouvrir un autre projet.'); return; } flushSave(); post({ type: 'conv_load', id: id }); },
       conv: function () { return conv; },

@@ -5761,3 +5761,25 @@ TEST_CASE("GalleryLogic::entries : entrées vérifiées, fichiers présents, lic
     CHECK(Plyo::GalleryLogic::entries(json{{"models", manifest}}, exists).size() == 2);
     CHECK(Plyo::GalleryLogic::entries(json("abîmé"), exists).empty());
 }
+
+TEST_CASE("Assistant v2 · ContextLogic::filament_cost : coût seulement si chaque filament utilisé a un prix")
+{
+    using Plyo::ContextLogic::filament_cost;
+    // 10 000 mm³ de PLA (1,24 g/cm³) à 20 €/kg : 12,4 g, soit 0,248 €.
+    const std::optional<double> one = filament_cost({{0, 10000.0}}, {1.24}, {20.0});
+    REQUIRE(one.has_value());
+    CHECK(*one == Catch::Approx(0.248));
+    // Deux filaments : chacun son prix.
+    const std::optional<double> two = filament_cost({{0, 10000.0}, {1, 5000.0}}, {1.24, 1.27}, {20.0, 30.0});
+    REQUIRE(two.has_value());
+    CHECK(*two == Catch::Approx(0.248 + 5000.0 * 1.27 * 0.001 * 30.0 * 0.001));
+    // Pas de prix (0, valeur par défaut d'Orca) : pas de coût, même partiel.
+    CHECK_FALSE(filament_cost({{0, 10000.0}}, {1.24}, {0.0}).has_value());
+    CHECK_FALSE(filament_cost({{0, 10000.0}, {1, 5000.0}}, {1.24, 1.27}, {20.0, 0.0}).has_value());
+    // Filament non utilisé (volume nul) : son prix ne compte pas.
+    CHECK(filament_cost({{0, 10000.0}, {1, 0.0}}, {1.24, 1.27}, {20.0, 0.0}).has_value());
+    // Rien d'extrudé, indice hors des listes, densité nulle : rien.
+    CHECK_FALSE(filament_cost({}, {1.24}, {20.0}).has_value());
+    CHECK_FALSE(filament_cost({{2, 100.0}}, {1.24}, {20.0}).has_value());
+    CHECK_FALSE(filament_cost({{0, 100.0}}, {0.0}, {20.0}).has_value());
+}

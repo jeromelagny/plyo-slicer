@@ -2,6 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -53,5 +55,11 @@ nlohmann::json plate_for_ai(const nlohmann::json& plate, const nlohmann::json& f
 // vides), outcome connu, defect (clé courte, 40, non vide) ; 10 entrées au plus. Une entrée sans date est ignorée. Les
 // champs propres au slicer (at, conv, asked, printed…) ne partent pas.
 nlohmann::json memory_for_ai(const nlohmann::json& memory);
+
+// Coût du filament d'une plaque découpée (écran « Tout est prêt » du panneau) : volume extrudé par filament (mm³, indice du
+// filament), densité (g/cm³) et prix au kilo du préréglage filament (`filament_cost`). Seulement si chaque filament utilisé a
+// un prix et une densité : sinon rien (le panneau masque alors la case, jamais un coût partiel ou inventé). Le coût horaire de
+// la machine (`time_cost`) n'en fait pas partie.
+std::optional<double> filament_cost(const std::map<size_t, double>& volumes_mm3, const std::vector<double>& density, const std::vector<double>& cost_per_kg);
 
 }} // namespace Plyo::ContextLogic

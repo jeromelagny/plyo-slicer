@@ -6,6 +6,7 @@
 #include "PlyoLifetime.hpp"
 #include "PlyoOrcaMessages.hpp"
 #include "PlyoAssistant.hpp"
+#include "PlyoContextLogic.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoWelcomeDialog.hpp"
 #include "PlyoPrinterSetup.hpp"
@@ -284,9 +285,15 @@ nlohmann::json tour_signals()
         signals["sliced"] = true;
         // Découpée mais pas imprimable (trajet hors plateau, filament refusé par la surface…) : le parcours ne propose pas d'imprimer.
         signals["ready_for_print"] = OrcaMessages::ready_for_print();
-        if (const Slic3r::GCodeProcessorResult* result = plate->get_slice_result())
+        const Slic3r::Print& print = plater->get_partplate_list().get_current_fff_print();
+        if (const Slic3r::GCodeProcessorResult* result = plate->get_slice_result()) {
             signals["time_s"] = result->print_statistics.modes[static_cast<size_t>(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal)].time;
-        signals["weight_g"] = plater->get_partplate_list().get_current_fff_print().print_statistics().total_weight;
+            // Coût du filament, seulement si le préréglage filament a un prix (`filament_cost`) : sinon le panneau masque la case.
+            if (const std::optional<double> cost = ContextLogic::filament_cost(result->print_statistics.total_volumes_per_extruder,
+                                                                               print.config().filament_density.values, print.config().filament_cost.values))
+                signals["cost"] = *cost;
+        }
+        signals["weight_g"] = print.print_statistics().total_weight;
     }
     return signals;
 }

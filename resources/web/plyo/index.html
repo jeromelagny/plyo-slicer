@@ -696,6 +696,7 @@
 <!--plyo-include:ai-client.js-->
 <!--plyo-include:conversation-logic.js-->
 <!--plyo-include:piece-logic.js-->
+<!--plyo-include:imprimer-logic.js-->
 <script>
 (function () {
   // Adresse du service Plyo, donnée par le slicer (Plyo::Config, variable d'environnement PLYO_API_URL en développement).
@@ -1445,17 +1446,10 @@
   function sendOf() { return conv && conv.project.send && typeof conv.project.send === 'object' ? conv.project.send : null; }
   // L'envoi de la conversation ; sans envoi noté (conversation d'avant, impression lancée depuis Orca), il part de la bobine du
   // projet : le slicer ne la marque que si son dernier envoi est récent et fait avec elle. Jamais pour les emplacements (Canvas…).
-  function sendRecord() {
-    var p = conv.project, f = p.filament;
-    if (!sendOf()) p.send = f && f.spool && f.spool.id && !(Array.isArray(p.canvas) && p.canvas.length) ? { spool: { id: f.spool.id, name: f.spool.name } } : {};
-    return p.send;
-  }
+  // Logique partagée avec la v2 (imprimer-logic.js).
+  function sendRecord() { return PlyoImprimer.sendRecord(conv.project); }
   function noteSendWatched() {
-    var s = sendRecord();
-    s.watch = projectUI.watchId;
-    s.answered = false;
-    delete s.end;
-    s.outcome = '';
+    PlyoImprimer.noteWatched(conv.project, projectUI.watchId);
     scheduleSave();
     dropEndNote();
   }
@@ -1470,12 +1464,8 @@
     n.appendChild(el('p', 'muted small', 'Cette question concerne un autre projet.'));
   }
   // La fin déjà répondue sans jugement, pour l'étape Résultat de cette conversation ('' sinon).
-  function endOutcome() { var s = sendOf(); return s && !conv.project.success ? s.outcome || '' : ''; }
-  function endQuestionNow() {
-    var s = sendOf();
-    if (!s || !PlyoJourney.endAsk(s, conv.project)) return null;
-    return PlyoJourney.endQuestion(s.end.verdict, conv.project.printer ? PlyoJourney.shortMachine(conv.project.printer) : 'ton imprimante', s.end.file);
-  }
+  function endOutcome() { return PlyoImprimer.endOutcome(conv.project); }
+  function endQuestionNow() { return PlyoImprimer.endQuestionNow(conv.project); }
   function onPrintEnd(msg) {
     var s = sendOf();
     if (!s || s.end) return;
@@ -2667,25 +2657,14 @@
   // ---------- Questions d'intention (étape Préparer, avant la découpe) ----------
   // Réponses gardées dans le projet (project.intent : use, pref, speed, skipped, applied) ; la table est dans intent-logic.js.
   var intentUI = { idk: false, manual: null };
-  function intentAnswers(p) { var i = p.intent || {}, a = {}; ['use', 'pref', 'speed'].forEach(function (k) { if (i[k]) a[k] = i[k]; }); return a; }
+  function intentAnswers(p) { return PlyoImprimer.intentAnswers(p); }
+  // État des questions : imprimer-logic.js (partagé avec la v2) ; ici, la relecture des réglages changés à la main.
   function intentState(step, sliced) {
     var p = conv && conv.project;
-    if (!p || step !== 'preparer' || sliced) return null;
-    var i = p.intent || {};
-    if (i.applied || i.skipped || !PlyoMachines.askIntent(habits) && !i.use) return null;
-    var answers = intentAnswers(p), q = PlyoIntent.nextQuestion(answers);
-    // Confirmé, deuxième pièce et suivantes (UX-33) : une ligne « Comme la dernière fois » au lieu des trois questions.
-    if (q && !i.reask && intentUI.changing !== conv && PlyoIntent.offersRepeat(fsState.level, habits.last_intent, answers))
-      return { mode: 'repeat', text: PlyoIntent.repeatText(habits.last_intent) };
-    // Débutant : une seule question (l'usage), sauf après « Ajuster » qui repose les deux autres.
-    var one = noviceIntent() && !i.adjust;
-    if (q) return { mode: 'asking', question: q, answers: answers, total: answers.use === 'test' || one ? 1 : 3, idk: intentUI.idk,
-      guess: PlyoIntent.guessUse(p.part && p.part.name) };
-    if (intentUI.manual === null) fetchManualKeys(function () { renderProject(); });
-    var type = p.filament && p.filament.type, nozzle = lastValues && lastValues.context ? lastValues.context.nozzle_mm : 0;
-    var r = PlyoIntent.keepManual(PlyoIntent.settingsFor(answers, type, nozzle), intentUI.manual);
-    // Débutant : pas d'écran « Voilà ce que je propose » ; pendant que sa réponse s'applique, le résumé se lit et la découpe suit.
-    return { mode: noviceIntent() && intentUI.applying ? 'auto' : 'ready', summary: PlyoIntent.summary(answers, type), changes: r.apply, kept: r.kept, level: PlyoMachines.levelOf(habits) };
+    var st = PlyoImprimer.intentState(p, { step: step, sliced: sliced, habits: habits, level: fsState.level, changing: intentUI.changing === conv, idk: intentUI.idk,
+      manual: intentUI.manual, applying: !!intentUI.applying, nozzleMm: lastValues && lastValues.context ? lastValues.context.nozzle_mm : 0 });
+    if (st && st.needsManual && intentUI.manual === null) fetchManualKeys(function () { renderProject(); });
+    return st;
   }
   function noviceIntent() { return fsState.level !== 'expert'; }
   // Ligne « Réglages choisis pour … · Ajuster » des étapes Préparer (découpée) et Imprimer, pour le débutant.
@@ -2751,14 +2730,8 @@
   };
   // Questions encore sans réponse, au format attendu par le service (les choix de « pref » dépendent de l'usage déjà choisi).
   function intentPending() {
-    var p = conv && conv.project, st = p ? intentState(PlyoJourney.currentStep(p), plateSliced()) : null;
-    if (!st || st.mode !== 'asking') return null;
-    var a = st.answers, out = [], Q = PlyoIntent.QUESTIONS;
-    var add = function (q) { out.push({ id: q.id, text: q.text, choices: q.choices.map(function (c) { return { id: c.id, label: c.label }; }) }); };
-    if (!a.use) add(Q.use);
-    else if (!a.pref && Q.pref[a.use]) add(Q.pref[a.use]);
-    if (!a.speed && a.use !== 'test') add(Q.speed);
-    return out.length ? out : null;
+    var p = conv && conv.project;
+    return PlyoImprimer.intentPending(p ? intentState(PlyoJourney.currentStep(p), plateSliced()) : null);
   }
   // Réponses comprises par l'IA dans une phrase libre : elles remplissent les questions, le reste continue normalement.
   function applyIntentAnswers(list) {
@@ -3232,10 +3205,7 @@
   }
   // La question de l'étape Résultat. La carte « Ça a marché ? » ne la double plus : elle se tait pour les corrections de
   // cette impression (Logic.outcomeCard), et cette question marque aussi leur mémoire (markCorrections).
-  function spoolAsk() {
-    var s = sendOf();
-    return s && s.spool && !conv.project.success ? s.spool.name : '';
-  }
+  function spoolAsk() { return PlyoImprimer.spoolAsk(conv.project); }
   // La réponse de Résultat (ou de la fin suivie) marque aussi la mémoire des corrections de cette impression, le journal de la
   // pièce et leurs réglages réussis : une seule question par impression. Changement d'avis (« Oui » après « Non ») : les
   // mêmes corrections, gardées avec l'envoi (`corrections`). Réponse du slicer : onOutcomeResult.
@@ -5573,13 +5543,7 @@
   function doneLabel(text, iconName) { var d = el('span', 'done'); d.appendChild(icon(iconName || 'check', 13)); d.appendChild(txt(text)); return d; }
 
   // ---------- Calibration guidée par photo ----------
-  var CALIB = {
-    temperature: { name: 'Tour de température', shows: 'la température où ton filament fait le moins de fils et soude bien ses couches', duration: '≈ 45 min', parts: 'Ta tour, étage par étage', pick: 'Choisis l’étage le plus propre', tower: true },
-    flow: { name: 'Test de débit', shows: 'la quantité de plastique juste : ni trous, ni bourrelets sur le dessus', duration: '≈ 20 min par passe', parts: 'Les carrés du test', pick: 'Choisis le carré le plus lisse' },
-    retraction: { name: 'Tour de rétraction', shows: 'la rétraction la plus courte qui supprime les fils', duration: '≈ 40 min', parts: 'Ta tour, bande par bande', pick: 'Choisis la bande la plus propre', tower: true },
-    pressure_advance: { name: 'Test des angles (pressure advance)', shows: 'le réglage qui rend les angles nets, sans bourrelet', duration: '≈ 10 min', parts: 'Les lignes du motif', pick: 'Choisis la ligne aux angles les plus nets' },
-    ironing: { name: 'Plaque de lissage', shows: 'le débit et l’espacement qui donnent le dessus le plus lisse', duration: '≈ 15 min', parts: 'Les carrés de la plaque', pick: 'Choisis le carré le plus lisse' }
-  };
+  var CALIB = PlyoImprimer.CALIB; // tests guidés : imprimer-logic.js (partagé avec la v2)
   var calibHistory = [];   // calibrations déjà faites pour ce filament sur cette imprimante (slicer)
   var calibCard = null;    // carte du test en cours
 
@@ -5828,15 +5792,7 @@
     plate: 'Au centre de la fenêtre : le plateau en 3D.'
   };
 
-  function durationText(seconds) {
-    var m = Math.max(1, Math.round(seconds / 60));
-    return m < 60 ? 'environ ' + m + ' min' : 'environ ' + Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0');
-  }
-  function printSummary() {
-    if (!tourSignals || !tourSignals.sliced || !tourSignals.time_s) return '';
-    var grams = tourSignals.weight_g ? ' et ' + Math.round(tourSignals.weight_g) + ' g de filament' : '';
-    return 'Ton impression prendra ' + durationText(tourSignals.time_s) + grams + '.';
-  }
+  function printSummary() { return PlyoImprimer.printSummary(tourSignals); }
 
   // Le parcours guidé appartient au projet : il commence quand la fiche est complète, et se range dans la conversation.
   function currentTourStep() {

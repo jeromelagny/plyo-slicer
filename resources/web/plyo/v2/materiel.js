@@ -1263,5 +1263,13 @@
   }
   (V2.plugins = V2.plugins || []).push(plug);
 
-  V2.materiel = { state: function () { return state(); }, printers: function () { return printers; } };
+  // Pour l'étape 3 (v2/imprimer.js, carte « Plyo Slicer est passé sur … ») : prendre la machine d'Orca, ou rattacher au projet
+  // la bobine qu'Orca utilise (même chemin que le choix d'une bobine : le slicer relit le préréglage et ses températures).
+  function attachSpool(spool, material) {
+    var p = project();
+    if (!spool || !spool.id) return;
+    state().pending = { kind: 'filament', type: material || (p.filament && p.filament.type) || '', spool: { id: spool.id, name: spool.name }, fresh: false, success: null, profileBefore: '' };
+    panel.post({ type: 'project_state' });
+  }
+  V2.materiel = { state: function () { return state(); }, printers: function () { return printers; }, pickPrinter: function (preset, name) { pickPrinter(preset, name); }, attachSpool: attachSpool };
 })(typeof window !== 'undefined' ? window : globalThis);

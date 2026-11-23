@@ -42,11 +42,11 @@ test('la page v2 : en-tête « Assistant Plyo » et retour à l’ancien assista
     p.$('btn-more').click();
     p.$('m-ui').click();
     assert.deepEqual(p.posted.slice(-2).map((m) => m.type), ['conv_save', 'firststeps_set']);
-    // « Ouvrir l’ancien assistant » dans une carte encore minimale (étape 3 depuis le lot 3) fait la même bascule.
+    // Les trois étapes sont construites (lot 4) : plus de carte minimale qui renvoie à l’ancien assistant ; le menu y ramène.
     Object.assign(p.ctx.PlyoV2.panel.conv().project, { part: { name: 'crochet.stl' }, printer: { preset: 'K1C', name: 'K1C' }, filament: { type: 'PLA', preset: 'PLA', temps_ok: true } });
     p.ctx.PlyoV2.panel.render();
-    p.$('stepcard').querySelector('.link').click();
-    assert.deepEqual(p.posted.at(-1), { type: 'firststeps_set', patch: { ui: 'classique' } });
+    assert.doesNotMatch(p.$('stepcard').textContent, /arrive bientôt|Ouvrir l’ancien assistant/);
+    assert.match(p.$('stepcard').textContent, /Étape 3 sur 3/);
   } finally { p.stop(); }
 });
 

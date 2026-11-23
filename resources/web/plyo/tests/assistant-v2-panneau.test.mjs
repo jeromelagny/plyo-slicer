@@ -75,13 +75,14 @@ test('lot 1 : une question part au service (même flux que le classique) et la r
     const body = JSON.parse(call.init.body);
     assert.equal(body.note, 'Je veux un dessus bien lisse');
     assert.match(body.request_id, /^[0-9a-f-]{36}$/);
-    assert.deepEqual(body.capabilities, [], 'la v2 ne propose encore aucune action d’Orca');
+    assert.deepEqual(body.capabilities, ['show_preview', 'open_calibration'], 'la v2 exécute l’aperçu et les tests d’Orca (lot 4), comme le classique');
     assert.deepEqual(body.plate, { objects: [{ name: 'crochet.stl' }] }, 'contexte lu par ai_context');
     assert.equal(body.project.step, 'piece');
     const ai = p.$('msgs').querySelector('.msg.ai');
     assert.ok(ai, 'réponse dans le fil');
     assert.match(texts(ai), /Un dessus bien lisse/);
-    assert.match(texts(ai), /Réglages proposés.*Lissage → oui/);
+    // Fiche de réglages à appliquer (lot 4) : valeur d’avant et valeur proposée, case cochée, « Appliquer 1 réglage ».
+    assert.match(texts(ai), /Réglages proposés.*Lissage.*Non → Oui.*Appliquer 1 réglage.*Ignorer/);
     assert.equal(p.$('msgs').querySelectorAll('.waiting').length, 0, 'l’attente disparaît');
     assert.equal(texts(p.$('gauge-pct')), '42 %', 'jauge de la réponse');
     assert.equal(p.$('note').value, '', 'champ vidé');

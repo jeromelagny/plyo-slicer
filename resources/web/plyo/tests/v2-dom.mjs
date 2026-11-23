@@ -59,6 +59,7 @@ class Element {
   insertBefore(n, ref) { if (!ref) return this.appendChild(n); if (n.parentNode) n.parentNode.removeChild(n); n.parentNode = this; this.childNodes.splice(this.childNodes.indexOf(ref), 0, n); return n; }
   removeChild(n) { const i = this.childNodes.indexOf(n); if (i >= 0) this.childNodes.splice(i, 1); n.parentNode = null; return n; }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
+  replaceWith(n) { const parent = this.parentNode; if (!parent) return; parent.insertBefore(n, this); parent.removeChild(this); }
   contains(other) { for (let n = other; n; n = n.parentNode) if (n === this) return true; return false; }
   addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); }
   removeEventListener(type, fn) { this.listeners[type] = (this.listeners[type] || []).filter((f) => f !== fn); }

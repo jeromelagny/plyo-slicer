@@ -101,7 +101,8 @@
     section.textContent = '';
     section.dataset.step = key;
     var head = ui.el('div', 'card-head');
-    head.appendChild(ui.el('p', 'kicker', 'Étape ' + numberOf(key) + ' sur 3' + (ctx.revisit ? ' · rouverte' : '')));
+    // `kicker` : l'en-tête propre à un écran (« Impression en cours », « Résultat », « Bravo ! »), sinon « Étape N sur 3 ».
+    head.appendChild(ui.el('p', 'kicker', spec.kicker || ('Étape ' + numberOf(key) + ' sur 3' + (ctx.revisit ? ' · rouverte' : ''))));
     head.appendChild(ui.el('h2', 't', spec.title || LABELS[key]));
     if (spec.sub) head.appendChild(ui.el('p', 'sub', spec.sub));
     section.appendChild(head);

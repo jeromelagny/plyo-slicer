@@ -60,7 +60,10 @@ test('UX-33 : « Comme la dernière fois » pour le confirmé seulement, avec de
   assert.deepEqual(J.primaryAction('preparer', { intent: 'repeat' }), { label: 'Préparer', kind: 'repeatIntent', enabled: true });
   assert.equal(J.prompt('preparer', { intent: 'repeat' }), 'Même usage que ta dernière pièce ?');
   const page = read('index.html');
-  assert.match(page, /PlyoIntent\.offersRepeat\(fsState\.level, habits\.last_intent, answers\)/);
+  // État des questions partagé avec la v2 (imprimer-logic.js), appelé par le classique avec son niveau et l'état « Changer ».
+  assert.match(read('imprimer-logic.js'), /I\.offersRepeat\(o\.level, habits\.last_intent, answers\)/);
+  assert.match(read('imprimer-logic.js'), /if \(q && !i\.reask && !o\.changing &&/);
+  assert.match(page, /level: fsState\.level, changing: intentUI\.changing === conv/);
   assert.match(page, /if \(lastAnswers\) habits\.last_intent = lastAnswers;/);
   assert.match(page, /fsState\.level === 'expert' && PlyoMachines\.askIntent\(habits\) && !PlyoMachines\.offerStopAsking\(habits\)/);
   assert.match(cpp('PlyoProjectLogic.cpp'), /"last_intent"/);

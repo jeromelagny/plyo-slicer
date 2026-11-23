@@ -213,13 +213,17 @@ test('lot 4 · page : la réponse du débutant applique et découpe ; « Ajuster
   const page = read('index.html');
   assert.match(page, /if \(!p\.intent\.adjust\) Object\.assign\(p\.intent, PlyoIntent\.noviceAnswers\(intentAnswers\(p\)\)\);/);
   assert.match(page, /if \(!PlyoIntent\.nextQuestion\(intentAnswers\(p\)\)\) applyIntent\(false\);/);
-  assert.match(page, /var one = noviceIntent\(\) && !i\.adjust;/);
-  assert.match(page, /mode: noviceIntent\(\) && intentUI\.applying \? 'auto' : 'ready'/);
+  // État des questions : imprimer-logic.js (partagé avec la v2), appelé par le classique.
+  const shared = read('imprimer-logic.js');
+  assert.match(page, /PlyoImprimer\.intentState\(p, \{ step: step, sliced: sliced, habits: habits, level: fsState\.level,/);
+  assert.match(page, /applying: !!intentUI\.applying/);
+  assert.match(shared, /var novice = o\.level !== 'expert', one = novice && !i\.adjust;/);
+  assert.match(shared, /mode: novice && o\.applying \? 'auto' : 'ready'/);
   assert.match(page, /st\.mode !== 'ready' && st\.mode !== 'auto'/);
   assert.match(page, /else p\.intent = \{ use: use, adjust: true, reask: !!\(tourSignals && tourSignals\.sliced\) \};/);
   assert.match(page, /delete p\.intent\.adjust;/);
   // Le confirmé garde « Comme la dernière fois » et ses trois questions.
-  assert.match(page, /PlyoIntent\.offersRepeat\(fsState\.level, habits\.last_intent, answers\)/);
+  assert.match(shared, /I\.offersRepeat\(o\.level, habits\.last_intent, answers\)/);
   assert.equal(I.offersRepeat('beginner', { use: 'daily', pref: 'balanced', speed: 'normal' }, {}), false);
 });
 

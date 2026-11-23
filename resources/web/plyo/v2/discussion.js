@@ -111,6 +111,30 @@
     return box;
   }
 
+  // Fiche d'un réglage (message « explain » du slicer) : le texte livré dans Plyo (fiches.js), sinon l'aide du slicer, et la
+  // valeur de chez toi jugée hors ligne (premiers-pas.js). Gratuite. `o` : { archived, explainActions: { show(key), ask(label) } }.
+  function fiche(msg, o) {
+    var f = (root.PLYO_FICHES || {})[msg.key], acts = o.explainActions || {};
+    var box = ui.el('div', 'msg ai fiche');
+    box.appendChild(who('explication gratuite'));
+    var label = f ? f.label : msg.label || msg.key;
+    box.appendChild(ui.el('h4', '', label));
+    function part(title, text) { if (text) { box.appendChild(ui.el('p', 'fiche-h', title)); box.appendChild(ui.el('p', 'fiche-p', text)); } }
+    if (f) { part('À quoi ça sert', f.what); part('Si c’est trop haut', f.high); part('Si c’est trop bas', f.low); part('Faut-il y toucher ?', f.touch); }
+    else part('À quoi ça sert', msg.tooltip || 'Je n’ai pas encore de fiche pour ce réglage : demande-moi, je t’explique.');
+    if (msg.value !== null && msg.value !== undefined && root.PlyoFirstSteps) {
+      var shown = typeof msg.value === 'number' ? String(msg.value).replace('.', ',') : msg.value;
+      var judged = root.PlyoFirstSteps.judgeValue({ value: msg.value, min: msg.min === null ? undefined : msg.min, max: msg.max === null ? undefined : msg.max,
+        systemValue: typeof msg.system_value === 'number' ? msg.system_value : undefined });
+      part(o.archived ? 'Chez toi, ce jour-là' : 'Chez toi', 'Valeur : ' + shown + (msg.unit ? ' ' + msg.unit : '') + '. ' + judged.text);
+    }
+    var row = ui.el('div', 'acts');
+    if (acts.show) row.appendChild(ui.button('Montre-moi où il est', function () { acts.show(msg.key); }, 'btn sm', 'eye'));
+    if (acts.ask && !o.archived) row.appendChild(ui.button('Et dans mon cas, je mets combien ?', function () { acts.ask(label); }, 'btn sm'));
+    if (row.children.length) box.appendChild(row);
+    return box;
+  }
+
   // Attente de la réponse : les trois points et le texte qui change avec le temps, puis le brouillon de la réponse pendant
   // que l'IA l'écrit ; « Annuler » reste à portée de main.
   function waiting(text, onCancel) {
@@ -164,5 +188,5 @@
     return box;
   }
 
-  V2.discussion = { GOALS: GOALS, hello: hello, me: me, answer: answer, waiting: waiting, notice: notice };
+  V2.discussion = { GOALS: GOALS, hello: hello, me: me, answer: answer, waiting: waiting, notice: notice, fiche: fiche, who: who, suggestionList: suggestionList };
 })(typeof window !== 'undefined' ? window : globalThis);

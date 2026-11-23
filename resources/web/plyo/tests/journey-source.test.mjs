@@ -838,7 +838,10 @@ test('lot 1 · UX-06 : l’envoi est gardé dans le projet, plus en mémoire par
   assert.match(success, /if \(!s\.spool\) \{ projectUI\.noSpoolNote = conv\.id; return; \}/);
   const result = page.slice(page.indexOf('function onOutcomeResult'), page.indexOf('function onOutcomeResult') + 2000);
   assert.match(result, /noteLine\('Je ne retiens les réglages que d’une bobine/, 'rien à retenir : on le dit');
-  const record = page.slice(page.indexOf('function sendRecord'), page.indexOf('function noteSendWatched'));
+  // L'envoi gardé dans le projet : imprimer-logic.js (partagé avec la v2), appelé par le classique.
+  assert.match(page, /function sendRecord\(\) \{ return PlyoImprimer\.sendRecord\(conv\.project\); \}/);
+  const shared = read('imprimer-logic.js');
+  const record = shared.slice(shared.indexOf('function sendRecord'), shared.indexOf('function newSend'));
   assert.match(record, /f\.spool\.id && !\(Array\.isArray\(p\.canvas\) && p\.canvas\.length\)/);
   // Réouverture : la fin lue pendant l'absence est redemandée au slicer, qui la garde par id d'envoi.
   const restore = page.slice(page.indexOf('function restoreConversation'), page.indexOf('function restoreConversation') + 3200);
