@@ -41,6 +41,7 @@
   function syncPhone() { if (panel) panel.syncPhone(); }
   function thread(text) { var c = conv(); if (c && root.PlyoThread && root.PlyoThread.add(c.project, 'etapes', text)) panel.scheduleSave(); }
   function note(text, tone) { panel.record({ kind: 'note', text: text, tone: tone || 'ok', icon: tone === 'error' ? 'alert' : 'check' }); }
+  function signalsObjects() { var s = panel.tourSignals(); return s && typeof s.objects === 'number' ? s.objects : null; }
   function orcaPrinter() { var v = panel.values(); return v && v.context ? v.context.printer : ''; }
 
   // ---------- Petits éléments de la carte ----------
@@ -118,6 +119,7 @@
       body.appendChild(ui.el('p', 'small muted center', 'Un 3MF d’un autre créateur sera adapté à ta machine et à ta bobine.'));
     }
     if (st.changing && name) body.appendChild(box('tip', 'info', null, 'Une autre pièce choisie ici ouvre un nouveau projet, avec la même machine et la même bobine ; « ' + name + ' » reste dans tes projets.'));
+    else if (st.oldPart && !name && !adding && signalsObjects() !== 0) body.appendChild(box('tip', 'info', null, '« ' + st.oldPart.label + ' », la pièce de ton projet d’avant, est encore sur le plateau : la pièce que tu choisis ici la remplace (« ' + st.oldPart.label + ' » reste dans tes projets).'));
     // Deuxième projet : les pièces des projets d'avant, rouvertes d'un clic avec leur plateau et leurs réglages.
     var recent = adding ? [] : Piece.recentParts(savedProjects, conv() && conv().id, 3);
     if (recent.length) {
@@ -917,5 +919,7 @@
   (V2.plugins = V2.plugins || []).push(plug);
 
   // `sample` : pose un modèle de la galerie par son nom (« benchy »), comme un clic dans la galerie.
-  V2.piece = { sample: function (name) { whenChanging(function () { importSample(name); }); }, addModels: addModels, answerExtras: answerExtras, attachSketch: attachSketch, state: function () { return state(); } };
+  V2.piece = { sample: function (name) { whenChanging(function () { importSample(name); }); }, addModels: addModels,
+    // Nouveau projet (v2/panneau.js) : la pièce du projet d'avant, encore sur le plateau, sera remplacée par la première posée.
+    setOldPart: function (o) { var st = state(); st.oldPart = o || null; render(); }, answerExtras: answerExtras, attachSketch: attachSketch, state: function () { return state(); } };
 })(typeof window !== 'undefined' ? window : globalThis);

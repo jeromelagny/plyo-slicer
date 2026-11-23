@@ -89,7 +89,12 @@
       attachments = [];
       renderAttachments();
       post({ type: 'project_detach' });
+      // La pièce du projet quitté reste sur le plateau d'Orca : la première pièce du nouveau projet la remplace (comme le
+      // classique, previousPart), sinon les deux seraient découpées et imprimées ensemble.
+      // (Remplacer un plateau déjà vide ne fait rien : dans le doute, on remplace.)
+      var previous = conv && conv.project.part && conv.project.part.name && !(tourSignals && tourSignals.objects === 0) ? { label: conv.project.part.name } : null;
       startConversation(conv && P.hasPrinter(conv.project) ? P.proposeFrom(conv.project) : null);
+      if (previous && V2.piece && V2.piece.setOldPart) V2.piece.setOldPart(previous);
       // Retouches d'impression faites à la main dans le projet quitté : la question vient une fois le plateau détaché.
       askRetouches(1500);
     }
@@ -126,6 +131,7 @@
     function openRetryReset() { clearTimeout(openRetry.timer); openRetry = { conv: null, tries: 0, timer: null }; }
     function onProjectOpened(msg) {
       if (!conv || msg.conv !== conv.id) return;
+      post({ type: 'tour_signals' }); // le plateau a changé : ce qu'il porte est relu tout de suite
       var again = openRetry.conv === conv.id;
       var step = P.openRetryStep(msg.reason, again ? openRetry.tries : 0);
       if (step === 'done') openRetryReset();
