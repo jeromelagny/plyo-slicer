@@ -90,6 +90,9 @@ test('lot 2 : pièce posée : fiche, « Envie d’ajuster ? », l’étape 1 res
     card.querySelectorAll('.act')[2].click();
     byText(card, /^\+$/).click();
     assert.deepEqual(p.posted.at(-1).commands, [{ op: 'set_copies', amount: 2, summary: '2 exemplaires sur le plateau', object: '7' }]);
+    // Geste fait à la main : marqué pour le slicer, qui le fait sans imprimante ni bobine choisies (étape 1).
+    assert.equal(rot.by_user, true);
+    assert.equal(p.posted.at(-1).by_user, true);
     p.emit({ type: 'commands', request: p.posted.at(-1).request, ok: true, done: ['2 exemplaires sur le plateau'], skipped: [], undo_token: 56 });
     card.querySelectorAll('.act')[1].click();
     byText(card.querySelector('.inline-pop'), /^75 %$/).click();
@@ -360,6 +363,7 @@ test('lot 2 : ordres sur le plateau proposés par l’IA : exécutés, annulable
     await sleep(60);
     const cmd = p.posted.find((m) => m.type === 'commands');
     assert.deepEqual(cmd.commands, [{ op: 'rotate', axis: 'x', amount: 90, summary: 'Pièce tournée de 90°' }]);
+    assert.equal(cmd.by_user, undefined, 'un ordre de l’IA reste soumis à la fiche du projet');
     p.emit({ type: 'commands', request: cmd.request, ok: true, done: ['Pièce tournée de 90°'], text: '', skipped: [], undo_token: 3 });
     const ai = p.$('msgs').querySelector('.msg.ai');
     assert.match(texts(ai), /Pièce tournée de 90°.*Annuler/);

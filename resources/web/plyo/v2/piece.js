@@ -508,10 +508,14 @@
     if (after) after(msg);
   }
   // Ordres sur la pièce (« commands », comme ceux de l'IA) : une seule étape d'annulation par envoi.
-  function runCommands(list, after) {
+  // `byUser` : geste fait à la main dans « Envie d'ajuster ? » (tourner, taille, copies, poser à plat). Le slicer l'accepte sans
+  // imprimante ni bobine choisies : la pièce se prépare à l'étape 1. Les ordres proposés par l'IA restent soumis à la fiche du projet.
+  function runCommands(list, after, byUser) {
     var id = ++request;
     waiters[id] = after;
-    panel.post({ type: 'commands', commands: list, request: id });
+    var msg = { type: 'commands', commands: list, request: id };
+    if (byUser) msg.by_user = true;
+    panel.post(msg);
   }
   function onCommands(msg) {
     var after = waiters[msg.request];
@@ -543,7 +547,7 @@
       if (kind === 'scale') st.checkFit = true;
       render();
       refreshPlate();
-    });
+    }, true);
   }
   function undoLast() {
     var st = state(), token = st.last && st.last.undo;

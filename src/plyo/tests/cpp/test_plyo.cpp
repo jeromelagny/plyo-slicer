@@ -5783,3 +5783,21 @@ TEST_CASE("Assistant v2 · ContextLogic::filament_cost : coût seulement si chaq
     CHECK_FALSE(filament_cost({{2, 100.0}}, {1.24}, {20.0}).has_value());
     CHECK_FALSE(filament_cost({{0, 100.0}}, {0.0}, {20.0}).has_value());
 }
+
+TEST_CASE("Assistant v2 · les gestes faits à la main sur la pièce n'attendent pas l'imprimante ni la bobine")
+{
+    using Plyo::ProjectLogic::user_plate_edit;
+    CHECK(user_plate_edit(json::array({{{"op", "set_copies"}, {"amount", 3}}})));
+    CHECK(user_plate_edit(json::array({{{"op", "rotate"}}, {{"op", "lay_flat"}}, {{"op", "scale"}, {"amount", 50}}})));
+    // Tout autre ordre (ceux de l'IA : orienter, ranger, réduire pour tenir…) reste soumis à la fiche du projet.
+    CHECK_FALSE(user_plate_edit(json::array({{{"op", "set_copies"}}, {{"op", "arrange"}}})));
+    CHECK_FALSE(user_plate_edit(json::array({{{"op", "scale_to_fit"}}})));
+    CHECK_FALSE(user_plate_edit(json::array()));
+    CHECK_FALSE(user_plate_edit(json::object()));
+    CHECK_FALSE(user_plate_edit(json::array({"set_copies"})));
+    // Le slicer ne les laisse passer que marqués « by_user », et jamais sur le plateau d'une autre conversation.
+    const std::string cpp = lot12_read(lot12_root() / "src" / "plyo" / "PlyoAssistant.cpp");
+    CHECK(cpp.find("Json::boolean(data, \"by_user\", false) && ProjectLogic::user_plate_edit(list)") != std::string::npos);
+    CHECK(cpp.find("!by_user                      ? project_refusal(data)") != std::string::npos);
+    CHECK(cpp.find(": ProjectFiles::edits_blocked() ? nlohmann::json{{\"ok\", false}, {\"text\", ProjectFiles::busy_text()}}") != std::string::npos);
+}

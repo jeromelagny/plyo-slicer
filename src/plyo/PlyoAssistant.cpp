@@ -536,7 +536,14 @@ void handle_page_message(const nlohmann::json& data)
                 PlateActions::run_when_ready(kind, reply);
         } else if (type == "commands") {
             // Ordres de l'IA (« penche la pièce de 20° ») : exécutés aussitôt, annulables d'un clic (plate_action « undo »).
-            if (const nlohmann::json refused = project_refusal(data); !refused.is_null()) {
+            // Un geste fait à la main sur la pièce (tourner, taille, copies, poser à plat) n'attend pas l'imprimante ni la
+            // bobine ; il ne touche jamais le plateau d'une autre conversation.
+            const nlohmann::json list    = data.contains("commands") ? data["commands"] : nlohmann::json();
+            const bool           by_user = Json::boolean(data, "by_user", false) && ProjectLogic::user_plate_edit(list);
+            const nlohmann::json refused = !by_user                      ? project_refusal(data)
+                                           : ProjectFiles::edits_blocked() ? nlohmann::json{{"ok", false}, {"text", ProjectFiles::busy_text()}}
+                                                                          : nlohmann::json();
+            if (!refused.is_null()) {
                 nlohmann::json done = refused;
                 done["type"]        = "commands";
                 done["request"]     = Json::integer(data, "request", 0);

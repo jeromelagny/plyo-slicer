@@ -99,6 +99,16 @@ std::vector<std::string> missing_for(const nlohmann::json& project, bool filamen
     return out;
 }
 
+bool user_plate_edit(const nlohmann::json& commands)
+{
+    if (!commands.is_array() || commands.empty())
+        return false;
+    return std::all_of(commands.begin(), commands.end(), [](const nlohmann::json& c) {
+        const std::string op = c.is_object() ? Json::str(c, "op", 40) : std::string();
+        return op == "rotate" || op == "lay_flat" || op == "set_copies" || op == "scale";
+    });
+}
+
 std::string refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament, bool filament_only)
 {
     const std::vector<std::string> todo = missing_for(project, filament_only);
