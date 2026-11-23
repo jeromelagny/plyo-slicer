@@ -178,8 +178,10 @@ test('lot 4 : fin arrêtée ou en erreur : la question formulée selon l’état
     byText(card(p), /Ça se décollait/).click();
     await sleep(10);
     assert.equal(sent(p, 'spool_failure')[0].spool, 's1', 'raté : la bobine le retient');
-    assert.match(p.$('note').value, /a été arrêtée : ça se décollait du plateau/, 'la discussion prête à écrire');
+    // Audit des parcours : la carte « Qu'est-ce qui ne va pas ? » reprend la raison (symptôme coché) ; on reste sur l'étape.
+    assert.equal(p.$('note').value, '', 'rien d’écrit à ta place dans la discussion');
     assert.match(texts(card(p)), /Qu’est-ce qui ne va pas/);
+    assert.ok(card(p).querySelectorAll('.card.sel').some((c) => /Elle se décolle du plateau/.test(texts(c))), 'symptôme coché');
   } finally { p.stop(); }
 });
 

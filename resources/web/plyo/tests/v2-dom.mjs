@@ -79,6 +79,7 @@ class Element {
       return (m[2].match(/[.#][\w-]+/g) || []).every((p) => (p[0] === '#' ? this.id === p.slice(1) : this.classList.contains(p.slice(1))));
     });
   }
+  closest(sel) { for (let n = this; n && n.nodeType === 1; n = n.parentNode) if (n.matches(sel)) return n; return null; }
   querySelectorAll(sel) { const out = []; const walk = (n) => n.children.forEach((c) => { if (c.matches(sel)) out.push(c); walk(c); }); walk(this); return out; }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
 }

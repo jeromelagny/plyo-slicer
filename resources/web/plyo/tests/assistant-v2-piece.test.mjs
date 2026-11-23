@@ -105,7 +105,7 @@ test('lot 2 : pièce posée : fiche, « Envie d’ajuster ? », l’étape 1 res
     assert.equal(p.posted.at(-1).commands[0].op, 'lay_flat');
     p.emit({ type: 'commands', request: p.posted.at(-1).request, ok: true, done: ['Pièce posée sur sa plus grande face'], skipped: [], undo_token: 58 });
     card.querySelectorAll('.act')[4].click();
-    assert.deepEqual(p.posted.at(-1), { type: 'open_tool', tool: 'cut' });
+    assert.deepEqual(p.posted.at(-1), { type: 'open_tool', tool: 'cut', object: '7' }, 'l’outil s’ouvre sur la pièce du projet');
     p.emit({ type: 'open_tool', ok: true, text: 'J’ai ouvert l’outil « Couper » sur « Petit bateau ».' });
     assert.match(texts(card), /J’ai ouvert l’outil « Couper »/);
     // Ajouter une pièce : le choix d'un fichier, posé à côté (sans remplacer).
@@ -294,7 +294,7 @@ test('lot 2 : « Créer avec l’IA » : connexion au premier appel, questions, 
   } finally { p.stop(); }
 });
 
-test('lot 2 : « Créer avec l’IA » en formule gratuite : le texte de la formule, rien d’autre à cliquer', async () => {
+test('lot 2 : « Créer avec l’IA » en formule gratuite : le texte de la formule et « Voir les formules » (audit des parcours : pas d’impasse)', async () => {
   const p = loadV2({ bridge: bridge({ session: SESSION }), fetch: service({ '/api/design': async () => response(403, { error: 'plan_required' }) }) });
   try {
     await sleep(30);
@@ -304,7 +304,7 @@ test('lot 2 : « Créer avec l’IA » en formule gratuite : le texte de la form
     p.$('card-primary').click();
     await sleep(30);
     assert.match(texts(p.$('stepcard')), /Les pièces sur mesure font partie de Plyo\+\./);
-    assert.equal(p.$('card-primary'), null);
+    assert.equal(texts(p.$('card-primary')), 'Voir les formules');
   } finally { p.stop(); }
 });
 
