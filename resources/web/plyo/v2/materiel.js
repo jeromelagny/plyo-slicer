@@ -848,7 +848,7 @@
     if (msg.auth) {
       linkSay(l.code ? 'Ce code d’accès est refusé par ' + (l.printer.name || 'ton imprimante') + '. Vérifie-le sur son écran et réessaie.'
         : (l.printer.name || 'Ton imprimante') + ' est joignable, mais elle demande son code d’accès. Tu le trouves sur son écran, dans les réglages réseau.', 'warn',
-        [{ label: 'Tester avec ce code', primary: true, run: function () { if (!l.code) return; testLink(); } }], 'code');
+        [{ label: 'Tester avec ce code', primary: true, run: function () { if (!l.code) { l.hint = 'Écris d’abord le code d’accès dans la case, puis teste.'; render(); return; } l.hint = ''; testLink(); } }], 'code');
       return;
     }
     linkSay('Je n’arrive pas à joindre ' + (l.printer.name || 'l’imprimante') + '. ' + (LINK_HELP[l.printer.host_type] || 'Vérifie qu’elle est allumée et sur le même Wi-Fi, puis réessaie.') + (msg.message ? ' (' + msg.message + ')' : ''), 'error',
@@ -906,6 +906,7 @@
           code.value = l.code || '';
           code.addEventListener('input', function () { l.code = code.value.trim(); });
           box.querySelector('.note-body').insertBefore(code, box.querySelector('.acts'));
+          if (l.hint) box.querySelector('.note-body').appendChild(ui.el('p', 'err', l.hint));
         }
         body.appendChild(box);
       } else if (s.phase === 'link') body.appendChild(spinLine('Je vérifie ton profil d’imprimante…'));

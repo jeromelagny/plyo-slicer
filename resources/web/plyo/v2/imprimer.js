@@ -57,6 +57,8 @@
   function sliced() { var p = project(); return !!(signals && signals.sliced) && !(p.intent && p.intent.reask); }
   function thread(text) { var c = conv(); if (c && root.PlyoThread && root.PlyoThread.add(c.project, 'etapes', text)) save(); }
   // Une phrase dans la discussion, gardée avec la conversation.
+  // Un lot refusé par le slicer : son texte, avec le bouton qui débloque (choisir la machine ou la bobine, remettre le projet).
+  function refused(text, result, retry) { return note(text || 'Je n’ai pas pu appliquer ces réglages.', 'error', panel.refusalActions(result, retry)); }
   function note(text, tone, acts) {
     if (!text || !panel) return null;
     panel.record({ kind: 'note', text: text, tone: tone === 'error' ? 'error' : tone === 'warn' ? 'warn' : 'ok' });
@@ -914,8 +916,8 @@
       if (a.kind === 'show_setting') { panel.post({ type: 'show_setting', key: a.key }); return; }
       b.disabled = true;
       if (a.kind === 'plate') { plateAction(a.action, function (ok) { if (ok) { st.preflight = null; slice(); } else render(); }); return; }
-      var done = function (ok, text) {
-        if (!ok) { note(text, 'error'); render(); return; }
+      var done = function (ok, text, result) {
+        if (!ok) { refused(text, result, function () { b.disabled = false; b.click(); }); render(); return; }
         if (c.key === 'support' || c.key === 'brim') st.added[c.key] = st.added[c.key] || a.label !== 'Retirer';
         st.preflight = null;
         slice();
@@ -1023,8 +1025,11 @@
   function onShowPreview(msg) {
     if (!(msg.request in waiters)) return;
     delete waiters[msg.request];
-    if (previewBtn) { previewBtn.disabled = false; previewBtn = null; }
-    panel.say(Logic.previewText(msg), msg.ok ? 'info' : 'error');
+    var b = previewBtn;
+    if (b) { b.disabled = false; previewBtn = null; }
+    // Ouvert : le lien le dit un instant (l'explication va dans la conversation) ; sinon, la raison là où l'on est.
+    if (msg.ok && msg.sliced !== false && b && panel.flash(b, 'Aperçu ouvert dans Plyo Slicer')) panel.say(Logic.previewText(msg), 'info');
+    else panel.tell(Logic.previewText(msg), msg.ok ? 'info' : 'error');
   }
 
   // ---------- Envoi en cours, fichier enregistré ----------
@@ -1366,14 +1371,20 @@
       var list = picked();
       var changes = list.map(function (r) { return Logic.sheetChange(r.s, confirmed); });
       fail.classList.add('hidden');
+      applyBtn.classList.add('main');
       applyBtn.disabled = true;
       apply(changes, (a.defect && a.defect.name) || '', function (ok, text, result) {
         if (!ok) {
           count();
-          fail.textContent = ui.fr(text + (result && result.missing && result.missing.length ? ' ' + (J.fixNeeds(project()) || '') : ''));
+          fail.textContent = ui.fr(text);
           fail.classList.remove('hidden');
           // Refus de la dernière barrière ou d'Orca : réessayer, confirmer ce réglage, ou le montrer (comme le classique).
           foot.querySelectorAll('.refusal').forEach(function (x) { x.remove(); });
+          // Fiche du projet incomplète, ou Plyo Slicer ailleurs : le bouton qui débloque (la fiche reste applicable ensuite).
+          var unblock = panel.refusalActions(result, function () { go(andReprint); }, 'C’est noté. Ta fiche de réglages t’attend dans la conversation : clique sur « Appliquer ».');
+          unblock.forEach(function (r) { foot.appendChild(ui.button(r.label, r.run, 'btn sm main refusal')); });
+          // Un seul bouton plein : celui qui débloque, tant que la fiche ne peut pas s'appliquer.
+          if (unblock.length) applyBtn.classList.remove('main');
           Logic.refusalActions(result || {}).forEach(function (r) {
             var rb = ui.button(r.label, function () {
               if (r.kind === 'show') { panel.post({ type: 'show_setting', key: r.key }); return; }
@@ -1695,7 +1706,7 @@
     pn.on('print_send_waiting', onSendWaiting);
     pn.on('print_upload', onPrintUpload);
     pn.on('print_watch', onPrintWatch);
-    pn.on('printer_link_rechecked', function (msg) { var v = PF.linkRecheckView(msg, shortName()); note(v.text, v.tone === 'ok' ? 'ok' : 'warn'); });
+    pn.on('printer_link_rechecked', function (msg) { var v = PF.linkRecheckView(msg, shortName()); panel.record({ kind: 'note', text: v.text, tone: v.tone === 'ok' ? 'ok' : 'warn' }); panel.tell(v.text, v.tone === 'ok' ? 'info' : 'warn'); });
     pn.on('spool_success_done', function (msg) { var st = state(); st.successNote = msg.ok && msg.name ? Sp.doneText(msg.name, msg.date) : msg.text || 'Je n’ai pas pu retenir ces réglages : je ne retrouve pas ceux de cet envoi. Ta prochaine impression réussie avec cette bobine les retiendra.'; if (inStep3()) render(); else note(st.successNote, msg.ok ? 'ok' : 'info'); });
     pn.on('spool_failure_done', function (msg) { if (msg && !msg.ok && msg.text) note(msg.text, 'info'); });
     pn.on('outcome_pending', function (msg) { onOutcomePending(msg.items); });
@@ -1706,7 +1717,6 @@
     pn.on('calib_started', onCalibStarted);
     pn.on('show_preview', onShowPreview);
     pn.on('open_calibration', onOpenCalibration);
-    pn.on('show_me', function (msg) { if (!msg.ok) pn.say('Je n’ai pas pu te le montrer dans Plyo Slicer : regarde dans la colonne de gauche.'); });
     pn.on('spool_adopt_offer', onAdoptOffer);
     pn.on('spool_adopted', onSpoolAdopted);
     pn.on('spool_current', onSpoolCurrent);

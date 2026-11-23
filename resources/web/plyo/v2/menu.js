@@ -115,7 +115,8 @@
   function onResult(msg) {
     if (!undoWaiting || msg.request !== undoWaiting) return;
     undoWaiting = null;
-    panel.say(msg.text || (msg.ok ? 'Réglages d’avant remis.' : 'Je n’ai pas pu annuler.'), msg.ok ? 'info' : 'error');
+    // Choisi dans le menu : la réponse se voit aussi en haut de la carte de l'étape (sinon rien ne bouge en apparence).
+    panel.tell(msg.text || (msg.ok ? 'Réglages d’avant remis.' : 'Je n’ai pas pu annuler.'), msg.ok ? 'info' : 'error');
   }
   function askIntentAgain() {
     var c = conv();

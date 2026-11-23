@@ -182,6 +182,7 @@
       renderHello();
       renderStepBar();
       if (alertKey && $('stepcard').dataset.step !== alertKey) hideStepAlert(); // autre étape : l'avis ne la concerne plus
+      followCompletion();
     }
     function openStep(key) {
       opened = key;
@@ -198,7 +199,7 @@
       stepScroller.scrollTop = 0; // la carte depuis son début : la pièce posée, ou l'étape suivante
     }
     function renderHello() { $('hello').classList.toggle('hidden', thread.children.length > 0); }
-    function clearThread() { thread.textContent = ''; dropLoginCard(); renderHello(); }
+    function clearThread() { thread.textContent = ''; dropLoginCard(); hideStepAlert(); renderHello(); }
     // ---------- Deux zones : l'étape ou la conversation, l'autre en barre ----------
     // Une seule zone dépliée. Écrire (champ de saisie, suggestion) déplie la conversation ; la barre des étapes, une étape
     // rouverte ou un projet rouvert déplient l'étape. Une réponse arrivée pendant qu'on est sur l'étape allume la barre de la
@@ -275,10 +276,16 @@
       if ((kind === 'error' || kind === 'warn') && zoneOpen() === 'step') showStepAlert(text, kind, actions);
       return addToThread(D.notice(kind || 'info', text, actions));
     }
+    // La réponse à un clic qui n'a pas d'autre retour visible (un menu, un bouton qui agit dans Plyo Slicer) : dans la
+    // conversation, et aussi en haut de la carte quand c'est elle qui est dépliée, même quand tout va bien.
+    function tell(text, kind, actions) {
+      if (zoneOpen() === 'step') showStepAlert(text, kind || 'info', actions);
+      return addToThread(D.notice(kind || 'info', text, actions));
+    }
     // Avis en haut de la carte de l'étape (le dernier seulement) : ses boutons, « Voir la conversation » et « × ». Il part dès
     // qu'on change d'étape, qu'un de ses boutons est utilisé, ou qu'on le ferme.
-    var stepAlert = $('stepalert'), alertKey = null;
-    function hideStepAlert() { stepAlert.textContent = ''; stepAlert.classList.add('hidden'); alertKey = null; }
+    var stepAlert = $('stepalert'), alertKey = null, alertLogin = false;
+    function hideStepAlert() { stepAlert.textContent = ''; stepAlert.classList.add('hidden'); alertKey = null; alertLogin = false; }
     function showStepAlert(text, kind, actions) {
       var acts = (actions || []).map(function (a) { return { label: a.label, primary: a.primary, run: function () { hideStepAlert(); a.run(); } }; });
       acts.push({ label: 'Voir la conversation', run: function () { hideStepAlert(); showZone('chat'); } });
@@ -290,7 +297,70 @@
       stepAlert.appendChild(box);
       stepAlert.classList.remove('hidden');
       alertKey = $('stepcard').dataset.step || null;
+      alertLogin = false;
       stepScroller.scrollTop = 0;
+    }
+
+    // Un bouton de la carte qui agit dans Plyo Slicer (montrer un réglage, l'aperçu) : son texte dit, un instant, que c'est fait.
+    var pressed = { el: null, at: 0 };
+    $('stepscroll').addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('button') : null;
+      if (b) pressed = { el: b, at: Date.now() };
+    }, true);
+    function flash(el, text) {
+      if (!el || !el.isConnected || el.dataset.flash) return false;
+      var nodes = Array.prototype.slice.call(el.childNodes);
+      el.dataset.flash = '1';
+      el.textContent = ui.fr(text);
+      setTimeout(function () {
+        if (!el.isConnected) return;
+        el.textContent = '';
+        nodes.forEach(function (n) { el.appendChild(n); });
+        delete el.dataset.flash;
+      }, 2500);
+      return true;
+    }
+    function flashPressed(text) { return Date.now() - pressed.at < 4000 && zoneOpen() === 'step' && flash(pressed.el, text); }
+
+    // Un refus du slicer parce que la fiche du projet est incomplète (`missing` : printer, part, filament) ou parce que Plyo
+    // Slicer n'est plus sur le projet (`can_restore`) : le bouton qui débloque, là où le refus est dit. `retry` : refaire la
+    // demande une fois le projet remis en place.
+    var completing = null;
+    function completeAction(missing, doneText) {
+      var label = J.completeLabel(missing);
+      if (!label || !conv) return null;
+      var mine = conv;
+      return { label: label, primary: true, run: function () {
+        if (conv !== mine) return;
+        completing = { conv: conv, missing: missing.slice(), done: doneText || J.FICHE_WAITS };
+        // Une correction de la bobine n'attend pas de pièce : machine et bobine d'abord (PlyoProject.nextStep).
+        if (missing.indexOf('part') < 0 && !(conv.project.part && conv.project.part.name)) { conv.project.part_later = true; scheduleSave(); }
+        opened = null;
+        hold = null;
+        render();
+        showZone('step');
+        stepScroller.scrollTop = 0;
+      } };
+    }
+    function followCompletion() {
+      var c = completing;
+      if (!c) return;
+      if (c.conv !== conv) { completing = null; return; }
+      if (J.stillMissing(conv.project, c.missing).length) return;
+      completing = null;
+      setTimeout(function () { showStepAlert(c.done, 'info', []); }, 0);
+    }
+    var restoreWaiters = [];
+    function restoreProject(then) {
+      if (!conv || !P.restorable(conv.project)) return;
+      restoreWaiters.push(then || null);
+      post({ type: 'project_restore', project: conv.project, discard_unsaved: false });
+    }
+    function refusalActions(result, retry, doneText) {
+      var r = result || {}, out = [];
+      if (Array.isArray(r.missing) && r.missing.length) { var c = completeAction(r.missing, doneText); if (c) out.push(c); }
+      else if (r.can_restore) out.push({ label: 'Remettre mon projet dans Plyo Slicer', primary: true, run: function () { restoreProject(retry); } });
+      return out;
     }
 
     // Une entrée de la conversation dans le fil. `archived` : conversation rouverte (ses questions ne se rejouent pas).
@@ -313,7 +383,12 @@
         addToThread(box);
         return;
       }
-      if (entry.kind === 'note') { say(entry.text, entry.tone === 'error' ? 'error' : entry.tone === 'warn' ? 'warn' : 'info'); return; }
+      if (entry.kind === 'note') {
+        var tone = entry.tone === 'error' ? 'error' : entry.tone === 'warn' ? 'warn' : 'info';
+        // Une note d'une conversation rouverte est un souvenir : elle ne redevient pas un avis en haut de la carte.
+        if (archived) addToThread(D.notice(tone, entry.text)); else say(entry.text, tone);
+        return;
+      }
       // Fiche d'un réglage (« C'est quoi la rétraction ? ») : gratuite, gardée avec la conversation.
       if (entry.kind === 'fiche' && entry.msg) { addToThread(D.fiche(entry.msg, { archived: archived, explainActions: ficheActions })); return; }
       if (entry.kind === 'model' && entry.msg && entry.msg.name) say('Pièce posée sur le plateau : ' + entry.msg.name + '.');
@@ -379,12 +454,14 @@
       if (message) say(message);
     }
     function openLogin() { post({ type: 'login' }); }
-    function dropLoginCard() { if (loginCard) { loginCard.remove(); loginCard = null; } }
+    function dropLoginCard() { if (loginCard) { loginCard.remove(); loginCard = null; } if (alertLogin) hideStepAlert(); }
     // Connexion demandée seulement au premier appel à l'IA : la demande est gardée et repart après la connexion.
     function requireLogin(reason, retry) {
       if (session) return false;
       afterLogin = retry || null;
       dropLoginCard();
+      // Demandé depuis la carte de l'étape (« Créer ma pièce », téléphone) : la demande se voit là, pas seulement dans la conversation.
+      if (zoneOpen() === 'step') { showStepAlert(reason, 'info', [{ label: 'Me connecter', run: openLogin, primary: true }]); alertLogin = true; }
       loginCard = addToThread(D.notice('info', reason, [{ label: 'Me connecter', run: openLogin, primary: true }]));
       return true;
     }
@@ -871,7 +948,14 @@
         onExplain(msg);
       } else if (msg.type === 'show_setting') {
         if (!msg.ok) say('Je n’ai pas trouvé ce réglage dans les onglets de Plyo.', 'error');
-        else if (msg.hidden) say('J’ai ouvert la bonne page. Si tu ne vois pas le réglage, active le bouton « Avancé » en haut des réglages.');
+        else if (msg.hidden) tell('J’ai ouvert la bonne page. Si tu ne vois pas le réglage, active le bouton « Avancé » en haut des réglages.');
+        else flashPressed('Ouvert dans Plyo Slicer');
+      } else if (msg.type === 'show_me') {
+        if (msg.ok) flashPressed('Montré dans Plyo Slicer');
+        else tell('Je n’ai pas pu te le montrer dans Plyo Slicer : regarde dans la colonne de gauche.', 'warn');
+      } else if (msg.type === 'project_restored') {
+        var then = restoreWaiters.shift();
+        if (msg.ok && then) then();
       }
       (listeners[msg.type] || []).forEach(function (fn) { fn(msg); });
     });
@@ -913,6 +997,12 @@
       scheduleSave: scheduleSave,
       send: send,
       say: say,
+      tell: tell,
+      flash: flash,
+      refusalActions: refusalActions,
+      completeAction: completeAction,
+      restoreProject: restoreProject,
+      showStep: function () { opened = null; render(); showZone('step'); stepScroller.scrollTop = 0; },
       requireLogin: requireLogin,
       newConversation: newConversation,
       on: function (type, fn) { (listeners[type] = listeners[type] || []).push(fn); }

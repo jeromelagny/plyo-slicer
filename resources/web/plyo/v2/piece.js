@@ -11,6 +11,8 @@
 
   var panel = null;
   var request = 1000000;     // demandes au slicer de cette étape (plate_action, commands) : un compteur à part
+  var MAX_COMMANDS = 6;      // ordres par envoi acceptés par le slicer (Commands::run)
+  var USER_OPS = ['rotate', 'lay_flat', 'set_copies', 'scale']; // gestes que le slicer accepte sans fiche complète (ProjectLogic::user_plate_edit)
   var waiters = {};          // demande → suite (réponse du slicer)
   var sentPlate = {};        // demande plate_action → message et essais (relance d'une action refusée un instant)
   var gallery = null;        // modèles de la galerie lus par le slicer (null : pas encore demandés)
@@ -432,8 +434,9 @@
     }
     body.appendChild(box('tip', 'info', null, d.retouch ? F.TEXT.retouchHelp : 'Mesure la place disponible avant : je dessine au millimètre près. ' + F.TEXT.scope));
     if (d.planRequired) {
-      // Les formules s'ouvrent depuis la jauge (fenêtre des formules) : rien d'autre à cliquer ici.
-      return { title: 'Créer avec l’IA', sub: null, body: body, primary: null, extra: [ui.button('Retour', closeDesign, 'link muted')] };
+      // Formule requise : les formules s'ouvrent d'ici (fenêtre de la v2, v2/menu.js), comme après une question.
+      return { title: 'Créer avec l’IA', sub: null, body: body, primary: { label: 'Voir les formules', run: function () { if (V2.menu) V2.menu.openPlans(); } },
+        extra: [ui.button('Retour', closeDesign, 'link muted')] };
     }
     return {
       title: d.retouch ? F.TEXT.retouchTitle : 'Créer avec l’IA',
@@ -804,13 +807,33 @@
     }
     if (entry.commandsResult) { show(entry.commandsResult); return wrap; }
     if (archived) { wrap.appendChild(line('Ces changements n’ont pas été faits sur le plateau.', '')); return wrap; }
+    var list = (a.commands || []).map(function (c) { return c && typeof c === 'object' && !Array.isArray(c) ? Object.assign({}, c, { summary: Logic.commandSummary(c) }) : c; });
+    // Fiche du projet incomplète : le slicer refuse les ordres de l'IA. Des gestes simples (tourner, taille, copies, poser à
+    // plat) se font quand même, sur ton clic, comme dans « Envie d'ajuster ? » ; les autres attendent la machine et la bobine.
+    var incomplete = J.stillMissing(project(), ['printer', 'part', 'filament']);
+    var simple = list.length > 0 && list.length <= MAX_COMMANDS && list.every(function (c) { return c && USER_OPS.indexOf(c.op) >= 0; });
+    if (incomplete.length && incomplete.indexOf('part') < 0 && simple) {
+      wrap.appendChild(line(list.map(function (c) { return c.summary; }).filter(Boolean).join(' · ') || 'Changements proposés sur la pièce', ''));
+      wrap.appendChild(ui.button('Faire ces changements sur le plateau', function () { wrap.textContent = ''; wrap.appendChild(line('Je modifie le plateau…', '')); run(true); }, 'btn sm main', 'spark'));
+      return wrap;
+    }
     wrap.appendChild(line('Je modifie le plateau…', ''));
-    runCommands((a.commands || []).map(function (c) { return c && typeof c === 'object' && !Array.isArray(c) ? Object.assign({}, c, { summary: Logic.commandSummary(c) }) : c; }), function (msg) {
+    run(false);
+    return wrap;
+    function run(byUser) {
+    runCommands(list, function (msg) {
       entry.commandsResult = { done: msg.done || [], text: msg.text || '', skipped: msg.skipped || [] };
       if (entry.hist) entry.hist.text = root.PlyoConversation.summaryForHistory(a, entry.commandsResult).slice(0, 2000);
       panel.scheduleSave();
       show(entry.commandsResult);
       refreshPlate();
+      // Refus parce que la fiche est incomplète : le bouton qui mène au choix, puis « Réessayer » ici.
+      if (!msg.ok && Array.isArray(msg.missing) && msg.missing.length) {
+        var acts = panel.refusalActions(msg, null, 'C’est noté. Retourne dans la conversation : « Réessayer » fait les changements proposés sur le plateau.');
+        acts.forEach(function (x) { wrap.appendChild(ui.button(x.label, x.run, 'btn sm main')); });
+        wrap.appendChild(ui.button('Réessayer', function () { delete entry.commandsResult; wrap.textContent = ''; wrap.appendChild(line('Je modifie le plateau…', '')); run(byUser); }, 'btn sm'));
+        return;
+      }
       if (msg.undo_token === undefined || !entry.commandsResult.done.length) return;
       var undo = ui.button('Annuler', function () {
         undo.disabled = true;
@@ -823,8 +846,8 @@
         });
       }, 'link', 'undo');
       wrap.appendChild(undo);
-    });
-    return wrap;
+    }, byUser);
+    }
   }
   function actionsView(actions) {
     var row = ui.el('div', 'acts');
