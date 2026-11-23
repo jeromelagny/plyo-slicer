@@ -106,7 +106,9 @@
       clearThread();
       conv.entries.forEach(function (entry) { try { renderEntry(entry, true); } catch (e) { /* élément abîmé : ignoré */ } });
       render();
-      scrollDown();
+      follow = false;
+      scroller.scrollTop = 0; // projet rouvert : sa carte d'étape d'abord, la conversation en dessous
+      newMsg.classList.add('hidden');
     }
 
     // Ouverture refusée parce qu'Orca est occupé : on le dit une fois et on redemande toutes les 3 s tant que le projet est
@@ -185,8 +187,23 @@
     }
     function renderHello() { $('hello').classList.toggle('hidden', thread.children.length > 0); }
     function clearThread() { thread.textContent = ''; dropLoginCard(); renderHello(); }
-    function scrollDown() { scroller.scrollTop = scroller.scrollHeight; }
-    function addToThread(node) { thread.appendChild(node); renderHello(); scrollDown(); return node; }
+    // Le fil ne suit les nouveaux messages que quand on parle à l'assistant (question, suggestion). Après un clic dans la carte
+    // de l'étape, la carte reste où elle est : un message arrivé plus bas, hors de vue, est signalé par « Nouveau message ↓ ».
+    var follow = false, newMsg = $('newmsg');
+    function atBottom() { return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 24; }
+    function scrollDown() { scroller.scrollTop = scroller.scrollHeight; newMsg.classList.add('hidden'); }
+    function addToThread(node) {
+      thread.appendChild(node);
+      renderHello();
+      if (follow) scrollDown();
+      else if (node.getBoundingClientRect && node.getBoundingClientRect().top > scroller.getBoundingClientRect().bottom) newMsg.classList.remove('hidden');
+      return node;
+    }
+    newMsg.addEventListener('click', scrollDown);
+    scroller.addEventListener('scroll', function () { if (atBottom()) newMsg.classList.add('hidden'); });
+    // Un geste dans la carte ou la barre des étapes : le fil arrête de suivre.
+    ['stepcard', 'stepper'].forEach(function (id) { $(id).addEventListener('pointerdown', function () { follow = false; }); });
+    input.addEventListener('focus', function () { follow = true; });
     function say(text, kind, actions) { return addToThread(D.notice(kind || 'info', text, actions)); }
 
     // Une entrée de la conversation dans le fil. `archived` : conversation rouverte (ses questions ne se rejouent pas).
@@ -525,6 +542,7 @@
     // `opts` : { photos (du téléphone), fromPhone, shown (la demande est déjà dans le fil), me, requestId }.
     function send(text, opts) {
       opts = opts || {};
+      follow = true; // on parle à l'assistant : le fil suit sa réponse
       var note = (text || '').trim();
       if (busy) return;
       var photos = opts.photos || attachments.slice();

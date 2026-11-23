@@ -176,6 +176,8 @@
 
   /* Fil : la carte de l'étape puis la discussion */
   .pscroll { flex: 1; overflow: auto; padding: 16px 16px 10px; display: flex; flex-direction: column; gap: 14px; }
+  /* Un message arrivé plus bas pendant qu'on travaille dans la carte : le panneau ne bouge pas, ce bouton y mène. */
+  html .newmsg { position: sticky; bottom: 4px; align-self: center; z-index: 2; border: 1px solid var(--accent); background: var(--bg); color: var(--accent-text); border-radius: var(--pill); padding: 5px 12px; font-size: 12.5px; font-weight: 600; box-shadow: var(--shadow-sm, 0 2px 8px rgba(20, 30, 30, .08)); cursor: pointer; }
   .stepcard { border: 1px solid var(--border); border-radius: 16px; padding: 18px 18px 16px; background: var(--bg); box-shadow: var(--shadow-sm); flex: none; }
   .kicker { font-size: 12px; font-weight: 650; color: var(--accent-text); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; }
   h2.t { font-size: 21px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -.015em; }
@@ -460,6 +462,7 @@
     <section class="stepcard" id="stepcard" aria-live="polite"></section>
     <div class="hello" id="hello"></div>
     <div class="msgs" id="msgs" aria-live="polite"></div>
+    <button class="newmsg hidden" id="newmsg" type="button">Nouveau message ↓</button>
   </div>
   <div class="composer">
     <div class="focus-chip hidden" id="focus-chip"><span>Tu regardes :</span><b id="focus-label"></b><button type="button" class="go" id="focus-explain">Explique-moi</button><button type="button" class="x" id="focus-close" title="Masquer" aria-label="Masquer">×</button></div>
