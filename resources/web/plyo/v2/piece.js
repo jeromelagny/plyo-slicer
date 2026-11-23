@@ -475,12 +475,37 @@
 
   // ---------- Pièce posée : fiche, « trop grande », « Envie d'ajuster ? » ----------
   function current() { var st = state(); return Piece.pieceObject(st.objects, partName()); }
+  // Plusieurs pièces sur le plateau : « Envie d'ajuster ? » demande laquelle (ou « Toutes »). st.target : ref, 'all' ou rien.
+  function targets() { return Piece.plateTargets(state().objects); }
+  function manyTargets() { return targets().length > 1; }
+  function chosen() {
+    var st = state(), list = targets();
+    if (list.length < 2) return null;
+    if (st.target === 'all') return 'all';
+    return list.filter(function (t) { return t.ref === st.target; })[0] || null;
+  }
+  function pickTarget(ref) {
+    var st = state(), pending = st.needTarget;
+    st.target = ref;
+    st.needTarget = null;
+    st.tool = null;
+    if (pending === 'rotate' || pending === 'flat') { adjust(pending); return; }
+    if (pending === 'scale' || pending === 'copies') st.tool = pending;
+    render();
+  }
   function refreshPlate() { if (panel) panel.post({ type: 'ai_context' }); }
   function onPlate(msg) {
     var st = state();
     if (!msg.plate || !Array.isArray(msg.plate.objects)) return;
     st.objects = msg.plate.objects;
     st.bed = Array.isArray(msg.plate.bed_mm) ? msg.plate.bed_mm : st.bed;
+    // Pièce choisie disparue du plateau : on redemande. Rien de choisi : la pièce sélectionnée dans Orca, s'il n'y en a qu'une.
+    var list = targets();
+    if (st.target && st.target !== 'all' && !list.some(function (t) { return t.ref === st.target; })) st.target = null;
+    if (!st.target && list.length > 1) {
+      var sel = list.filter(function (t) { return t.selected; });
+      if (sel.length === 1) st.target = sel[0].ref;
+    }
     var o = current();
     // La mesure du plateau lève l'alerte quand la pièce tient ; elle ne la pose qu'après un changement de taille fait ici.
     if (o && st.bed && !Piece.measuredElsewhere(project(), orcaPrinter())) {
@@ -529,9 +554,13 @@
     if (st.working) return;
     if (kind === 'cut') { st.tool = null; st.toolAsked = true; panel.post({ type: 'open_tool', tool: 'cut' }); return; }
     if (kind === 'add') { st.tool = null; st.adding = true; render(); return; }
+    var many = manyTargets(), target = chosen();
+    if (many && !target) { st.needTarget = kind; st.tool = null; render(); return; }
     if ((kind === 'scale' || kind === 'copies') && !o) { st.tool = st.tool === kind ? null : kind; render(); return; }
-    var obj = current();
-    var list = Piece.adjustCommands(kind, Object.assign({ ref: obj && obj.ref }, o || {}));
+    var list;
+    if (target === 'all') list = Piece.adjustMany(kind, targets(), o);
+    else if (target) list = Piece.adjustCommands(kind, Object.assign({ ref: target.ref, label: target.label }, o || {}));
+    else { var obj = current(); list = Piece.adjustCommands(kind, Object.assign({ ref: obj && obj.ref }, o || {})); }
     if (!list) return;
     st.working = true;
     setLast('Je modifie le plateau…', 'busy');
@@ -582,7 +611,8 @@
     var st = state(), p = project(), name = partName(), obj = current();
     var size = obj && Array.isArray(obj.size_mm) ? obj.size_mm : st.model && st.model.size_mm;
     var copies = obj && obj.copies ? obj.copies : 1;
-    var pct = Piece.sizePct(st.original, obj && obj.size_mm);
+    var pct = obj && obj.scale_pct ? obj.scale_pct : Piece.sizePct(st.original, obj && obj.size_mm);
+    var list = targets(), target = chosen();
     var body = ui.el('div', 'card-content');
     // Mesures et exemplaires lus sur le plateau (ai_context), une fois par projet affiché.
     if (!st.objects && !st.plateAsked) { st.plateAsked = true; setTimeout(refreshPlate, 0); }
@@ -641,6 +671,7 @@
       body.appendChild(ui.button('Changer quelque chose sur la pièce', function () { openDesign(true); }, 'btn sm', 'spark'));
     }
     body.appendChild(section('Envie d’ajuster ? (facultatif)'));
+    if (list.length > 1) body.appendChild(targetPicker(list, st));
     var grid = ui.el('div', 'acts-grid');
     [['rotate', 'rotate', 'Tourner'], ['scale', 'scale', 'Taille'], ['copies', 'copy', 'Copies'], ['flat', 'flat', 'Poser à plat'], ['cut', 'cut', 'Couper'], ['add', 'plus', 'Ajouter une pièce']].forEach(function (x) {
       var b = ui.el('button', 'act' + (st.tool === x[0] ? ' on' : ''));
@@ -654,8 +685,8 @@
       grid.appendChild(b);
     });
     body.appendChild(grid);
-    if (st.tool === 'scale') body.appendChild(scalePop(pct));
-    if (st.tool === 'copies') body.appendChild(copiesPop(copies));
+    if (st.tool === 'scale') body.appendChild(target === 'all' ? scalePop(commonPct(list), true) : scalePop(target ? Piece.targetPct(target, target.ref === (obj && obj.ref) ? st.original : null) : pct));
+    if (st.tool === 'copies') body.appendChild(target === 'all' ? copiesAllPop(list) : copiesPop(target ? target.copies : copies));
     if (st.last) {
       var last = ui.el('div', 'done-line ' + (st.last.tone || ''));
       last.setAttribute('role', 'status');
@@ -674,10 +705,44 @@
       primary: ctx.revisit ? null : { label: 'Continuer', run: function () { st.tool = null; panel.hold(null); }, disabled: st.tooBig || !!st.placing }
     };
   }
-  function scalePop(pct) {
+  // Toutes les pièces : à la même taille, en % de leur taille d'origine (celles déjà à cette taille ne bougent pas).
+  function commonPct(list) {
+    var all = list.map(function (t) { return Piece.targetPct(t); });
+    return all.every(function (v) { return v === all[0]; }) ? all[0] : 100;
+  }
+  function targetPicker(list, st) {
+    var wrap = ui.el('div', 'target-pick');
+    wrap.appendChild(ui.el('span', 'small muted', st.needTarget ? 'Quelle pièce ? Choisis-la, puis je m’en occupe.' : 'Quelle pièce ?'));
+    var row = ui.el('div', 'chips');
+    list.forEach(function (t) {
+      var b = ui.button(t.label + (t.copies > 1 ? ' × ' + t.copies : ''), function () { pickTarget(t.ref); }, 'chip' + (st.target === t.ref ? ' sel' : ''));
+      b.setAttribute('aria-pressed', st.target === t.ref ? 'true' : 'false');
+      row.appendChild(b);
+    });
+    var all = ui.button('Toutes', function () { pickTarget('all'); }, 'chip' + (st.target === 'all' ? ' sel' : ''));
+    all.setAttribute('aria-pressed', st.target === 'all' ? 'true' : 'false');
+    row.appendChild(all);
+    wrap.appendChild(row);
+    if (st.needTarget) wrap.classList.add('ask');
+    return wrap;
+  }
+  function copiesAllPop(list) {
+    var pop = ui.el('div', 'inline-pop pop-head');
+    pop.appendChild(ui.el('span', 'grow', 'Un exemplaire de plus ou de moins pour chaque pièce'));
+    var minus = ui.button('−', function () { adjust('copies', { delta: -1 }); }, 'btn sm');
+    minus.disabled = list.every(function (t) { return t.copies <= 1; });
+    minus.setAttribute('aria-label', ui.fr('Un exemplaire de moins pour chaque pièce'));
+    var plus = ui.button('+', function () { adjust('copies', { delta: 1 }); }, 'btn sm');
+    plus.disabled = list.every(function (t) { return t.copies >= Piece.COPIES_MAX; });
+    plus.setAttribute('aria-label', ui.fr('Un exemplaire de plus pour chaque pièce'));
+    pop.appendChild(minus);
+    pop.appendChild(plus);
+    return pop;
+  }
+  function scalePop(pct, all) {
     var pop = ui.el('div', 'inline-pop');
     var head = ui.el('div', 'pop-head');
-    head.appendChild(ui.el('span', '', 'Taille de la pièce'));
+    head.appendChild(ui.el('span', '', all ? 'Taille de toutes les pièces' : 'Taille de la pièce'));
     var label = ui.el('b', '', pct + ' %');
     head.appendChild(label);
     pop.appendChild(head);

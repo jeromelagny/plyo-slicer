@@ -199,6 +199,13 @@ nlohmann::json context()
         const Slic3r::ModelObject* object = model_objects[i];
         nlohmann::json item{{"ref", std::to_string(object->id().id)}, {"name", Json::utf8_prefix(object->name, 120)}, {"size_mm", size_json(object_size(*object))},
                             {"copies", std::max<size_t>(1, std::min<size_t>(object->instances.size(), 200))}};
+        // Échelle de la pièce (premier exemplaire, plus grand facteur), en % : « Taille » part de la taille de chaque pièce.
+        if (!object->instances.empty()) {
+            const Slic3r::Vec3d f   = object->instances.front()->get_scaling_factor();
+            const double        pct = std::max({std::abs(f.x()), std::abs(f.y()), std::abs(f.z())}) * 100.0;
+            if (pct > 0.0 && pct < 100000.0)
+                item["scale_pct"] = static_cast<int>(std::lround(pct));
+        }
         if (selected.count(static_cast<int>(i)))
             item["selected"] = true;
         if (const int plate = plates.find_instance(static_cast<int>(i), 0); plate >= 0 && plate < 100)

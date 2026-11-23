@@ -129,7 +129,46 @@
     }
     if (!c) return null;
     if (o.ref) c.object = String(o.ref);
+    // Plusieurs pièces sur le plateau : la phrase dit laquelle (« Bateau : 2 exemplaires sur le plateau »).
+    if (o.label) c.summary = o.label + ' : ' + c.summary.charAt(0).toLowerCase() + c.summary.slice(1);
     return [c];
+  }
+
+  // Pièces du plateau proposées à « Envie d'ajuster ? » quand il y en a plusieurs : une par objet d'Orca (ses exemplaires
+  // comptent pour un), nom sans extension, numéroté s'il revient (« Bateau », « Bateau (2) »).
+  function plateTargets(objects) {
+    var list = (Array.isArray(objects) ? objects : []).filter(function (o) { return o && typeof o === 'object' && o.ref !== undefined && o.ref !== null; });
+    var seen = {};
+    return list.map(function (o) {
+      var base = String(o.name || 'Pièce').replace(/\.[a-z0-9]+$/i, '').trim() || 'Pièce';
+      seen[base] = (seen[base] || 0) + 1;
+      return { ref: String(o.ref), label: seen[base] > 1 ? base + ' (' + seen[base] + ')' : base, copies: Math.max(1, Number(o.copies) || 1),
+        size_mm: o.size_mm, scale_pct: Number(o.scale_pct) > 0 ? Math.round(Number(o.scale_pct)) : null, selected: !!o.selected };
+    });
+  }
+  // Taille actuelle d'une pièce en % : l'échelle lue sur le plateau, sinon comparée à la taille posée.
+  function targetPct(target, original) {
+    return target && target.scale_pct ? target.scale_pct : sizePct(original, target && target.size_mm);
+  }
+  // Le même geste sur plusieurs pièces (« Toutes »), une ligne par pièce. `o` : { delta } (copies : un de plus ou de moins pour
+  // chacune), { to } (taille : chacune à ce % de sa taille d'origine). Rend null si rien ne change.
+  function adjustMany(kind, targets, o) {
+    o = o || {};
+    var out = [];
+    (Array.isArray(targets) ? targets : []).forEach(function (t) {
+      var one = { ref: t.ref, label: t.label };
+      if (kind === 'copies') {
+        var n = Math.max(1, Math.min(COPIES_MAX, t.copies + (Number(o.delta) || 0)));
+        if (n === t.copies) return;
+        one.copies = n;
+      } else if (kind === 'scale') {
+        one.from = targetPct(t);
+        one.to = o.to;
+      }
+      var list = adjustCommands(kind, one);
+      if (list) out = out.concat(list);
+    });
+    return out.length ? out : null;
   }
 
   // « Mes pièces récentes » (deuxième projet) : les projets enregistrés qui ont une pièce, les plus récents d'abord, sans
@@ -145,7 +184,7 @@
 
   var api = { MAX_MODEL_BYTES: MAX_MODEL_BYTES, COPIES_MAX: COPIES_MAX, SIZE_MIN: SIZE_MIN, SIZE_MAX: SIZE_MAX,
     measuredElsewhere: measuredElsewhere, fits: fits, mm: mm, tooBigText: tooBigText, designOutcome: designOutcome, base64: base64,
-    designFile: designFile, designLibLoader: designLibLoader, pieceObject: pieceObject, sizePct: sizePct, adjustCommands: adjustCommands,
+    designFile: designFile, designLibLoader: designLibLoader, pieceObject: pieceObject, sizePct: sizePct, adjustCommands: adjustCommands, plateTargets: plateTargets, targetPct: targetPct, adjustMany: adjustMany,
     recentParts: recentParts };
   root.PlyoPiece = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

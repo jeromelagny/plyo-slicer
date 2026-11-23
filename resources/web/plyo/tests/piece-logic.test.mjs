@@ -115,3 +115,16 @@ test('« Mes pièces récentes » : projets avec une pièce, les plus récents d
   assert.equal(Piece.recentParts(items, null, 1).length, 1);
   assert.deepEqual(Piece.recentParts(null), []);
 });
+
+test('plusieurs pièces : noms sans extension numérotés, même geste pour toutes, échelle lue sur le plateau', () => {
+  const t = Piece.plateTargets([{ ref: 1, name: 'Bateau.stl', copies: 2, scale_pct: 100 }, { ref: 2, name: 'Bateau.stl', scale_pct: 80, selected: true }, { ref: 3, name: 'Cube' }, null, { name: 'sans ref' }]);
+  assert.deepEqual(t.map((x) => [x.ref, x.label, x.copies, x.selected]), [['1', 'Bateau', 2, false], ['2', 'Bateau (2)', 1, true], ['3', 'Cube', 1, false]]);
+  assert.deepEqual(Piece.adjustMany('copies', t, { delta: 1 }).map((c) => [c.object, c.amount, c.summary]),
+    [['1', 3, 'Bateau : 3 exemplaires sur le plateau'], ['2', 2, 'Bateau (2) : 2 exemplaires sur le plateau'], ['3', 2, 'Cube : 2 exemplaires sur le plateau']]);
+  assert.deepEqual(Piece.adjustMany('copies', t, { delta: -1 }).map((c) => c.object), ['1'], 'déjà à un exemplaire : rien');
+  assert.deepEqual(Piece.adjustMany('scale', t, { to: 80 }).map((c) => [c.object, c.amount]), [['1', 80], ['3', 80]], 'déjà à 80 % : rien');
+  assert.equal(Piece.adjustMany('rotate', [], {}), null);
+  assert.equal(Piece.targetPct(t[1]), 80);
+  assert.equal(Piece.targetPct(t[2], [60, 31, 48]), 100);
+  assert.equal(Piece.adjustCommands('flat', { ref: 3, label: 'Cube' })[0].summary, 'Cube : pièce posée sur sa plus grande face');
+});

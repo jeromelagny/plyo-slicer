@@ -293,6 +293,10 @@
   html .act.on { border-color: var(--accent); background: var(--accent-soft); }
   .act > svg { color: var(--accent-text); }
   html .act[disabled] { opacity: .5; }
+  /* « Quelle pièce ? » (plusieurs pièces sur le plateau) : mise en avant quand un geste attend le choix. */
+  .target-pick { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface); }
+  .target-pick.ask { outline: 1.5px solid var(--accent); }
+  .target-pick.ask > span { color: var(--accent-text); font-weight: 600; }
   .inline-pop { padding: 12px; border-radius: 12px; background: var(--surface); font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
   .inline-pop.pop-head { flex-direction: row; align-items: center; gap: 10px; }
   .pop-head { display: flex; justify-content: space-between; align-items: center; }

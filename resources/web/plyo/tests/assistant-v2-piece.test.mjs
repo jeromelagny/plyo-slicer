@@ -393,3 +393,48 @@ test('lot 2 : la vue de l’étape n’affiche ni crédits ni tokens, et le clas
   assert.match(classic, /var built = PlyoPiece\.designFile\(M, answer\.part\);/);
   assert.match(classic, /data: built\.data, project: conv\.project, conv: conv\.id,/);
 });
+
+test('plusieurs pièces : « Envie d’ajuster ? » demande laquelle, ou « Toutes », et la phrase dit laquelle a changé', async () => {
+  const plate = { objects: [
+    { ref: '7', name: 'Petit bateau', size_mm: [60, 31, 48], copies: 1, scale_pct: 100 },
+    { ref: '9', name: 'Cube.stl', size_mm: [20, 20, 20], copies: 2, scale_pct: 100 }], bed_mm: [220, 220, 250] };
+  const p = loadV2({ bridge: bridge({ plate }), fetch: service() });
+  try {
+    await sleep(30);
+    p.$('piece-boat').click();
+    p.emit(BOAT);
+    await sleep(20);
+    const card = () => p.$('stepcard');
+    const pick = () => card().querySelector('.target-pick');
+    assert.ok(pick(), 'deux pièces : « Quelle pièce ? »');
+    assert.deepEqual(pick().querySelectorAll('.chip').map((b) => texts(b)), ['Petit bateau', 'Cube × 2', 'Toutes']);
+    // Copies sans pièce choisie : rien n'est envoyé, la question est mise en avant.
+    const before = p.posted.length;
+    card().querySelectorAll('.act')[2].click();
+    assert.equal(p.posted.length, before, 'aucun ordre sans pièce choisie');
+    assert.match(texts(pick()), /Quelle pièce \? Choisis-la, puis je m’en occupe\./);
+    // Le cube choisi : le réglage des copies s'ouvre sur ses 2 exemplaires.
+    byText(pick(), /^Cube/).click();
+    assert.match(texts(card().querySelector('.inline-pop')), /Combien d’exemplaires \?.*2/);
+    byText(card().querySelector('.inline-pop'), /^\+$/).click();
+    assert.deepEqual(JSON.parse(JSON.stringify(p.posted.at(-1).commands)), [{ op: 'set_copies', amount: 3, summary: 'Cube : 3 exemplaires sur le plateau', object: '9' }]);
+    assert.equal(p.posted.at(-1).by_user, true);
+    p.emit({ type: 'commands', request: p.posted.at(-1).request, ok: true, done: ['Cube : 3 exemplaires sur le plateau'], skipped: [], undo_token: 70 });
+    // Toutes : tourner chaque pièce, une phrase par pièce.
+    byText(pick(), /^Toutes$/).click();
+    card().querySelectorAll('.act')[0].click();
+    assert.deepEqual(JSON.parse(JSON.stringify(p.posted.at(-1).commands)).map((c) => [c.object, c.summary]),
+      [['7', 'Petit bateau : pièce tournée d’un quart de tour'], ['9', 'Cube : pièce tournée d’un quart de tour']]);
+  } finally { p.stop(); }
+});
+
+test('une seule pièce : pas de question, le geste va droit à la pièce', async () => {
+  const p = loadV2({ bridge: bridge({ plate: PLATE }), fetch: service() });
+  try {
+    await sleep(30);
+    p.$('piece-boat').click();
+    p.emit(BOAT);
+    await sleep(20);
+    assert.equal(p.$('stepcard').querySelector('.target-pick'), null);
+  } finally { p.stop(); }
+});
