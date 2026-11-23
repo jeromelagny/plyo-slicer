@@ -214,3 +214,44 @@ test('lot 1 : la page v2 tient dans la politique de sécurité (une seule balise
     assert.ok(!/\beval\s*\(|new Function\s*\(|innerHTML/.test(source), 'eval, new Function ou innerHTML');
   }
 });
+
+test('deux zones : une seule dépliée, l’autre en barre ; écrire déplie la conversation, une réponse sur l’étape allume le badge', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const p = loadV2({ bridge: bridge({ session: SESSION }), fetch: service(async () => { await gate; return response(200, null, { lines: [FINAL] }); }) });
+  try {
+    await sleep(30);
+    const zone = () => p.$('zones').dataset.open;
+    assert.equal(zone(), 'step', 'à l’ouverture : l’étape');
+    assert.match(texts(p.$('stepbar-kicker')) + ' ' + texts(p.$('stepbar-title')), /Étape 1 sur 3 Qu’est-ce qu’on imprime/);
+    p.$('chatbar').click();
+    assert.equal(zone(), 'chat');
+    p.$('chat-reduce').click();
+    assert.equal(zone(), 'step');
+    // Une question : la conversation se déplie ; on revient sur l'étape avant la réponse, qui allume alors le badge.
+    p.$('note').value = 'Je veux un dessus bien lisse';
+    p.$('c-send').click();
+    assert.equal(zone(), 'chat', 'écrire déplie la conversation');
+    p.$('stepbar-show').click();
+    assert.equal(zone(), 'step');
+    release();
+    await sleep(80);
+    assert.equal(zone(), 'step', 'la réponse ne change pas de zone');
+    assert.equal(texts(p.$('chatbar-badge')), '1');
+    assert.equal(p.$('chatbar-badge').classList.contains('hidden'), false);
+    assert.match(texts(p.$('chatbar-last')), /Un dessus bien lisse/, 'la dernière ligne de la conversation dans la barre');
+    p.$('chatbar').click();
+    assert.equal(p.$('chatbar-badge').classList.contains('hidden'), true, 'lu : le badge s’éteint');
+  } finally { p.stop(); }
+});
+
+test('barre de l’étape : son bouton fait la même chose que le bouton plein de la carte', async () => {
+  const p = loadV2({ bridge: bridge(), fetch: service() });
+  try {
+    await sleep(30);
+    const primary = p.$('card-primary');
+    const go = p.$('stepbar-go');
+    assert.equal(go.classList.contains('hidden'), !primary);
+    if (primary) assert.equal(texts(go), texts(primary));
+  } finally { p.stop(); }
+});

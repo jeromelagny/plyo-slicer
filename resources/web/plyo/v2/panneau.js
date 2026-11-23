@@ -107,7 +107,11 @@
       conv.entries.forEach(function (entry) { try { renderEntry(entry, true); } catch (e) { /* élément abîmé : ignoré */ } });
       render();
       follow = false;
-      scroller.scrollTop = 0; // projet rouvert : sa carte d'étape d'abord, la conversation en dessous
+      unread = 0;
+      showZone('step'); // projet rouvert : sa carte d'étape d'abord, la conversation en barre
+      stepScroller.scrollTop = 0;
+      scrollDown();
+      renderChatBar();
       newMsg.classList.add('hidden');
     }
 
@@ -171,22 +175,72 @@
       E.renderCard($('stepcard'), key, { project: conv.project, step: J.currentStep(conv.project), revisit: !!opened, held: !opened && !!hold, panel: V2.panel,
         actions: { classic: backToClassic, closeRevisit: function () { openStep(null); } } });
       renderHello();
+      renderStepBar();
     }
     function openStep(key) {
       opened = key;
       if (!key) hold = null; // « Revenir à l'étape en cours » : là où en est le projet
       render();
-      scroller.scrollTop = 0;
+      showZone('step');
+      stepScroller.scrollTop = 0;
     }
     // Garde une étape à l'écran (`key`), ou la relâche (null) : la carte suit alors le projet.
     function setHold(key) {
       hold = key || null;
       if (hold) opened = null;
       render();
-      scroller.scrollTop = 0; // la carte depuis son début : la pièce posée, ou l'étape suivante
+      stepScroller.scrollTop = 0; // la carte depuis son début : la pièce posée, ou l'étape suivante
     }
     function renderHello() { $('hello').classList.toggle('hidden', thread.children.length > 0); }
     function clearThread() { thread.textContent = ''; dropLoginCard(); renderHello(); }
+    // ---------- Deux zones : l'étape ou la conversation, l'autre en barre ----------
+    // Une seule zone dépliée. Écrire (champ de saisie, suggestion) déplie la conversation ; la barre des étapes, une étape
+    // rouverte ou un projet rouvert déplient l'étape. Une réponse arrivée pendant qu'on est sur l'étape allume la barre de la
+    // conversation (badge, dernière ligne) sans changer de zone. La barre de l'étape garde son bouton (« Continuer »…).
+    var zones = $('zones'), stepScroller = $('stepscroll'), unread = 0;
+    zones.dataset.open = 'step';
+    function zoneOpen() { return zones.dataset.open || 'step'; }
+    function showZone(which) {
+      if (zoneOpen() === which) return;
+      zones.dataset.open = which;
+      if (which === 'chat') {
+        unread = 0;
+        renderChatBar();
+        if (follow || atBottom()) scrollDown();
+      }
+    }
+    function lastLine() {
+      for (var n = thread.lastElementChild || thread.lastChild; n; n = n.previousElementSibling || n.previousSibling) {
+        var t = (n.textContent || '').replace(/\s+/g, ' ').trim();
+        if (t) return t.slice(0, 160);
+      }
+      return '';
+    }
+    function renderChatBar() {
+      var badge = $('chatbar-badge');
+      badge.textContent = String(unread);
+      badge.classList.toggle('hidden', unread === 0);
+      $('chatbar-last').textContent = lastLine() || ui.fr('Pose une question à l’assistant quand tu veux.');
+    }
+    // La barre de l'étape : en-tête et titre de la carte, ce qui est choisi, et le bouton plein de la carte (même action).
+    function renderStepBar() {
+      var card = $('stepcard'), kicker = card.querySelector('.kicker'), title = card.querySelector('h2.t'), primary = $('card-primary');
+      $('stepbar-kicker').textContent = kicker ? kicker.textContent : '';
+      $('stepbar-title').textContent = title ? title.textContent : '';
+      var rows = J.filledRows(conv.project, {}).map(function (r) { return r.text; });
+      $('stepbar-sub').textContent = rows.join(' · ');
+      var go = $('stepbar-go');
+      go.classList.toggle('hidden', !primary);
+      if (primary) { go.textContent = primary.textContent; go.disabled = primary.disabled; }
+    }
+    $('stepbar-go').addEventListener('click', function (e) { e.stopPropagation(); var b = $('card-primary'); if (b && !b.disabled) b.click(); });
+    $('stepbar-show').addEventListener('click', function (e) { e.stopPropagation(); showZone('step'); });
+    $('stepbar').addEventListener('click', function () { showZone('step'); });
+    $('chatbar').addEventListener('click', function () { showZone('chat'); });
+    $('chatbar').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showZone('chat'); } });
+    $('chat-reduce').addEventListener('click', function () { showZone('step'); });
+    $('stepper').addEventListener('click', function () { showZone('step'); });
+
     // Le fil ne suit les nouveaux messages que quand on parle à l'assistant (question, suggestion). Après un clic dans la carte
     // de l'étape, la carte reste où elle est : un message arrivé plus bas, hors de vue, est signalé par « Nouveau message ↓ ».
     var follow = false, newMsg = $('newmsg');
@@ -195,6 +249,12 @@
     function addToThread(node) {
       thread.appendChild(node);
       renderHello();
+      if (zoneOpen() === 'step') {
+        // Seules les réponses de l'assistant comptent dans le badge ; les lignes d'un geste fait dans la carte, non.
+        if (node.classList && node.classList.contains('ai')) unread++;
+        renderChatBar();
+        return node;
+      }
       if (follow) scrollDown();
       else if (node.getBoundingClientRect && node.getBoundingClientRect().top > scroller.getBoundingClientRect().bottom) newMsg.classList.remove('hidden');
       return node;
@@ -203,7 +263,7 @@
     scroller.addEventListener('scroll', function () { if (atBottom()) newMsg.classList.add('hidden'); });
     // Un geste dans la carte ou la barre des étapes : le fil arrête de suivre.
     ['stepcard', 'stepper'].forEach(function (id) { $(id).addEventListener('pointerdown', function () { follow = false; }); });
-    input.addEventListener('focus', function () { follow = true; });
+    input.addEventListener('focus', function () { follow = true; showZone('chat'); });
     function say(text, kind, actions) { return addToThread(D.notice(kind || 'info', text, actions)); }
 
     // Une entrée de la conversation dans le fil. `archived` : conversation rouverte (ses questions ne se rejouent pas).
@@ -543,6 +603,7 @@
     function send(text, opts) {
       opts = opts || {};
       follow = true; // on parle à l'assistant : le fil suit sa réponse
+      showZone('chat');
       var note = (text || '').trim();
       if (busy) return;
       var photos = opts.photos || attachments.slice();

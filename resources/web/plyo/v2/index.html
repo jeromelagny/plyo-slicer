@@ -174,8 +174,31 @@
   .st-line.on { background: var(--accent); }
   @media (max-width: 340px) { .st .l { display: none; } .st.cur .l { display: inline; } }
 
-  /* Fil : la carte de l'étape puis la discussion */
-  .pscroll { flex: 1; overflow: auto; padding: 16px 16px 10px; display: flex; flex-direction: column; gap: 14px; }
+  /* Deux zones : l'étape et la conversation. Une seule dépliée (pleine hauteur), l'autre en barre avec « Afficher ». */
+  .zones { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .zone-step, .zone-chat { display: flex; flex-direction: column; min-height: 0; }
+  .zbody { flex: 1; min-height: 0; overflow: auto; }
+  #stepscroll { padding: 14px 16px 16px; }
+  .pscroll { padding: 10px 16px 10px; display: flex; flex-direction: column; gap: 14px; }
+  html .zbar { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--surface); cursor: pointer; text-align: left; }
+  #stepbar { border-bottom: 1px solid var(--border); }
+  #chatbar { border-top: 1px solid var(--border); }
+  .zbar .zt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .zl { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .zbar b { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .zbar small { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  html .zshow { flex: none; border: 1px solid var(--accent); color: var(--accent-text); background: var(--bg); border-radius: var(--pill); padding: 5px 12px; font-size: 12.5px; font-weight: 650; cursor: pointer; }
+  .zbadge { flex: none; background: var(--accent-fill); color: var(--on-accent); border-radius: var(--pill); font-size: 11px; font-weight: 700; padding: 1px 7px; }
+  #stepbar-go { flex: none; }
+  .zbar .pdot { flex: none; width: 22px; height: 22px; border-radius: 7px; font-size: 11px; }
+  .zhead { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 16px 0; }
+  .ztitle { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .ztitle::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  html .zreduce { border: 0; background: none; color: var(--accent-text); font-weight: 600; font-size: 12.5px; padding: 0; cursor: pointer; }
+  .zones[data-open="step"] .zone-step { flex: 1; }
+  .zones[data-open="step"] #stepbar, .zones[data-open="step"] .zhead, .zones[data-open="step"] #pscroll { display: none; }
+  .zones[data-open="chat"] .zone-chat { flex: 1; }
+  .zones[data-open="chat"] #stepscroll, .zones[data-open="chat"] #chatbar { display: none; }
   /* Un message arrivé plus bas pendant qu'on travaille dans la carte : le panneau ne bouge pas, ce bouton y mène. */
   html .newmsg { position: sticky; bottom: 4px; align-self: center; z-index: 2; border: 1px solid var(--accent); background: var(--bg); color: var(--accent-text); border-radius: var(--pill); padding: 5px 12px; font-size: 12.5px; font-weight: 600; box-shadow: var(--shadow-sm, 0 2px 8px rgba(20, 30, 30, .08)); cursor: pointer; }
   .stepcard { border: 1px solid var(--border); border-radius: 16px; padding: 18px 18px 16px; background: var(--bg); box-shadow: var(--shadow-sm); flex: none; }
@@ -458,11 +481,32 @@
     </div>
   </header>
   <nav class="stepper" id="stepper" aria-label="Étapes"></nav>
-  <div class="pscroll" id="pscroll">
-    <section class="stepcard" id="stepcard" aria-live="polite"></section>
-    <div class="hello" id="hello"></div>
-    <div class="msgs" id="msgs" aria-live="polite"></div>
-    <button class="newmsg hidden" id="newmsg" type="button">Nouveau message ↓</button>
+  <!-- Deux zones, une seule dépliée à la fois (data-open) ; l'autre est une barre nommée avec « Afficher ». -->
+  <div class="zones" id="zones" data-open="step">
+    <div class="zone-step">
+      <div class="zbar" id="stepbar">
+        <span class="zt"><span class="zl" id="stepbar-kicker"></span><b id="stepbar-title"></b><small id="stepbar-sub"></small></span>
+        <button class="zshow" id="stepbar-show" type="button">Afficher</button>
+        <button class="btn primary sm" id="stepbar-go" type="button"></button>
+      </div>
+      <div class="zbody" id="stepscroll">
+        <section class="stepcard" id="stepcard" aria-live="polite"></section>
+      </div>
+    </div>
+    <div class="zone-chat">
+      <div class="zbar" id="chatbar" role="button" tabindex="0" aria-label="Afficher la conversation avec l’assistant">
+        <span class="pdot" aria-hidden="true">P</span>
+        <span class="zt"><span class="zl">Conversation</span><small id="chatbar-last">Pose une question à l’assistant quand tu veux.</small></span>
+        <span class="zbadge hidden" id="chatbar-badge"></span>
+        <span class="zshow">Afficher</span>
+      </div>
+      <div class="zhead"><span class="ztitle">Conversation avec l’assistant</span><button class="zreduce" id="chat-reduce" type="button">Réduire</button></div>
+      <div class="pscroll zbody" id="pscroll">
+        <div class="hello" id="hello"></div>
+        <div class="msgs" id="msgs" aria-live="polite"></div>
+        <button class="newmsg hidden" id="newmsg" type="button">Nouveau message ↓</button>
+      </div>
+    </div>
   </div>
   <div class="composer">
     <div class="focus-chip hidden" id="focus-chip"><span>Tu regardes :</span><b id="focus-label"></b><button type="button" class="go" id="focus-explain">Explique-moi</button><button type="button" class="x" id="focus-close" title="Masquer" aria-label="Masquer">×</button></div>
