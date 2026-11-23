@@ -33,7 +33,7 @@ function service(routes = {}) {
 const BOAT = { type: 'model_added', ok: true, name: 'Petit bateau', size_mm: [60, 31, 48], bed_mm: [220, 220, 250], fits: true, count: 1, sample: 'benchy' };
 const PLATE = { objects: [{ ref: '7', name: 'Petit bateau', size_mm: [60, 31, 48], copies: 1 }], bed_mm: [220, 220, 250] };
 
-test('lot 2 : étape 1 vide : zone de dépôt, ouvrir, galerie, créer avec l’IA, petit bateau', async () => {
+test('lot 2 : étape 1 vide : zone de dépôt, ouvrir, galerie, créer avec l’IA (le petit bateau est dans la galerie)', async () => {
   const p = loadV2({ bridge: bridge(), fetch: service() });
   try {
     await sleep(30);
@@ -45,8 +45,11 @@ test('lot 2 : étape 1 vide : zone de dépôt, ouvrir, galerie, créer avec l’
     assert.match(texts(card.querySelectorAll('.card')[2]), /IA/, 'badge IA');
     assert.ok(!/Mes pièces récentes/.test(texts(card)), 'premier lancement : pas de pièces récentes');
     assert.equal(card.querySelector('#card-primary'), null, 'aucun bouton plein avant le choix');
-    // Le petit bateau : le slicer le pose comme un fichier choisi (même message que le classique).
-    p.$('piece-boat').click();
+    // Plus de lien « essaie avec le petit bateau » : il est dans la galerie. Posé depuis la galerie, le slicer le pose comme un
+    // fichier choisi (même message que le classique).
+    assert.equal(p.$('piece-boat'), null);
+    assert.doesNotMatch(texts(card), /petit bateau/);
+    p.ctx.PlyoV2.piece.sample('benchy');
     const add = p.posted.at(-1);
     assert.equal(add.type, 'model_add');
     assert.equal(add.sample, 'benchy');
@@ -60,7 +63,7 @@ test('lot 2 : pièce posée : fiche, « Envie d’ajuster ? », l’étape 1 res
   const p = loadV2({ bridge: bridge({ plate: PLATE }), fetch: service() });
   try {
     await sleep(30);
-    p.$('piece-boat').click();
+    p.ctx.PlyoV2.piece.sample('benchy');
     p.emit(BOAT);
     await sleep(20);
     const card = p.$('stepcard');
@@ -126,7 +129,7 @@ test('lot 2 : pièce trop grande : alerte, « Réduire pour que ça tienne » (s
   const p = loadV2({ bridge: bridge({ plate: { objects: [{ ref: '7', name: 'Petit bateau', size_mm: [300, 120, 80], copies: 1 }], bed_mm: [220, 220, 250] } }), fetch: service() });
   try {
     await sleep(30);
-    p.$('piece-boat').click();
+    p.ctx.PlyoV2.piece.sample('benchy');
     p.emit(big);
     await sleep(20);
     const card = p.$('stepcard');
@@ -149,7 +152,7 @@ test('lot 2 : machine proposée différente de celle d’Orca : « trop grande �
   try {
     await sleep(30);
     p.ctx.PlyoV2.panel.conv().project.printer = { preset: 'Creality K2 Plus', proposed: true };
-    p.$('piece-boat').click();
+    p.ctx.PlyoV2.piece.sample('benchy');
     p.emit({ ...BOAT, fits: false, size_mm: [300, 120, 80] });
     assert.equal(p.$('stepcard').querySelector('.note.warn'), null);
     assert.equal(p.$('card-primary').disabled, false);
@@ -222,13 +225,13 @@ test('lot 2 : « Changer » : une autre pièce ouvre un nouveau projet, l’anci
   const p = loadV2({ bridge: bridge({ plate: PLATE }), fetch: service() });
   try {
     await sleep(30);
-    p.$('piece-boat').click();
+    p.ctx.PlyoV2.piece.sample('benchy');
     p.emit(BOAT);
     const first = p.ctx.PlyoV2.panel.conv();
     p.$('piece-change').click();
     assert.match(texts(p.$('stepcard')), /Une autre pièce choisie ici ouvre un nouveau projet/);
     assert.match(texts(p.$('stepcard')), /Garder « Petit bateau »/);
-    p.$('piece-boat').click();
+    p.ctx.PlyoV2.piece.sample('benchy');
     const now = p.ctx.PlyoV2.panel.conv();
     assert.notEqual(now.id, first.id, 'nouvelle conversation');
     const add = p.posted.at(-1);
@@ -401,7 +404,7 @@ test('plusieurs pièces : « Envie d’ajuster ? » demande laquelle, ou « Tout
   const p = loadV2({ bridge: bridge({ plate }), fetch: service() });
   try {
     await sleep(30);
-    p.$('piece-boat').click();
+    p.ctx.PlyoV2.piece.sample('benchy');
     p.emit(BOAT);
     await sleep(20);
     const card = () => p.$('stepcard');
@@ -432,7 +435,7 @@ test('une seule pièce : pas de question, le geste va droit à la pièce', async
   const p = loadV2({ bridge: bridge({ plate: PLATE }), fetch: service() });
   try {
     await sleep(30);
-    p.$('piece-boat').click();
+    p.ctx.PlyoV2.piece.sample('benchy');
     p.emit(BOAT);
     await sleep(20);
     assert.equal(p.$('stepcard').querySelector('.target-pick'), null);

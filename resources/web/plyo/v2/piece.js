@@ -1,5 +1,5 @@
 // Assistant v2, étape 1 « Ta pièce » (lot 2) : déposer ou ouvrir un fichier, la galerie, « Créer avec l'IA » (description,
-// croquis, photo par téléphone, puis « Changer quelque chose »), le petit bateau de test, « Mes pièces récentes » ; une fois
+// croquis, photo par téléphone, puis « Changer quelque chose »), « Mes pièces récentes » (le petit bateau de test est dans la galerie) ; une fois
 // la pièce posée : sa fiche, l'alerte « trop grande » et « Envie d'ajuster ? » (tourner, taille, copies, poser à plat, couper,
 // ajouter une pièce). Mêmes messages au slicer que le panneau classique (model_add, gallery_get, plate_action, commands,
 // open_tool, design_lib_get) ; logique partagée dans piece-logic.js, design-flow.js et design-builder.js.
@@ -114,9 +114,6 @@
     body.appendChild(cards);
     if (!adding) {
       body.appendChild(ui.el('p', 'small muted center', 'Un 3MF d’un autre créateur sera adapté à ta machine et à ta bobine.'));
-      var boat = ui.button('Je n’ai rien sous la main : essaie avec le petit bateau', function () { whenChanging(function () { importSample('benchy'); }); }, 'link center');
-      boat.id = 'piece-boat';
-      body.appendChild(boat);
     }
     if (st.changing && name) body.appendChild(box('tip', 'info', null, 'Une autre pièce choisie ici ouvre un nouveau projet, avec la même machine et la même bobine ; « ' + name + ' » reste dans tes projets.'));
     // Deuxième projet : les pièces des projets d'avant, rouvertes d'un clic avec leur plateau et leurs réglages.
@@ -896,5 +893,6 @@
   }
   (V2.plugins = V2.plugins || []).push(plug);
 
-  V2.piece = { addModels: addModels, answerExtras: answerExtras, attachSketch: attachSketch, state: function () { return state(); } };
+  // `sample` : pose un modèle de la galerie par son nom (« benchy »), comme un clic dans la galerie.
+  V2.piece = { sample: function (name) { whenChanging(function () { importSample(name); }); }, addModels: addModels, answerExtras: answerExtras, attachSketch: attachSketch, state: function () { return state(); } };
 })(typeof window !== 'undefined' ? window : globalThis);
