@@ -114,7 +114,17 @@
     delete waiters[msg.request];
     var st = state();
     if (msg.kind === 'slice') {
+      // Orca occupé sur le plateau (orienter, ranger) : la découpe est redemandée d'elle-même, comme les gestes de l'étape 1.
+      if (!msg.ok && msg.reason === 'busy' && (st.sliceBusy || 0) < 20) {
+        st.sliceBusy = (st.sliceBusy || 0) + 1;
+        setTimeout(function () { if (state() === st && st.slicing) ask({ type: 'plate_action', kind: 'slice' }, w); }, 500);
+        return;
+      }
+      st.sliceBusy = 0;
       if (!msg.ok) stopSlicing();
+      // Refus sans explication d'Orca (plateau vide, occupé trop longtemps) : dit dans la carte, avec « Découper à nouveau ».
+      if (!msg.ok && msg.reason !== 'orca_refused' && msg.reason !== 'too_big') { st.sliceTried = 'failed'; st.sliceError = msg.text || ''; render(); if (w) w(false, msg); return; }
+      if (msg.ok) st.sliceError = '';
       if (msg.reason === 'orca_refused') { sliceFailed(msg.issues, 'refused'); if (w) w(false, msg); return; }
       if (msg.reason === 'too_big') { st.issues = [{ tone: 'error', title: 'Ta pièce ne tient pas sur le plateau', text: msg.text || '', actions: [{ kind: 'plate', action: 'scale_to_fit', label: 'Réduire pour que ça tienne' }] }]; render(); if (w) w(false, msg); return; }
     }
@@ -242,9 +252,12 @@
     var c = conv();
     if (!c || !inStep3() || !panel) return;
     var st = state(), p = c.project, s = step();
+    // Plyo Slicer sur une autre machine ou un autre filament : le slicer refuserait les réglages, et une découpe serait faite
+    // pour une autre machine. La carte « … est passé sur » attend ton choix.
+    if (diverged()) return;
     if (s === 'preparer') {
       var it = intentNow();
-      if (it && it.mode === 'ready' && (!expert() || (p.intent && p.intent.reapply)) && !st.applying) { applyIntent(); return; }
+      if (it && it.mode === 'ready' && (!expert() || (p.intent && p.intent.reapply)) && !st.applying && !st.intentError) { applyIntent(); return; }
       if (it) return;
       if (sliced()) { if (st.preflight) advance(); return; }
     }
@@ -284,6 +297,7 @@
   function applyIntent() {
     var st = state();
     if (st.applying) return;
+    st.intentError = null;
     st.applying = true;
     render();
     readManual(function () {
@@ -311,8 +325,32 @@
       };
       if (!it.changes.length) { done(null); return; }
       apply(Logic.confirmedChanges(it.changes.map(function (c) { return { key: c.key, value: c.value, label: c.label }; })), 'Intention : ' + it.summary.sentence.replace(/ :$/, ''),
-        function (ok, text, result) { if (!ok) { st.applying = false; note(text, 'error'); render(); return; } done(result); });
+        function (ok, text, result) {
+          if (!ok) {
+            // Refusé (Orca occupé, fiche incomplète…) : on s'arrête là, sans redemander en boucle ; la carte le dit avec « Réessayer ».
+            st.applying = false;
+            st.intentError = { text: text || 'Je n’ai pas pu régler Plyo Slicer pour ta pièce.', result: result || {} };
+            panel.record({ kind: 'note', text: st.intentError.text, tone: 'error' });
+            render();
+            return;
+          }
+          done(result);
+        });
     });
+  }
+  // Le plateau a été vidé dans Plyo Slicer : rien à découper ; la pièce revient par « Annuler » du slicer, ou à l'étape 1.
+  function goneBox() {
+    return noteBox('warn', 'alert', 'Ta pièce n’est plus sur le plateau. « Annuler » de Plyo Slicer (Cmd/Ctrl + Z) la remet ; sinon, reviens à l’étape 1 pour la reposer.',
+      [ui.button('Revenir à l’étape 1', function () { if (panel.openStep) panel.openStep('piece'); }, 'btn sm main')]);
+  }
+  function intentErrorBox() {
+    var st = state(), e = st.intentError;
+    var acts = [ui.button('Réessayer', function () { st.intentError = null; applyIntent(); }, 'btn sm main')];
+    panel.refusalActions(e.result, function () { st.intentError = null; applyIntent(); }).forEach(function (a) {
+      acts.unshift(ui.button(a.label, a.run, 'btn sm main'));
+    });
+    if (acts.length > 1) acts[1].className = 'btn sm';
+    return noteBox('error', 'alert', e.text, acts);
   }
   function presetKey(p) { return [p.printer && p.printer.preset, p.filament && p.filament.preset].join('|'); }
   // « Annuler » du lot de l'usage : réglages d'avant remis, retour à la question.
@@ -733,30 +771,38 @@
   }
 
   // « Plyo Slicer est passé sur … » (machine ou filament changé hors du panneau) : sans rien décider à ta place.
+  // Plyo Slicer est-il sur une autre machine, ou sur un autre filament, que le projet ? (hors envoi en cours)
+  function diverged() {
+    var p = project(), ctx = values() && values().context, st = state();
+    if (!p.printer || p.printer.proposed || !ctx || st.lock) return false;
+    if (ctx.printer && ctx.printer !== p.printer.preset) return true;
+    var f = p.filament;
+    return !!(ctx.filament && f && !f.proposed && f.preset && !(Array.isArray(p.canvas) && p.canvas.length) && !R.sameFilament(f.preset, ctx.filament));
+  }
   function divergenceInto(body) {
     var p = project(), ctx = values() && values().context, st = state();
-    if (!p.printer || p.printer.proposed || !ctx || st.lock) return;
+    if (!diverged()) return false;
     if (ctx.printer && ctx.printer !== p.printer.preset) {
       var names = J.divergenceNames(p.printer, ctx.printer);
       body.appendChild(noteBox('warn', 'alert', 'Plyo Slicer est passé sur **' + names.to + '**, mais ton projet imprime sur **' + names.from + '**.', [
         ui.button('Utiliser ' + names.to + ' pour ce projet', function () { if (V2.materiel && V2.materiel.pickPrinter) V2.materiel.pickPrinter(ctx.printer, J.machineLabel({ name: ctx.printer })); }, 'btn sm'),
         ui.button('Remettre ' + names.from, restoreProject, 'btn sm')]));
-      return;
+      return true;
     }
     var f = p.filament, of = ctx.filament;
-    if (!of || !f || f.proposed || !f.preset || (Array.isArray(p.canvas) && p.canvas.length) || R.sameFilament(f.preset, of)) return;
     var t = R.filamentDivergence(of, f);
     var acts = [];
     if (st.diverge && st.diverge.preset === of && st.diverge.path === 'name') {
       body.appendChild(adoptForm(of, true));
-      return;
+      return true;
     }
-    if (st.diverge && st.diverge.preset === of && st.diverge.path === 'none') { body.appendChild(noteBox('warn', 'alert', R.ADOPT_NONE, [ui.button(t.restore, restoreProject, 'btn sm')])); return; }
+    if (st.diverge && st.diverge.preset === of && st.diverge.path === 'none') { body.appendChild(noteBox('warn', 'alert', R.ADOPT_NONE, [ui.button(t.restore, restoreProject, 'btn sm')])); return true; }
     acts.push(ui.button(t.use, function () { st.diverge = { preset: of, path: 'asking' }; panel.post({ type: 'spool_about_current' }); }, 'btn sm'));
     acts.push(ui.button(t.restore, restoreProject, 'btn sm'));
     var box = noteBox('warn', 'alert', t.text, acts);
     box.querySelector('.note-body').appendChild(ui.el('p', 'hint', t.note));
     body.appendChild(box);
+    return true;
   }
   function restoreProject() { var p = project(); if (P.restorable(p)) panel.post({ type: 'project_restore', project: p, discard_unsaved: false }); }
   function onSpoolCurrent(msg) {
@@ -829,6 +875,8 @@
   // ---------- Écran « À quoi va servir ta pièce ? » ----------
   function usageCard(it) {
     var p = project(), st = state(), body = ui.el('div', 'card-content');
+    if (st.intentError) body.appendChild(intentErrorBox());
+    divergenceInto(body);
     if (it.mode === 'repeat') {
       body.appendChild(noteBox('', 'sliders', it.text));
       return { title: 'Même usage que ta dernière pièce ?', sub: 'Je règle Plyo Slicer comme pour ta dernière pièce.', body: body,
@@ -891,9 +939,11 @@
       ul.appendChild(li);
     });
     body.appendChild(ul);
+    divergenceInto(body);
     issuesInto(body);
-    if (!st.issues.length && !st.slicing && !sliced() && st.sliceTried === 'failed') body.appendChild(noteBox('warn', 'alert', 'La découpe ne s’est pas faite.', [ui.button('Découper à nouveau', function () { st.sliceTried = ''; slice(); }, 'btn sm')]));
-    if (signals && signals.objects === 0) body.appendChild(noteBox('warn', 'alert', 'Ta pièce n’est plus sur le plateau : reviens à l’étape 1 pour la remettre.'));
+    if (!st.issues.length && !st.slicing && !sliced() && st.sliceTried === 'failed') body.appendChild(noteBox('warn', 'alert', st.sliceError || 'La découpe ne s’est pas faite.', [ui.button('Découper à nouveau', function () { st.sliceTried = ''; st.sliceError = ''; slice(); }, 'btn sm')]));
+    if (st.intentError) body.appendChild(intentErrorBox());
+    if (signals && signals.objects === 0) body.appendChild(goneBox());
     var extra = [];
     if (sliced() && st.preflight && signals && signals.ready_for_print === false) extra.push(ui.el('p', 'hint center', 'Plyo Slicer ne laisse pas imprimer cette plaque : regarde ce qu’il signale.'));
     return { title: 'Je prépare ton impression…', sub: null, body: body, primary: null, extra: extra };
@@ -930,7 +980,7 @@
   function readyCard() {
     var p = project(), st = state(), body = ui.el('div', 'card-content'), linked = !!(signals && signals.linked);
     var stats = X.stats(signals, p.filament && p.filament.type);
-    divergenceInto(body);
+    var moved = divergenceInto(body);
     if (stats) body.appendChild(statBox(stats));
     var checks = X.readyChecks(st.preflight, { printer: shortName(), filament: p.filament, added: st.added });
     if (checks.length) {
@@ -949,7 +999,9 @@
       });
       body.appendChild(ul);
     } else if (st.slicing || st.fixing || (!sliced() && st.sliceTried === 'auto')) body.appendChild(spinLine('Je redécoupe la pièce et je revérifie…'));
-    else if (!sliced() && !st.issues.length) body.appendChild(noteBox('warn', 'alert', 'La plaque n’est plus découpée.', [ui.button('Découper', function () { st.sliceTried = ''; slice(); }, 'btn sm main')]));
+    else if (signals && signals.objects === 0) body.appendChild(goneBox());
+    else if (!sliced() && !st.issues.length && st.sliceTried === 'failed' && st.sliceError) body.appendChild(noteBox('warn', 'alert', st.sliceError, [ui.button('Découper à nouveau', function () { st.sliceTried = ''; st.sliceError = ''; slice(); }, 'btn sm main')]));
+    else if (!sliced() && !st.issues.length && !moved) body.appendChild(noteBox('warn', 'alert', 'La plaque n’est plus découpée.', [ui.button('Découper', function () { st.sliceTried = ''; slice(); }, 'btn sm main')]));
     issuesInto(body);
     // Réglages : l'usage choisi, et « Ajuster » (usage, priorité, vitesse).
     var it = p.intent || {}, labels = X.intentLabels(X.intentAnswers(p));
@@ -977,14 +1029,16 @@
     if (st.failure) body.appendChild(failureBox(st.failure));
     body.appendChild(noteBox('tip', 'info', '**Avant de lancer :** plateau propre (sans traces de doigts) et filament bien engagé.', [link('Que vérifier d’autre ?', function () { panel.send(J.suggestionsFor('imprimer')[0].value); })]));
     var blocked = !!(signals && signals.ready_for_print === false);
-    var ready = sliced() && !st.slicing && !blocked && !st.fixing;
+    var ready = sliced() && !st.slicing && !blocked && !st.fixing && !moved;
     var primary = linked ? { label: 'Lancer l’impression sur ' + shortName(), icon: 'send', disabled: !ready || !!st.lock, run: sendPrint }
       : { label: 'Enregistrer pour la clé USB', icon: 'save', disabled: !ready || !!st.lock, run: exportFile };
-    if (!ready && !blocked) primary.label = 'Je prépare…';
+    // Plyo Slicer n'est plus sur la machine ou la bobine du projet : le fichier serait fait pour une autre. Choisir d'abord.
+    if (moved) primary.label = 'Choisis d’abord ci-dessus';
+    else if (!ready && !blocked) primary.label = 'Je prépare…';
     var links = ui.el('div', 'links');
     var prev = link('Voir l’aperçu dans Orca', function () { showPreview(prev); });
     links.appendChild(prev);
-    if (linked) links.appendChild(link('Enregistrer le fichier', exportFile));
+    if (linked && !moved) links.appendChild(link('Enregistrer le fichier', exportFile));
     return { title: 'Tout est prêt', sub: null, body: body, primary: primary, extra: [links] };
   }
   function adjustBox() {
@@ -1697,7 +1751,8 @@
     pn.on('habits', function (msg) { habits = Object.assign(M.emptyHabits(), msg.habits || {}); });
     pn.on('firststeps', function (msg) { level = (msg.state || {}).level || ''; shareOutcomes = !!(msg.state || {}).share_outcomes; if (inStep3()) render(); });
     pn.on('project_reachable', function (msg) { reachable[msg.preset] = !!msg.ok; });
-    pn.on('values', function () { checkAdoptOffer(); if (inStep3()) render(); });
+    // Plyo Slicer remis sur le projet (ou passé ailleurs) : la préparation reprend d'elle-même, ou attend ton choix.
+    pn.on('values', function () { checkAdoptOffer(); if (inStep3()) { drive(); render(); } });
     pn.on('canvas_state', onCanvasState);
     pn.on('canvas_sent', onCanvasSent);
     pn.on('canvas_refused', function (msg) { var st = state(); st.refused = msg.text || 'La CC2 a refusé les emplacements choisis.'; stopWatch(); render(); });
