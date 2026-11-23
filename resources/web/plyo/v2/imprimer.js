@@ -592,12 +592,19 @@
     if (!s || !s.end || s.answered) return;
     var a = J.endAction(s.end.verdict, id, s.end.file);
     s.outcome = s.end.verdict;
+    // Erreur de la machine : on écrit ce que dit l'écran dans la conversation ; la question reste posée sur la carte (ratée
+    // seulement si tu le dis), elle ne devient pas « Bonne impression ! ».
+    if (s.end.verdict === 'error') { save(); if (a.chat) panel.prefill(a.prefill); return; }
     markAnswered();
     if (a.mark === 'success') success();
-    else if (a.mark === 'failure') failed();
-    else render();
-    if (a.chat) panel.prefill(a.prefill);
+    else if (a.mark === 'failure') {
+      // Arrêtée pour une raison donnée : la carte « Qu'est-ce qui ne va pas ? » la reprend (symptôme coché), sans t'emmener
+      // dans la conversation.
+      state().symptom = END_SYMPTOM[id] || '';
+      failed();
+    } else render();
   }
+  var END_SYMPTOM = { bed: 'warp', spaghetti: 'spaghetti' };
   function reprint() {
     var p = project(), st = state();
     delete p.success;
@@ -618,6 +625,8 @@
     if (signals) signals.sliced = false;
     setStep('slice');
     drive();
+    // Demandé depuis la conversation : la préparation qui repart se voit (la carte de l'étape se déplie).
+    panel.showStep();
   }
 
   // ---------- Vues ----------

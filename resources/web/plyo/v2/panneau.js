@@ -988,7 +988,7 @@
       gauge: function () { return lastGauge; },
       // Photos depuis l'ordinateur pour la prochaine demande, avec une phrase déjà écrite dans le champ (diagnostic d'un raté).
       pickPhotos: function (prefill) { if (prefill && !input.value.trim()) { input.value = prefill; growNote(); } fileInput.click(); },
-      prefill: function (text) { input.value = text || ''; growNote(); input.focus(); },
+      prefill: function (text) { input.value = text || ''; growNote(); follow = true; showZone('chat'); input.focus(); },
       scrollDown: scrollDown,
       addToThread: addToThread,
       setPhoneRoute: function (route) { if (phoneRoutes.indexOf(route) < 0) phoneRoutes.push(route); syncPhonePurpose(); },
