@@ -491,7 +491,8 @@
     st.target = ref;
     st.needTarget = null;
     st.tool = null;
-    if (pending === 'rotate' || pending === 'flat') { adjust(pending); return; }
+    if (pending === 'rotate' || pending === 'flat' || (pending === 'cut' && ref !== 'all')) { adjust(pending); return; }
+    if (pending === 'cut') st.needTarget = 'cut'; // couper : une pièce à la fois
     if (pending === 'scale' || pending === 'copies') st.tool = pending;
     render();
   }
@@ -554,9 +555,19 @@
   function adjust(kind, o) {
     var st = state();
     if (st.working) return;
-    if (kind === 'cut') { st.tool = null; st.toolAsked = true; panel.post({ type: 'open_tool', tool: 'cut' }); return; }
     if (kind === 'add') { st.tool = null; st.adding = true; render(); return; }
     var many = manyTargets(), target = chosen();
+    if (kind === 'cut') {
+      // L'outil « Couper » d'Orca s'ouvre sur une pièce : avec plusieurs pièces (ou « Toutes »), on demande laquelle.
+      if (many && (!target || target === 'all')) { st.needTarget = 'cut'; st.target = target === 'all' ? null : st.target; st.tool = null; render(); return; }
+      var one = target || current();
+      st.tool = null;
+      st.toolAsked = true;
+      var m = { type: 'open_tool', tool: 'cut' };
+      if (one && one.ref) m.object = String(one.ref);
+      panel.post(m);
+      return;
+    }
     if (many && !target) { st.needTarget = kind; st.tool = null; render(); return; }
     if ((kind === 'scale' || kind === 'copies') && !o) { st.tool = st.tool === kind ? null : kind; render(); return; }
     var list;
@@ -567,7 +578,22 @@
     st.working = true;
     setLast('Je modifie le plateau…', 'busy');
     render();
-    runCommands(list, function (msg) {
+    // Le slicer prend 6 ordres au plus par envoi : au-delà (« Toutes » sur beaucoup de pièces), plusieurs envois, sans « Annuler »
+    // d'un seul clic (chaque envoi a sa propre étape d'annulation dans Plyo Slicer).
+    var chunks = [];
+    for (var i = 0; i < list.length; i += MAX_COMMANDS) chunks.push(list.slice(i, i + MAX_COMMANDS));
+    var all = { done: [], text: '', undo_token: undefined };
+    (function next() {
+      runCommands(chunks.shift(), function (msg) {
+        all.done = all.done.concat(msg.done || []);
+        if (!msg.ok) all.text = msg.text || all.text;
+        all.undo_token = msg.undo_token;
+        if (msg.ok && chunks.length) { next(); return; }
+        if (all.done.length > MAX_COMMANDS) all.undo_token = undefined;
+        finish(all);
+      }, true);
+    })();
+    function finish(msg) {
       st.working = false;
       var done = (msg.done || []).filter(Boolean);
       if (done.length) {
@@ -578,7 +604,7 @@
       if (kind === 'scale') st.checkFit = true;
       render();
       refreshPlate();
-    }, true);
+    }
   }
   function undoLast() {
     var st = state(), token = st.last && st.last.undo;
@@ -714,16 +740,18 @@
   }
   function targetPicker(list, st) {
     var wrap = ui.el('div', 'target-pick');
-    wrap.appendChild(ui.el('span', 'small muted', st.needTarget ? 'Quelle pièce ? Choisis-la, puis je m’en occupe.' : 'Quelle pièce ?'));
+    wrap.appendChild(ui.el('span', 'small muted', st.needTarget === 'cut' ? 'Quelle pièce couper ? Choisis-la, j’ouvre l’outil sur elle.' : st.needTarget ? 'Quelle pièce ? Choisis-la, puis je m’en occupe.' : 'Quelle pièce ?'));
     var row = ui.el('div', 'chips');
     list.forEach(function (t) {
       var b = ui.button(t.label + (t.copies > 1 ? ' × ' + t.copies : ''), function () { pickTarget(t.ref); }, 'chip' + (st.target === t.ref ? ' sel' : ''));
       b.setAttribute('aria-pressed', st.target === t.ref ? 'true' : 'false');
       row.appendChild(b);
     });
-    var all = ui.button('Toutes', function () { pickTarget('all'); }, 'chip' + (st.target === 'all' ? ' sel' : ''));
-    all.setAttribute('aria-pressed', st.target === 'all' ? 'true' : 'false');
-    row.appendChild(all);
+    if (st.needTarget !== 'cut') {
+      var all = ui.button('Toutes', function () { pickTarget('all'); }, 'chip' + (st.target === 'all' ? ' sel' : ''));
+      all.setAttribute('aria-pressed', st.target === 'all' ? 'true' : 'false');
+      row.appendChild(all);
+    }
     wrap.appendChild(row);
     if (st.needTarget) wrap.classList.add('ask');
     return wrap;

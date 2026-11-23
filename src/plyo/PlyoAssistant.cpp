@@ -555,7 +555,7 @@ void handle_page_message(const nlohmann::json& data)
             done["request"]     = Json::integer(data, "request", 0);
             send(done);
         } else if (type == "open_tool") {
-            nlohmann::json done = Commands::open_tool(Json::str(data, "tool"));
+            nlohmann::json done = Commands::open_tool(Json::str(data, "tool"), Json::str(data, "object", 20));
             done["type"]        = "open_tool";
             send(done);
         } else if (type == "show_setting") {

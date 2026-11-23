@@ -527,7 +527,7 @@ nlohmann::json run(const nlohmann::json& commands)
     return result;
 }
 
-nlohmann::json open_tool(const std::string& tool)
+nlohmann::json open_tool(const std::string& tool, const std::string& object)
 {
     using EType = Slic3r::GUI::GLGizmosManager::EType;
     static const std::map<std::string, std::pair<EType, const char*>> tools = {
@@ -551,12 +551,18 @@ nlohmann::json open_tool(const std::string& tool)
     const auto it = tools.find(tool);
     if (it == tools.end())
         return {{"ok", false}, {"text", "Outil inconnu."}};
-    const std::optional<Slic3r::ObjectID> target = target_of("");
+    // `object` : la pièce choisie dans le panneau (« Couper » avec plusieurs pièces) ; sinon la pièce sélectionnée, ou la seule.
+    const std::optional<Slic3r::ObjectID> target = target_of(object);
     if (!target)
         return {{"ok", false}, {"text", "Clique d'abord sur la pièce, puis redemande-moi d'ouvrir l'outil."}};
+    int idx = -1;
+    try {
+        idx = index_of(*target);
+    } catch (const Refused& e) {
+        return {{"ok", false}, {"text", e.what()}};
+    }
     if (auto* frame = wxGetApp().mainframe)
         frame->select_tab(TAB_ID_PREPARE);
-    const int idx = index_of(*target);
     select_object(idx);
     Slic3r::GUI::GLGizmosManager& gizmos = canvas().get_gizmos_manager();
     // Rouvrir l'outil déjà ouvert le fermerait.
