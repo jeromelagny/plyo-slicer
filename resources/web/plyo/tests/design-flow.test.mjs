@@ -48,7 +48,9 @@ test('croquis ou photo joints : deux au plus, formats acceptés seulement, envoy
 
 test('discussion : pièce dessinée par Plyo → capacité « redesign », bouton « Modifier ma pièce » qui part au concepteur', () => {
   const page = read('index.html'), L = require('../assistant-logic.js');
-  assert.match(page, /if \(conv && conv\.project\.design && conv\.project\.design\.part\) body\.capabilities\.push\('redesign'\);/);
+  // Corps de la demande : ai-client.js, avec le projet de la conversation.
+  assert.match(read('ai-client.js'), /if \(project\.design && project\.design\.part\) body\.capabilities\.push\('redesign'\);/);
+  assert.match(page, /PlyoAiClient\.diagnoseBody\(\{[^}]*project: conv\.project,/);
   assert.match(page, /conv\.project\.design = \{ part: answer\.part \};/);
   assert.match(page, /else if \(a\.kind === 'redesign'\) \{[\s\S]{0,400}designStart\(true\);[\s\S]{0,200}designSubmit\(\);/);
   assert.equal(L.actionSupported({ kind: 'redesign', target: 'Retire l’encoche', label: 'Modifier ma pièce' }), true);

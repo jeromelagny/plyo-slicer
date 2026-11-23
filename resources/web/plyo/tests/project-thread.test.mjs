@@ -37,7 +37,8 @@ test('ce que reçoit l’assistant : l’étape et le fil (heure, onglet, texte)
 
 test('page : les deux onglets écrivent le fil, et il part avec chaque question', () => {
   assert.match(page, /<!--plyo-include:project-thread\.js-->/);
-  assert.match(page, /body\.project = PlyoThread\.forAI\(conv\.project, PlyoJourney\.currentStep\(conv\.project\)\);/);
+  assert.match(page, /projectForAI: PlyoThread\.forAI\(conv\.project, PlyoJourney\.currentStep\(conv\.project\)\),/);
+  assert.match(fs.readFileSync(new URL('../ai-client.js', import.meta.url), 'utf8'), /if \(i\.projectForAI\) body\.project = i\.projectForAI;/);
   for (const what of ["threadNote\\('Étape « '", "PlyoThread\\.appliedText\\(msg\\.applied", "threadNote\\('Résultat : impression réussie\\.'\\)", "threadNote\\('Résultat : impression ratée\\.'\\)", "threadNote\\('Envoyée à l’imprimante\\.'", "threadNote\\('Découpe vérifiée : '", "threadNote\\('Pièce ' \\+ \\(p\\.retouch"])
     assert.match(page, new RegExp(what), what);
 });

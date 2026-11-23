@@ -76,9 +76,13 @@ test('ROB-01 : le texte d’attente rassure pendant une longue réponse, sans ja
   assert.match(page, /var IDLE_TIMEOUT_MS = 60000;/);
   // Les lignes « wait » ne s'affichent pas : seules partial, final et error sont lues ; chaque lecture relance le délai.
   const ask = page.slice(page.indexOf('function ask(note, photos, req)'), page.indexOf('// Une réponse sur une pièce du plateau'));
-  assert.match(ask, /return reader\.read\(\)\.then\(function \(r\) \{\s*touch\(\);/);
-  assert.ok(!/ev\.type === 'wait'/.test(ask));
-  assert.match(ask, /body\.request_id = req\.id;/);
+  // Envoi et lecture du flux : ai-client.js, partagé avec la v2 (voir aussi tests/ai-client.test.mjs).
+  const client = read('ai-client.js');
+  assert.match(client, /return reader\.read\(\)\.then\(function \(r\) \{\s*touch\(\);/);
+  assert.ok(!/ev\.type === 'wait'/.test(client));
+  assert.match(client, /body\.request_id = i\.requestId;/);
+  assert.match(ask, /requestId: req\.id \}\);/);
+  assert.match(ask, /signal: controller\.signal, touch: touch,/);
 });
 
 test('ROB-03 : taille de la demande mesurée en octets UTF-8, photos réduites par paliers, puis refus clair', () => {

@@ -174,7 +174,8 @@ test('panneau : fin de découpe, refus, relecture après un lot et contexte de l
   assert.match(page, /msg\.type === 'orca_issues'\) \{\n\s+onOrcaIssues\(msg\);/);
   assert.match(page, /msg\.reason === 'orca_refused'\) \{[\s\S]{0,80}orcaFailed\(msg\.issues, 'refused'\)/);
   assert.match(page, /if \(msg\.ok && msg\.undo_id && conv\) \{[\s\S]{0,200}askOrca\('after_apply'\)/);
-  assert.match(page, /if \(ctx && ctx\.plate\) body\.plate = ctx\.plate;/, 'plate.issues part tel quel vers le service');
+  assert.match(read('../ai-client.js'), /if \(ctx && ctx\.plate\) body\.plate = ctx\.plate;/, 'plate.issues part tel quel vers le service');
+  assert.match(page, /PlyoAiClient\.diagnoseBody\(\{ values: lastValues, ctx: ctx,/);
   // Une correction passe par le chemin d'application habituel (validation du slicer, « Annuler »).
   const fix = page.slice(page.indexOf('function applyOrcaFix'), page.indexOf('function orcaNote'));
   // Le clic sur le bouton qui annonce la valeur confirme la correction (dernière barrière du slicer, lot 3).

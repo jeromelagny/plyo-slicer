@@ -6,22 +6,30 @@
 <title>Assistant Plyo</title>
 <style>
   /* Assistant Plyo v2 — maquette : docs/plyo/maquette-assistant-plyo.html (colonne de droite).
-     Même pont window.orca et même stockage que le panneau classique (resources/web/plyo/index.html) ; la version affichée
-     se choisit par la clé « ui » des premiers pas (menu ⋯ des deux panneaux). Variables --orca-* injectées par OrcaSlicer. */
+     Variables --orca-* injectées par OrcaSlicer (thème clair ou sombre, attribut data-orca-theme) ; valeurs de repli
+     pour un navigateur. Tailles, rayons et espacements de la maquette. */
   :root {
     --bg: var(--orca-bg, #ffffff);
     --fg: var(--orca-fg, #1d2527);
     --muted: var(--orca-muted, #667074);
     --border: var(--orca-border, #e1e5e4);
     --accent: var(--orca-accent, #00897b);
-    --font: var(--orca-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    --font: var(--orca-font, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif);
+    /* Blanc sur l'accent d'Orca ne fait pas 4,5:1 : les fonds pleins et textes accentués prennent un vert plus sombre. */
     --accent-fill: #00796b;
     --on-accent: #ffffff;
     --accent-text: #00695c;
     --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--bg));
     --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
     --raised: color-mix(in srgb, var(--fg) 8%, var(--bg));
+    --warn: #d18a00;
+    --warn-text: #8a5300;
+    --warn-soft: color-mix(in srgb, var(--warn) 13%, var(--bg));
+    --danger: #d64545;
+    --danger-text: #b3261e;
+    --danger-soft: color-mix(in srgb, var(--danger) 10%, var(--bg));
     --shadow: 0 10px 30px rgba(20, 30, 30, .14);
+    --shadow-sm: 0 2px 8px rgba(20, 30, 30, .08);
     --r: 14px; --r-sm: 9px; --pill: 999px;
     color-scheme: light;
   }
@@ -29,67 +37,198 @@
     --accent-fill: #1f9488;
     --accent-text: #6fd1c5;
     --accent-soft: color-mix(in srgb, var(--accent) 18%, var(--bg));
+    --warn-text: #f2b544;
+    --danger-text: #ff8a80;
     --shadow: 0 10px 30px rgba(0, 0, 0, .5);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, .4);
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  /* Préfixées par « html » : ces règles gagnent sur les styles par défaut qu'Orca injecte (boutons en texte blanc…). */
   html, body { height: 100%; }
-  html body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 13px; line-height: 1.5; display: flex; flex-direction: column; overflow: hidden; }
-  html button { font: inherit; color: inherit; }
+  html body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; overflow: hidden; }
+  html button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; }
+  html button[disabled] { cursor: default; }
+  html textarea { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .hidden { display: none !important; }
+  svg.i { flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .small { font-size: 12.5px; }
+  .muted { color: var(--muted); }
 
-  .head { position: relative; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-  .pdot { width: 22px; height: 22px; border-radius: 7px; background: var(--accent-fill); color: var(--on-accent); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
-  .head strong { font-size: 14px; }
+  /* En-tête */
+  .phead { position: relative; display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--border); }
+  .pdot { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), #4db6ac); color: #fff; display: grid; place-items: center; font-weight: 700; flex: none; }
+  .phead strong { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .spacer { flex: 1; }
-  .icon-btn { width: 30px; height: 30px; border: 0; border-radius: var(--r-sm); background: transparent; cursor: pointer; display: grid; place-items: center; }
-  .icon-btn:hover { background: var(--raised); }
-  .menu { position: absolute; top: 46px; right: 10px; z-index: 10; min-width: 240px; padding: 6px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg); box-shadow: var(--shadow); }
-  .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; text-align: left; cursor: pointer; }
-  .menu button:hover { background: var(--raised); }
+  html .phone-pill { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--accent-text); background: var(--accent-soft); border-radius: var(--pill); padding: 6px 8px; }
+  html .gauge { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--bg); border-radius: var(--pill); padding: 5px 9px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .gauge .gname { font-size: 11.5px; }
+  .gauge .bar { width: 40px; height: 6px; border-radius: 6px; background: var(--raised); overflow: hidden; }
+  .gauge .bar i { display: block; height: 100%; width: 3%; background: var(--accent); border-radius: 6px; transition: width .6s; }
+  .gauge b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .gauge.low .bar i { background: var(--warn); }
+  html .gauge.empty { border-color: var(--danger); color: var(--danger-text); }
+  .gauge.empty .bar i { background: var(--danger); }
+  /* Panneau étroit : la barre de la jauge cède la place (comme dans la maquette), le pourcentage reste. */
+  @media (max-width: 440px) { .gauge .bar { display: none; } }
+  @media (max-width: 340px) { .gauge .gname { display: none; } }
+  html .iconbtn { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); flex: none; }
+  html .iconbtn:hover { background: var(--surface); color: var(--fg); }
+  .menu { position: absolute; right: 12px; top: 52px; width: 290px; max-width: calc(100vw - 24px); max-height: calc(100vh - 70px); overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 6px; z-index: 30; }
+  .menu .g { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px 4px; }
+  html .menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 9px; text-align: left; }
+  html .menu button:hover { background: var(--surface); }
+  .menu hr { border: 0; border-top: 1px solid var(--border); margin: 5px 0; }
+  .menu hr:first-child { display: none; }
 
-  .body { flex: 1; overflow: auto; padding: 16px; }
-  .card { border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); padding: 16px; }
-  .card h2 { margin: 0 0 6px; font-size: 15px; }
-  .card p { margin: 0 0 12px; color: var(--muted); }
-  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 6px 14px; border-radius: var(--r-sm); font-weight: 600; cursor: pointer; border: 1px solid var(--accent-fill); background: var(--accent-fill); color: var(--on-accent); }
-  .btn:hover { filter: brightness(1.08); }
+  /* Barre des étapes */
+  .stepper { display: flex; justify-content: space-between; align-items: center; gap: 3px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  html .st { display: flex; align-items: center; gap: 5px; padding: 4px 4px; border-radius: var(--pill); color: var(--muted); font-weight: 550; font-size: 12.5px; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+  .st .l { overflow: hidden; text-overflow: ellipsis; }
+  html .st.cur, html .st.open { flex-shrink: 0; }
+  .st .n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; border: 2px solid var(--border); background: var(--bg); flex: none; }
+  html .st.cur, html .st.done { color: var(--fg); }
+  .st.cur .n { border-color: var(--accent); color: var(--accent-text); }
+  .st.done .n { background: var(--accent); border-color: var(--accent); color: #fff; }
+  html .st:not([disabled]):hover { background: var(--surface); }
+  html .st.open { background: var(--accent-soft); }
+  .st-line { flex: 1 0 6px; min-width: 6px; height: 2px; background: var(--border); border-radius: 2px; }
+  .st-line.on { background: var(--accent); }
+  @media (max-width: 340px) { .st .l { display: none; } .st.cur .l { display: inline; } }
+
+  /* Fil : la carte de l'étape puis la discussion */
+  .pscroll { flex: 1; overflow: auto; padding: 16px 16px 10px; display: flex; flex-direction: column; gap: 14px; }
+  .stepcard { border: 1px solid var(--border); border-radius: 16px; padding: 18px 18px 16px; background: var(--bg); box-shadow: var(--shadow-sm); flex: none; }
+  .kicker { font-size: 12px; font-weight: 650; color: var(--accent-text); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; }
+  h2.t { font-size: 21px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -.015em; }
+  p.sub { color: var(--muted); margin: 0; }
+  .card-content { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .chosen { display: grid; gap: 8px; }
+  .chosen-line { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
+  .chosen-line .ic { color: var(--accent-text); display: flex; }
+  .chosen-line .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .stepcard .foot { padding: 14px 0 2px; background: var(--bg); position: sticky; bottom: -11px; z-index: 2; box-shadow: 0 -10px 12px -8px var(--bg); display: flex; flex-direction: column; gap: 8px; }
+  .note { display: flex; gap: 10px; align-items: flex-start; border-radius: 12px; padding: 11px 13px; background: var(--surface); font-size: 13px; }
+  .note.tip { background: var(--accent-soft); }
+  .note.tip > svg { color: var(--accent-text); margin-top: 1px; }
+  .note p { margin: 0; }
+
+  html .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); padding: 10px 16px; font-weight: 600; }
+  html .btn:hover { background: var(--surface); }
+  html .btn.primary, html .notice .acts .btn.main, html .questions .acts .btn { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent); }
+  html .btn.primary { padding: 14px 18px; font-size: 15px; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+  html .btn.primary:hover, html .notice .acts .btn.main:hover { filter: brightness(1.06); background: var(--accent-fill); }
+  html .btn[disabled] { opacity: .45; box-shadow: none; }
+  html .btn.sm { padding: 7px 12px; font-size: 13px; border-radius: 10px; }
+  .btn.wide { width: 100%; }
+  html .link { color: var(--accent-text); font-weight: 600; padding: 4px 0; text-align: left; }
+  .link:hover { text-decoration: underline; }
+
+  .msgs { display: flex; flex-direction: column; gap: 12px; flex: none; }
+  .hello h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  html .chip { border: 1.5px solid var(--border); background: var(--bg); border-radius: var(--pill); padding: 6px 11px; font-weight: 550; font-size: 12.5px; text-align: left; }
+  html .chip:not([disabled]):hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+  html .chip.sel { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+  .msg { max-width: 88%; padding: 10px 13px; border-radius: 14px; background: var(--surface); overflow-wrap: anywhere; }
+  .msg.me { align-self: flex-end; background: var(--accent-fill); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.ai { align-self: flex-start; border-bottom-left-radius: 4px; }
+  .msg .who { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); margin-bottom: 4px; }
+  .msg .who i { width: 16px; height: 16px; border-radius: 5px; background: var(--accent-fill); color: #fff; font-style: normal; font-size: 10px; font-weight: 700; display: grid; place-items: center; }
+  .msg h4 { margin: 0 0 4px; font-size: 14px; }
+  .msg h4:empty { display: none; }
+  .msg .from { display: flex; align-items: center; gap: 4px; font-size: 11.5px; opacity: .85; margin-top: 4px; }
+  .msg .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .msg .thumbs img { width: 72px; height: 54px; object-fit: cover; border-radius: 8px; display: block; }
+  .rich p { margin: 0 0 6px; } .rich p:last-child { margin-bottom: 0; }
+  .rich ul, .rich ol { margin: 4px 0 6px; padding-left: 20px; }
+  .rich .ui { font-weight: 600; color: var(--accent-text); }
+  .sheet { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); }
+  .sheet-title { margin: 0 0 4px; font-size: 12.5px; font-weight: 650; color: var(--muted); }
+  .proposed { margin: 0; padding-left: 18px; }
+  .questions .q { margin: 10px 0 6px; font-weight: 600; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .typing { display: flex; align-items: center; gap: 4px; }
+  .typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: bl 1s infinite; flex: none; }
+  .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+  .typing .wait-text { margin: 0 8px 0 6px; color: var(--muted); font-size: 13px; }
+  @keyframes bl { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+  .notice { display: flex; gap: 10px; align-items: flex-start; border-radius: 12px; padding: 11px 13px; background: var(--surface); font-size: 13px; }
+  .notice > svg { margin-top: 1px; color: var(--accent-text); }
+  .notice.warn { background: var(--warn-soft); } .notice.warn > svg { color: var(--warn-text); }
+  .notice.error { background: var(--danger-soft); } .notice.error > svg { color: var(--danger-text); }
+  .notice-body { flex: 1; min-width: 0; }
+
+  /* Champ de saisie, toujours en bas */
+  .composer { border-top: 1px solid var(--border); padding: 10px 12px 12px; }
+  .cbox { border: 1.5px solid var(--border); border-radius: 14px; padding: 8px 8px 6px 12px; background: var(--bg); }
+  .cbox:focus-within { border-color: var(--accent); }
+  .cbox textarea { width: 100%; border: 0; outline: 0; resize: none; background: none; min-height: 24px; font-size: 14px; display: block; }
+  .cbar { display: flex; align-items: center; gap: 2px; }
+  html .cbar .iconbtn { width: 32px; height: 32px; }
+  html .cbar .iconbtn.listen { color: var(--danger-text); background: var(--danger-soft); }
+  html .send { margin-left: auto; width: 34px; height: 34px; border-radius: 10px; background: var(--accent-fill); color: #fff; display: grid; place-items: center; }
+  html .send[disabled] { opacity: .45; }
+  .attached { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .att { position: relative; }
+  .att img { width: 52px; height: 52px; object-fit: cover; border-radius: 8px; display: block; }
+  html .att-x { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%; background: var(--fg); color: var(--bg); display: grid; place-items: center; }
 </style>
 </head>
 <body>
-  <div class="head">
+  <header class="phead">
     <span class="pdot" aria-hidden="true">P</span><strong>Assistant Plyo</strong><span class="spacer"></span>
-    <button class="icon-btn" id="btn-more" type="button" title="Plus d’options" aria-haspopup="menu" aria-label="Plus d’options">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
-    </button>
+    <button class="phone-pill hidden" id="phone-pill" type="button" title="Téléphone relié : clique pour revoir le QR code" aria-label="Téléphone relié"></button>
+    <button class="gauge hidden" id="gauge" type="button" title="Jauge IA : ton utilisation ce mois-ci" aria-label="Jauge IA du mois"><span class="gname">Jauge IA</span><span class="bar"><i id="gauge-fill"></i></span><b id="gauge-pct">…</b></button>
+    <button class="iconbtn" id="btn-more" type="button" title="Menu" aria-label="Menu" aria-haspopup="menu" aria-expanded="false"></button>
     <div class="menu hidden" id="menu" role="menu">
+      <div id="menu-items"></div>
       <button type="button" id="m-ui" role="menuitem">Revenir à l’ancien assistant</button>
     </div>
+  </header>
+  <nav class="stepper" id="stepper" aria-label="Étapes"></nav>
+  <div class="pscroll" id="pscroll">
+    <section class="stepcard" id="stepcard" aria-live="polite"></section>
+    <div class="hello" id="hello"></div>
+    <div class="msgs" id="msgs" aria-live="polite"></div>
   </div>
-  <div class="body">
-    <div class="card">
-      <h2>Le nouvel assistant arrive</h2>
-      <p>Cette présentation est en construction. Ton projet reste ouvert : tu peux revenir à l’ancien assistant à tout moment.</p>
-      <button class="btn" id="back" type="button">Revenir à l’ancien assistant</button>
+  <div class="composer">
+    <div class="cbox">
+      <div class="attached hidden" id="attached"></div>
+      <textarea id="note" rows="1" maxlength="500" placeholder="Une question ? Décris-la avec tes mots…" aria-label="Ta question"></textarea>
+      <div class="cbar">
+        <button class="iconbtn" id="c-file" type="button" title="Joindre une photo" aria-label="Joindre une photo"></button>
+        <button class="iconbtn" id="c-phone" type="button" title="Prendre une photo avec mon téléphone" aria-label="Photo avec le téléphone"></button>
+        <button class="iconbtn hidden" id="c-mic" type="button" title="Dicter à la voix" aria-label="Dicter à la voix" aria-pressed="false"></button>
+        <button class="send" id="c-send" type="button" title="Envoyer" aria-label="Envoyer"></button>
+      </div>
     </div>
+    <input type="file" id="file-input" class="hidden" accept="image/*" multiple>
   </div>
 <!--plyo-config-->
+<!--plyo-include:rich-text.js-->
+<!--plyo-include:project-logic.js-->
+<!--plyo-include:journey-logic.js-->
+<!--plyo-include:assistant-logic.js-->
+<!--plyo-include:machines-logic.js-->
+<!--plyo-include:project-thread.js-->
+<!--plyo-include:photo-tools.js-->
+<!--plyo-include:ai-client.js-->
+<!--plyo-include:conversation-logic.js-->
+<!--plyo-include:v2/ui.js-->
+<!--plyo-include:v2/etapes.js-->
+<!--plyo-include:v2/discussion.js-->
+<!--plyo-include:v2/panneau.js-->
 <script>
 (function () {
   'use strict';
-  function $(id) { return document.getElementById(id); }
-  var menu = $('menu');
-  // Retour au panneau classique : le slicer enregistre la version puis rouvre le panneau ; le projet en cours le suit.
-  function backToClassic() {
-    menu.classList.add('hidden');
-    window.orca.postMessage({ type: 'firststeps_set', patch: { ui: 'classique' } });
-  }
-  $('btn-more').addEventListener('click', function (e) { e.stopPropagation(); menu.classList.toggle('hidden'); });
-  document.addEventListener('click', function (e) { if (!menu.contains(e.target)) menu.classList.add('hidden'); });
-  $('m-ui').addEventListener('click', backToClassic);
-  $('back').addEventListener('click', backToClassic);
-  window.orca.postMessage({ type: 'ready' });
+  // Icônes fixes de l'en-tête et du champ de saisie, puis le panneau (v2/panneau.js).
+  var ui = window.PlyoV2.ui;
+  [['phone-pill', 'phone', 16], ['btn-more', 'menu', 20], ['c-file', 'clip', 20], ['c-phone', 'phone', 20], ['c-mic', 'mic', 20], ['c-send', 'up', 16]].forEach(function (x) {
+    document.getElementById(x[0]).appendChild(ui.icon(x[1], x[2]));
+  });
+  window.PlyoV2.start();
 })();
 </script>
 </body>

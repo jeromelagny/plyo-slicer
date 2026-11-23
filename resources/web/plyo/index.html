@@ -691,11 +691,13 @@
 <!--plyo-include:design-builder.js-->
 <!--plyo-include:design-flow.js-->
 <!--plyo-include:project-thread.js-->
+<!--plyo-include:photo-tools.js-->
+<!--plyo-include:ai-client.js-->
+<!--plyo-include:conversation-logic.js-->
 <script>
 (function () {
   // Adresse du service Plyo, donnée par le slicer (Plyo::Config, variable d'environnement PLYO_API_URL en développement).
   var PLYO_API_URL = window.PLYO_API_URL;
-  var MAX_SIDE = 1600;
   var THUMB_SIDE = 160;
   var MAX_PHOTOS = 6;
   var MAX_HISTORY = 10;
@@ -993,7 +995,7 @@
   // ---------- Conversations : gardées sur l'ordinateur par le slicer, rouvertes au lancement ----------
   var conv = null;           // { id, title, updated, entries: [...], history: [...] }
   var saveTimer = null;
-  function newId() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6); }
+  var newId = PlyoConversation.newId;
   function startConversation(project) {
     openRisks = 0;
     plateChecked = '';
@@ -1003,19 +1005,18 @@
     dropLoginCard();
     if (typeof intentUI !== 'undefined') { intentUI.idk = false; intentUI.manual = null; }
     if (typeof applyTab === 'function') { applyTab('reset'); $('guide-notes').textContent = ''; }
-    conv = { id: newId(), title: '', updated: new Date().toISOString(), entries: [], history: [], project: project || PlyoProject.emptyProject() };
+    conv = PlyoConversation.create(newId(), project, new Date().toISOString());
     if (typeof projectUI !== 'undefined') { projectUI.gallery = false; projectUI.addingPart = false; if (projectUI.editing === 'part') projectUI.editing = null; }
     conv.project.assistant = {}; // réglages que l'assistant posera pour ce projet (les autres modifications sont les tiennes)
     if (typeof renderProject === 'function') renderProject();
     if (typeof applyMachineQuestion === 'function') { projectUI.showList = false; projectUI.showKinds = false; applyMachineQuestion(); }
   }
   // Une conversation vaut d'être gardée dès qu'elle a des échanges ou une pièce : un simple lancement n'enregistre rien.
-  function partName(c) { return c && c.project && c.project.part && c.project.part.name || ''; }
-  function worthSaving(c) { return !!c && (c.entries.length > 0 || !!partName(c)); }
+  var partName = PlyoConversation.partName, worthSaving = PlyoConversation.worthSaving;
   function saveNow(c) {
     if (!worthSaving(c)) return;
     c.updated = new Date().toISOString();
-    window.orca.postMessage({ type: 'conv_save', id: c.id, conversation: { title: c.title || partName(c), updated: c.updated, entries: c.entries, history: c.history, project: c.project } });
+    window.orca.postMessage({ type: 'conv_save', id: c.id, conversation: PlyoConversation.savePayload(c) });
   }
   var saveTarget = null;
   function scheduleSave(c) {
@@ -3541,9 +3542,7 @@
     var previous = previousPart();
     projectUI.oldPart = null;
     projectUI.waitingFile = null;
-    conv = { id: id, title: c.title || '', updated: c.updated || '', entries: c.entries, history: Array.isArray(c.history) ? c.history : [],
-      project: c.project && typeof c.project === 'object' ? c.project : PlyoProject.emptyProject() };
-    if (PlyoProject.nextStep(conv.project) === 'ready' && conv.project.part && !conv.project.adapted) conv.project.adapted = conv.project.part.name; // ancienne conversation : jamais réadaptée
+    conv = PlyoConversation.fromSaved(id, c); // une ancienne conversation prête n'est jamais réadaptée
     openRisks = 0;
     plateChecked = '';
     dropTooBig();
@@ -3628,31 +3627,11 @@
   }
 
   // ---------- Compte : session, solde, connexion ----------
-  function postJson(path, body) {
-    return fetch(PLYO_API_URL + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  }
-
-  // Appel authentifié : sur un 401, un seul renouvellement de session puis une nouvelle tentative.
-  // Seul un refus du renouvellement (401) renvoie le 401 d'origine, qui déconnecte ; une panne (503)
-  // renvoie la réponse du renouvellement, et la session est gardée.
-  function apiFetch(path, init) {
-    function attempt() {
-      var headers = Object.assign({}, init.headers || {}, { Authorization: 'Bearer ' + (session ? session.access_token : '') });
-      return fetch(PLYO_API_URL + path, Object.assign({}, init, { headers: headers }));
-    }
-    return attempt().then(function (response) {
-      if (response.status !== 401 || !session) return response;
-      return postJson('/api/auth/refresh', { refresh_token: session.refresh_token }).then(function (r) {
-        if (r.status === 401) return response;
-        if (!r.ok) return r;
-        return r.json().then(function (fresh) {
-          session = fresh;
-          window.orca.postMessage({ type: 'session_save', session: fresh });
-          return attempt();
-        });
-      });
-    });
-  }
+  // Appel authentifié (ai-client.js, partagé avec la v2) : sur un 401, un seul renouvellement de session puis une nouvelle
+  // tentative ; la session renouvelée est gardée par le slicer.
+  var serviceApi = window.PlyoAiClient.createApi({ url: PLYO_API_URL, session: function () { return session; },
+    saveSession: function (fresh) { session = fresh; window.orca.postMessage({ type: 'session_save', session: fresh }); } });
+  var postJson = serviceApi.postJson, apiFetch = serviceApi.apiFetch;
 
   function paintGauge(root, fill, v) {
     fill.style.width = v.pct + '%';
@@ -4418,46 +4397,8 @@
   }
 
   // ---------- Photos : réduites à 1 600 px, JPEG 85 % (vignette de 160 px gardée dans la conversation) ----------
-  // La vue web peut signaler l'image chargée avant de l'avoir décodée : le dessin reste alors vide, et un canevas
-  // vide exporté en JPEG donne une image noire. On attend donc le décodage, on peint un fond blanc, et on vérifie
-  // que l'image a bien été dessinée (un second essai, puis abandon plutôt qu'une photo noire).
-  function drawn(ctx, w, h) {
-    var px = ctx.getImageData(0, 0, w, h).data;
-    var step = Math.max(4, Math.floor(px.length / 4 / 400) * 4);
-    for (var i = 0; i < px.length; i += step) if (px[i] < 250 || px[i + 1] < 250 || px[i + 2] < 250) return true;
-    return false;
-  }
-  function scaled(src, side, quality) {
-    return new Promise(function (resolve, reject) {
-      var img = new Image();
-      function render(retry) {
-        var scale = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
-        var canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-        var ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        if (drawn(ctx, canvas.width, canvas.height)) return resolve(canvas.toDataURL('image/jpeg', quality));
-        if (retry) return setTimeout(function () { render(false); }, 150);
-        reject(new Error('blank'));
-      }
-      img.onload = function () {
-        var ready = img.decode ? img.decode().catch(function () {}) : Promise.resolve();
-        ready.then(function () { render(true); });
-      };
-      img.onerror = function () { reject(new Error('unreadable')); };
-      img.src = src;
-    });
-  }
-  function downscale(file) {
-    var url = URL.createObjectURL(file);
-    return scaled(url, MAX_SIDE, 0.85).then(function (dataUrl) {
-      URL.revokeObjectURL(url);
-      return { media_type: 'image/jpeg', data: dataUrl.split(',')[1], preview: dataUrl };
-    }, function (e) { URL.revokeObjectURL(url); throw e; });
-  }
+  // Réduction partagée avec la v2 (photo-tools.js).
+  var scaled = window.PlyoPhotos.scaled, downscale = window.PlyoPhotos.downscale;
 
   function addAttachments(list) {
     list.forEach(function (a) { if (attachments.length < MAX_PHOTOS) attachments.push(a); });
@@ -6611,7 +6552,7 @@
 
   // Ta demande dans le fil (vignettes gardées dans la conversation) ; le titre vient de la première demande.
   function addMe(text, photos, fromPhone) {
-    var entry = record({ kind: 'me', text: text, thumbs: [], fromPhone: !!fromPhone });
+    var entry = record(PlyoConversation.meEntry(text, fromPhone));
     if (!conv.title) conv.title = Logic.conversationTitle(text, photos.length, new Date().toISOString());
     renderMe({ text: text, fromPhone: fromPhone, thumbs: photos.map(function (p) { return p.preview; }) });
     // La conversation garde des vignettes de 160 px, pas les photos entières.
@@ -6770,8 +6711,6 @@
     // ROB-13 : la question est « en attente » dans la conversation enregistrée tant que rien n'est revenu.
     if (req.me) { req.me.pending = { id: req.id, at: new Date().toISOString(), photos: photos.length }; scheduleSave(target); }
     var live = null;           // réponse en cours d'écriture
-    var out = {};              // événements du flux : final ou error
-    var streaming = false;     // le flux a commencé : une coupure arrive pendant la réponse
     // Fin de la demande ; vrai si Orca a ouvert un autre projet entre-temps : le panneau repart alors sur ce projet.
     function finish() {
       clearTimeout(idle);
@@ -6807,118 +6746,24 @@
     }
     // Tu attendais la réponse dans la Discussion : le message y reste (les notes des Étapes s'effacent au changement d'étape).
     function switchedNote(text) { noteLine(text, 'warn', 'alert', 'chat'); applyTab('show-chat'); }
-    function delay(ms) {
-      return new Promise(function (resolve, reject) {
-        if (controller.signal.aborted) { reject(new Error('aborted')); return; }
-        var t = setTimeout(resolve, ms);
-        controller.signal.addEventListener('abort', function () { clearTimeout(t); reject(new Error('aborted')); });
-      });
-    }
-
     // Profils au moment de la question : les réglages proposés ne s'appliquent qu'à eux (le slicer refuse sinon).
     var sentNames = lastValues && lastValues.context ? Logic.namesForApply(null, lastValues.context) : null;
     var pendingIntent = intentPending(); // questions d'intention affichées : l'IA peut y répondre d'après la phrase
     var plateParts = [];       // pièces sur le plateau au moment de la question (journal des pièces)
-    var body = null;
-    var limit = Logic.MAX_SEND_BYTES, shrunk = 0, lastBytes = 0, inProgressTries = 0;
-    // Photos réduites d'un palier (ROB-03) : toujours depuis l'image jointe, jamais depuis une copie déjà réduite.
-    function shrink(step) {
-      return Promise.all(original.map(function (p) {
-        var src = p.preview || 'data:' + p.media_type + ';base64,' + p.data;
-        return scaled(src, step.side, step.quality).then(function (dataUrl) {
-          return { media_type: 'image/jpeg', data: dataUrl.split(',')[1], preview: p.preview };
-        }, function () { return p; });
-      })).then(function (list) { photos = list; });
-    }
-    // Un envoi : taille vérifiée d'abord (au-delà, l'hébergeur refuserait sans que le panneau sache pourquoi), puis
-    // nouvel essai espacé si la même demande tourne encore (409), ou réduction des photos si le service la dit trop lourde (413).
-    function attempt() {
-      if (controller.signal.aborted) return Promise.reject(new Error('aborted'));
-      touch();
-      if (photos.length) body.images = photos.map(function (p) { return { media_type: p.media_type, data: p.data }; });
-      var json = JSON.stringify(body);
-      var bytes = Logic.utf8Bytes(json);
-      var plan = Logic.sizePlan(bytes, shrunk, photos.length > 0, limit);
-      if (plan.tooBig) return Promise.resolve({ error: 'payload_too_large' });
-      if (plan.shrink) { shrunk = plan.step; return shrink(plan.shrink).then(attempt); }
-      lastBytes = bytes;
-      return apiFetch('/api/diagnose', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: json, signal: controller.signal }).then(function (response) {
-        if (response.status === 409) return response.json().catch(function () { return {}; }).then(function (data) {
-          var wait = Logic.inProgressDelay(inProgressTries++);
-          if (!wait || (data.error && data.error !== 'request_in_progress')) return { error: data.error || 'request_in_progress', data: data };
-          phase = 'retry';
-          sayWaiting();
-          return delay(wait).then(attempt);
-        });
-        if (response.status === 413 && photos.length) return response.json().catch(function () { return {}; }).then(function (data) {
-          limit = Math.min(Logic.limitFrom413(data), lastBytes - 1); // le prochain envoi passe sous la limite du service
-          return attempt();
-        });
-        return receive(response);
-      });
-    }
-    function receive(response) {
-      if (response.status === 401) return { error: 'unauthorized' };
-      var type = response.headers.get('Content-Type') || '';
-      if (type.indexOf('ndjson') < 0 || !response.body)
-        return response.json().catch(function () { return {}; }).then(function (data) {
-          if (response.ok) return { final: data };
-          // Corps sans code (proxy, limite de débit) : le statut HTTP suffit à choisir le message.
-          var code = data.error || (response.status === 429 ? 'rate_limited' : response.status === 409 ? 'request_in_progress' : response.status === 413 ? 'payload_too_large' : 'internal');
-          return { error: code, gauge: data.gauge, data: Object.assign({}, data, { retry_after: Logic.retryAfter(data, response.headers.get('Retry-After')) }) };
-        });
-      // Réponse en flux : les textes s'affichent au fur et à mesure, puis la réponse complète remplace le brouillon.
-      // Les lignes « wait » (signal de vie du service) ne s'affichent pas : elles relancent seulement le délai d'inactivité.
-      streaming = true;
-      var reader = response.body.getReader(), decoder = new TextDecoder(), nd = Logic.ndjsonReader();
-      function handle(events) {
-        events.forEach(function (ev) {
-          if (ev.type === 'partial') { if (!live) { thinking.classList.add('hidden'); live = liveAnswer(function () { controller.abort('cancel'); }); } live.update(ev); }
-          else if (ev.type === 'final') out.final = ev;
-          else if (ev.type === 'error') { out.error = ev.error; out.data = ev; }
-        });
-      }
-      function pump() {
-        return reader.read().then(function (r) {
-          touch();
-          if (r.done) { handle(nd.end()); return out.final || out.error ? out : { error: 'incomplete_answer' }; }
-          handle(nd.push(decoder.decode(r.value, { stream: true })));
-          return pump();
-        });
-      }
-      return pump();
-    }
-
     aiContext().then(function (ctx) {
       if (ctx && ctx.plate && ctx.plate.objects) plateParts = ctx.plate.objects.map(function (o) { return o.name; });
       // Contexte (lot 6) : clé de plateau résolue, plafond de la machine et choix permis de chaque réglage ; plateau en cours,
-      // matière et faits de l'imprimante lus par le slicer juste avant (lecture seule, filtrés par le C++).
-      body = {
-        locale: lastValues.locale || 'fr',
-        settings: { params: Logic.diagnoseParams(lastValues.params) },
-        context: Logic.aiContext(lastValues.context, ctx && ctx.context),
-        history: Logic.historyForAI(conv.history.slice(-MAX_HISTORY))
-      };
-      // La bobine du projet : sans elle le serveur ne propose jamais « Retenir ces réglages ».
-      var spoolName = conv.project && conv.project.filament && conv.project.filament.spool && conv.project.filament.spool.name;
-      if (spoolName && typeof spoolName === 'string') body.context = Object.assign({}, body.context, { spool: spoolName.slice(0, 60) });
-      if (note) body.note = note;
-      if (calibHistory.length) body.calibrations = calibHistory;
-      if (ctx && ctx.plate) body.plate = ctx.plate;
-      if (ctx && ctx.memory && ctx.memory.length) body.memory = ctx.memory;
-      if (ctx && ctx.limits && Object.keys(ctx.limits).length) body.filament_limits = ctx.limits;
-      // Mode catalogue : toutes les valeurs Filament + Impression, pour que l'assistant puisse proposer n'importe quel réglage.
-      if (ctx && ctx.snapshot && Object.keys(ctx.snapshot).length) body.snapshot = ctx.snapshot;
-      body.explanation_level = PlyoMachines.levelOf(habits);
-      if (pendingIntent) body.intent_questions = pendingIntent;
-      // Où en est le projet (onglet Étapes) : l'étape en cours et le fil des deux onglets.
-      body.project = PlyoThread.forAI(conv.project, PlyoJourney.currentStep(conv.project));
-      body.capabilities = Logic.CAPABILITIES.slice(); // actions que ce panneau sait exécuter (aperçu, tests bruts d'Orca)
-      // Pièce du projet dessinée par Plyo : une retouche de forme devient « Modifier ma pièce » (au lieu d'un autre logiciel).
-      if (conv && conv.project.design && conv.project.design.part) body.capabilities.push('redesign');
-      // Le service rend la réponse déjà réglée de ce même identifiant (« replayed ») sans la refaire ni la débiter.
-      body.request_id = req.id;
-      return attempt();
+      // matière et faits de l'imprimante lus par le slicer juste avant (lecture seule, filtrés par le C++). Corps et envoi :
+      // ai-client.js, partagé avec la v2.
+      var body = window.PlyoAiClient.diagnoseBody({ values: lastValues, ctx: ctx, history: conv.history.slice(-MAX_HISTORY), project: conv.project,
+        // Où en est le projet (onglet Étapes) : l'étape en cours et le fil des deux onglets.
+        projectForAI: PlyoThread.forAI(conv.project, PlyoJourney.currentStep(conv.project)),
+        note: note, calibrations: calibHistory, level: PlyoMachines.levelOf(habits), intentQuestions: pendingIntent, requestId: req.id });
+      return window.PlyoAiClient.diagnose({ apiFetch: apiFetch, body: body, photos: photos, signal: controller.signal, touch: touch,
+        // Photos réduites d'un palier (ROB-03) : toujours depuis l'image jointe, jamais depuis une copie déjà réduite.
+        shrink: function (step) { return window.PlyoPhotos.shrinkAll(original, step).then(function (list) { photos = list; return list; }); },
+        onRetry: function () { phase = 'retry'; sayWaiting(); },
+        onPartial: function (ev) { if (!live) { thinking.classList.add('hidden'); live = liveAnswer(function () { controller.abort('cancel'); }); } live.update(ev); } });
     }).then(function (r) {
       if (r.error) {
         if (r.error === 'insufficient_credits') setGauge(r.gauge, true);
@@ -6927,9 +6772,8 @@
       }
       done(r.final);
     }).catch(function () {
-      // Réponse complète déjà reçue (coupure juste après) : on la garde, elle est payée.
-      if (out.final) { done(out.final); return; }
-      fail(controller.signal.aborted ? (controller.signal.reason === 'cancel' ? 'cancel' : 'timeout') : streaming ? 'stream_cut' : 'network');
+      // Panne avant l'envoi (contexte illisible) : comme une coupure du réseau ; une annulation reste une annulation.
+      fail(controller.signal.aborted ? (controller.signal.reason === 'cancel' ? 'cancel' : 'timeout') : 'network');
     });
 
     function done(a) {
@@ -6938,15 +6782,10 @@
       // Réponse rejouée (« replayed ») : la même que la première fois, jauge comprise ; elle s'affiche comme une autre.
       if (a.credits) setGauge(a.credits.gauge);
       // Mode catalogue : les réglages de n'importe quel onglet arrivent dans « changes » ; la fiche les montre comme les autres.
-      a.suggestions = (a.suggestions || []).concat(Logic.catalogToSuggestions(a.changes));
-      if (sentNames) a.names = sentNames;
-      // 2 000 caractères au plus : au-delà, l'API refuserait toutes les demandes suivantes de la conversation.
-      target.history.push({ role: 'user', text: ((photos.length ? '(' + photos.length + ' photo(s) envoyée(s)) ' : '') + note).slice(0, 2000) });
-      var hist = { role: 'assistant', text: summaryForHistory(a) };
-      if (a.suggestions.length) hist.cards = 'proposed'; // devient « applied » ou « undone » (historyForAI le dit à l'IA)
-      target.history.push(hist);
-      target.history = target.history.slice(-MAX_HISTORY);
-      var entry = record({ kind: 'answer', data: a, photoCount: photos.length, question: note, date: new Date().toISOString(), applied: false }, target);
+      // Échange gardé pour l'IA et réponse enregistrée : conversation-logic.js, partagé avec la v2.
+      PlyoConversation.normalizeAnswer(a, sentNames);
+      var hist = PlyoConversation.exchange(target, note, photos.length, a, MAX_HISTORY);
+      var entry = record(PlyoConversation.answerEntry(a, photos.length, note, new Date().toISOString()), target);
       // Ce que les ordres ont réellement fait remplacera « demandé » dans l'historique (non enregistré avec l'entrée).
       Object.defineProperty(entry, 'hist', { value: hist, enumerable: false, writable: true });
       journalAnswer(a, target, plateParts, photos);
@@ -7063,14 +6902,7 @@
   }
 
   // Ce que l'assistant a répondu, pour le renvoyer dans l'historique au tour suivant.
-  function summaryForHistory(a, commandsResult) {
-    var parts = [a.message];
-    var orders = Logic.commandsForHistory(a, commandsResult || null);
-    if (orders) parts.push(orders);
-    a.questions.forEach(function (q) { parts.push(q.text + ' (' + q.choices.join(' / ') + ')'); });
-    a.suggestions.forEach(function (s) { parts.push('suggestion: ' + s.id + ' ' + (s.delta !== null ? 'delta ' + s.delta : '= ' + s.value)); });
-    return parts.join('\n').slice(0, 2000);
-  }
+  function summaryForHistory(a, commandsResult) { return PlyoConversation.summaryForHistory(a, commandsResult); }
 
   // Valeur avant et après pour la fiche de réglages.
   function change(s) {

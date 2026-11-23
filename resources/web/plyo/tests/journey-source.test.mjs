@@ -316,8 +316,11 @@ test('une conversation rouverte montre son échange', () => {
 
 test('« Mes conversations » : le nom de la pièce sert de titre, et un simple lancement n’enregistre rien', () => {
   const page = read('index.html');
-  assert.ok(/function worthSaving\(c\) \{ return !!c && \(c\.entries\.length > 0 \|\| !!partName\(c\)\); \}/.test(page));
-  assert.ok(/title: c\.title \|\| partName\(c\)/.test(page));
+  // Partagé avec la v2 (conversation-logic.js) : les deux pages enregistrent les mêmes conversations.
+  const C = read('conversation-logic.js');
+  assert.ok(/function worthSaving\(c\) \{ return !!c && \(c\.entries\.length > 0 \|\| !!partName\(c\)\); \}/.test(C));
+  assert.ok(/title: c\.title \|\| partName\(c\)/.test(C));
+  assert.ok(/worthSaving = PlyoConversation\.worthSaving/.test(page) && /conversation: PlyoConversation\.savePayload\(c\)/.test(page));
 });
 
 test('« Appliquer et préparer » : un seul lot au double-clic, et un refus laisse réessayer', () => {
@@ -606,9 +609,11 @@ test('reprise de revue : échec noté, fraîcheur venue du slicer, sortie de « 
 });
 
 test('la demande à l’assistant porte la bobine du projet dans le contexte (≤ 60 caractères)', () => {
-  const html = read('index.html');
-  assert.match(html, /conv\.project\.filament\.spool\.name/);
-  assert.match(html, /body\.context = Object\.assign\(\{\}, body\.context, \{ spool: spoolName\.slice\(0, 60\) \}\)/);
+  // Corps de la demande : ai-client.js (partagé avec la v2), à partir du projet de la conversation.
+  const client = read('ai-client.js');
+  assert.match(client, /project\.filament && project\.filament\.spool && project\.filament\.spool\.name/);
+  assert.match(client, /body\.context = Object\.assign\(\{\}, body\.context, \{ spool: spoolName\.slice\(0, 60\) \}\)/);
+  assert.match(read('index.html'), /PlyoAiClient\.diagnoseBody\(\{[^}]*project: conv\.project,/);
 });
 
 test('l’action remember_success poste spool_success, se grise au clic et disparaît des réponses archivées', () => {

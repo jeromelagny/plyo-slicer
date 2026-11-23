@@ -95,11 +95,15 @@ test('IA-16 : chaque test d’Orca est annoncé avant, puis expliqué (lecture, 
 test('le corps de /api/diagnose : contexte, réglages complets, historique et capacités ; la confirmation précède le test', () => {
   const page = read('index.html');
   const ask = page.slice(page.indexOf('function ask(note, photos, req)'), page.indexOf('// Une réponse sur une pièce du plateau'));
-  assert.match(ask, /settings: \{ params: Logic\.diagnoseParams\(lastValues\.params\) \}/);
-  assert.match(ask, /context: Logic\.aiContext\(lastValues\.context, ctx && ctx\.context\)/);
-  assert.match(ask, /history: Logic\.historyForAI\(conv\.history\.slice\(-MAX_HISTORY\)\)/);
-  assert.match(ask, /body\.capabilities = Logic\.CAPABILITIES\.slice\(\)/);
-  assert.match(ask, /if \(a\.suggestions\.length\) hist\.cards = 'proposed'/);
+  // Le corps est construit par ai-client.js (partagé avec la v2), avec ce que le panneau sait à ce moment-là.
+  assert.match(ask, /PlyoAiClient\.diagnoseBody\(\{ values: lastValues, ctx: ctx, history: conv\.history\.slice\(-MAX_HISTORY\), project: conv\.project,/);
+  const client = read('ai-client.js');
+  assert.match(client, /settings: \{ params: Logic\.diagnoseParams\(values\.params\) \}/);
+  assert.match(client, /context: Logic\.aiContext\(values\.context, ctx && ctx\.context\)/);
+  assert.match(client, /history: Logic\.historyForAI\(i\.history \|\| \[\]\)/);
+  assert.match(client, /body\.capabilities = \(i\.capabilities \|\| Logic\.CAPABILITIES\)\.slice\(\)/);
+  assert.match(ask, /PlyoConversation\.exchange\(target, note, photos\.length, a, MAX_HISTORY\)/);
+  assert.match(read('conversation-logic.js'), /if \(a\.suggestions\.length\) hist\.cards = 'proposed'/);
   assert.match(page, /if \(entry\.hist\) entry\.hist\.cards = 'applied'/);
   assert.match(page, /if \(entry\.hist\) entry\.hist\.cards = 'undone'/);
   const actions = page.slice(page.indexOf('function renderActions'), page.indexOf('// ---------- Modèle 3D joint'));
