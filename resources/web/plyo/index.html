@@ -683,6 +683,7 @@
 <!--plyo-include:canvas-view.js-->
 <!--plyo-include:colours-logic.js-->
 <!--plyo-include:colours-view.js-->
+<!--plyo-include:materiel-logic.js-->
 <!--plyo-include:journey-view.js-->
 <!--plyo-include:journey-steps.js-->
 <!--plyo-include:spools-logic.js-->
@@ -1259,17 +1260,10 @@
   function slotWordsKey() { var k = knownPrinter(); return k && k.slots || ''; }
   function slotWords() { return PlyoCanvas.words(slotWordsKey()); }
   // Seulement pour une machine reliée qu'on sait lire : les autres imprimantes gardent la liste des filaments.
-  function canvasWanted(step) {
-    var known = knownPrinter();
-    return !!(known && known.slots && known.linked && (step === 'filament' || projectUI.editing === 'filament'));
-  }
+  function canvasWanted(step) { return PlyoMateriel.slotsWanted(knownPrinter(), step === 'filament' || projectUI.editing === 'filament'); }
   // Saisie manuelle : pour une machine qu'on ne sait pas lire, ou CFS, IFS, U1 injoignable à la lecture. La CC2 garde sa liste.
   function manualWanted(step) {
-    var known = knownPrinter();
-    if (!known || !(step === 'filament' || projectUI.editing === 'filament')) return false;
-    if (known.slots === 'canvas') return false;
-    if (!known.slots || !known.linked) return true;
-    return !canvasUI.loading && canvasUI.preset === known.preset && !!canvasUI.state && !canvasUI.state.ok;
+    return PlyoMateriel.manualWanted(knownPrinter(), step === 'filament' || projectUI.editing === 'filament', { loading: canvasUI.loading, preset: canvasUI.preset, state: canvasUI.state });
   }
   function ensureManualRead(step) {
     var m = canvasUI.manual, preset = conv.project.printer && conv.project.printer.preset;
@@ -1282,37 +1276,22 @@
   // L'état en cours : la lecture sur la machine si elle a réussi, sinon la saisie de cette machine, sinon la lecture ratée.
   function slotState() {
     var pr = conv && conv.project.printer;
-    if (!pr) return null;
-    var read = canvasUI.preset === pr.preset ? canvasUI.state : null, m = canvasUI.manual;
-    if (read && read.ok) return read;
-    return m.preset === pr.preset && m.state && m.state.ok ? m.state : read;
+    return pr ? PlyoMateriel.slotState(pr.preset, { preset: canvasUI.preset, state: canvasUI.state }, canvasUI.manual) : null;
   }
   // Machine à un seul emplacement lu ou saisi : remarque si son type diffère du projet.
   function slotRemark() {
     var f = conv && conv.project.filament, st = slotState();
     return f && !f.proposed && st ? PlyoCanvas.typeMismatch(PlyoCanvas.trays(st), f.type) : '';
   }
-  function canvasColours() {
-    var st = slotState(), fresh = coloursState(), c = fresh && Array.isArray(fresh.colours) && fresh.colours.length ? fresh.colours : st && Array.isArray(st.colours) ? st.colours : [];
-    return c.length ? c : [{ t: 0, color: '', type: '' }];
-  }
+  function canvasColours() { return PlyoMateriel.canvasColours(slotState(), coloursState()); }
+  // L'écran des emplacements (materiel-logic.js, canvasMode, partagé avec la v2).
   function canvasMode(step) {
-    var m = canvasUI.manual;
-    if (conv && PlyoJourney.tempsPending(conv.project) && projectUI.editing !== 'filament') return null; // emplacement déjà choisi : on demande les températures
-    if (m.form && (step === 'filament' || projectUI.editing === 'filament')) return 'manual';
-    if (canvasUI.useList) return null;
-    if (canvasWanted(step) && (canvasUI.loading || canvasUI.preset !== conv.project.printer.preset)) return 'loading';
-    if (!canvasWanted(step) && !manualWanted(step)) return null;
-    var st = slotState();
-    if (!st || !st.ok) return null;
-    if (!PlyoCanvas.askSlots(st)) return null; // un seul emplacement : aucune question
-    if (st.source === 'manual' && !m.confirmed) return 'recall';
-    var trays = PlyoCanvas.trays(st), colours = canvasColours();
-    if (PlyoCanvas.tooMany(colours, trays)) return 'tooMany';
-    // Plusieurs pièces, une pièce en parties ou plusieurs couleurs : la carte « Couleurs », une ligne par pièce (lot 20).
-    if (!(coloursUI.conv === conv && coloursUI.state)) return 'loading'; // une lecture, sans réseau : la réponse suit tout de suite
-    if (PlyoColours.wanted(coloursState(), trays) || coloursFileRows(trays).length) return 'colours';
-    return colours.length > 1 ? 'multi' : 'single';
+    var wanted = canvasWanted(step), st = slotState();
+    return PlyoMateriel.canvasMode({ tempsPending: !!conv && PlyoJourney.tempsPending(conv.project), editing: projectUI.editing === 'filament',
+      wantsFilament: step === 'filament' || projectUI.editing === 'filament', manualForm: canvasUI.manual.form, useList: canvasUI.useList,
+      wanted: wanted, manualWanted: manualWanted(step), loading: canvasUI.loading, readFor: canvasUI.preset, preset: conv.project.printer && conv.project.printer.preset,
+      state: st, manualConfirmed: canvasUI.manual.confirmed, colours: canvasColours(), coloursReady: coloursUI.conv === conv && !!coloursUI.state,
+      coloursState: coloursState(), fileRows: st && st.ok ? coloursFileRows(PlyoCanvas.trays(st)).length : 0 });
   }
   function ensureCanvasRead(step) {
     if (!canvasWanted(step) || canvasUI.useList || canvasUI.loading || canvasUI.preset === conv.project.printer.preset) return;
@@ -1324,16 +1303,8 @@
     canvasUI.readId += 1;
     window.orca.postMessage({ type: 'canvas_read', preset: canvasUI.preset, id: canvasUI.readId });
   }
-  function canvasProposal() {
-    var colours = canvasColours(), st = slotState() || {}, trays = PlyoCanvas.trays(st), chosen = conv.project.canvas;
-    // Déjà choisi pour ces couleurs : on le reprend ; sinon, proposition (une couleur : le type du filament du projet).
-    if (Array.isArray(chosen) && chosen.length === colours.length && colours.every(function (c) { return chosen.some(function (e) { return e.t === c.t; }); }))
-      return chosen.map(function (e) { return { t: e.t, color: (colours.filter(function (c) { return c.t === e.t; })[0] || {}).color, canvas_id: e.canvas_id, tray_id: e.tray_id }; });
-    var wanted = colours.length === 1 ? [{ t: colours[0].t, color: colours[0].color, type: conv.project.filament && !conv.project.filament.proposed ? conv.project.filament.type : colours[0].type }] : colours;
-    // Un emplacement vide refusé à l'envoi (CFS, IFS) n'est pas proposé.
-    if (st.empty_blocks) trays = trays.filter(function (t) { return !t.empty; });
-    return PlyoCanvas.propose(wanted, trays);
-  }
+  // Déjà choisi pour ces couleurs : on le reprend ; sinon, proposition (materiel-logic.js, canvasProposal).
+  function canvasProposal() { return PlyoMateriel.canvasProposal(canvasColours(), slotState(), conv.project.canvas, conv.project.filament); }
   function canvasCtx(step) {
     var mode = canvasMode(step);
     if (!mode) return null;
@@ -2981,9 +2952,7 @@
     setTemps: function (nozzle, bed, done) {
       var f = conv.project.filament;
       if (!f) return;
-      var n = labelTemp(nozzle), b = labelTemp(bed), changes = [];
-      if (n !== null) changes.push({ id: 'nozzle_temp', value: n }, { id: 'nozzle_temp_initial', value: n });
-      if (b !== null) changes.push({ id: 'bed_temp', value: b }, { id: 'bed_temp_initial', value: b });
+      var changes = PlyoMateriel.tempChanges(nozzle, bed); // températures de l'étiquette (materiel-logic.js, partagé avec la v2)
       if (!changes.length) { renderProject(); if (done) done(true); return; }
       pendingSheet = { kind: 'apply', onResult: function (ok, text) { if (done) done(ok, text); else if (!ok) noteLine(text, 'error', 'alert', 'guide'); } };
       postRequest({ type: 'apply', project_edit: true, changes: changes, why: 'Étiquette de la bobine' });
@@ -3058,9 +3027,7 @@
   // Orca copie un profil d'Orca modifié sous « <nom> (Plyo) » : le filament du projet suit ce nouveau nom.
   function syncProjectNames(saved) {
     if (!Array.isArray(saved) || !conv || !conv.project.filament) return;
-    saved.forEach(function (item) {
-      if (item && item.type === 'filament' && item.from && conv.project.filament.preset === item.from) conv.project.filament.preset = item.name;
-    });
+    PlyoProject.followSaved(conv.project, saved);
     scheduleSave();
   }
   // Une modification refusée parce qu'Orca n'est plus sur le projet : un bouton pour l'y remettre.
@@ -5869,14 +5836,6 @@
     if (!tourSignals || !tourSignals.sliced || !tourSignals.time_s) return '';
     var grams = tourSignals.weight_g ? ' et ' + Math.round(tourSignals.weight_g) + ' g de filament' : '';
     return 'Ton impression prendra ' + durationText(tourSignals.time_s) + grams + '.';
-  }
-  // Étape « Ton filament » : la matière écrite sur la bobine, puis les températures de son étiquette.
-  // « 205 », « 205 °C » ou une fourchette « 190-220 » (on prend le milieu, arrondi à 5 °C) ; null si illisible.
-  function labelTemp(text) {
-    var nums = String(text || '').match(/\d+/g);
-    if (!nums) return null;
-    var a = +nums[0], b = nums.length > 1 ? +nums[1] : a;
-    return Math.round((a + b) / 2 / 5) * 5;
   }
 
   // Le parcours guidé appartient au projet : il commence quand la fiche est complète, et se range dans la conversation.

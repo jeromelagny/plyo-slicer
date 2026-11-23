@@ -232,6 +232,65 @@
   .q { margin: 4px 0 0; font-weight: 600; }
 
   /* Champ de saisie, toujours en bas */
+  /* Étape 2 « Imprimante et bobine » (v2/materiel.js) : cartes à cocher, emplacements, « Préciser ma bobine ». */
+  html .card.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .card.sel .ic { background: var(--bg); }
+  html .card[disabled] { opacity: .6; cursor: default; }
+  .card .check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); display: grid; place-items: center; flex: none; }
+  .card.sel .check { background: var(--accent-fill); border-color: var(--accent-fill); color: #fff; }
+  .badge.usb { background: var(--raised); color: var(--muted); }
+  .cyl { width: 26px; height: 26px; border-radius: 50%; border: 3px solid rgba(0, 0, 0, .12); background: var(--raised); display: block; }
+  .cyl.small { width: 16px; height: 16px; border-width: 2px; flex: none; }
+  .slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  @media (max-width: 340px) { .slots { grid-template-columns: repeat(3, 1fr); } }
+  html .slot { border: 1.5px solid var(--border); border-radius: 12px; padding: 10px 4px; text-align: center; font-size: 12px; background: var(--bg); min-width: 0; overflow-wrap: anywhere; }
+  .slot .cyl { width: 30px; height: 30px; margin: 0 auto 6px; }
+  .slot b { display: block; font-size: 13px; }
+  html .slot.sel { border-color: var(--accent); background: var(--accent-soft); }
+  html .slot:not(.sel):not([disabled]):hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+  .slot.empty { color: var(--muted); border-style: dashed; }
+  .slot.empty .cyl { background: transparent; border-style: dashed; }
+  .fold { border: 1px solid var(--border); border-radius: 12px; }
+  html .fold > button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 11px 13px; font-weight: 600; color: var(--muted); text-align: left; }
+  .fold > button svg:last-child { margin-left: auto; transition: transform .15s; }
+  .fold.open > button svg:last-child { transform: rotate(180deg); }
+  .fold .in { padding: 0 13px 13px; display: flex; flex-direction: column; gap: 8px; }
+  .fld { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); flex: 1 1 130px; min-width: 0; }
+  html .fld input, html .fld select, html input.search, html .row2 select, html .note input { border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; background: var(--bg); color: var(--fg); font: inherit; font-size: 14px; width: 100%; min-width: 0; }
+  html input.search { border-width: 1.5px; border-radius: 12px; padding: 11px 12px; }
+  html .fld input:focus, html .fld select:focus, html input.search:focus { outline: none; border-color: var(--accent); }
+  .row2 { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .row2.manual, .row2.colour-line { align-items: center; flex-wrap: nowrap; }
+  .row2.manual select, .row2.colour-line select { flex: 1; }
+  .hint { font-size: 12.5px; color: var(--muted); margin: 0; }
+  ol.hint { padding-left: 18px; }
+  .err { font-size: 12.5px; color: var(--danger-text); margin: 0; }
+  .hwline { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
+  html .hwline .link { padding: 0; font-size: 12.5px; }
+  .fixed { padding: 9px 0; color: var(--fg); font-size: 14px; }
+  .left { display: flex; }
+  .num { width: 18px; text-align: center; flex: none; }
+  .chips.mats .chip { padding: 8px 14px; font-size: 13.5px; }
+  /* Carte « Couleurs » : la vue partagée avec le classique (colours-view.js). */
+  .colours-box { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+  .colours-box .project-body { display: flex; flex-direction: column; gap: 8px; }
+  .colours-box p { margin: 0; }
+  .colours-box .muted { color: var(--muted); }
+  .colours-box .small { font-size: 12.5px; }
+  .colours-box .project-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .colours-box .project-label { display: flex; flex-direction: column; min-width: 0; }
+  .colours-box .colour-right { display: flex; align-items: center; gap: 8px; }
+  .colours-box .colour-spool { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .colours-box .colour-part { padding-left: 14px; }
+  .colours-box .swatch { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .2); display: inline-block; flex: none; background: var(--raised); }
+  .colours-box .printer-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  html .colours-box .btn.ghost { padding: 6px 10px; font-size: 12.5px; border-radius: 10px; }
+  html .colours-box .btn.on { border-color: var(--accent); background: var(--accent-soft); }
+  .colours-box .project-error { color: var(--danger-text); font-size: 12.5px; }
+  .colours-box .project-ok { color: var(--ok); font-size: 12px; }
+  .colours-box .brand-ask { padding: 10px; border-radius: 10px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
+  html .colours-box .disclosure { color: var(--accent-text); font-weight: 600; text-align: left; font-size: 13px; }
+
   .composer { border-top: 1px solid var(--border); padding: 10px 12px 12px; }
   .cbox { border: 1.5px solid var(--border); border-radius: 14px; padding: 8px 8px 6px 12px; background: var(--bg); }
   .cbox:focus-within { border-color: var(--accent); }
@@ -283,6 +342,11 @@
 <!--plyo-include:journey-logic.js-->
 <!--plyo-include:assistant-logic.js-->
 <!--plyo-include:machines-logic.js-->
+<!--plyo-include:canvas-logic.js-->
+<!--plyo-include:colours-logic.js-->
+<!--plyo-include:colours-view.js-->
+<!--plyo-include:spools-logic.js-->
+<!--plyo-include:materiel-logic.js-->
 <!--plyo-include:project-thread.js-->
 <!--plyo-include:photo-tools.js-->
 <!--plyo-include:ai-client.js-->
@@ -295,6 +359,7 @@
 <!--plyo-include:v2/etapes.js-->
 <!--plyo-include:v2/discussion.js-->
 <!--plyo-include:v2/piece.js-->
+<!--plyo-include:v2/materiel.js-->
 <!--plyo-include:v2/panneau.js-->
 <script>
 (function () {

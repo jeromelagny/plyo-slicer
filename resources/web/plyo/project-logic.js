@@ -140,7 +140,18 @@
     return msg.same_printer ? 'open' : 'attach';
   }
 
-  var api = { hasPrinter: hasPrinter, opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, openRetryStep: openRetryStep, openGiveUpText: openGiveUpText, OPEN_RETRY_MS: OPEN_RETRY_MS, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, projectFileText: projectFileText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  // Orca copie un profil d'Orca modifié sous « <nom> (Plyo) » (`saved` : [{type, from, name}] d'un lot appliqué, d'une
+  // adaptation) : le filament du projet suit ce nouveau nom. Vrai si le projet a changé.
+  function followSaved(project, saved) {
+    var f = project && project.filament, moved = false;
+    if (!Array.isArray(saved) || !f) return false;
+    saved.forEach(function (item) {
+      if (item && item.type === 'filament' && item.from && f.preset === item.from) { f.preset = item.name; moved = true; }
+    });
+    return moved;
+  }
+
+  var api = { followSaved: followSaved, hasPrinter: hasPrinter, opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, openRetryStep: openRetryStep, openGiveUpText: openGiveUpText, OPEN_RETRY_MS: OPEN_RETRY_MS, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, projectFileText: projectFileText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

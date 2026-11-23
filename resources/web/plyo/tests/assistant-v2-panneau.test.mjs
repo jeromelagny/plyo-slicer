@@ -169,7 +169,9 @@ test('lot 1 : reprise de la conversation en cours (bascule) : son fil, son étap
     const steps = p.$('stepper').querySelectorAll('.st');
     assert.deepEqual(steps.map((s) => ['done', 'cur'].filter((c) => s.classList.contains(c)).join()), ['done', 'cur', '']);
     assert.match(texts(p.$('stepcard')), /Étape 2 sur 3/);
-    assert.match(texts(p.$('stepcard')), /Creality K1C/, 'ce qui est choisi vient du projet');
+    // L'étape 2 (lot 3) montre la machine du projet, cochée, dès que le slicer a donné la liste des machines.
+    p.emit({ type: 'project_printers', printers: [{ preset: 'K1C 0.4', name: 'Creality K1C', linked: false }] });
+    assert.match(texts(p.$('stepcard').querySelector('.card.sel')), /Creality K1C/, 'ce qui est choisi vient du projet');
     // Une étape faite se rouvre d'un clic ; le bouton plein de la carte ramène à l'étape en cours.
     steps[0].click();
     assert.match(texts(p.$('stepcard')), /Étape 1 sur 3 · rouverte/);

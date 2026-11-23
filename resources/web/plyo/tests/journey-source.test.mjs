@@ -404,7 +404,9 @@ test('réglages lus : pas de nom technique pour un débutant ; ligne décochée 
 
 test('emplacements : canvasWanted lit le traducteur (known.slots), et la CC2 garde ses textes', () => {
   const page = read('index.html');
-  assert.ok(/known && known\.slots && known\.linked/.test(page), 'canvasWanted : known.slots');
+  // Règle partagée avec la v2 (materiel-logic.js), appelée par le classique.
+  assert.ok(/known && known\.slots && known\.linked/.test(read('materiel-logic.js')), 'canvasWanted : known.slots');
+  assert.ok(/PlyoMateriel\.slotsWanted\(knownPrinter\(\)/.test(page), 'canvasWanted passe par la règle partagée');
   assert.ok(!/known\.cc2/.test(page), 'plus de lecture de known.cc2');
   // Textes CC2 fixés (consigne : la CC2 ne change ni de comportement ni de texte).
   assert.ok(page.includes('Je n’arrive pas à relire les emplacements de ta CC2 : rien n’est envoyé. Vérifie qu’elle est allumée, puis réessaie.'));
@@ -454,7 +456,7 @@ test('U1 : le réordonnancement (T18 à T21) n’existe pas dans le panneau, et 
 
 test('une bobine : pas de question, remarque seulement ; liaison incomplète : proposer de relier à nouveau', () => {
   const page = read('index.html'), card = read('project-card.js');
-  assert.ok(/PlyoCanvas\.askSlots\(/.test(page), 'canvasMode passe par askSlots');
+  assert.ok(/C\.askSlots\(/.test(read('materiel-logic.js')) && /PlyoMateriel\.canvasMode\(/.test(page), 'canvasMode passe par askSlots');
   assert.ok(/PlyoCanvas\.typeMismatch\(/.test(page) && card.includes('ctx.slotRemark') && read('journey-steps.js').includes('opts.slotRemark'), 'la remarque est affichée aux deux étapes');
   assert.ok(/slots_reason === 'link_incomplete'/.test(page), 'link_incomplete lu dans la liste des machines');
   assert.ok(/Relier à nouveau', ctx\.handlers\.setupPrinter/.test(card), 'relier à nouveau lance la recherche d’abord (la série n’est connue que là)');
@@ -495,7 +497,8 @@ test('annulation ou délai dépassé : la jauge est relue, une fois la facturati
 });
 
 test('saisie manuelle : une machine avec traducteur mais non reliée y a droit aussi', () => {
-  assert.ok(/!known\.slots \|\| !known\.linked\) return true/.test(read('index.html')));
+  assert.ok(/!known\.slots \|\| !known\.linked\) return true/.test(read('materiel-logic.js')));
+  assert.ok(/PlyoMateriel\.manualWanted\(/.test(read('index.html')), 'le classique suit la règle partagée');
 });
 
 test('une découpe lancée depuis une réponse propose ensuite d’imprimer ou d’exporter sur cette réponse', () => {
