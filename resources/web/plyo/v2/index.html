@@ -175,6 +175,10 @@
   @media (max-width: 340px) { .st .l { display: none; } .st.cur .l { display: inline; } }
 
   /* Deux zones : l'étape et la conversation. Une seule dépliée (pleine hauteur), l'autre en barre avec « Afficher ». */
+  /* Avis en haut de l'étape : un problème arrivé pendant qu'on y travaille (rien ne part en silence dans la conversation). */
+  .stepalert { margin-bottom: 12px; }
+  .stepalert .notice { position: relative; padding-right: 34px; }
+  html .stepalert .x { position: absolute; top: 6px; right: 8px; border: 0; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
   .zones { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .zone-step, .zone-chat { display: flex; flex-direction: column; min-height: 0; }
   .zbody { flex: 1; min-height: 0; overflow: auto; }
@@ -493,6 +497,7 @@
         <button class="btn primary sm" id="stepbar-go" type="button"></button>
       </div>
       <div class="zbody" id="stepscroll">
+        <div class="stepalert hidden" id="stepalert" role="alert"></div>
         <section class="stepcard" id="stepcard" aria-live="polite"></section>
       </div>
     </div>

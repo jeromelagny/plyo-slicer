@@ -23,7 +23,12 @@
       thread.appendChild(D.notice('info', 'Ouvre ce panneau depuis Plyo Slicer : il a besoin du slicer pour fonctionner.'));
       return null;
     }
-    function post(m) { host.postMessage(m); }
+    // Comme le panneau classique : un lot de réglages ou des ordres sur le plateau partent avec la fiche du projet (imprimante,
+    // pièce, bobine), que le slicer vérifie (PlyoAssistant.cpp, project_refusal). Sans elle, il refuse tout.
+    function post(m) {
+      if (m && (m.type === 'apply' || m.type === 'commands') && !m.project) m.project = conv ? conv.project : null;
+      host.postMessage(m);
+    }
     function iso() { return new Date().toISOString(); }
 
     // ---------- État ----------
@@ -176,6 +181,7 @@
         actions: { classic: backToClassic, closeRevisit: function () { openStep(null); } } });
       renderHello();
       renderStepBar();
+      if (alertKey && $('stepcard').dataset.step !== alertKey) hideStepAlert(); // autre étape : l'avis ne la concerne plus
     }
     function openStep(key) {
       opened = key;
@@ -264,7 +270,28 @@
     // Un geste dans la carte ou la barre des étapes : le fil arrête de suivre.
     ['stepcard', 'stepper'].forEach(function (id) { $(id).addEventListener('pointerdown', function () { follow = false; }); });
     input.addEventListener('focus', function () { follow = true; showZone('chat'); });
-    function say(text, kind, actions) { return addToThread(D.notice(kind || 'info', text, actions)); }
+    function say(text, kind, actions) {
+      // Sur l'étape, un problème (erreur, avertissement) se voit aussi en haut de la carte : rien n'arrive en silence.
+      if ((kind === 'error' || kind === 'warn') && zoneOpen() === 'step') showStepAlert(text, kind, actions);
+      return addToThread(D.notice(kind || 'info', text, actions));
+    }
+    // Avis en haut de la carte de l'étape (le dernier seulement) : ses boutons, « Voir la conversation » et « × ». Il part dès
+    // qu'on change d'étape, qu'un de ses boutons est utilisé, ou qu'on le ferme.
+    var stepAlert = $('stepalert'), alertKey = null;
+    function hideStepAlert() { stepAlert.textContent = ''; stepAlert.classList.add('hidden'); alertKey = null; }
+    function showStepAlert(text, kind, actions) {
+      var acts = (actions || []).map(function (a) { return { label: a.label, primary: a.primary, run: function () { hideStepAlert(); a.run(); } }; });
+      acts.push({ label: 'Voir la conversation', run: function () { hideStepAlert(); showZone('chat'); } });
+      var box = D.notice(kind, text, acts);
+      var close = ui.button('×', hideStepAlert, 'x');
+      close.setAttribute('aria-label', ui.fr('Fermer'));
+      box.appendChild(close);
+      stepAlert.textContent = '';
+      stepAlert.appendChild(box);
+      stepAlert.classList.remove('hidden');
+      alertKey = $('stepcard').dataset.step || null;
+      stepScroller.scrollTop = 0;
+    }
 
     // Une entrée de la conversation dans le fil. `archived` : conversation rouverte (ses questions ne se rejouent pas).
     function renderEntry(entry, archived) {
