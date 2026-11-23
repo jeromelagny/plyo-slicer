@@ -694,6 +694,7 @@
 <!--plyo-include:photo-tools.js-->
 <!--plyo-include:ai-client.js-->
 <!--plyo-include:conversation-logic.js-->
+<!--plyo-include:piece-logic.js-->
 <script>
 (function () {
   // Adresse du service Plyo, donnée par le slicer (Plyo::Config, variable d'environnement PLYO_API_URL en développement).
@@ -4523,34 +4524,10 @@
     renderProject();
     syncPhonePurpose(); // lien téléphone déjà ouvert : sa page demande maintenant le croquis
   }
-  var designLib = { promise: null };
-  // manifold-3d, lue par le slicer dans ses ressources (la page est chargée comme texte) : module ES rendu classique, puis
-  // instancié avec ses octets WebAssembly (la politique de sécurité permet 'wasm-unsafe-eval', jamais eval).
-  function loadDesignLib() {
-    if (designLib.promise) return designLib.promise;
-    designLib.promise = new Promise(function (resolve, reject) { designLib.resolve = resolve; designLib.reject = reject; });
-    window.orca.postMessage({ type: 'design_lib_get' });
-    return designLib.promise;
-  }
-  function onDesignLib(msg) {
-    var lib = designLib;
-    if (!lib.resolve) return;
-    if (!msg.ok) { designLib = { promise: null }; lib.reject(new Error('bibliothèque introuvable')); return; }
-    try {
-      var code = String(msg.js).replace(/import\.meta\.url/g, '"plyo://manifold.js"').replace(/export default Module;?\s*$/, 'window.__plyoManifold = Module;');
-      var tag = document.createElement('script');
-      var known = document.querySelector('script[nonce]');
-      tag.nonce = known ? known.nonce : '';
-      tag.textContent = code;
-      document.head.appendChild(tag);
-      var raw = atob(msg.wasm), bytes = new Uint8Array(raw.length);
-      for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      window.__plyoManifold({ wasmBinary: bytes }).then(function (w) {
-        w.setup();
-        lib.resolve({ Manifold: w.Manifold, CrossSection: w.CrossSection });
-      }, function (e) { designLib = { promise: null }; lib.reject(e); });
-    } catch (e) { designLib = { promise: null }; lib.reject(e); }
-  }
+  // manifold-3d, lue par le slicer dans ses ressources et chargée à la première pièce créée (piece-logic.js, designLibLoader).
+  var designLib = PlyoPiece.designLibLoader({ post: function (m) { window.orca.postMessage(m); }, document: document, window: window });
+  function loadDesignLib() { return designLib.load(); }
+  function onDesignLib(msg) { designLib.onMessage(msg); }
   function designSay(text, failed) { designUI.busy = false; designUI.message = text; designUI.failed = !!failed; renderProject(); }
   function designSubmit() {
     if (designUI.busy) return;
@@ -4564,23 +4541,24 @@
       return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; });
     }).then(function (res) {
       if (designUI !== asked) return; // annulé ou autre projet entre-temps
-      var j = res.j || {};
-      if (j.credits && j.credits.gauge) setGauge(j.credits.gauge);
-      if (res.status === 401) { designUI.needsLogin = true; designSay('Ta session a expiré : reconnecte-toi pour créer ta pièce.', true); return; }
-      if (j.error === 'plan_required') { designUI.planRequired = true; designSay(PlyoDesignFlow.TEXT.planRequired, false); return; }
-      if (res.status !== 200) {
-        if (j.error === 'insufficient_credits' && j.gauge) setGauge(j.gauge, true);
-        designSay(Logic.errorView(j.error || 'upstream_error', j).text, true);
+      // Ce que dit le service (piece-logic.js, designOutcome) : même lecture dans le panneau v2.
+      var j = res.j || {}, o = PlyoPiece.designOutcome(res.status, j);
+      if (o.gauge) setGauge(o.gauge);
+      if (o.kind === 'login') { designUI.needsLogin = true; designSay(o.text, true); return; }
+      if (o.kind === 'plan') { designUI.planRequired = true; designSay(o.text, false); return; }
+      if (o.kind === 'error') {
+        if (o.spent) setGauge(o.spent, true);
+        designSay(o.text, true);
         return;
       }
       designUI.conversation.push({ role: 'user', text: body.text });
       if (j.message) designUI.conversation.push({ role: 'assistant', text: j.message });
-      if (j.status === 'question' && Array.isArray(j.questions) && j.questions.length) {
-        designUI.busy = false; designUI.questions = j.questions; designUI.answers = []; designUI.message = j.message || ''; designUI.text = '';
+      if (o.kind === 'question') {
+        designUI.busy = false; designUI.questions = o.questions; designUI.answers = []; designUI.message = o.message; designUI.text = '';
         renderProject();
         return;
       }
-      if (j.status !== 'design') { designUI.text = ''; designSay(j.message || 'Je ne peux pas dessiner cette pièce.', false); return; }
+      if (o.kind === 'refused') { designUI.text = ''; designSay(o.text, false); return; }
       designPlace(j);
     }).catch(function () { if (designUI === asked) designSay(Logic.errorView('network').text, true); });
   }
@@ -4588,17 +4566,15 @@
     var asked = designUI;
     loadDesignLib().then(function (M) {
       if (designUI !== asked) return;
-      var built = PlyoDesign.build(M, answer.part);
+      var built = PlyoPiece.designFile(M, answer.part); // STL en base64 (piece-logic.js)
       if (!built.ok) { designSay('Je n’ai pas pu fabriquer cette pièce (' + built.error + '). Redécris-la plus simplement.', true); return; }
-      var stl = PlyoDesign.toSTL(built.mesh, answer.part.name), bin = '';
-      for (var i = 0; i < stl.length; i += 0x8000) bin += String.fromCharCode.apply(null, stl.subarray(i, i + 0x8000));
-      var name = PlyoDesignFlow.fileName(answer.part);
+      var name = built.name;
       conv.project.design = { part: answer.part }; // gardée avec le projet : retouches depuis la discussion, et après un redémarrage
       scheduleSave();
       designUI = { open: false, conv: conv, retouch: false, text: '', busy: false, questions: [], answers: [], conversation: asked.conversation, part: answer.part, message: '', failed: false, needsLogin: false,
         placing: { message: answer.message || '', size: built.size, name: name, retouch: !!asked.retouch } };
       projectUI.placing = noteLine('Je pose « ' + answer.part.name + ' » sur le plateau…', '', 'cube', 'guide');
-      window.orca.postMessage({ type: 'model_add', name: name, data: btoa(bin), project: conv.project, conv: conv.id,
+      window.orca.postMessage({ type: 'model_add', name: name, data: built.data, project: conv.project, conv: conv.id,
         replace: asked.retouch || PlyoProject.replacesPlate(conv.project, projectUI.oldPart, projectUI.newProjectFile) });
       renderProject();
     }, function () { if (designUI === asked) designSay('Je n’arrive pas à charger l’outil de dessin des pièces. Relance Plyo Slicer, puis réessaie.', true); });
@@ -5299,7 +5275,7 @@
     if (msg.replaced > 0) showReplaced(msg, old);
     // Machine pas encore confirmée : la taille est mesurée sur le plateau de la machine en cours d'Orca. On ne la tait que si
     // le projet en vise une autre (machine proposée différente) ; sinon c'est bien la tienne, et « trop grande » est vrai.
-    var measuredElsewhere = !PlyoProject.hasPrinter(conv.project) && !!(conv.project.printer && conv.project.printer.preset) && conv.project.printer.preset !== orcaPrinterName();
+    var measuredElsewhere = PlyoPiece.measuredElsewhere(conv.project, orcaPrinterName());
     if (msg.fits === false && measuredElsewhere) msg = Object.assign({}, msg, { fits: true });
     if (msg.fits === false) projectUI.tooBigNames = (projectUI.tooBigNames || []).concat([msg.name]); // dit après le rangement
     var entry = record({ kind: 'model', msg: msg, reduced: false });

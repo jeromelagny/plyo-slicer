@@ -107,6 +107,7 @@ export function makeDocument(bodyHtml) {
   doc.createElementNS = (ns, t) => new Element(doc, t);
   doc.createTextNode = (t) => new Text(t);
   doc.documentElement = new Element(doc, 'html');
+  doc.head = doc.documentElement.appendChild(new Element(doc, 'head'));
   doc.body = doc.documentElement.appendChild(new Element(doc, 'body'));
   doc.addEventListener = (type, fn) => { (doc.listeners[type] = doc.listeners[type] || []).push(fn); };
   doc.getElementById = (id) => doc.documentElement.querySelectorAll('#' + id)[0] || null;

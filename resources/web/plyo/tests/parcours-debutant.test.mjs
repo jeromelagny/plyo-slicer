@@ -438,7 +438,9 @@ test('plusieurs pièces : une pièce plus grande que le plateau est dite après 
   assert.equal(J.arrangeTooBigText([]), '');
   const page = read('index.html');
   // « Trop grande » n'est tu que si le projet vise une autre machine que celle d'Orca (essai du 22/11 : 221,8 mm sur 220).
-  assert.match(page, /var measuredElsewhere = !PlyoProject\.hasPrinter\(conv\.project\) && !!\(conv\.project\.printer && conv\.project\.printer\.preset\) && conv\.project\.printer\.preset !== orcaPrinterName\(\);/);
+  // La règle vit dans piece-logic.js (partagée avec la v2) ; le classique l'appelle avec la machine en cours d'Orca.
+  assert.match(read('piece-logic.js'), /return !P\.hasPrinter\(p\) && !!\(p\.printer && p\.printer\.preset\) && p\.printer\.preset !== orcaPrinter;/);
+  assert.match(page, /var measuredElsewhere = PlyoPiece\.measuredElsewhere\(conv\.project, orcaPrinterName\(\)\);/);
   assert.match(page, /if \(tooBig\.length\) noteLine\(PlyoJourney\.arrangeTooBigText\(tooBig\), 'warn', 'alert', 'guide'\);/);
 });
 

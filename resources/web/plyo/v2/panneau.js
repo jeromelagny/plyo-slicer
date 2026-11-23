@@ -40,6 +40,7 @@
     var lastAsked = null;      // question restée sans réponse : renvoyée telle quelle, même identifiant
     var afterLogin = null, loginCard = null;
     var opened = null;         // étape faite rouverte d'un clic
+    var hold = null;           // étape gardée à l'écran bien que faite (pièce posée : « Envie d'ajuster ? », puis « Continuer »)
     var listeners = {};        // messages du slicer suivis par les écrans des étapes (PlyoV2.panel.on)
 
     var api = Client.createApi({ url: PLYO_API_URL, session: function () { return session; },
@@ -67,6 +68,7 @@
       conv = Conv.create(Conv.newId(), project, iso());
       conv.project.assistant = {}; // réglages que l'assistant posera pour ce projet (les autres modifications sont les tiennes)
       opened = null;
+      hold = null;
       clearThread();
       render();
     }
@@ -80,13 +82,19 @@
       post({ type: 'project_detach' });
       startConversation(conv && P.hasPrinter(conv.project) ? P.proposeFrom(conv.project) : null);
     }
-    // Conversation enregistrée qui redevient active (panneau rouvert, bascule depuis le panneau classique).
-    function restoreConversation(id, c) {
+    // Conversation enregistrée qui redevient active. `attached` : panneau rouvert (ou bascule) sur la conversation dont le
+    // plateau est encore attaché : rien n'est rechargé. Sinon (« Mes pièces récentes », « Mes projets ») son projet 3MF revient
+    // sur le plateau, comme dans le panneau classique ; sans pièce, le plateau d'avant est seulement détaché.
+    function restoreConversation(id, c, attached) {
       if (!c || !Array.isArray(c.entries) || busy) return;
       flushSave();
+      if (!attached) unlinkPhone(true);
       conv = Conv.fromSaved(id, c);
       opened = null;
-      if (P.mayAttach(tourSignals)) post({ type: 'project_attach', conv: id }); // le slicer garde l'attache : rien n'est rechargé
+      hold = null;
+      if (attached) { if (P.mayAttach(tourSignals)) post({ type: 'project_attach', conv: id }); }
+      else if (P.opensProjectFile(conv.project)) post({ type: 'project_open', conv: id });
+      else post({ type: 'project_detach' });
       clearThread();
       conv.entries.forEach(function (entry) { try { renderEntry(entry, true); } catch (e) { /* élément abîmé : ignoré */ } });
       render();
@@ -100,25 +108,33 @@
       if (!resume.waiting) return;
       resume.waiting = false;
       clearTimeout(resume.timer);
-      if (msg.attached && msg.conversation && Array.isArray(msg.conversation.entries)) { restoreConversation(msg.attached, msg.conversation); return; }
+      if (msg.attached && msg.conversation && Array.isArray(msg.conversation.entries)) { restoreConversation(msg.attached, msg.conversation, true); return; }
       post({ type: 'project_detach' });
       render();
     }
 
     // ---------- Vue ----------
     // Pendant une réponse de l'assistant, la barre ne rouvre pas d'étape (la réponse va au projet affiché).
-    function renderBar() { E.renderBar($('stepper'), conv.project, opened, busy ? null : openStep); }
+    function renderBar() { E.renderBar($('stepper'), conv.project, opened, busy ? null : openStep, hold); }
     function render() {
       renderBar();
-      var key = opened || E.barKeyOf(conv.project);
-      E.renderCard($('stepcard'), key, { project: conv.project, step: J.currentStep(conv.project), revisit: !!opened, panel: V2.panel,
+      var key = opened || hold || E.barKeyOf(conv.project);
+      E.renderCard($('stepcard'), key, { project: conv.project, step: J.currentStep(conv.project), revisit: !!opened, held: !opened && !!hold, panel: V2.panel,
         actions: { classic: backToClassic, closeRevisit: function () { openStep(null); } } });
       renderHello();
     }
     function openStep(key) {
       opened = key;
+      if (!key) hold = null; // « Revenir à l'étape en cours » : là où en est le projet
       render();
       scroller.scrollTop = 0;
+    }
+    // Garde une étape à l'écran (`key`), ou la relâche (null) : la carte suit alors le projet.
+    function setHold(key) {
+      hold = key || null;
+      if (hold) opened = null;
+      render();
+      scroller.scrollTop = 0; // la carte depuis son début : la pièce posée, ou l'étape suivante
     }
     function renderHello() { $('hello').classList.toggle('hidden', thread.children.length > 0); }
     function clearThread() { thread.textContent = ''; dropLoginCard(); renderHello(); }
@@ -137,7 +153,8 @@
       if (entry.kind === 'answer') {
         var box = D.answer(entry, { params: lastValues && lastValues.params, archived: archived,
           onAnswer: function (text) { send(text); }, onChange: function () { scheduleSave(); } });
-        if (entry.data.commands && entry.data.commands.length) box.appendChild(ui.el('p', 'small muted', 'Les changements sur le plateau proposés ici se font pour l’instant depuis l’ancien assistant.'));
+        // Ordres sur le plateau et actions sur la pièce proposés par l'IA (v2/piece.js) ; les autres actions viennent avec leurs étapes.
+        if (V2.piece && V2.piece.answerExtras) V2.piece.answerExtras(entry, box, archived);
         addToThread(box);
         return;
       }
@@ -249,12 +266,22 @@
       renderAttachments();
     }
 
-    // Trombone : photos jointes à la demande (réduites à 1 600 px, photo-tools.js).
+    // Trombone et glisser-déposer : un modèle 3D est posé sur le plateau (étape « Ta pièce », v2/piece.js, comme dans le
+    // classique) ; les photos sont jointes à la demande (réduites à 1 600 px, photo-tools.js).
     var fileInput = $('file-input');
     $('c-file').addEventListener('click', function () { fileInput.click(); });
     fileInput.addEventListener('change', function () {
-      var files = Array.prototype.slice.call(fileInput.files || []).filter(function (f) { return /^image\//.test(f.type || ''); });
+      var all = Array.prototype.slice.call(fileInput.files || []);
       fileInput.value = '';
+      addFiles(all);
+    });
+    function addFiles(all) {
+      var isModel = function (f) { return root.PlyoFirstSteps.isModelFile(f.name); };
+      var models = all.filter(isModel), files = all.filter(function (f) { return !isModel(f) && /^image\//.test(f.type || ''); });
+      var other = all.filter(function (f) { return !isModel(f) && !/^image\//.test(f.type || ''); })[0];
+      if (other) say(root.PlyoFirstSteps.unreadableFileText(other.name), 'error');
+      if (models.length && V2.piece && V2.piece.addModels) V2.piece.addModels(models);
+      if (!files.length) return;
       Promise.all(files.map(function (f) { return root.PlyoPhotos.downscale(f).catch(function () { return null; }); })).then(function (list) {
         var ok = list.filter(Boolean);
         if (ok.length < list.length) say('Je n’ai pas pu lire une de tes photos (JPEG, PNG ou WebP). Reprends-la.', 'error');
@@ -263,6 +290,12 @@
         renderAttachments();
         input.focus();
       });
+    }
+    document.addEventListener('dragover', function (e) { e.preventDefault(); });
+    document.addEventListener('drop', function (e) {
+      e.preventDefault();
+      var files = Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []);
+      if (files.length) addFiles(files);
     });
     function renderAttachments() {
       var box = $('attached');
@@ -322,17 +355,29 @@
 
     // Téléphone : un lien par conversation ; la fenêtre du QR est celle du slicer. Chaque envoi du téléphone part à l'assistant.
     var phone = { link: null, timer: null, creating: null, collecting: false, queue: [] };
+    // Ce que le téléphone doit photographier : un croquis quand « Créer avec l'IA » est ouvert (v2/piece.js, `phoneRoute`),
+    // sinon un défaut, envoyé à l'assistant. `phoneRoute` : { purpose() → 'sketch' | 'defect', take(envoi) → true si gardé }.
+    var phoneRoute = null;
+    function phonePurpose() { return phoneRoute && phoneRoute.purpose() || 'defect'; }
     function phoneLabel() { return conv && conv.project.part && conv.project.part.name ? J.projectTitle(conv.project) : ''; }
+    // Le lien vaut pour toute la conversation : sa consigne suit l'usage du moment (comme dans le classique).
+    function syncPhonePurpose() {
+      var want = phonePurpose(), label = phoneLabel();
+      if (!phone.link || !session || (phone.link.purpose === want && (phone.link.label || '') === label)) return;
+      phone.link.purpose = want;
+      phone.link.label = label;
+      api.apiFetch('/api/phone-sessions/' + encodeURIComponent(phone.link.id) + '/purpose', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: want, label: label }) }).catch(function () {});
+    }
     function openPhone() {
       if (requireLogin('Les photos du téléphone passent par le service Plyo. Pour ça, connecte-toi : pas de mot de passe, tu reçois un code par e-mail.', openPhone)) return;
       refreshAccount().then(function (valid) {
         if (!valid) { if (session) showError('network', null, openPhone); return; }
         if (!phone.link && !phone.creating) {
-          var label = phoneLabel();
-          phone.creating = api.apiFetch('/api/phone-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: 'defect', label: label }) })
+          var label = phoneLabel(), purpose = phonePurpose();
+          phone.creating = api.apiFetch('/api/phone-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purpose: purpose, label: label }) })
             .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
             .then(function (created) {
-              phone.link = { id: created.id, qr_svg: created.qr_svg, purpose: 'defect', label: label };
+              phone.link = { id: created.id, qr_svg: created.qr_svg, purpose: purpose, label: label };
               $('phone-pill').classList.remove('hidden');
               clearInterval(phone.timer);
               phone.timer = setInterval(pollPhone, PHONE_POLL_MS);
@@ -341,7 +386,7 @@
           phone.creating.then(function () { phone.creating = null; }, function () { phone.creating = null; });
         }
         (phone.link ? Promise.resolve(phone.link) : phone.creating)
-          .then(function (link) { post({ type: 'phone', link: { id: link.id, qr_svg: link.qr_svg, purpose: link.purpose, label: link.label || '' } }); })
+          .then(function (link) { syncPhonePurpose(); post({ type: 'phone', link: { id: link.id, qr_svg: link.qr_svg, purpose: link.purpose, label: link.label || '' } }); })
           .catch(function () { showError('network', null, openPhone); });
       });
     }
@@ -373,9 +418,11 @@
           var missing = Logic.missingPhotosText(batch.missing);
           if (missing) say(missing, 'error');
           if (!batch.images || !batch.images.length) { if (!missing) say('Les photos du téléphone n’ont pas pu être récupérées. Renvoie-les depuis le téléphone.', 'error'); return; }
-          phone.queue.push({ message: batch.message, photos: batch.images.map(function (img) {
+          var sent = { message: batch.message, photos: batch.images.map(function (img) {
             return { media_type: img.media_type, data: img.data, preview: 'data:' + img.media_type + ';base64,' + img.data };
-          }) });
+          }) };
+          if (phonePurpose() === 'sketch' && phoneRoute.take(sent)) return; // croquis joint au formulaire « Créer avec l'IA »
+          phone.queue.push(sent);
           drainPhoneQueue();
         })
         .catch(function () { say('Les photos du téléphone n’ont pas pu être récupérées. Renvoie-les depuis le téléphone.', 'error'); })
@@ -502,8 +549,10 @@
         // Réponse rejouée (« replayed ») : la même que la première fois, jauge comprise.
         if (a.credits) setGauge(a.credits.gauge);
         Conv.normalizeAnswer(a, sentNames);
-        Conv.exchange(target, note, photos.length, a, MAX_HISTORY);
+        var hist = Conv.exchange(target, note, photos.length, a, MAX_HISTORY);
         var entry = record(Conv.answerEntry(a, photos.length, note, iso()), target);
+        // Ligne de l'historique de cette réponse (non enregistrée avec l'entrée) : les ordres faits sur le plateau s'y ajoutent.
+        Object.defineProperty(entry, 'hist', { value: hist, enumerable: false, writable: true });
         if (switched) { say(Logic.projectSwitchText(!!(a.commands && a.commands.length), true), 'warn'); return; }
         if (target !== conv) return;
         try { renderEntry(entry, false); }
@@ -580,6 +629,9 @@
         if (!otherInstanceShown) { otherInstanceShown = true; say(Logic.OTHER_INSTANCE_TEXT, 'error'); }
       } else if (msg.type === 'dictation') {
         onDictation(msg);
+      } else if (msg.type === 'project_opened') {
+        // Plateau d'un projet rouvert : ce qui n'a pas marché est dit (pas retrouvé, Orca occupé, ouverture annulée).
+        if (conv && msg.conv === conv.id && msg.reason) say(P.projectOpenedText(msg.reason), msg.reason === 'annule' ? 'info' : 'warn');
       } else if (msg.type === 'phone_batch_ready') {
         pollPhone(); // la fenêtre du QR s'est fermée sur un envoi : on le traite sans attendre
       }
@@ -589,6 +641,16 @@
     // Ce que les écrans des étapes (lots suivants) utilisent du panneau.
     V2.panel = {
       post: post,
+      iso: iso,
+      record: record,
+      setGauge: setGauge,
+      hold: setHold,
+      held: function () { return hold; },
+      tourSignals: function () { return tourSignals; },
+      openPhone: openPhone,
+      setPhoneRoute: function (route) { phoneRoute = route; syncPhonePurpose(); },
+      syncPhone: syncPhonePurpose,
+      openConversation: function (id) { if (busy) { say('Attends la fin de la réponse (ou annule-la) avant d’ouvrir un autre projet.'); return; } flushSave(); post({ type: 'conv_load', id: id }); },
       conv: function () { return conv; },
       values: function () { return lastValues; },
       session: function () { return session; },
@@ -603,6 +665,8 @@
       on: function (type, fn) { (listeners[type] = listeners[type] || []).push(fn); }
     };
 
+    // Écrans des étapes branchés sur le panneau (v2/piece.js…), une fois V2.panel prêt.
+    (V2.plugins || []).forEach(function (fn) { fn(V2.panel); });
     startConversation();
     post({ type: 'tour_signals' });
     post({ type: 'project_resume_get' });

@@ -28,9 +28,13 @@ test('page : entrée à l’étape Pièce, bibliothèque chargée à la demande,
   const page = read('index.html'), card = read('project-card.js');
   assert.match(card, /ui\.button\('Créer avec l’IA', h\.designOpen, 'pick-card ai-action', 'wand'\)/); // lot 6 : une carte de l'étape Pièce
   assert.match(page, /<!--plyo-include:design-builder\.js-->\n<!--plyo-include:design-flow\.js-->/);
-  assert.match(page, /window\.orca\.postMessage\(\{ type: 'design_lib_get' \}\)/);
-  assert.match(page, /replace\(\/import\\\.meta\\\.url\/g, '"plyo:\/\/manifold\.js"'\)/);
-  assert.match(page, /window\.__plyoManifold\(\{ wasmBinary: bytes \}\)/);
+  // Chargement de manifold-3d : module partagé avec la v2 (piece-logic.js), que le classique utilise.
+  const piece = read('piece-logic.js');
+  assert.match(piece, /env\.post\(\{ type: 'design_lib_get' \}\)/);
+  assert.match(piece, /replace\(\/import\\\.meta\\\.url\/g, '"plyo:\/\/manifold\.js"'\)/);
+  assert.match(piece, /win\.__plyoManifold\(\{ wasmBinary: bytes \}\)/);
+  assert.match(page, /var designLib = PlyoPiece\.designLibLoader\(\{ post: function \(m\) \{ window\.orca\.postMessage\(m\); \}/);
+  assert.match(page, /<!--plyo-include:piece-logic\.js-->/);
   assert.match(page, /apiFetch\('\/api\/design'/);
   assert.match(page, /replace: asked\.retouch \|\| PlyoProject\.replacesPlate/);
   assert.match(page, /onModelAdded\(msg\);\n\s*designPlaced\(msg\);/);

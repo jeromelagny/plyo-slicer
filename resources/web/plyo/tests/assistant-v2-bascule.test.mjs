@@ -42,7 +42,9 @@ test('la page v2 : en-tête « Assistant Plyo » et retour à l’ancien assista
     p.$('btn-more').click();
     p.$('m-ui').click();
     assert.deepEqual(p.posted.slice(-2).map((m) => m.type), ['conv_save', 'firststeps_set']);
-    // « Ouvrir l’ancien assistant » dans une carte encore minimale fait la même bascule.
+    // « Ouvrir l’ancien assistant » dans une carte encore minimale (étape 2 depuis le lot 2) fait la même bascule.
+    p.ctx.PlyoV2.panel.conv().project.part = { name: 'crochet.stl' };
+    p.ctx.PlyoV2.panel.render();
     p.$('stepcard').querySelector('.link').click();
     assert.deepEqual(p.posted.at(-1), { type: 'firststeps_set', patch: { ui: 'classique' } });
   } finally { p.stop(); }

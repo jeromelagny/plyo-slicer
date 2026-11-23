@@ -13,19 +13,24 @@
   var ICON_OF = { printer: 'printer', part: 'cube', filament: 'spool' };
 
   // Les trois étapes, avec leur état réel (« done », « current », « todo ») et si une étape faite peut se rouvrir.
-  function bar(project) {
-    return J.steps(project).map(function (s, i) {
+  // `hold` : étape faite gardée à l'écran (pièce posée, « Envie d'ajuster ? ») : elle reste l'étape en cours jusqu'à
+  // « Continuer », les suivantes attendent.
+  function bar(project, hold) {
+    var list = J.steps(project).map(function (s, i) {
       return { key: s.key, n: i + 1, label: LABELS[s.key] || s.label, state: s.state, revisit: J.canRevisit(s) };
     });
+    var at = list.findIndex(function (s) { return s.key === hold && s.state === 'done'; });
+    if (at >= 0) list.forEach(function (s, i) { if (i === at) { s.state = 'current'; s.revisit = false; } else if (i > at) { s.state = 'todo'; s.revisit = false; } });
+    return list;
   }
   function barKeyOf(project) { return J.barKey(J.currentStep(project)); }
   function numberOf(key) { return J.BAR.findIndex(function (b) { return b.key === key; }) + 1; }
 
   // `opened` : étape faite rouverte d'un clic (sinon null) ; `onOpen(key)` : clic sur une étape faite ; null pendant une
   // réponse de l'assistant (la barre ne bouge pas).
-  function renderBar(nav, project, opened, onOpen) {
+  function renderBar(nav, project, opened, onOpen, hold) {
     nav.textContent = '';
-    bar(project).forEach(function (s, i) {
+    bar(project, hold).forEach(function (s, i) {
       if (i) nav.appendChild(ui.el('span', 'st-line' + (s.state !== 'todo' ? ' on' : '')));
       var shown = opened ? s.key === opened : s.state === 'current';
       var b = ui.el('button', 'st' + (s.state === 'current' ? ' cur' : '') + (s.state === 'done' ? ' done' : '') + (shown && opened ? ' open' : ''));
