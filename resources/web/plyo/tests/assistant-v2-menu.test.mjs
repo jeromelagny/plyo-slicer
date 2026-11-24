@@ -156,6 +156,8 @@ test('lot 5 : Mes projets (rouvrir, supprimer après confirmation), Mes pièces,
     menuItem(p, /^Aide$/).click();
     assert.match(texts(win(p)), /Une IA qui te guide/);
     assert.match(texts(win(p)), /Signaler/);
+    // Audit du 24/11 : les rubriques d'aide (premiers pas, pendant l'impression, si ça rate, annuler un changement, glossaire).
+    assert.match(texts(win(p)), /Premiers pas.*Pendant l’impression.*Si ça rate.*Annuler un changement.*Glossaire.*Bordure/);
   } finally { p.stop(); }
 });
 
