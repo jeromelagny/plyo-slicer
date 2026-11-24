@@ -187,6 +187,28 @@
     return list.length > 0 && list.every(function (c) { return !!trayFor(c.t, trays, canvas); });
   }
 
+  // « Une bobine par pièce » : plusieurs pièces sans parties, toutes sur la même bobine (ou sans bobine), et assez de bobines
+  // chargées de la même matière. L'ordre : « couleur 1, 2, 3… » si chaque nom le dit, sinon celui du plateau. null sinon.
+  var RANK = /(?:couleur|color|colour|coul\.?)\s*(\d+)/i;
+  function spreadPlan(rows, trays) {
+    var list = (rows || []).filter(function (r) { return r && !r.mixed && !(r.parts && r.parts.length); });
+    if (list.length < 2 || list.length !== (rows || []).length) return null;
+    var first = list[0].tray, same = list.every(function (r) { return trayKey(r.tray) === trayKey(first); });
+    if (!same) return null;
+    var usable = (trays || []).filter(function (t) { return t && !t.empty && t.type && (!first || upper(t.type) === upper(first.type)); });
+    if (usable.length < list.length) return null;
+    var ranked = list.every(function (r) { return RANK.test(r.title || r.name); });
+    var ordered = ranked ? list.slice().sort(function (a, b) { return Number(RANK.exec(a.title || a.name)[1]) - Number(RANK.exec(b.title || b.name)[1]); }) : list;
+    // La bobine en cours reste à la première pièce : une étape de moins, et la couleur 1 garde son emplacement.
+    if (first) usable = [first].concat(usable.filter(function (t) { return trayKey(t) !== trayKey(first); }));
+    var moves = ordered.map(function (r, i) { return { ref: r.ref, name: r.name, current: r.tray, tray: usable[i] }; });
+    return { moves: moves, text: moves.map(function (m) { return m.name + ' → ' + spoolText(m.tray); }).join(', ') };
+  }
+  function spreadIntro(rows) {
+    var r = rows || [], t = r[0] && r[0].tray;
+    return 'Tes ' + r.length + ' pièces sortiront toutes ' + (t ? 'en ' + spoolText(t) : 'avec la même bobine') + '. Donne une bobine à chaque pièce : touche sa couleur ci-dessous.';
+  }
+
   function changedText(name, trayText) { return name + ' : maintenant en ' + trayText; }
 
   // Deux matières différentes (bobine d'avant, bobine choisie) : un avertissement simple, '' sinon.
@@ -231,7 +253,7 @@
     otherMaterialNote: otherMaterialNote, missingText: missingText, spoolText: spoolText, trayFor: trayFor, trayKey: trayKey, mappingFrom: mappingFrom,
     traysFromCanvas: traysFromCanvas, ficheText: ficheText, pieceName: pieceName, partDetail: partDetail, fileRows: fileRows, fileIntro: fileIntro,
     fileWhere: fileWhere, sameTrayNote: sameTrayNote, PAINTED_FILE: PAINTED_FILE, ONE_PIECE: ONE_PIECE, worth: worth, newPieces: newPieces,
-    INVITE_BUTTON: INVITE_BUTTON, inviteText: inviteText, sameAsChosen: sameAsChosen, covers: covers, fileColour: fileColour };
+    INVITE_BUTTON: INVITE_BUTTON, inviteText: inviteText, spreadPlan: spreadPlan, spreadIntro: spreadIntro, sameAsChosen: sameAsChosen, covers: covers, fileColour: fileColour };
   root.PlyoColours = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

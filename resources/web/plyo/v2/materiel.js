@@ -35,7 +35,7 @@
       spools: { printer: null, items: null },
       canvas: { preset: null, state: null, loading: false, mapping: null, useList: false, error: '', readId: 0, applying: null, planKey: null, brands: { of: null, id: 0, items: null }, choice: {}, dismissed: {} },
       manual: { preset: null, state: null, loading: false, confirmed: false, form: false, draft: null, count: 2, error: '' },
-      colours: { state: null, id: 0, picker: null, token: 0, next: 0, error: '', recheck: false, open: false, sent: null, unfolded: false },
+      colours: { state: null, id: 0, picker: null, token: 0, next: 0, error: '', recheck: false, open: false, shut: false, sent: null, unfolded: false, batch: null },
       bed: { token: 0, next: 0 }, setup: freshSetup(), adoptNote: '', keepSpool: null };
   }
   var S = fresh(null);
@@ -323,32 +323,62 @@
     // d'un clic, ou dont l'étiquette vient d'être recopiée.
     var labelGiven = !!(pend.temps && Mat.tempChanges(pend.temps.nozzle, pend.temps.bed).length);
     // Emplacement dont l'étiquette a déjà été confirmée, et qui montre la même bobine : ses températures sont reprises.
-    var slotRec = pend.canvas && p.printer && Array.isArray(p.canvas) ? Mat.slotTempsFor(habits, p.printer.preset, p.canvas[0]) : null;
-    var tempsOk = !!slotRec || (!pend.canvas && !!pend.spool && (!pend.fresh || pend.asked || labelGiven));
+    // Avec plusieurs couleurs, chaque emplacement compte : la question ne tombe que si tous ont déjà leur étiquette.
+    var slotRecs = pend.canvas && p.printer && Array.isArray(p.canvas) ? p.canvas.map(function (e) { return { e: e, rec: Mat.slotTempsFor(habits, p.printer.preset, e) }; }).filter(function (x) { return !!x.rec; }) : [];
+    var allRecalled = pend.canvas && Array.isArray(p.canvas) && p.canvas.length > 0 && slotRecs.length === p.canvas.length;
+    var tempsOk = allRecalled || (!pend.canvas && !!pend.spool && (!pend.fresh || pend.asked || labelGiven));
     p.filament = { type: pend.type, preset: msg.filament_preset, nozzle_temp: msg.nozzle_temp, bed_temp: msg.bed_temp, temps_ok: tempsOk };
     if (pend.spool) p.filament.spool = pend.spool;
     if (pend.spool && pend.brand) { p.filament.brand = pend.brand; if (pend.range) p.filament.range = pend.range; if (pend.brandProfile) p.filament.brand_profile = true; }
     if (!pend.canvas) delete p.canvas; // une bobine de la liste remplace les emplacements choisis avant
-    st.pick = null; st.temps = { nozzle: '', bed: '' }; st.colour = ''; st.name = ''; st.nameSuggested = '';
+    st.pick = null; st.temps = { nozzle: '', bed: '' }; st.slotTemps = {}; st.colour = ''; st.name = ''; st.nameSuggested = '';
     changed();
     closeRevisit(); // étape rouverte depuis la barre : le choix fait, on revient où on en était
-    if (pend.canvas) { syncCanvasPlan(true); if (slotRec) reuseSlotTemps(slotRec, msg); return; } // sinon la carte des températures (tempsCard)
+    if (pend.canvas) { syncCanvasPlan(true); if (slotRecs.length) reuseSlotTemps(slotRecs, msg, allRecalled); return; } // sinon la carte des températures (tempsCard)
     announceSpool(pend, msg);
     // Températures de l'étiquette (« Préciser ma bobine ») : appliquées au profil de la bobine, comme dans le classique.
     var t = pend.temps;
     if (t && Mat.tempChanges(t.nozzle, t.bed).length && (Mat.labelTemp(t.nozzle) !== msg.nozzle_temp || Mat.labelTemp(t.bed) !== msg.bed_temp)) setTemps(t.nozzle, t.bed);
   }
-  function reuseSlotTemps(rec, msg) {
-    var p = project(), first = p.canvas[0], printer = p.printer.preset;
-    var n = typeof rec.nozzle === 'number' ? rec.nozzle : null, b = typeof rec.bed === 'number' ? rec.bed : null;
-    if ((n !== null && n !== msg.nozzle_temp) || (b !== null && b !== msg.bed_temp)) setTemps(n !== null ? String(n) : '', b !== null ? String(b) : '', true);
-    var again = ui.button('Ce n’est plus la même bobine', function () {
+  // Emplacements déjà connus (même bobine que la dernière fois) : leurs températures sont remises, une note par lot, et
+  // « Ce n'est plus la même bobine » les oublie pour reposer la question.
+  function reuseSlotTemps(list, msg, all) {
+    var p = project(), printer = p.printer.preset, temps = [];
+    list.forEach(function (x) {
+      var rec = x.rec;
+      var n = typeof rec.nozzle === 'number' ? rec.nozzle : null, b = typeof rec.bed === 'number' ? rec.bed : null;
+      var nowN = x.e === p.canvas[0] ? msg.nozzle_temp : x.e.nozzle, nowB = x.e === p.canvas[0] ? msg.bed_temp : x.e.bed;
+      if ((n !== null && n !== nowN) || (b !== null && b !== nowB)) temps.push({ e: x.e, nozzle: n, bed: b });
+      x.shownN = n !== null ? n : nowN; x.shownB = b !== null ? b : nowB;
+    });
+    applySlotTemps(temps, true);
+    if (!all) return; // les autres emplacements : la carte des températures, avec ceux-ci déjà remplis
+    var again = ui.button(list.length > 1 ? 'Ce ne sont plus les mêmes bobines' : 'Ce n’est plus la même bobine', function () {
       again.disabled = true;
-      habits = Mat.forgetSlotTemps(habits, printer, first); saveHabits();
+      list.forEach(function (x) { habits = Mat.forgetSlotTemps(habits, printer, x.e); });
+      saveHabits();
       if (project() === p && p.filament) { p.filament.temps_ok = false; changed(); }
     }, 'link');
-    note('Même bobine que la dernière fois' + (first.label ? ' dans l’emplacement ' + first.label : '') + ' : je reprends ses températures (buse '
-      + tempOf(n !== null ? n : msg.nozzle_temp) + ', plateau ' + tempOf(b !== null ? b : msg.bed_temp) + ').', 'ok', [again]);
+    var said = list.map(function (x) { return (list.length > 1 && x.e.label ? x.e.label + ' : ' : '') + 'buse ' + tempOf(x.shownN) + ', plateau ' + tempOf(x.shownB); });
+    note((list.length > 1 ? 'Mêmes bobines que la dernière fois : je reprends leurs températures (' + said.join(' ; ') + ').'
+      : 'Même bobine que la dernière fois' + (list[0].e.label ? ' dans l’emplacement ' + list[0].e.label : '') + ' : je reprends ses températures (' + said[0] + ').'), 'ok', [again]);
+  }
+  // Applique les températures d'étiquette : d'abord les couleurs 2 et suivantes (slot_temps_set, un profil par couleur), puis la
+  // couleur 1 par l'onglet Filament (setTemps), qui enregistre son profil comme avant.
+  function applySlotTemps(list, quiet) {
+    var p = project(), first = p.canvas && p.canvas[0], others = list.filter(function (x) { return x.e !== first; }), main = list.filter(function (x) { return x.e === first; })[0];
+    var failed = [];
+    (function next() {
+      if (others.length) {
+        var x = others.shift(), id = ++request;
+        waiters[id] = function (ok, text) { if (!ok) failed.push((x.e.label || 'couleur ' + (x.e.t + 1)) + ' : ' + (text || 'non réglée')); next(); };
+        panel.post({ type: 'slot_temps_set', request: id, t: x.e.t, nozzle: x.nozzle !== null && x.nozzle !== undefined ? x.nozzle : -1, bed: x.bed !== null && x.bed !== undefined ? x.bed : -1 });
+        return;
+      }
+      if (failed.length) note('Je n’ai pas pu régler toutes les températures (' + failed.join(' ; ') + ').', 'error');
+      if (main) setTemps(main.nozzle !== null && main.nozzle !== undefined ? String(main.nozzle) : '', main.bed !== null && main.bed !== undefined ? String(main.bed) : '', quiet);
+      else if (!quiet && list.length) note('Températures de tes bobines enregistrées.', 'ok');
+    })();
   }
   function closeRevisit() { if (actions && actions.revisit && actions.closeRevisit) { var close = actions.closeRevisit; actions = null; close(); } }
   function tempOf(v) { return v != null ? v + ' °C' : '?'; }
@@ -627,8 +657,13 @@
     if (!full) return;
     if (!msg.ok) { st.pending = null; st.canvas.error = msg.text || 'Je n’ai pas pu choisir ces emplacements.'; render(); return; }
     var presets = {};
-    (msg.presets || []).forEach(function (p) { presets[p.t] = p.preset; });
-    full.forEach(function (e) { e.preset = presets[e.t] || ''; });
+    (msg.presets || []).forEach(function (p) { presets[p.t] = p; });
+    full.forEach(function (e) {
+      var got = presets[e.t] || {};
+      e.preset = got.preset || '';
+      if (typeof got.nozzle === 'number') e.nozzle = got.nozzle; else delete e.nozzle;
+      if (typeof got.bed === 'number') e.bed = got.bed; else delete e.bed;
+    });
     full.sort(function (a, b) { return a.t - b.t; });
     project().canvas = full;
     thread('Emplacements : ' + C.mapLabel(full, C.isImposed(full)) + '.');
@@ -683,6 +718,14 @@
       if (pk.fileT !== undefined) { state().colours.picker = null; setTray(pk.fileT, Col.trayKey(tray)); } else setPieceColour(pk, tray);
     },
     confirm: function (tray) { var pk = state().colours.picker; if (!pk) return; if (pk.fileT !== undefined) { state().colours.picker = null; setTray(pk.fileT, Col.trayKey(tray)); } else setPieceColour(pk, tray); },
+    // Vue directe : un clic sur la pastille d'une bobine, comme « changer » puis cette bobine.
+    choose: function (ref, part, name, current, tray) {
+      var st = state(), trays = C.trays(slotState() || {});
+      st.colours.picker = { ref: ref, part: part || '', name: name, current: current || Col.trayFor(0, trays, st.canvas.mapping), confirm: null, missing: false };
+      st.colours.error = ''; st.colours.recheck = false;
+      coloursHandlers.pick(tray);
+    },
+    spread: function () { spreadColours(); },
     toggleOne: function () { var c = state().colours; c.unfolded = !c.unfolded; c.picker = null; render(); },
     paint: function () { panel.post({ type: 'open_tool', tool: 'paint_color' }); },
     cancel: function () { state().colours.picker = null; render(); },
@@ -702,7 +745,49 @@
     st.colours.picker = null;
     setTimeout(function () { if (state() === st && st.colours.token === token) onColourSet({ token: token, ok: false, reason: 'slot', text: 'Plyo Slicer ne m’a pas répondu : touche « Vérifier à nouveau », puis réessaie.' }); }, 25000);
     panel.post({ type: 'colour_set', token: token, preset: pr, object: pk.ref, part: pk.part, all_parts: false, source: sst.source === 'manual' ? 'manual' : 'printer',
-      slot: { canvas_id: tray.canvas_id, tray_id: tray.tray_id, type: tray.type, color: tray.color }, canvas: mapping });
+      slot: slotOf(tray), canvas: mapping });
+    render();
+  }
+  // L'emplacement envoyé avec colour_set : sa marque confirmée suit (profil du fabricant, vérifié par le slicer).
+  function slotOf(tray) {
+    var out = { canvas_id: tray.canvas_id, tray_id: tray.tray_id, type: tray.type, color: tray.color }, c = slotChoice(Sp.slotKey(tray));
+    if (c && c.kind === 'brand' && c.preset) out.preset = c.preset;
+    return out;
+  }
+  // « Oui, une par pièce » : les changements un par un (chacun relit la machine), une seule note à la fin, un seul « Annuler ».
+  function spreadColours() {
+    var st = state(), sst = slotState() || {}, trays = C.trays(sst);
+    var rows = Col.pieceRows(coloursState(), trays, st.canvas.mapping, { partName: project().part && project().part.name || '' });
+    var plan = Col.spreadPlan(rows, trays);
+    if (!plan || st.colours.token || st.colours.batch) return;
+    var moves = plan.moves.filter(function (m) { return Col.trayKey(m.current) !== Col.trayKey(m.tray); });
+    if (!moves.length) return;
+    st.colours.batch = { moves: moves, done: 0, undo: [], before: JSON.parse(JSON.stringify(st.canvas.mapping || [])), text: plan.text };
+    st.colours.error = '';
+    nextSpread();
+  }
+  function nextSpread() {
+    var st = state(), b = st.colours.batch;
+    if (!b) return;
+    if (b.done >= b.moves.length) { st.colours.batch = null; spreadDone(st, b); return; }
+    var m = b.moves[b.done];
+    setPieceColour({ ref: m.ref, part: '', name: m.name, current: m.current }, m.tray);
+  }
+  function spreadDone(st, b) {
+    var undo = b.undo.length ? ui.button('Annuler', function () {
+      undo.disabled = true;
+      var tokens = b.undo.slice().reverse();
+      (function back() {
+        if (!tokens.length) { undo.remove(); if (state() === st) st.canvas.mapping = b.before; note('C’est annulé : tes pièces ont repris leur couleur.', 'ok'); requestColours(); render(); return; }
+        plateUndo(tokens.shift(), function (r) {
+          if (!r.ok) { undo.remove(); note((r.text || 'Je n’ai pas pu tout annuler.') + ' Remets les couleurs d’un clic dans la carte.', 'error'); requestColours(); render(); return; }
+          back();
+        });
+      })();
+    }, 'link', 'undo') : null;
+    note('Chaque pièce a sa bobine : ' + b.text + '.', 'ok', undo ? [undo] : null);
+    thread('Couleurs : ' + b.text + '.');
+    requestColours();
     render();
   }
   function onColourSet(msg) {
@@ -710,8 +795,20 @@
     if (!msg.token || msg.token !== st.colours.token) return;
     st.colours.token = 0; st.colours.sent = null;
     if (!sent) return;
-    if (!msg.ok) { st.colours.error = msg.text || 'Je n’ai pas pu changer la couleur.'; st.colours.recheck = msg.reason === 'slot' || msg.reason === 'gone'; render(); return; }
+    var batch = st.colours.batch;
+    if (!msg.ok) {
+      st.colours.error = (batch && batch.done ? 'Je me suis arrêté à « ' + sent.name + ' » : ' : '') + (msg.text || 'Je n’ai pas pu changer la couleur.');
+      st.colours.recheck = msg.reason === 'slot' || msg.reason === 'gone';
+      if (batch) { st.colours.batch = null; requestColours(); }
+      render(); return;
+    }
     st.canvas.mapping = Col.mappingFrom(msg.canvas, C.trays(slotState() || {}));
+    if (batch) {
+      if (msg.undo_token !== undefined && msg.undo_token !== null) batch.undo.push(msg.undo_token);
+      batch.done += 1;
+      nextSpread();
+      return;
+    }
     var undo = msg.undo_token !== undefined && msg.undo_token !== null ? ui.button('Annuler', function () {
       undo.disabled = true;
       plateUndo(msg.undo_token, function (r) {
@@ -1011,23 +1108,63 @@
   // Avec des emplacements, elles valent pour la couleur 1 (le filament du projet) : on dit laquelle.
   function tempsCard() {
     var p = project(), f = p.filament, st = state(), body = ui.el('div', 'card-content');
-    var slots = Array.isArray(p.canvas) ? p.canvas : [], first = slots[0];
-    body.appendChild(ui.el('p', '', 'J’ai mis les températures conseillées pour du ' + f.type + ' : buse ' + tempOf(f.nozzle_temp) + ', plateau ' + tempOf(f.bed_temp) + '. Ton étiquette dit autre chose ?'));
-    if (first && first.label) body.appendChild(ui.el('p', 'hint', slots.length > 1
-      ? 'C’est la bobine de l’emplacement ' + first.label + ' (couleur 1). Les autres couleurs gardent les températures conseillées.'
-      : 'C’est la bobine de l’emplacement ' + first.label + '.'));
-    body.appendChild(ui.el('p', 'hint', 'La buse fait fondre le fil, le plateau garde ta pièce collée. Rien d’écrit sur ton étiquette ? Garde-les, elles conviennent.'));
-    var row = ui.el('div', 'row2');
-    row.appendChild(field('Buse (°C) sur l’étiquette', textInput(st.temps.nozzle, function (v) { st.temps.nozzle = v; }, { inputmode: 'numeric', placeholder: 'ex. 200-220' })));
-    row.appendChild(field('Plateau (°C)', textInput(st.temps.bed, function (v) { st.temps.bed = v; }, { inputmode: 'numeric', placeholder: 'ex. 60' })));
-    body.appendChild(row);
-    return { title: 'Quelles températures indique ta bobine ?', sub: null, body: body, primary: { label: 'C’est bon', run: function () {
+    var slots = Array.isArray(p.canvas) && p.canvas.length ? p.canvas : [{ t: 0 }], printer = p.printer && p.printer.preset;
+    if (!st.slotTemps) st.slotTemps = {};
+    var advised = function (e) { return e === slots[0] ? { n: f.nozzle_temp, b: f.bed_temp } : { n: e.nozzle, b: e.bed }; };
+    // Une ligne par emplacement : déjà connu (gardé), sinon à remplir. Deux bobines de la même marque et de la même matière :
+    // ce qui est tapé dans la première remplit l'autre, tant qu'elle n'a pas été touchée.
+    var rows = slots.map(function (e) {
+      var rec = printer && e.canvas_id !== undefined ? Mat.slotTempsFor(habits, printer, e) : null, v = st.slotTemps[e.t];
+      if (!v) v = st.slotTemps[e.t] = { nozzle: rec && typeof rec.nozzle === 'number' ? String(rec.nozzle) : '', bed: rec && typeof rec.bed === 'number' ? String(rec.bed) : '', touched: !!rec, known: !!rec };
+      return { e: e, v: v };
+    });
+    var twin = function (a, b) { return !!a.e.brand && a.e.brand === b.e.brand && String(a.e.range || '') === String(b.e.range || '') && String(a.e.type || '').toUpperCase() === String(b.e.type || '').toUpperCase(); };
+    var many = rows.length > 1;
+    body.appendChild(ui.el('p', '', many
+      ? 'Ta pièce utilise ' + rows.length + ' bobines. J’ai mis les températures conseillées pour chacune : ton étiquette dit autre chose ?'
+      : 'J’ai mis les températures conseillées pour du ' + f.type + ' : buse ' + tempOf(f.nozzle_temp) + ', plateau ' + tempOf(f.bed_temp) + '. Ton étiquette dit autre chose ?'));
+    body.appendChild(ui.el('p', 'hint', 'Elles sont écrites sur l’étiquette de la bobine, souvent en fourchette. Rien d’écrit ? Laisse vide : je garde les conseillées.'));
+    var inputs = {};
+    rows.forEach(function (r, i) {
+      var e = r.e, box = ui.el('div', many ? 'slot-temps' : '');
+      if (!many && e.label) box.appendChild(ui.el('p', 'hint', 'C’est la bobine de l’emplacement ' + e.label + '.'));
+      if (many) {
+        var head = ui.el('div', 'row2 colour-line');
+        var sw = ui.el('span', 'cyl small'); if (e.color) sw.style.background = e.color;
+        head.appendChild(sw);
+        head.appendChild(ui.el('b', 'grow', (e.label ? e.label + ' · ' : '') + C.trayText(e.type, e.color) + (e.brand ? ' · ' + e.brand + (e.range ? ' ' + e.range : '') : '') + (many ? ' (couleur ' + (e.t + 1) + ')' : '')));
+        box.appendChild(head);
+      }
+      var a = advised(e);
+      if (many) box.appendChild(ui.el('p', 'hint', r.v.known ? 'Même bobine que la dernière fois : je reprends ce que tu m’avais dit.' : 'Conseillées : buse ' + tempOf(a.n) + ', plateau ' + tempOf(a.b) + '.'));
+      var row = ui.el('div', 'row2');
+      var mirror = function (key, val) {
+        rows.forEach(function (o, k) { if (k > i && !o.v.touched && twin(r, o)) { o.v[key] = val; var el = inputs[o.e.t + key]; if (el) el.value = val; } });
+      };
+      var nz = textInput(r.v.nozzle, function (val) { r.v.nozzle = val; r.v.touched = true; mirror('nozzle', val); }, { inputmode: 'numeric', placeholder: a.n != null ? String(a.n) : 'ex. 200-220' });
+      var bd = textInput(r.v.bed, function (val) { r.v.bed = val; r.v.touched = true; mirror('bed', val); }, { inputmode: 'numeric', placeholder: a.b != null ? String(a.b) : 'ex. 60' });
+      inputs[e.t + 'nozzle'] = nz; inputs[e.t + 'bed'] = bd;
+      row.appendChild(field('Buse (°C)' + (many ? '' : ' sur l’étiquette'), nz));
+      row.appendChild(field('Plateau (°C)', bd));
+      box.appendChild(row);
+      var prev = rows.slice(0, i).filter(function (o) { return twin(o, r); })[0];
+      if (prev) box.appendChild(ui.el('p', 'hint', 'Même marque que ' + (prev.e.label || 'la couleur ' + (prev.e.t + 1)) + ' : je recopie ce que tu y tapes.'));
+      body.appendChild(box);
+    });
+    return { title: many ? 'Quelles températures indiquent tes bobines ?' : 'Quelles températures indique ta bobine ?', sub: null, body: body, primary: { label: 'C’est bon', run: function () {
       f.temps_ok = true;
-      var t = st.temps;
-      // Emplacement : retenu, pour ne plus reposer la question tant qu'il montre la même bobine.
-      if (first && p.printer) { habits = Mat.rememberSlotTemps(habits, p.printer.preset, first, Mat.labelTemp(t.nozzle), Mat.labelTemp(t.bed)); saveHabits(); }
+      var todo = [];
+      rows.forEach(function (r) {
+        var n = Mat.labelTemp(r.v.nozzle), b = Mat.labelTemp(r.v.bed);
+        // Emplacement : retenu, pour ne plus reposer la question tant qu'il montre la même bobine.
+        if (printer && r.e.canvas_id !== undefined) habits = Mat.rememberSlotTemps(habits, printer, r.e, n, b);
+        var a = advised(r.e);
+        if ((n !== null && n !== a.n) || (b !== null && b !== a.b)) todo.push({ e: r.e, nozzle: n, bed: b });
+      });
+      if (printer && slots[0].canvas_id !== undefined) saveHabits();
       changed();
-      if (Mat.tempChanges(t.nozzle, t.bed).length) setTemps(t.nozzle, t.bed);
+      if (!Array.isArray(p.canvas) || !p.canvas.length) { var only = todo[0]; if (only) setTemps(only.nozzle !== null ? String(only.nozzle) : '', only.bed !== null ? String(only.bed) : ''); return; }
+      applySlotTemps(todo, false);
     } } };
   }
 
@@ -1036,6 +1173,8 @@
     var st = state(), sst = slotState() || {}, trays = C.trays(sst), sys = mode === 'manual' ? 'manual' : sst.source === 'manual' ? 'manual' : sst.system || (known() && known().slots) || 'canvas';
     var w = C.words(sys), pr = selectedPrinter(), busy = !!st.pending;
     if (st.canvas.error) body.appendChild(noteBox('error', 'alert', st.canvas.error));
+    var tpu = Mat.tpuWarning(sys, trays, project().filament && project().filament.type);
+    if (tpu && mode !== 'loading' && mode !== 'manual') body.appendChild(noteBox('warn', 'alert', tpu, [ui.button('Imprimer depuis le porte-bobine', useList, 'link')]));
     if (mode === 'loading') { body.appendChild(spinLine(J.prompt('filament', { canvas: { mode: 'loading', system: sys } }))); return null; }
     if (mode === 'manual') {
       var m = st.manual;
@@ -1095,19 +1234,25 @@
       var lead = files.length ? 'Ta pièce a ' + files.length + ' couleurs : ' : rows.length > 1 ? 'Ta plaque a ' + rows.length + ' pièces : ' : n > 1 ? 'Ta pièce a ' + n + ' couleurs : ' : 'Ta pièce a plusieurs parties : ';
       body.appendChild(ui.el('p', 'sub', 'J’ai lu les bobines de ' + w.your + '.'));
       body.appendChild(slotGrid(trays, null, null, true, sst.empty_blocks));
-      var toggle = ui.button(st.colours.open ? 'Fermer les couleurs' : 'Changer les couleurs', function () { st.colours.open = !st.colours.open; st.colours.picker = null; render(); }, 'link');
+      // Plusieurs pièces qui sortiraient toutes avec la même bobine : la carte s'ouvre d'office (on ne fait pas un porte-clés
+      // trois couleurs en une seule), avec la répartition « une bobine par pièce » quand elle est possible.
+      var allSame = !files.length && rows.length > 1 && rows.every(function (r) { return !r.parts.length && !r.mixed && Col.trayKey(r.tray) === Col.trayKey(rows[0].tray); });
+      var shown = st.colours.open || (allSame && !st.colours.shut), spread = allSame && !st.colours.batch ? Col.spreadPlan(rows, trays) : null;
+      var toggle = ui.button(shown ? 'Fermer les couleurs' : 'Changer les couleurs', function () { st.colours.open = !shown; st.colours.shut = shown; st.colours.picker = null; render(); }, 'link');
       toggle.id = 'colours-toggle';
-      toggle.setAttribute('aria-expanded', st.colours.open ? 'true' : 'false');
+      toggle.setAttribute('aria-expanded', shown ? 'true' : 'false');
       body.appendChild(noteBox('tip', 'info', lead + said.join(', ') + '.', [toggle]));
-      if (st.colours.open) {
+      if (shown) {
         var holder = ui.el('div', 'colours-box');
         root.PlyoColoursView.render(holder, { el: ui.el, button: ui.button, icon: ui.icon }, { rows: rows, fileRows: files, unfolded: st.colours.unfolded,
           sameTray: Col.sameTrayNote(files), trays: trays, system: sst.source === 'manual' ? 'manual' : sst.system || sys, emptyBlocks: !!sst.empty_blocks,
-          picker: st.colours.picker, error: st.colours.error, recheck: st.colours.recheck, pending: !!st.colours.token, handlers: coloursHandlers });
+          picker: st.colours.picker, error: st.colours.error, recheck: st.colours.recheck, pending: !!st.colours.token || !!st.colours.batch, handlers: coloursHandlers,
+          direct: true, intro: allSame ? Col.spreadIntro(rows) : 'Touche une pièce pour la voir dans la vue 3D, puis la bobine qui l’imprime.', spread: spread,
+          pendingText: st.colours.batch ? 'Je donne une bobine à chaque pièce… (' + st.colours.batch.done + '/' + st.colours.batch.moves.length + ')' : '' });
         body.appendChild(holder);
       }
     }
-    if (mode === 'single' || mode === 'multi') slotBrandsInto(body, sst, w);
+    slotBrandsInto(body, sst, w);
     if (sys === 'manual') body.appendChild(ui.button('J’ai changé', openManual, 'link'));
     body.appendChild(ui.button('Choisir un autre filament', useList, 'link muted'));
     var complete = mode === 'colours' ? Col.complete(colours(), mapping, trays) : C.complete(mapping);
@@ -1323,6 +1468,7 @@
     p.on('slot_brands', onSlotBrands);
     p.on('colour_set', onColourSet);
     p.on('plate_action', onPlateAction);
+    p.on('slot_temps', onPlateAction);
     p.on('habits', function (msg) { habits = Object.assign(M.emptyHabits(), msg.habits || {}); });
     p.on('firststeps', function (msg) { var s = msg.state || {}; level = s.level || ''; if (J.barKey(J.currentStep(project())) === 'materiel') render(); });
     // Profil copié « <nom> (Plyo) » par une adaptation ou un lot appliqué : le filament du projet suit (repris du lot 2).

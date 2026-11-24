@@ -1294,4 +1294,10 @@ nlohmann::json spiral_leftovers()
     return out;
 }
 
+std::string bed_temp_key(bool initial)
+{
+    const Param* p = find_param(initial ? "bed_temp_initial" : "bed_temp");
+    return p != nullptr ? resolve_key(*p) : std::string(initial ? "hot_plate_temp_initial_layer" : "hot_plate_temp");
+}
+
 }} // namespace Plyo::SettingsBridge

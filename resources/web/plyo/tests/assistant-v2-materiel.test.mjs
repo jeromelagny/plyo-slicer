@@ -51,7 +51,18 @@ function bridge(cfg = {}) {
     else if (m.type === 'colours_get') emit(Object.assign({ type: 'colours', id: m.id }, cfg.colours || { ok: true, pieces: [{ ref: '1', name: 'Pièce', t: 0 }], colours: [{ t: 0, color: '#FFFFFF' }] }));
     else if (m.type === 'slots_manual_get') emit({ type: 'slots_manual_state', preset: m.preset, ok: false });
     else if (m.type === 'slot_brands_get') emit({ type: 'slot_brands', id: m.id, items: (cfg.slotBrands || []) });
-    else if (m.type === 'canvas_apply') { orca.filament = 'CFS PLA'; emit({ type: 'canvas_applied', ok: true, presets: m.entries.map((e) => ({ t: e.t, preset: e.t === 0 ? 'CFS PLA' : 'CFS PLA ' + e.t })) }); }
+    else if (m.type === 'canvas_apply') { orca.filament = 'CFS PLA'; emit({ type: 'canvas_applied', ok: true, presets: m.entries.map((e) => ({ t: e.t, preset: e.t === 0 ? 'CFS PLA' : 'CFS PLA ' + e.t, nozzle: 210, bed: 60 })) }); }
+    else if (m.type === 'colour_set') {
+      // La pièce prend une couleur du projet (une nouvelle si l'emplacement n'en a pas encore) ; l'association suit.
+      const st = cfg.colours, used = m.canvas.filter((e) => e.canvas_id === m.slot.canvas_id && e.tray_id === m.slot.tray_id)[0];
+      const t = used ? used.t : st.colours.length;
+      if (!used) st.colours.push({ t, color: m.slot.color, type: m.slot.type });
+      st.pieces.forEach((x) => { if (x.ref === m.object) x.t = t; });
+      const canvas = m.canvas.filter((e) => st.pieces.some((x) => x.t === e.t)).concat(used ? [] : [{ t, canvas_id: m.slot.canvas_id, tray_id: m.slot.tray_id }]);
+      emit({ type: 'colour_set', token: m.token, ok: true, t, undo_token: 100 + t, canvas });
+    }
+    else if (m.type === 'slot_temps_set') emit({ type: 'slot_temps', request: m.request, ok: true, t: m.t, preset: 'CFS PLA ' + m.t + ' (Plyo)' });
+    else if (m.type === 'plate_action') emit({ type: 'plate_action', request: m.request, ok: true });
   };
 }
 const start = async (cfg) => { const p = loadV2({ bridge: bridge(cfg), fetch: async () => response(404, {}) }); await sleep(40); return p; };
@@ -242,13 +253,13 @@ test('lot 3 : CFS lu sur la machine : grille des emplacements, « Oui, l’empla
     assert.match(texts(tcard), /Quelles températures indique ta bobine \?/);
     assert.match(texts(tcard), /emplacement 1B/);
     const [buse, plateau] = tcard.querySelectorAll('input');
-    buse.value = '200-220'; buse.dispatch('input');
+    buse.value = '220-230'; buse.dispatch('input');
     plateau.value = '60'; plateau.dispatch('input');
     p.$('card-primary').click();
     await sleep(30);
     assert.equal(project.filament.temps_ok, true);
     const apply = sent(p, 'apply').at(-1);
-    assert.deepEqual(apply.changes.map((c) => [c.id, c.value]), [['nozzle_temp', 210], ['nozzle_temp_initial', 210], ['bed_temp', 60], ['bed_temp_initial', 60]]);
+    assert.deepEqual(apply.changes.map((c) => [c.id, c.value]), [['nozzle_temp', 225], ['nozzle_temp_initial', 225], ['bed_temp', 60], ['bed_temp_initial', 60]]);
   } finally { p.stop(); }
 });
 
@@ -398,5 +409,82 @@ test('lot 5 : marque d’un emplacement (slot_brands_get) : « C’est bien cett
     await sleep(30);
     assert.deepEqual(sent(p, 'canvas_apply').at(-1).entries, [{ t: 0, type: 'PLA', color: '#222222', preset: 'Creality Hyper PLA @K2' }]);
     assert.equal(p.ctx.PlyoV2.panel.conv().project.canvas[0].brand, 'Creality');
+  } finally { p.stop(); }
+});
+
+// Porte-clés en trois objets (un 3MF sans couleurs) : tous sur la couleur 1 au départ.
+const keyring = () => ({ ok: true, pieces: [{ ref: '1', name: 'Fond (couleur 1)', t: 0 }, { ref: '2', name: 'Cadre + texte (couleur 2)', t: 0 }, { ref: '3', name: 'Icone + A (couleur 3)', t: 0 }],
+  colours: [{ t: 0, color: '#FFFFFF', type: 'PLA' }] });
+
+test('Couleurs : trois pièces sur une seule bobine, la carte s’ouvre d’office, « Oui, une par pièce » donne une bobine à chacune, un seul « Annuler »', async () => {
+  const colours = keyring();
+  const p = await start({ printers: [K2], orca: K2.preset, canvas: CFS, colours, conversation: conversation(PART_ONLY) });
+  try {
+    await sleep(40);
+    const card = p.$('stepcard');
+    const box = card.querySelector('.colours-box');
+    assert.ok(box, 'la carte Couleurs ouverte sans toucher « Changer les couleurs »');
+    assert.match(texts(box), /Tes 3 pièces sortiront toutes en PLA blanc · 1A\. Donne une bobine à chaque pièce/);
+    assert.match(texts(box), /Une bobine différente par pièce \? Fond \(couleur 1\) → PLA blanc · 1A, Cadre \+ texte \(couleur 2\) → PLA noir · 1B, Icone \+ A \(couleur 3\) → PLA rouge · 1C\./);
+    assert.equal(box.querySelectorAll('.colour-chips').length, 3, 'des pastilles sous chaque pièce');
+    byText(box, /^Oui, une par pièce$/).click();
+    await sleep(40);
+    const sets = sent(p, 'colour_set');
+    assert.deepEqual(sets.map((m) => [m.object, m.slot.tray_id]), [['2', 1], ['3', 2]], 'la couleur 1 garde son emplacement');
+    assert.deepEqual(colours.pieces.map((x) => x.t), [0, 1, 2]);
+    const done = p.document.body.querySelectorAll('.notice').find((n) => /Chaque pièce a sa bobine/.test(texts(n)));
+    assert.ok(done, 'une seule note à la fin');
+    byText(done, /^Annuler$/).click();
+    await sleep(30);
+    assert.deepEqual(sent(p, 'plate_action').map((m) => m.undo_token), [102, 101], 'annulé dans l’ordre inverse');
+  } finally { p.stop(); }
+});
+
+test('Couleurs : un clic sur la pastille d’une bobine change la pièce (colour_set), sans passer par « changer »', async () => {
+  const colours = keyring();
+  const p = await start({ printers: [K2], orca: K2.preset, canvas: CFS, colours, conversation: conversation(PART_ONLY) });
+  try {
+    await sleep(40);
+    const rows = p.$('stepcard').querySelector('.colours-box').querySelectorAll('.colour-chips');
+    byText(rows[1], /^1C$/).click();
+    await sleep(30);
+    const m = sent(p, 'colour_set').at(-1);
+    assert.deepEqual([m.object, m.slot.tray_id, m.slot.color], ['2', 2, '#D1495B']);
+  } finally { p.stop(); }
+});
+
+test('Températures : une ligne par emplacement ; même marque, ce qui est tapé se recopie ; couleurs 2 et suivantes par slot_temps_set, la 1 par l’onglet', async () => {
+  const canvas = JSON.parse(JSON.stringify(CFS));
+  Object.assign(canvas.canvases[0].trays[0], { brand: 'Creality', name: 'Hyper PLA' });
+  Object.assign(canvas.canvases[0].trays[1], { brand: 'Creality', name: 'Hyper PLA' });
+  canvas.colours = KEY.colours.concat([{ t: 2, color: '#222222' }]);
+  const colours = { ok: true, pieces: [{ ref: '1', name: 'Fond', t: 0 }, { ref: '2', name: 'Cadre', t: 1 }, { ref: '3', name: 'Icone', t: 2 }], colours: [{ t: 0, color: '#FFFFFF' }, { t: 1, color: '#D1495B' }, { t: 2, color: '#222222' }] };
+  const match = { brand: 'Creality', preset: 'Creality Hyper PLA @K2', label: 'Creality Hyper PLA', short: 'Hyper PLA' };
+  const p = await start({ printers: [K2], orca: K2.preset, canvas, colours, slotBrands: [{ key: '0:0', match }, { key: '0:1', match }], conversation: conversation(PART_ONLY) });
+  try {
+    await sleep(40);
+    assert.match(texts(p.$('stepcard')), /C’est bien elles \?/, 'la question de marque, aussi dans la carte Couleurs');
+    byText(p.$('stepcard'), /^Oui$/).click();
+    p.$('card-primary').click();
+    await sleep(40);
+    const card = p.$('stepcard');
+    assert.match(texts(card), /Quelles températures indiquent tes bobines \?/);
+    assert.match(texts(card), /Ta pièce utilise 3 bobines/);
+    assert.match(texts(card), /1B · .*Creality Hyper PLA.*Même marque que 1A : je recopie ce que tu y tapes\./);
+    const inputs = card.querySelectorAll('input');
+    assert.equal(inputs.length, 6);
+    inputs[0].value = '220-230'; inputs[0].dispatch('input');
+    // Couleur 2 = rouge (1C), couleur 3 = noir (1B) : 1B a la même marque que 1A.
+    assert.equal(inputs[4].value, '220-230', 'recopié dans 1B (même marque)');
+    assert.equal(inputs[2].value, '', 'pas dans 1C (autre bobine)');
+    inputs[3].value = '50'; inputs[3].dispatch('input');
+    p.$('card-primary').click();
+    await sleep(40);
+    const slotSets = sent(p, 'slot_temps_set');
+    assert.deepEqual(slotSets.map((m) => [m.t, m.nozzle, m.bed]), [[1, -1, 50], [2, 225, -1]]);
+    const apply = sent(p, 'apply').at(-1);
+    assert.deepEqual(apply.changes.map((c) => [c.id, c.value]), [['nozzle_temp', 225], ['nozzle_temp_initial', 225]], 'la couleur 1 par l’onglet, après les autres');
+    const slots = sent(p, 'habits_set').at(-1).habits.slot_temps;
+    assert.equal(Object.keys(slots).length, 3, 'les trois emplacements sont retenus');
   } finally { p.stop(); }
 });

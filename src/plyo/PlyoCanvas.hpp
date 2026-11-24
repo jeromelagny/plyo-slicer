@@ -34,6 +34,14 @@ nlohmann::json colours();
 // `preset` : profil de marque choisi par l'utilisateur pour cet emplacement, vérifié par Brands::check (refus sinon).
 // {ok, presets:[{t, preset}], text?} ; tout ou rien sur la recherche des profils.
 nlohmann::json apply(const nlohmann::json& entries);
+
+// Températures de l'étiquette d'une couleur autre que la première (`t` >= 1 ; la première passe par l'onglet Filament, voir
+// « apply ») : un profil utilisateur « <profil> (Plyo) » qui part du profil de cette couleur, avec buse et plateau (-1 : gardée),
+// réutilisé s'il existe déjà avec ces valeurs, puis choisi pour cette couleur. {ok, preset, nozzle, bed} ou {ok:false, text}.
+nlohmann::json set_temps(size_t t, int nozzle, int bed);
+
+// Buse et plateau du profil de la couleur `t` (-1 : inconnu).
+std::pair<int, int> temps_of(size_t t);
 // Plan d'envoi : carte [{t, canvas_id, tray_id}] pour l'imprimante de ce profil, avec les couleurs de la plaque.
 void plan(const std::string& printer_preset, const nlohmann::json& map);
 void clear_plan();

@@ -11,6 +11,8 @@
 #include "PlyoIfs.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoPrinterLink.hpp"
+#include "PlyoProfilesLogic.hpp"
+#include "PlyoSettingsBridge.hpp"
 #include "PlyoSend.hpp"
 #include "PlyoSlotsLogic.hpp"
 #include "PlyoSpoolsLogic.hpp"
@@ -305,9 +307,110 @@ nlohmann::json apply(const nlohmann::json& entries)
         if (presets[i].first != 0)
             set_preset(presets[i].first, presets[i].second);
         set_colour(presets[i].first, Json::str(entries[i], "color", 16));
-        out["presets"].push_back({{"t", presets[i].first}, {"preset", presets[i].second}});
+        const auto [nozzle, bed] = temps_of(presets[i].first);
+        nlohmann::json item = {{"t", presets[i].first}, {"preset", presets[i].second}};
+        if (nozzle >= 0)
+            item["nozzle"] = nozzle;
+        if (bed >= 0)
+            item["bed"] = bed;
+        out["presets"].push_back(item);
     }
     return out;
+}
+
+namespace {
+
+int first_int(const Slic3r::DynamicPrintConfig& cfg, const std::string& key)
+{
+    const auto* o = cfg.option<Slic3r::ConfigOptionInts>(key);
+    return o != nullptr && !o->values.empty() ? o->values.front() : -1;
+}
+
+void set_int(Slic3r::DynamicPrintConfig& cfg, const std::string& key, int value)
+{
+    if (value < 0)
+        return;
+    if (auto* o = cfg.option<Slic3r::ConfigOptionInts>(key); o != nullptr && !o->values.empty())
+        o->values.assign(o->values.size(), value);
+}
+
+} // namespace
+
+std::pair<int, int> temps_of(size_t t)
+{
+    if (t >= bundle().filament_presets.size())
+        return {-1, -1};
+    const Slic3r::Preset* p = bundle().filaments.find_preset(bundle().filament_presets[t], false);
+    if (p == nullptr)
+        return {-1, -1};
+    return {first_int(p->config, "nozzle_temperature"), first_int(p->config, SettingsBridge::bed_temp_key(false))};
+}
+
+nlohmann::json set_temps(size_t t, int nozzle, int bed)
+{
+    Slic3r::PresetBundle& b = bundle();
+    if (t == 0 || t >= b.filament_presets.size())
+        return {{"ok", false}, {"text", "Cette couleur n'existe pas dans la pièce. Recharge la pièce, puis choisis à nouveau."}};
+    if ((nozzle >= 0 && (nozzle < 150 || nozzle > 350)) || (bed >= 0 && bed > 130))
+        return {{"ok", false}, {"text", "Ces températures ne ressemblent pas à celles d'une étiquette : vérifie-les."}};
+    Slic3r::PresetCollection& col = b.filaments;
+    // Orca recharge le filament en cours d'édition après l'ajout d'un profil : des modifications non enregistrées seraient perdues.
+    if (col.current_is_dirty() && AutoSave::flush_spool() == SpoolsLogic::Flush::Refuse)
+        return {{"ok", false}, {"text", SpoolsLogic::FLUSH_REFUSED_TEXT}};
+    if (col.current_is_dirty())
+        return {{"ok", false}, {"text", "Le filament de la couleur 1 a des modifications non enregistrées : enregistre-les (ou annule-les) dans l'onglet Filament, puis touche à nouveau « C'est bon »."}};
+    const Slic3r::Preset*     cur = col.find_preset(b.filament_presets[t], false);
+    if (cur == nullptr)
+        return {{"ok", false}, {"text", "Je ne trouve plus le profil de cette couleur : choisis à nouveau les emplacements."}};
+    const std::string bed_key = SettingsBridge::bed_temp_key(false), bed_key0 = SettingsBridge::bed_temp_key(true);
+    Slic3r::DynamicPrintConfig cfg = cur->config;
+    set_int(cfg, "nozzle_temperature", nozzle);
+    set_int(cfg, "nozzle_temperature_initial_layer", nozzle);
+    set_int(cfg, bed_key, bed);
+    set_int(cfg, bed_key0, bed);
+    if (!AutoSave::temperatures_ok(cfg))
+        return {{"ok", false}, {"text", "Plyo Slicer refuse ces températures pour ce profil (écart trop grand avec la première couche) : vérifie-les."}};
+    const auto same_temps = [&](const Slic3r::DynamicPrintConfig& c) {
+        return first_int(c, "nozzle_temperature") == first_int(cfg, "nozzle_temperature") && first_int(c, "nozzle_temperature_initial_layer") == first_int(cfg, "nozzle_temperature_initial_layer")
+               && first_int(c, bed_key) == first_int(cfg, bed_key) && first_int(c, bed_key0) == first_int(cfg, bed_key0);
+    };
+    // Le profil de la couleur a déjà ces températures : rien à écrire.
+    if (same_temps(cur->config))
+        return {{"ok", true}, {"preset", cur->name}, {"nozzle", first_int(cfg, "nozzle_temperature")}, {"bed", first_int(cfg, bed_key)}};
+    // Le parent système (une copie ne doit jamais partir d'une autre copie) ; sans parent, le profil lui-même.
+    const Slic3r::Preset* parent = cur->is_system ? cur : col.get_preset_parent(*cur);
+    const std::string     base   = parent != nullptr ? parent->name : cur->name;
+    // Une copie qui part du même profil avec ces mêmes températures existe déjà (projet précédent) : on la reprend.
+    std::string name;
+    std::vector<std::string> existing;
+    for (const Slic3r::Preset& p : col) {
+        existing.push_back(p.name);
+        if (name.empty() && !p.is_system && !p.is_default && p.is_visible && p.is_compatible && p.inherits() == base
+            && p.name.find(" (Plyo") != std::string::npos && same_temps(p.config))
+            name = p.name;
+    }
+    if (name.empty()) {
+        name = Profiles::copy_name(base, existing);
+        std::vector<std::string> failures;
+        const bool cloned = col.clone_presets({cur}, failures, [&](Slic3r::Preset& p, Slic3r::Preset::Type&) {
+            p.name   = name;
+            p.config = cfg;
+            if (parent != nullptr && parent != cur)
+                p.config.option<Slic3r::ConfigOptionString>("inherits", true)->value = base;
+            else if (cur->is_system)
+                p.config.option<Slic3r::ConfigOptionString>("inherits", true)->value = cur->name;
+        });
+        if (!cloned || col.find_preset(name, false) == nullptr) {
+            BOOST_LOG_TRIVIAL(error) << "Plyo: profil « " << name << " » non créé pour la couleur " << t + 1;
+            return {{"ok", false}, {"text", "Plyo Slicer n'a pas pu enregistrer le profil « " + name + " »."}};
+        }
+        BOOST_LOG_TRIVIAL(info) << "Plyo: profil « " << name << " » créé pour la couleur " << t + 1 << " depuis « " << cur->name << " »";
+    }
+    if (Slic3r::GUI::Plater* plater = wxGetApp().plater())
+        plater->sidebar().update_presets(Slic3r::Preset::TYPE_FILAMENT);
+    if (!set_preset(t, name))
+        return {{"ok", false}, {"text", "Le profil « " + name + " » est enregistré, mais Plyo Slicer ne l'a pas choisi pour cette couleur."}};
+    return {{"ok", true}, {"preset", name}, {"nozzle", first_int(cfg, "nozzle_temperature")}, {"bed", first_int(cfg, bed_key)}};
 }
 
 void plan(const std::string& printer_preset, const nlohmann::json& map)

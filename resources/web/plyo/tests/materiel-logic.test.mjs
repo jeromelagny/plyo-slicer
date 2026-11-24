@@ -119,3 +119,26 @@ test('températures d’un emplacement : retenues, reprises seulement pour la m�
   assert.equal(M.slotTempsFor(M.forgetSlotTemps(h, 'K2', e), 'K2', e), null);
   assert.equal(M.slotTempsKey('K2', { type: 'PLA' }), '', 'sans emplacement : rien');
 });
+
+test('TPU et CFS : avertissement si un emplacement en annonce ou si le filament voulu en est ; rien hors CFS', () => {
+  const trays = [{ slot: '1A', type: 'TPU', color: '#FFF' }, { slot: '1B', type: 'PLA' }, { slot: '1C', type: 'TPU 95A' }];
+  assert.match(M.tpuWarning('cfs', trays, 'PLA'), /^Les emplacements 1A, 1C annoncent du TPU, mais le CFS ne prend pas le TPU/);
+  assert.match(M.tpuWarning('cfs', [{ slot: '1B', type: 'PLA' }], 'TPU'), /^Le CFS ne prend pas le TPU.*porte-bobine/);
+  assert.equal(M.tpuWarning('cfs', [{ slot: '1B', type: 'PLA' }], 'PLA'), '');
+  assert.equal(M.tpuWarning('canvas', trays, 'TPU'), '');
+  assert.equal(M.tpuWarning('cfs', [{ slot: '1A', type: 'TPU', empty: true }], ''), '', 'un emplacement vide ne compte pas');
+});
+
+test('une bobine par pièce : ordre « couleur N », même matière, la bobine en cours reste à la première ; sinon rien', () => {
+  const Col = globalThis.PlyoColours;
+  const A = { canvas_id: 0, tray_id: 0, type: 'TPU', color: '#FFFFFF', slot: '1A' }, B = { canvas_id: 0, tray_id: 1, type: 'TPU', color: '#222222', slot: '1B' };
+  const Cc = { canvas_id: 0, tray_id: 2, type: 'TPU', color: '#D1495B', slot: '1C' }, D = { canvas_id: 0, tray_id: 3, type: 'PLA', color: '#00F', slot: '1D' };
+  const row = (ref, name) => ({ ref, name, title: name, tray: A, parts: [], mixed: false });
+  const rows = [row('3', 'Icone (couleur 3)'), row('1', 'Fond (couleur 1)'), row('2', 'Cadre (couleur 2)')];
+  const plan = Col.spreadPlan(rows, [A, D, B, Cc]);
+  assert.deepEqual(plan.moves.map((m) => [m.ref, m.tray.slot]), [['1', '1A'], ['2', '1B'], ['3', '1C']], 'le PLA n’est pas proposé pour du TPU');
+  assert.equal(Col.spreadPlan(rows, [A, B, D]), null, 'pas assez de bobines de la même matière');
+  assert.equal(Col.spreadPlan([row('1', 'a'), Object.assign(row('2', 'b'), { tray: B })], [A, B]), null, 'les pièces n’ont pas toutes la même bobine');
+  assert.equal(Col.spreadPlan([row('1', 'a')], [A, B]), null, 'une seule pièce');
+  assert.deepEqual(Col.spreadPlan([row('1', 'Socle'), row('2', 'Toit')], [A, B]).moves.map((m) => m.tray.slot), ['1A', '1B'], 'sans numéro : l’ordre du plateau');
+});

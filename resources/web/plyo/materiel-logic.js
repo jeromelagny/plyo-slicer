@@ -98,6 +98,16 @@
     return colours.length > 1 ? 'multi' : 'single';
   }
 
+  // CFS de Creality et TPU : Creality ne le permet pas (le fil souple se plie dans les tubes ; 90A et moins ne passent pas
+  // l'extrudeur de la K2). Le texte de l'avertissement si un emplacement lu en annonce, ou si le filament voulu en est.
+  function tpuWarning(system, trays, wanted) {
+    if (system !== 'cfs') return '';
+    var tpu = (trays || []).filter(function (t) { return t && !t.empty && /^TPU/i.test(String(t.type || '')); });
+    if (!tpu.length && !/^TPU/i.test(String(wanted || ''))) return '';
+    var where = tpu.length ? (tpu.length > 1 ? 'Les emplacements ' : 'L’emplacement ') + tpu.map(function (t) { return t.slot; }).join(', ') + (tpu.length > 1 ? ' annoncent' : ' annonce') + ' du TPU, mais le' : 'Le';
+    return where + ' CFS ne prend pas le TPU : d’après Creality, ce fil souple se plie dans ses tubes. Charge ta bobine de TPU sur le porte-bobine de l’imprimante : elle imprimera alors en une seule couleur. Pour plusieurs couleurs, prends une matière que le CFS accepte (PLA, PETG…).';
+  }
+
   // Température écrite sur l'étiquette : « 205 », « 205 °C » ou une fourchette « 190-220 » (le milieu, arrondi à 5 °C) ; null
   // si illisible.
   function labelTemp(text) {
@@ -142,7 +152,7 @@
   }
 
   var api = { slotTempsKey: slotTempsKey, slotTempsFor: slotTempsFor, rememberSlotTemps: rememberSlotTemps, forgetSlotTemps: forgetSlotTemps, COLOURS: COLOURS, colourOf: colourOf, spoolName: spoolName, labelTemp: labelTemp, tempChanges: tempChanges, MATERIALS: MATERIALS, materialHelp: materialHelp, knownPrinter: knownPrinter, slotsWanted: slotsWanted, manualWanted: manualWanted, slotState: slotState,
-    canvasColours: canvasColours, canvasProposal: canvasProposal, canvasMode: canvasMode };
+    canvasColours: canvasColours, canvasProposal: canvasProposal, canvasMode: canvasMode, tpuWarning: tpuWarning };
   root.PlyoMateriel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

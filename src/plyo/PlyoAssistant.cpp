@@ -799,6 +799,17 @@ void handle_page_message(const nlohmann::json& data)
             r["type"]        = "canvas_applied";
             send(r);
             send_values();
+        } else if (type == "slot_temps_set") {
+            // Températures de l'étiquette d'une couleur autre que la première (carte « Quelles températures… »), sur ton clic.
+            const long long t      = Json::integer(data, "t", -1);
+            nlohmann::json  r      = t > 0 ? Canvas::set_temps(static_cast<size_t>(t), static_cast<int>(Json::integer(data, "nozzle", -1)), static_cast<int>(Json::integer(data, "bed", -1)))
+                                           : nlohmann::json{{"ok", false}, {"text", "Cette couleur n'existe pas dans la pièce."}};
+            r["type"]    = "slot_temps";
+            r["t"]       = t;
+            r["request"] = Json::integer(data, "request", 0);
+            send(r);
+            if (Json::boolean(r, "ok", false))
+                send_values();
         } else if (type == "colours_get") {
             // Carte « Couleurs » : les pièces de la plaque et leur couleur (lecture seule). `select` : la ligne touchée, sélectionnée
             // dans la vue 3D comme un clic (sans point d'annulation, contrairement à l'ordre « select » de l'IA).

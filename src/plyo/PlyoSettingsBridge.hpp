@@ -104,6 +104,9 @@ nlohmann::json apply_catalog_changes(const nlohmann::json& changes, const std::s
 // n'est alors pas exigée pour l'appliquer (ProjectLogic::missing_for). Faux pour un lot vide ou une clé inconnue.
 bool filament_only(const nlohmann::json& changes);
 
+// Clé Orca de la température de plateau que lit le plateau en cours (« hot_plate_temp »…), première couche si `initial`.
+std::string bed_temp_key(bool initial);
+
 // Réglages d'impression laissés par le mode vase (ConfigRules::spiral_leftovers), au catalogue seulement. Référence : les
 // valeurs d'avant le lot encore annulable qui a activé le mode vase, sinon celles du profil d'impression enregistré.
 // [{key, label, value (valeur à remettre, typée), now (valeur actuelle, typée)}].

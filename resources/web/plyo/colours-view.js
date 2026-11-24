@@ -17,13 +17,21 @@
     var h = opts.handlers, P = root.PlyoColours, trays = opts.trays || [], pk = opts.picker, files = opts.fileRows || [];
     var body = ui.el('div', 'project-body canvas-choices colours-card');
     slot.textContent = '';
-    body.appendChild(ui.el('p', 'muted small', files.length ? P.fileIntro(files) : P.INTRO));
+    body.appendChild(ui.el('p', 'muted small', files.length ? P.fileIntro(files) : opts.intro || P.INTRO));
     if (opts.system === 'manual') body.appendChild(ui.el('p', 'muted small', 'Ces bobines viennent de ce que tu m’as dit.'));
     if (opts.error) {
       body.appendChild(ui.el('p', 'project-error', opts.error));
       if (opts.recheck) body.appendChild(ui.button('Vérifier à nouveau', h.recheck, 'link'));
     }
-    if (opts.pending) body.appendChild(ui.el('p', 'muted small', 'Je change la couleur…'));
+    if (opts.pending) body.appendChild(ui.el('p', 'muted small', opts.pendingText || 'Je change la couleur…'));
+    if (opts.spread && !opts.pending) {
+      var sp = ui.el('div', 'brand-ask colour-spread');
+      sp.appendChild(ui.el('p', 'small', 'Une bobine différente par pièce ? ' + opts.spread.text + '.'));
+      var spa = ui.el('div', 'printer-actions');
+      spa.appendChild(ui.button('Oui, une par pièce', h.spread, 'btn sm main'));
+      sp.appendChild(spa);
+      body.appendChild(sp);
+    }
 
     // La bobine : pastille et texte, sur une seule ligne (« PLA blanc · 2 » ne se coupe pas).
     function spool(tray, text) {
@@ -51,9 +59,25 @@
       var right = ui.el('div', 'colour-right');
       right.appendChild(spool(target.tray, target.text));
       if (target.selected) right.appendChild(ui.el('span', 'project-ok', 'sélectionnée'));
-      if (target.canChange && !opts.pending) right.appendChild(ui.button('changer', function () { h.open(target.piece || target.ref, isPart ? target.ref : '', target.name, target.tray); }, 'link'));
+      if (target.canChange && !opts.pending && !opts.direct) right.appendChild(ui.button('changer', function () { h.open(target.piece || target.ref, isPart ? target.ref : '', target.name, target.tray); }, 'link'));
       row.appendChild(right);
       body.appendChild(row);
+      // Vue directe (assistant v2) : les bobines chargées en pastilles sous la pièce, un clic suffit.
+      if (opts.direct && target.canChange) body.appendChild(chips(target, isPart));
+    }
+    function chips(target, isPart) {
+      var box = ui.el('div', 'colour-chips' + (isPart ? ' colour-part' : ''));
+      trays.forEach(function (t) {
+        var on = !!target.tray && P.trayKey(target.tray) === P.trayKey(t);
+        var b = ui.button(t.slot, function () { if (!on) h.choose(target.piece || target.ref, isPart ? target.ref : '', target.name, target.tray, t); }, 'chip colour' + (on ? ' on' : ''));
+        b.insertBefore(swatch(ui, t.empty ? '' : t.color), b.firstChild);
+        b.title = P.spoolText(t) + (t.empty ? ' (vide)' : '');
+        b.setAttribute('aria-label', target.name + ' en ' + P.spoolText(t));
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        if (opts.pending || (t.empty && opts.emptyBlocks) || !t.type) b.disabled = true;
+        box.appendChild(b);
+      });
+      return box;
     }
     function fileLine(r) {
       var row = ui.el('div', 'project-row colour-row colour-file');
