@@ -17,4 +17,8 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
 // Arrête la surveillance en cours (Orca qui se ferme).
 void stop();
 
+// Pause (« pause »), reprise (« resume ») ou arrêt (« stop ») de l'impression en cours sur la machine du préréglage, par le
+// réseau local (Creality, Moonraker). `notify` reçoit {ok, action} sur le fil principal ; `unsupported` si la machine ne sait pas.
+void control(const std::string& preset, const std::string& action, std::function<void(nlohmann::json)> notify);
+
 } // namespace Plyo::PrinterStatus

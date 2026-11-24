@@ -39,7 +39,7 @@
     return { conv: id, idk: false, changing: false, manual: null, applying: false, expert: null, adjust: false, intentLine: null,
       slicing: false, sliceTimer: null, sliceSince: 0, sliceAsked: false, sliceTried: '', issues: [], blockSig: '', sliceSig: null, checkAsked: null,
       preflight: null, added: savedAdded(id), autoFixed: false, fixing: '', sending: null, lock: null, exported: null, failure: null,
-      screen: '', symptom: '', asked: false, watchLine: null, readId: 0, refused: '', successNote: '', calibOpen: false, diverge: null, recheckTimer: null };
+      screen: '', symptom: '', diag: '', asked: false, watchLine: null, readId: 0, refused: '', successNote: '', calibOpen: false, diverge: null, recheckTimer: null };
   }
   var S = fresh(null);
   function conv() { return panel ? panel.conv() : null; }
@@ -89,10 +89,12 @@
   function setStep(s) { var p = project(); p.step = s || 'done'; changed(); }
 
   // ---------- Demandes au slicer qui répondent par « result », « plate_action », « show_preview », « open_calibration » ----------
+  var whyOf = {}; // titre d'un lot envoyé (« why »), pour « Changé par l'assistant »
   function ask(message, after) {
     var id = ++request;
     waiters[id] = after || null;
     message.request = id;
+    if (message.type === 'apply' && message.why) whyOf[id] = message.why;
     panel.post(message);
     return id;
   }
@@ -104,11 +106,66 @@
       if (msg.undone_id) { c.project.assistant = Logic.forgetBatch(c.project.assistant, BATCH_TAG + ':' + msg.undone_id); save(); }
     }
     if (msg.undone_id && undone[msg.undone_id]) { var u = undone[msg.undone_id]; delete undone[msg.undone_id]; u(msg); }
+    noteChange(msg);
     watchAfterApply(msg);
     var w = waiters[msg.request];
     if (!(msg.request in waiters)) return;
     delete waiters[msg.request];
     if (w) w(!!msg.ok, msg.text, msg);
+  }
+  // ---------- « Changé par l'assistant » (audit du 24/11) ----------
+  // Tout lot de réglages appliqué par l'assistant (questions d'usage, vérifications, fiche de la discussion, diagnostic) se dit
+  // « avant → après » dans un toast avec « Annuler », et reste listé dans « Tout est prêt » tant qu'il n'est pas annulé.
+  var intentBatches = {}; // lot de l'usage → conversation : son annulation ramène aussi à la question d'usage
+  function noteChange(msg) {
+    var c = conv();
+    if (!c || !msg.ok) return;
+    // Réglages changés ou remis : les valeurs du slicer sont relues (« Réglages en chiffres » ne montre jamais une valeur périmée).
+    if ((msg.undo_id && Array.isArray(msg.applied) && msg.applied.length) || msg.undone_id) panel.post({ type: 'get_values' });
+    if (msg.undone_id) {
+      var had = (c.project.changes || []).length;
+      c.project.changes = X.forgetChange(c.project.changes, msg.undone_id);
+      if (c.project.changes.length !== had) { save(); if (shownCard === 'ready') render(); }
+      return;
+    }
+    if (!msg.undo_id || !Array.isArray(msg.applied) || !msg.applied.length) return;
+    var why = String(whyOf[msg.request] || '').replace(/^Intention : /, 'Réglages pour ta pièce : ');
+    delete whyOf[msg.request];
+    c.project.changes = X.noteChange(c.project.changes, msg.undo_id, why || 'Réglages de l’assistant', msg.applied, function (id) { return paramOf(id).unit; });
+    save();
+    var entry = c.project.changes[c.project.changes.length - 1];
+    if (entry && entry.undo === msg.undo_id) ui.toast(X.changeLine(entry), 'Annuler', function () { undoChange(msg.undo_id); });
+  }
+  function undoChange(undoId) {
+    var c = conv();
+    if (intentBatches[undoId] && intentBatches[undoId] === c) { undoIntent(undoId, c); return; }
+    var entry = (c && c.project.changes || []).filter(function (e) { return e.undo === undoId; })[0];
+    ask({ type: 'undo', undo_id: undoId }, function (ok, text) {
+      if (!ok) { panel.tell(text || 'Je n’ai pas pu annuler ce changement.', 'error'); return; }
+      ui.toast('Annulé : ' + (entry ? entry.title.charAt(0).toLowerCase() + entry.title.slice(1) : 'les réglages d’avant sont remis'));
+      if (signals) signals.sliced = false;
+      render();
+    });
+  }
+  function changedBox() {
+    var list = (project().changes || []).slice().reverse();
+    if (!list.length) return null;
+    var box = ui.el('div');
+    box.appendChild(section('Changé par l’assistant'));
+    var ul = ui.el('ul', 'checks changed');
+    list.forEach(function (e) {
+      var li = ui.el('li'), mark = ui.el('span', 'ok');
+      mark.appendChild(ui.icon('check', 18));
+      li.appendChild(mark);
+      var t = ui.el('span', 'txt', e.title);
+      t.appendChild(ui.el('small', '', X.changeLine(e)));
+      li.appendChild(t);
+      var b = ui.button('Annuler', function () { b.disabled = true; undoChange(e.undo); }, 'mini');
+      li.appendChild(b);
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    return box;
   }
   function apply(changes, why, after, extra) {
     var names = Logic.namesForApply(extra && extra.data || null, values() && values().context);
@@ -330,6 +387,7 @@
         st.intentLine = null;
         if (result && result.undo_id) {
           var mine = conv();
+          intentBatches[result.undo_id] = mine;
           st.intentLine = panel.say(I.doneText(X.intentAnswers(p)), 'info', [{ label: 'Annuler', run: function () { undoIntent(result.undo_id, mine); } }]);
         }
         changed();
@@ -560,6 +618,16 @@
       render();
       return;
     }
+    // La machine sait-elle mettre en pause, reprendre et arrêter (Creality, Moonraker) ? Sinon les boutons restent masqués.
+    if (typeof msg.control === 'boolean' && s.control !== msg.control) { s.control = msg.control; save(); }
+    // Avancement lu sur la machine toutes les 30 s ; une pause faite sur son écran se voit aussi. Rien n'avance tout seul.
+    if (msg.phase === 'progress') {
+      if (typeof msg.progress === 'number' && msg.progress >= 0) st.progress = msg.progress;
+      var paused = msg.state === 'paused';
+      if (!!s.paused !== paused) { s.paused = paused; save(); }
+      render();
+      return;
+    }
     st.watchLine = J.watchText(msg.verdict, shortName(), msg.file);
     if (st.watchLine && msg.verdict !== 'started') panel.record({ kind: 'note', text: st.watchLine.text, tone: st.watchLine.tone === 'warn' ? 'warn' : 'ok' });
     render();
@@ -624,6 +692,8 @@
     st.screen = '';
     st.asked = false;
     st.symptom = '';
+    st.diag = '';
+    st.offlineFix = false;
     setStep(sliced() ? 'print' : 'slice');
   }
   // « Appliquer et réimprimer » : les réglages changent, la plaque est à redécouper (la préparation repart d'elle-même).
@@ -633,6 +703,8 @@
     st.screen = '';
     st.asked = false;
     st.symptom = '';
+    st.diag = '';
+    st.offlineFix = false;
     st.preflight = null;
     st.sliceTried = '';
     if (signals) signals.sliced = false;
@@ -656,6 +728,7 @@
   function card(o) {
     var b = ui.el('button', 'card' + (o.sel ? ' sel' : ''));
     b.type = 'button';
+    if (o.radio) { b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', o.sel ? 'true' : 'false'); }
     if (o.icon) { var ic = ui.el('span', 'ic'); ic.appendChild(ui.icon(o.icon, 22)); b.appendChild(ic); }
     var mid = ui.el('span', 'mid');
     mid.appendChild(ui.el('strong', '', o.title));
@@ -911,29 +984,34 @@
         primary: { label: 'Préparer l’impression', icon: 'send', run: function () { var last = I.validLast(habits.last_intent); if (!last) { st.changing = true; render(); return; } p.intent = Object.assign({}, last); changed(); applyIntent(); } },
         extra: [link('Changer', function () { st.changing = true; render(); }, 'muted')] };
     }
-    var answers = X.intentAnswers(p), uc = X.useCards(partName()), primary = null, extra = [];
-    var list = ui.el('div', 'cards uses');
-    uc.cards.forEach(function (c) {
-      list.appendChild(card({ icon: c.icon, title: c.label, sub: c.sub, sel: answers.use === c.id, badge: c.suggested ? badge('Suggéré') : null,
-        on: function () { if (expert()) { p.intent = Object.assign({}, p.intent || {}, { use: c.id }); delete p.intent.pref; if (c.id === 'test') delete p.intent.speed; changed(); } else answerIntent('use', c.id); } }));
-    });
-    body.appendChild(list);
+    // Audit du 24/11 : la réponse suggérée vient en premier et elle est déjà choisie ; « Préparer l'impression » lance tout.
+    // Confirmé : trois groupes étiquetés (Usage, Priorité, Vitesse), préremplis de même.
+    var answers = X.intentAnswers(p), uc = X.useCards(partName()), extra = [];
     var pending = it.mode === 'auto' || st.applying;
-    if (pending) body.appendChild(spinLine('Je règle Plyo Slicer pour toi…'));
-    if (expert() && answers.use && answers.use !== 'test') {
-      // Confirmé : préférence et vitesse visibles d'office (« Pour aller plus loin »).
-      body.appendChild(section('Pour aller plus loin'));
-      [I.QUESTIONS.pref[answers.use], I.QUESTIONS.speed].forEach(function (q) {
-        if (!q) return;
-        body.appendChild(ui.el('p', 'hint', q.text));
-        var chips = ui.el('div', 'chips');
-        q.choices.forEach(function (c) { var b = ui.button(c.label, function () { p.intent[q.id] = c.id; changed(); }, 'chip' + (answers[q.id] === c.id ? ' sel' : '')); chips.appendChild(b); });
-        body.appendChild(chips);
+    var ordered = uc.cards.slice().sort(function (x, y) { return (y.suggested ? 1 : 0) - (x.suggested ? 1 : 0); });
+    if (!st.usePick || !st.usePick.use) st.usePick = Object.assign({}, I.noviceAnswers({ use: answers.use || uc.suggested }), answers.use ? answers : {});
+    var pick = st.usePick, primary = { label: 'Préparer l’impression', icon: 'send', disabled: pending, run: function () {
+      if (expert()) { p.intent = Object.assign({}, p.intent || {}, pick); changed(); applyIntent(); }
+      else answerIntent('use', pick.use);
+    } };
+    if (expert()) {
+      body.appendChild(chipGroup('Usage', I.QUESTIONS.use.choices.slice().sort(function (x, y) { return (y.id === uc.suggested ? 1 : 0) - (x.id === uc.suggested ? 1 : 0); }),
+        pick.use, function (id) { st.usePick = I.noviceAnswers({ use: id }); render(); }, function (c) { return c.id === uc.suggested ? ' (suggéré)' : ''; }));
+      if (pick.use !== 'test') {
+        body.appendChild(chipGroup('Priorité', I.QUESTIONS.pref[pick.use].choices, pick.pref, function (id) { pick.pref = id; render(); }));
+        body.appendChild(chipGroup('Vitesse', I.QUESTIONS.speed.choices, pick.speed, function (id) { pick.speed = id; render(); }));
+      }
+    } else {
+      var list = ui.el('div', 'cards uses');
+      list.setAttribute('role', 'radiogroup');
+      list.setAttribute('aria-label', ui.fr('Usage de la pièce'));
+      ordered.forEach(function (c) {
+        list.appendChild(card({ icon: c.icon, title: c.label, sub: c.sub, sel: pick.use === c.id, radio: true, badge: c.suggested ? badge('Suggéré') : null,
+          on: function () { if (!pending) { st.usePick = I.noviceAnswers({ use: c.id }); render(); } } }));
       });
+      body.appendChild(list);
     }
-    if (expert() && it.mode === 'ready') primary = { label: 'Préparer l’impression', icon: 'send', disabled: pending, run: applyIntent };
-    else if (expert() && answers.use) primary = { label: 'Préparer l’impression', disabled: true, run: function () {} };
-    if (!pending && !expert()) extra.push(link('Je ne sais pas : choisis pour moi', function () { answerIntent('use', uc.suggested); }, 'muted center'));
+    if (pending) body.appendChild(spinLine('Je règle Plyo Slicer pour toi…'));
     if (!pending) extra.push(link('Je règle moi-même', function () {
       p.intent = { skipped: true };
       habits = M.noteIntent(habits, true);
@@ -1010,6 +1088,7 @@
     var stats = X.stats(signals, p.filament && p.filament.type);
     var moved = divergenceInto(body);
     if (stats) body.appendChild(statBox(stats));
+    if (expert() && sliced() && !moved) body.appendChild(numbersBox());
     var checks = X.readyChecks(st.preflight, { printer: shortName(), filament: p.filament, added: st.added });
     if (checks.length) {
       var ul = ui.el('ul', 'checks');
@@ -1031,12 +1110,14 @@
     else if (!sliced() && !st.issues.length && st.sliceTried === 'failed' && st.sliceError) body.appendChild(noteBox('warn', 'alert', st.sliceError, [ui.button('Découper à nouveau', function () { st.sliceTried = ''; st.sliceError = ''; slice(); }, 'btn sm main')]));
     else if (!sliced() && !st.issues.length && !moved) body.appendChild(noteBox('warn', 'alert', 'La plaque n’est plus découpée.', [ui.button('Découper', function () { st.sliceTried = ''; slice(); }, 'btn sm main')]));
     issuesInto(body);
-    // Réglages : l'usage choisi, et « Ajuster » (usage, priorité, vitesse).
-    var it = p.intent || {}, labels = X.intentLabels(X.intentAnswers(p));
+    var changed = changedBox();
+    if (changed) body.appendChild(changed);
+    // Réglages : l'usage choisi (« Réglages pour une déco »), et « Ajuster » (usage, priorité, vitesse).
+    var it = p.intent || {}, labels = X.intentLabels(X.intentAnswers(p)), use = X.intentAnswers(p).use;
     var line = ui.el('div', 'summary-line');
     var ic = ui.el('span', 'ic'); ic.appendChild(ui.icon('sliders', 20)); line.appendChild(ic);
     var mid = ui.el('div', 'grow');
-    mid.appendChild(ui.el('strong', '', it.skipped || !labels.use ? 'Réglages : les tiens' : 'Réglages : ' + labels.use));
+    mid.appendChild(ui.el('strong', '', it.skipped || !labels.use ? 'Réglages : les tiens' : 'Réglages pour ' + (USE_SHORT[use] || labels.use.toLowerCase())));
     if (labels.detail) mid.appendChild(ui.el('small', '', labels.detail));
     else if (it.skipped) mid.appendChild(ui.el('small', '', 'Je n’ai rien changé'));
     line.appendChild(mid);
@@ -1069,15 +1150,70 @@
     if (linked && !moved) links.appendChild(link('Enregistrer le fichier', exportFile));
     return { title: 'Tout est prêt', sub: null, body: body, primary: primary, extra: [links] };
   }
+  // « Réglages en chiffres » (confirmé, juste sous la durée, le poids et le coût) : hauteur de couche, parois, remplissage et
+  // bordure, lus dans Plyo Slicer et changés d'un choix (lot annulable, plaque redécoupée). La couche est un réglage à part.
+  var USE_SHORT = { flex: 'une pièce souple', deco: 'une déco', daily: 'un objet de tous les jours', strong: 'une pièce qui force', test: 'un essai' };
+  var NUMBERS = [
+    { id: 'layer_height', label: 'Hauteur de couche', options: [0.08, 0.12, 0.16, 0.2, 0.24, 0.28], text: function (v) { return formatValue(v, 'mm'); } },
+    { id: 'wall_loops', label: 'Parois', options: [1, 2, 3, 4, 5, 6], text: function (v) { return String(v); } },
+    { id: 'sparse_infill_density', label: 'Remplissage', options: [5, 10, 15, 20, 25, 30, 40, 50], text: function (v) { return v + ' %'; } }
+  ];
+  function numbersBox() {
+    var st = state(), box = ui.el('div'), grid = ui.el('div', 'vals');
+    box.appendChild(section('Réglages en chiffres'));
+    var send = function (changes) {
+      apply(changes, 'Réglages en chiffres', function (ok, text, result) {
+        if (!ok) { refused(text, result); render(); return; }
+        st.preflight = null;
+        slice();
+      });
+    };
+    NUMBERS.forEach(function (n) {
+      var cur = paramOf(n.id).value;
+      if (typeof cur !== 'number') return;
+      var opts = n.options.indexOf(cur) >= 0 ? n.options : n.options.concat([cur]).sort(function (a, b) { return a - b; });
+      grid.appendChild(selectField(n.label, opts.map(function (o) { return [String(o), n.text(o)]; }), String(cur), function (v) { send([{ id: n.id, value: Number(v) }]); }));
+    });
+    // Même source que les vérifications (la plaque vérifiée) : la bordure dite ici et dans la liste ne peut pas se contredire.
+    var plate = st.preflight && st.preflight.settings;
+    var brimNow = X.brimOn(plate || { brim_type: paramOf('brim_type').value, brim_width: paramOf('brim_width').value });
+    grid.appendChild(selectField('Bordure', [['on', '5 mm'], ['off', 'aucune']], brimNow ? 'on' : 'off', function (v) {
+      send(v === 'on' ? [{ id: 'brim_type', value: 'outer_only' }, { id: 'brim_width', value: 5 }] : [{ id: 'brim_type', value: 'no_brim' }]);
+    }));
+    box.appendChild(grid);
+    return box;
+  }
+  function selectField(label, options, current, onPick) {
+    var l = ui.el('label'), sel = ui.el('select');
+    l.appendChild(ui.txt(label));
+    options.forEach(function (o) { var op = ui.el('option', '', o[1]); op.value = o[0]; if (o[0] === current) op.selected = true; sel.appendChild(op); });
+    sel.value = current;
+    sel.addEventListener('change', function () { sel.disabled = true; onPick(sel.value); });
+    l.appendChild(sel);
+    return l;
+  }
+  // Groupe de puces à choix unique, étiqueté (« Usage », « Priorité », « Vitesse ») : un vrai groupe de boutons radio.
+  var groupSeq = 0;
+  function chipGroup(title, choices, cur, onPick, suffix) {
+    var wrap = ui.el('div'), id = 'grp-' + (++groupSeq);
+    var lab = ui.el('div', 'field-row', title);
+    lab.id = id;
+    wrap.appendChild(lab);
+    var chips = ui.el('div', 'chips');
+    chips.setAttribute('role', 'radiogroup');
+    chips.setAttribute('aria-labelledby', id);
+    choices.forEach(function (c) {
+      var b = ui.button(c.label + (suffix ? suffix(c) : ''), function () { onPick(c.id); }, 'chip' + (cur === c.id ? ' sel' : ''));
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', cur === c.id ? 'true' : 'false');
+      chips.appendChild(b);
+    });
+    wrap.appendChild(chips);
+    return wrap;
+  }
   function adjustBox() {
     var p = project(), a = X.intentAnswers(p), box = ui.el('div', 'adjust');
-    function group(title, q, cur, onPick) {
-      if (!q) return;
-      box.appendChild(ui.el('p', 'hint', title));
-      var chips = ui.el('div', 'chips');
-      q.choices.forEach(function (c) { chips.appendChild(ui.button(c.label, function () { onPick(c.id); }, 'chip' + (cur === c.id ? ' sel' : ''))); });
-      box.appendChild(chips);
-    }
+    function group(title, q, cur, onPick) { if (q) box.appendChild(chipGroup(title, q.choices, cur, onPick)); }
     group('Usage', I.QUESTIONS.use, a.use, function (id) { adjustIntent({ use: id }); });
     if (a.use && a.use !== 'test') {
       group('Priorité', I.QUESTIONS.pref[a.use], a.pref, function (id) { adjustIntent({ pref: id }); });
@@ -1136,25 +1272,99 @@
   }
 
   // ---------- Impression en cours ----------
+  // Audit du 24/11 : « Le petit bateau, sur la K1C », « Bien démarrée. », et Pause / Reprendre / Arrêter sur les machines qui
+  // le permettent (commande print_control du slicer, Creality et Moonraker). Ailleurs, ces boutons ne sont pas montrés.
+  var controlSeq = 0, controlWaiters = {};
+  function control(action, done) {
+    var p = project(), id = ++controlSeq;
+    controlWaiters[id] = done;
+    panel.post({ type: 'print_control', preset: p.printer && p.printer.preset, action: action, request: id });
+  }
+  function onPrintControl(msg) {
+    var w = controlWaiters[msg.request];
+    if (!w) return;
+    delete controlWaiters[msg.request];
+    w(!!msg.ok);
+  }
+  function setPaused(on, s) {
+    control(on ? 'pause' : 'resume', function (ok) {
+      if (!ok) { panel.tell(on ? 'Ta machine n’a pas pu se mettre en pause. Utilise son écran.' : 'Ta machine n’a pas pu reprendre. Utilise son écran.', 'error'); render(); return; }
+      s.paused = on;
+      save();
+      thread(on ? 'Impression mise en pause.' : 'Impression reprise.');
+      ui.toast(on ? 'Impression en pause' : 'L’impression reprend');
+      render();
+    });
+  }
+  function askStop(s, then) {
+    V2.fenetre.open({ title: 'Arrêter l’impression ?', sub: 'Elle ne pourra pas reprendre. Tu pourras la relancer depuis le début.',
+      foot: [ui.button('Continuer d’imprimer', function () { V2.fenetre.close(); }, 'link muted'), ui.button('Arrêter', function () {
+        V2.fenetre.close();
+        control('stop', function (ok) {
+          if (!ok) { panel.tell('Ta machine n’a pas pu s’arrêter. Utilise son écran.', 'error'); render(); return; }
+          s.paused = false;
+          s.stopped = true;
+          save();
+          thread('Impression arrêtée.');
+          if (then) then(); else { state().during = false; failed(); }
+        });
+      }, 'btn main')] });
+  }
+  function controlButtons(s) {
+    var bar = ui.el('div', 'pausebar');
+    bar.appendChild(s.paused ? ui.button('Reprendre', function () { setPaused(false, s); }, 'btn main', 'send') : ui.button('Mettre en pause', function () { setPaused(true, s); }, 'btn', 'clock'));
+    bar.appendChild(ui.button('Arrêter', function () { askStop(s); }, 'btn danger', 'x'));
+    return bar;
+  }
   function printingCard() {
-    var st = state(), body = ui.el('div', 'card-content'), w = st.watchLine;
-    if (w) body.appendChild(noteBox(w.tone === 'ok' ? 'ok' : w.tone === 'warn' ? 'warn' : '', w.icon === 'check' ? 'check' : w.icon === 'alert' ? 'alert' : 'info', w.text.replace(/^✓ /, '')));
+    var st = state(), body = ui.el('div', 'card-content'), w = st.watchLine, s = X.sendOf(project()) || {}, can = !!s.control;
+    if (w && w.tone === 'ok') body.appendChild(noteBox('ok', 'check', '**Bien démarrée.** Je surveille le début avec toi.'));
+    else if (w) body.appendChild(noteBox(w.tone === 'warn' ? 'warn' : '', w.icon === 'alert' ? 'alert' : 'info', w.text.replace(/^✓ /, '')));
     else body.appendChild(spinLine('Je vérifie qu’elle a bien démarré…'));
+    if (s.paused) body.appendChild(noteBox('tip', 'clock', '**En pause.** La buse reste écartée de la pièce : regarde tranquillement.'));
     var stats = X.stats(signals, project().filament && project().filament.type);
+    if (typeof st.progress === 'number') {
+      var row = ui.el('div', 'prog-row');
+      row.appendChild(ui.el('b', '', st.progress + ' %'));
+      var total = signals && signals.time_s > 0 ? signals.time_s : 0;
+      if (total && st.progress < 100) row.appendChild(ui.el('span', 'muted', 'encore ' + X.shortDuration(Math.round(total * (100 - st.progress) / 100))));
+      body.appendChild(row);
+      var bar = ui.el('div', 'progress'), fill = ui.el('i');
+      bar.setAttribute('role', 'progressbar');
+      bar.setAttribute('aria-label', ui.fr('Avancement de l’impression'));
+      bar.setAttribute('aria-valuemin', '0');
+      bar.setAttribute('aria-valuemax', '100');
+      bar.setAttribute('aria-valuenow', String(st.progress));
+      fill.style.width = st.progress + '%';
+      bar.appendChild(fill);
+      body.appendChild(bar);
+    }
     if (stats) body.appendChild(ui.el('p', 'hint', 'Durée prévue : ' + stats.time + (stats.grams ? ' · ' + stats.grams + ' de filament' : '') + '. Je te le dis ici quand elle a fini.'));
-    body.appendChild(noteBox('tip', 'eye', '**Regarde la première couche :** elle doit être bien écrasée et collée. Si elle se décolle, arrête et dis-le-moi.'));
-    var extra = [ui.button('Ça a l’air de mal se passer', function () { st.screen = 'failed'; st.during = true; render(); }, 'btn wide'),
-      link('Elle a fini', function () { st.screen = 'result'; render(); }, 'muted center')];
-    return { kicker: 'Impression en cours', title: shortName() + ' imprime ' + (partName() || 'ta pièce'), sub: null, body: body, primary: null, extra: extra };
+    if (!s.paused) body.appendChild(noteBox('tip', 'eye', '**Regarde la première couche :** elle doit être bien écrasée et collée. Si elle se décolle, ' + (can ? 'mets en pause' : 'arrête') + ' et dis-le-moi.'));
+    var extra = [];
+    if (can) extra.push(controlButtons(s));
+    // « Ça a l'air de mal se passer » met en pause tout seul quand la machine le permet : on regarde sans que ça empire.
+    extra.push(ui.button('Ça a l’air de mal se passer', function () {
+      var go = function () { st.screen = 'failed'; st.during = true; render(); };
+      if (can && !s.paused) control('pause', function (ok) { if (ok) { s.paused = true; save(); thread('Impression mise en pause.'); } go(); });
+      else go();
+    }, 'btn wide'));
+    extra.push(link('Elle a fini', function () { st.screen = 'result'; render(); }, 'muted center'));
+    var title = (partName() ? partName().charAt(0).toUpperCase() + partName().slice(1) : 'Ta pièce') + ', sur la ' + shortName();
+    return { kicker: s.paused ? 'Impression en pause' : 'Impression en cours', title: title, sub: null, body: body, primary: null, extra: extra };
   }
 
   // ---------- Résultat ----------
   function bigChoice() {
     var row = ui.el('div', 'big-choice');
-    [['😀', 'Réussi', success], ['😕', 'Raté', failed], ['📷', 'Je montre', function () { failed(); state().photoAsk = true; render(); }]].forEach(function (x) {
+    // Icônes SVG (audit du 24/11 : plus d'emoji).
+    [['check', 'Réussi', success], ['alert', 'Raté', failed], ['camera', 'Montrer une photo', function () { failed(); state().photoAsk = true; render(); }]].forEach(function (x) {
       var b = ui.el('button');
       b.type = 'button';
-      b.appendChild(ui.el('span', 'emo', x[0]));
+      var emo = ui.el('span', 'emo');
+      emo.setAttribute('aria-hidden', 'true');
+      emo.appendChild(ui.icon(x[0], 28));
+      b.appendChild(emo);
       b.appendChild(ui.txt(x[1]));
       b.addEventListener('click', x[2]);
       row.appendChild(b);
@@ -1215,27 +1425,75 @@
   function failedCard() {
     var st = state(), p = project(), body = ui.el('div', 'card-content');
     if (st.asked) {
-      body.appendChild(noteBox('tip', 'info', 'Je t’ai répondu dans la discussion, juste en dessous. **Appliquer et réimprimer** change les réglages et prépare la prochaine impression.'));
+      body.appendChild(st.offlineFix ? noteBox('ok', 'check', 'C’est changé pour la prochaine fois. Tu peux l’annuler dans la liste « Changé par l’assistant » de « Tout est prêt », ou tout de suite avec « Annuler ».')
+        : noteBox('tip', 'info', 'Je t’ai répondu dans la discussion, juste en dessous. **Appliquer et réimprimer** change les réglages et prépare la prochaine impression.'));
       body.appendChild(nextCards(true));
       if (st.calibOpen) body.appendChild(calibChooser());
       return { kicker: 'Résultat', title: 'On corrige pour la prochaine fois', sub: null, body: body, primary: null,
         extra: [link('Montrer une autre photo', photoChoice, 'muted center')] };
     }
-    var list = ui.el('div', 'cards');
-    X.SYMPTOMS.forEach(function (s) { list.appendChild(card({ title: s.label, sub: s.sub || null, sel: st.symptom === s.id, radio: true, on: function () { st.symptom = s.id; render(); } })); });
-    body.appendChild(list);
+    if (st.diag) return diagnosisCard();
+    // Audit du 24/11 : la photo d'abord ; les symptômes ensuite, aucun coché d'office (sauf ce que tu as dit à la fin) ; une
+    // impression en pause se reprend ou s'arrête d'ici.
+    var s = X.sendOf(p) || {}, live = st.during && !!s.paused;
+    if (live) body.appendChild(noteBox('tip', 'clock', '**En pause** : la buse reste écartée pendant qu’on regarde.', [ui.button('Reprendre', function () { setPaused(false, s); st.screen = ''; st.during = false; }, 'btn sm'), ui.button('Arrêter', function () { askStop(s, function () { st.during = false; failed(); }); }, 'btn sm danger')]));
     body.appendChild(card({ icon: 'camera', title: 'Montrer une photo', sub: 'Avec ton téléphone ou depuis l’ordinateur', badge: badge('IA', 'ai'), chev: true, on: function () { st.photoAsk = !st.photoAsk; render(); } }));
     if (st.photoAsk) body.appendChild(photoBox());
-    var go = function () {
-      if (st.during || !(X.sendOf(p) && X.sendOf(p).failed)) { st.during = false; failed(); }
-      st.asked = true;
-      render();
-      panel.send(X.symptomPrompt(st.symptom, partName()));
-    };
-    return { kicker: 'Résultat', title: 'Qu’est-ce qui ne va pas ?', sub: 'Choisis ce qui ressemble le plus. Une photo me permet d’être plus précis.', body: body,
-      primary: { label: 'Trouver la solution', disabled: !st.symptom || panel.busy(), run: go },
-      extra: [link('Retour', function () { st.screen = st.during ? '' : 'result'; st.during = false; render(); }, 'muted center')] };
+    body.appendChild(section('Ou choisis ce qui ressemble le plus'));
+    var list = ui.el('div', 'cards');
+    list.setAttribute('role', 'radiogroup');
+    list.setAttribute('aria-label', ui.fr('Ce qui ne va pas'));
+    X.SYMPTOMS.forEach(function (sy) { list.appendChild(card({ title: sy.label, sub: sy.sub || null, sel: st.symptom === sy.id, radio: true, on: function () { st.symptom = sy.id; render(); } })); });
+    body.appendChild(list);
+    // Sans photo : le diagnostic se fait ici, sans IA ni connexion (gratuit). « En parler à l'assistant » reste possible ensuite.
+    var go = function () { st.diag = st.symptom; render(); };
+    return { kicker: live ? 'Impression en pause' : 'Résultat', title: s.stopped ? 'Impression arrêtée. Qu’est-ce qui n’allait pas ?' : 'Qu’est-ce qui ne va pas ?', sub: 'Le plus simple : montre-moi une photo.', body: body,
+      primary: { label: 'Trouver la solution', disabled: !st.symptom, run: go },
+      extra: live ? [] : [link('Retour', function () { st.screen = st.during ? '' : 'result'; st.during = false; render(); }, 'muted center')] };
   }
+  // Diagnostic sans photo (imprimer-logic.js, diagnosis) : la cause, ce que je change (avant → après), un conseil, et le test qui
+  // aide. « Appliquer et réimprimer » (ou « Arrêter et réimprimer avec ces réglages » si elle est en pause).
+  function diagnosisCard() {
+    var st = state(), p = project(), body = ui.el('div', 'card-content'), d = X.diagnosis(st.diag, (values() || {}).params), s = X.sendOf(p) || {};
+    var live = st.during && !!s.paused;
+    if (!d) { st.diag = ''; return failedCard(); }
+    body.appendChild(section('Ce que je change pour la prochaine fois'));
+    var ul = ui.el('ul', 'checks');
+    d.lines.forEach(function (t) { var li = ui.el('li'), m = ui.el('span', 'ok'); m.appendChild(ui.icon('check', 18)); li.appendChild(m); li.appendChild(ui.el('span', 'txt', t)); ul.appendChild(li); });
+    if (!d.lines.length) ul.appendChild(ui.el('li', '', 'Tes réglages sont déjà ceux que je conseille : le conseil ci-dessous compte le plus.'));
+    body.appendChild(ul);
+    if (d.tip) body.appendChild(noteBox('tip', 'info', d.tip));
+    if (d.calib) body.appendChild(card({ icon: 'target', title: 'Trouver la température idéale', sub: X.CALIB[d.calib].name + ' · ' + X.CALIB[d.calib].duration, chev: true, on: function () { st.calibOpen = true; st.diag = ''; st.asked = true; markFailed(); render(); } }));
+    var applyFix = function (thenReprint) {
+      var finish = function () {
+        markFailed();
+        if (thenReprint) reprintAfterFix(); else { st.diag = ''; st.asked = true; st.offlineFix = true; render(); }
+      };
+      if (!d.changes.length) { finish(); return; }
+      apply(d.changes, 'Correction « ' + d.title.charAt(0).toLowerCase() + d.title.slice(1) + ' »', function (ok, text, result) {
+        if (!ok) { refused(text, result); render(); return; }
+        finish();
+      });
+    };
+    var primaryRun = live ? function () {
+      control('stop', function (ok) {
+        if (!ok) { panel.tell('Ta machine n’a pas pu s’arrêter. Utilise son écran.', 'error'); return; }
+        s.paused = false; s.stopped = true; save(); thread('Impression arrêtée.');
+        applyFix(true);
+      });
+    } : function () { applyFix(true); };
+    return { kicker: live ? 'Impression en pause' : 'Résultat', title: d.title, sub: d.why, body: body,
+      primary: { label: live ? 'Arrêter et réimprimer avec ces réglages' : 'Appliquer et réimprimer', icon: 'send', run: primaryRun },
+      extra: [(function () {
+        var row = ui.el('div', 'links');
+        if (!live) row.appendChild(link('Appliquer sans réimprimer', function () { applyFix(false); }, 'muted'));
+        row.appendChild(link('En parler à l’assistant', function () { markFailed(); st.asked = true; st.offlineFix = false; var sy = st.diag; st.diag = ''; render(); panel.send(X.symptomPrompt(sy, partName())); }, 'muted'));
+        row.appendChild(link('Retour', function () { st.diag = ''; render(); }, 'muted'));
+        return row;
+      })()] };
+  }
+  // Raté noté (pas pendant une impression en pause qu'on regarde encore) : comme « Raté » de l'écran Résultat.
+  function markFailed() { var st = state(), p = project(); if (st.during || !(X.sendOf(p) && X.sendOf(p).failed)) { st.during = false; failed(); } }
   function photoChoice() { var st = state(); st.photoAsk = true; st.asked = false; render(); }
   function photoBox() {
     var st = state(), p = project(), box = ui.el('div', 'cards photo-ask');
@@ -1415,8 +1673,8 @@
         info.appendChild(name);
         info.appendChild(ui.el('span', 'delta', c.before + ' → ' + c.after));
         if (s.reason) info.appendChild(ui.el('small', '', s.reason));
-        if (!ro && s.beyond) info.appendChild(ui.el('small', 'caution', '⚠ Hors de la plage conseillée par le fabricant de ton filament : à toi de décider.'));
-        else if (!ro && s.confirm) info.appendChild(ui.el('small', 'caution', '⚠ Réglage sensible : coche-le si tu veux l’appliquer.'));
+        if (!ro && s.beyond) info.appendChild(ui.el('small', 'caution', 'Hors de la plage conseillée par le fabricant de ton filament : à toi de décider.'));
+        else if (!ro && s.confirm) info.appendChild(ui.el('small', 'caution', 'Réglage sensible : coche-le si tu veux l’appliquer.'));
         row.appendChild(info);
         sheet.appendChild(row);
         rows.push({ check: check, s: s, row: row, c: c });
@@ -1775,6 +2033,7 @@
     pn.on('orca_issues', onOrcaIssues);
     pn.on('plate_action', onPlateAction);
     pn.on('result', onResult);
+    pn.on('print_control', onPrintControl);
     pn.on('manual_edits', function (msg) { var list = manualWaiters; manualWaiters = []; list.forEach(function (f) { f(msg.items || []); }); });
     pn.on('habits', function (msg) { habits = Object.assign(M.emptyHabits(), msg.habits || {}); });
     pn.on('firststeps', function (msg) { level = (msg.state || {}).level || ''; shareOutcomes = !!(msg.state || {}).share_outcomes; if (inStep3()) render(); });

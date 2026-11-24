@@ -304,7 +304,8 @@ nlohmann::json sanitize(const nlohmann::json& project)
         }
         if (const std::string watch = Json::str(*s, "watch", 60); !watch.empty())
             o["watch"] = watch;
-        for (const char* key : {"failed", "answered", "marked"})
+        // control / paused / stopped (assistant v2) : la machine sait faire pause, l'impression est en pause, elle a été arrêtée.
+        for (const char* key : {"failed", "answered", "marked", "control", "paused", "stopped"})
             if (const nlohmann::json* v = Json::field(*s, key); v != nullptr && v->is_boolean() && v->get<bool>())
                 o[key] = true;
         const auto verdict = [](const std::string& v) { return v == "finished" || v == "cancelled" || v == "error"; };
@@ -350,6 +351,26 @@ nlohmann::json sanitize(const nlohmann::json& project)
                 o[it.key()] = list;
         }
         out["assistant"] = o;
+    }
+    // Assistant v2 (audit du 24/11) : les changements de réglages faits par l'assistant pour ce projet, affichés « avant → après »
+    // dans « Changé par l'assistant » avec leur « Annuler » (`undo`, l'annulation d'Orca). 20 lots, 8 réglages par lot au plus.
+    if (const nlohmann::json* ch = Json::field(project, "changes"); ch != nullptr && ch->is_array()) {
+        nlohmann::json list = nlohmann::json::array();
+        for (const nlohmann::json& e : *ch) {
+            const int undo = Json::integer(e, "undo", 0);
+            if (list.size() >= 20 || undo <= 0)
+                continue;
+            nlohmann::json items = nlohmann::json::array();
+            for (const nlohmann::json& i : Json::arr(e, "items")) {
+                const std::string label = Json::str(i, "label", 80), before = Json::str(i, "before", 40), after = Json::str(i, "after", 40);
+                if (items.size() < 8 && !label.empty())
+                    items.push_back({{"label", label}, {"before", before}, {"after", after}});
+            }
+            if (!items.empty())
+                list.push_back({{"undo", undo}, {"title", Json::str(e, "title", 120)}, {"items", items}});
+        }
+        if (!list.empty())
+            out["changes"] = list;
     }
     return out;
 }

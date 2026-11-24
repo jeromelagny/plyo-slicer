@@ -875,6 +875,13 @@ void handle_page_message(const nlohmann::json& data)
             Store::write(file, store);
         } else if (type == "print_watch_start") {
             PrinterStatus::watch(Json::str(data, "preset"), [id = Json::str(data, "id")](nlohmann::json w) { send_watch(w, id); });
+        } else if (type == "print_control") {
+            // Boutons du suivi : Mettre en pause, Reprendre, Arrêter (machines Creality et Moonraker seulement).
+            PrinterStatus::control(Json::str(data, "preset"), Json::str(data, "action"), [request = Json::integer(data, "request", 0)](nlohmann::json r) {
+                r["type"]    = "print_control";
+                r["request"] = request;
+                send(r);
+            });
         } else if (type == "print_watch_replay") {
             // Conversation rouverte : la fin de son envoi, si le suivi l'a lue pendant qu'elle n'était pas affichée.
             if (const auto it = s_watch_ends.find(Json::str(data, "id")); it != s_watch_ends.end())

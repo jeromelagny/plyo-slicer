@@ -60,7 +60,7 @@ async function toReady(p) {
   await pickBoat(p);
   await tap(p, /^Continuer$/, 'Continuer', 300);
   await click(p, p.$('card-primary'), 'Oui, sur … avec du PLA', 400);
-  await click(p, card(p).querySelectorAll('.card').find((b) => /Suggéré/.test(b.textContent)), 'usage suggéré', 900);
+  await click(p, p.$('card-primary'), 'usage suggéré', 900);
   assert.match(norm(card(p).textContent), /Tout est prêt/);
 }
 
@@ -71,7 +71,7 @@ test('parcours 1 : débutant, de l’accueil à « Réussi » en Wi-Fi, sans un 
     await toReady(p);
     assert.equal(norm(p.$('card-primary').textContent), 'Lancer l\'impression sur Creality K1C');
     await click(p, p.$('card-primary'), 'Lancer', 400);
-    assert.match(norm(card(p).textContent), /Impression en cours.*a démarré/);
+    assert.match(norm(card(p).textContent), /Impression en cours.*, sur la .*Bien démarrée\./);
     p.sim.finishPrint('finished');
     await sleep(50);
     await tap(p, /Réussi/);
@@ -215,7 +215,7 @@ test('parcours 7 : pièce trop grande, « Réduire » puis « Continuer » ; dé
     await pickBoat(q);
     await tap(q, /^Continuer$/, 'Continuer', 300);
     await click(q, q.$('card-primary'), 'Oui avec du PLA', 400);
-    await click(q, card(q).querySelectorAll('.card').find((b) => /Suggéré/.test(b.textContent)), 'usage suggéré', 600);
+    await click(q, q.$('card-primary'), 'usage suggéré', 600);
     assert.match(norm(card(q).textContent), /Je prépare ton impression/);
     assert.ok(card(q).querySelectorAll('.note').some((n) => /error|warn/.test(n.className)), 'le refus d’Orca est expliqué dans la carte');
   } finally { q.stop(); }
@@ -263,7 +263,9 @@ test('parcours 8 bis : raté, symptôme, diagnostic, « Appliquer et réimprimer
     await tap(p, /Raté/);
     await click(p, card(p).querySelectorAll('.card').find((b) => /Des fils/.test(b.textContent)), 'symptôme');
     await click(p, p.$('card-primary'), 'Trouver la solution', 300);
-    await click(p, p.$('msgs').querySelectorAll('.sheet').at(-1).querySelectorAll('button').find((b) => b.classList.contains('main')), 'Appliquer et réimprimer', 900);
+    // Diagnostic sans photo, sur la carte (audit du 24/11) : « Appliquer et réimprimer » change les réglages et prépare.
+    assert.match(norm(card(p).textContent), /Des fils entre les parties.*Ce que je change pour la prochaine fois/);
+    await click(p, p.$('card-primary'), 'Appliquer et réimprimer', 900);
     assert.deepEqual(p.sim.S.refusals, []);
     assert.equal(p.$('zones').dataset.open, 'step', 'la préparation qui repart se voit');
     assert.match(norm(card(p).textContent), /Tout est prêt|Je prépare/);
@@ -292,7 +294,7 @@ test('parcours 9 et 10 : pièces récentes, nouveau projet, « Comme la dernièr
     await click(p, p.$('card-primary'), 'Oui, c’est ça', 500);
     assert.match(norm(card(p).textContent), /À quoi va servir ta pièce/);
     // Bascule vers le classique : la conversation est enregistrée avant de partir ; au retour, le projet reprend où il en était.
-    await click(p, byText(card(p), /Suggéré/) || card(p).querySelectorAll('.card').find((b) => /Suggéré/.test(b.textContent)), 'usage', 900);
+    await click(p, p.$('card-primary'), 'usage', 900);
     p.$('btn-more').click();
     p.$('m-ui').click();
     await sleep(20);
@@ -341,7 +343,7 @@ test('parcours 12 : Orca occupé : un refus des réglages s’arrête et se dit 
     await tap(p, /^Continuer$/, 'Continuer', 300);
     await click(p, p.$('card-primary'), 'Oui avec du PLA', 400);
     p.sim.busy(true);
-    await click(p, card(p).querySelectorAll('.card').find((b) => /Suggéré/.test(b.textContent)), 'usage (Orca occupé)', 900);
+    await click(p, p.$('card-primary'), 'usage (Orca occupé)', 900);
     assert.equal(sent(p, 'apply').length, 1, 'une seule demande, pas une boucle');
     assert.match(norm(card(p).textContent), new RegExp(norm(TEXTS.busy).slice(0, 30)));
     p.sim.busy(false);
@@ -355,7 +357,7 @@ test('parcours 12 : Orca occupé : un refus des réglages s’arrête et se dit 
     await click(q, q.$('card-primary'), 'Oui avec du PLA', 400);
     q.sim.S.jobBusy = true; // Orca range le plateau : la découpe est refusée « occupé »
     setTimeout(() => { q.sim.S.jobBusy = false; }, 1200);
-    await click(q, card(q).querySelectorAll('.card').find((b) => /Suggéré/.test(b.textContent)), 'usage (plateau occupé)', 2200, { retried: true });
+    await click(q, q.$('card-primary'), 'usage (plateau occupé)', 2200, { retried: true });
     assert.match(norm(card(q).textContent), /Tout est prêt/, 'la découpe est redemandée d’elle-même');
     // Plateau vidé dans Orca : la découpe refusée est dite dans la carte, avec « Découper à nouveau ».
     q.sim.S.plate.objects = [];

@@ -110,6 +110,8 @@
   }
 
   // ---------- « Tout est prêt » : les vérifications ----------
+  // Bordure : une seule règle (audit du 24/11), lue dans les réglages réels de la plaque. Partout où la bordure apparaît
+  // (vérifications, « Réglages en chiffres »), c'est elle qui décide.
   function hasBrim(s) { return s.brim_type !== 'no_brim' && (s.brim_type === 'auto_brim' || Number(s.brim_width) > 0); }
   function kinds(data, settings) {
     var out = {};
@@ -136,10 +138,11 @@
       if (s.support) out.push({ key: 'support', ok: true, title: added.support ? 'J’ai ajouté des supports' : 'Avec des supports', sub: 'Des parties sont dans le vide : les supports les soutiennent, ils se détachent à la main.', act: { label: 'Retirer', kind: 'apply', changes: [{ id: 'support', value: false }] } });
       else out.push({ key: 'support', ok: false, title: 'Pas de supports', sub: 'Attention : des parties dans le vide risquent de s’affaisser.', act: { label: added.support ? 'Remettre' : 'Ajouter', kind: 'apply', changes: [{ id: 'support', value: true }] } });
     }
-    // Bordure : quand une pièce en a besoin (haute et fine, ou touche peu le plateau), ou quand la préparation l'a ajoutée.
+    // Bordure : dite dès qu'il y en a une (même règle partout, hasBrim) ; signalée comme manquante quand une pièce en a besoin
+    // (haute et fine, ou touche peu le plateau).
     var bare = kinds(data, Object.assign({}, s, { brim_type: 'no_brim', brim_width: 0 }));
     var needs = bare.tall || bare.contact;
-    if (hasBrim(s) && (needs || added.brim)) out.push({ key: 'brim', ok: true, title: added.brim ? 'J’ai ajouté une bordure' : 'Avec une bordure', sub: 'Un fin rebord autour de la pièce, pour qu’elle ne se décolle pas.', act: { label: 'Retirer', kind: 'apply', changes: [{ id: 'brim_type', value: 'no_brim' }] } });
+    if (hasBrim(s)) out.push({ key: 'brim', ok: true, title: added.brim ? 'J’ai ajouté une bordure' : 'Avec une bordure', sub: 'Un fin rebord autour de la pièce, pour qu’elle ne se décolle pas.', act: { label: 'Retirer', kind: 'apply', changes: [{ id: 'brim_type', value: 'no_brim' }] } });
     else if (!hasBrim(s) && needs) out.push({ key: 'brim', ok: false, title: 'Pas de bordure', sub: (bare.tall ? 'Haute et fine : elle risque de basculer.' : 'Elle touche peu le plateau : elle risque de se décoller.'), act: { label: added.brim ? 'Remettre' : 'Ajouter', kind: 'apply', changes: [{ id: 'brim_type', value: 'outer_only' }, { id: 'brim_width', value: 5 }] } });
     var f = opts.filament;
     if (f && (f.nozzle_temp != null || f.bed_temp != null))
@@ -161,6 +164,53 @@
     { id: 'layers', label: 'Des couches décalées ou fragiles', sub: '', said: 'les couches sont décalées ou fragiles' },
     { id: 'first', label: 'La première couche ne colle pas', sub: '', said: 'la première couche ne colle pas' }
   ];
+  // Diagnostic sans photo ni connexion (audit du 24/11) : pour chaque symptôme, la cause la plus courante, les réglages à changer
+  // pour la prochaine fois (calculés depuis les valeurs actuelles du slicer, `params` : [{ id, label, unit, value }], jamais en
+  // dur) et un conseil. Gratuit, sans IA : les plages sont vérifiées par le slicer à l'application comme pour toute fiche.
+  var DIAG = {
+    warp: { title: 'Ta pièce s’est décollée du plateau', why: 'Les coins refroidissent trop vite et se soulèvent : c’est le problème le plus courant.',
+      tip: 'Nettoie le plateau à l’eau savonneuse : les traces de doigts empêchent de coller.',
+      fixes: [{ id: 'brim_width', set: function (v) { return Math.max(8, num(v)); }, with: [{ id: 'brim_type', value: 'outer_only' }] }, { id: 'bed_temp', add: 5 }] },
+    strings: { title: 'Des fils entre les parties', why: 'Le plastique coule pendant que la buse se déplace. Souvent, la buse est un peu trop chaude.',
+      calib: 'temperature', fixes: [{ id: 'nozzle_temp', add: -5 }, { id: 'retraction', add: 0.2 }] },
+    spaghetti: { title: 'La pièce s’est détachée en cours de route', why: 'Elle ne tenait pas assez au plateau, ou une partie dans le vide n’était pas soutenue.',
+      tip: 'Nettoie le plateau et vérifie qu’il est bien en place avant de relancer.',
+      fixes: [{ id: 'support', value: true }, { id: 'brim_width', set: function (v) { return Math.max(8, num(v)); }, with: [{ id: 'brim_type', value: 'outer_only' }] }] },
+    layers: { title: 'Des couches décalées ou fragiles', why: 'Les couches ne se soudent pas assez entre elles, ou la tête va trop vite.',
+      fixes: [{ id: 'nozzle_temp', add: 5 }, { id: 'outer_wall_speed', scale: 0.8 }] },
+    first: { title: 'La première couche ne colle pas', why: 'La buse est un peu trop loin du plateau, ou le plateau est gras.',
+      tip: 'Lance la mise à niveau automatique depuis l’écran de l’imprimante, et nettoie le plateau.',
+      fixes: [{ id: 'bed_temp', add: 5 }] }
+  };
+  function num(v) { var n = Number(v); return isFinite(n) ? n : 0; }
+  function shown(v, unit) {
+    if (typeof v === 'boolean') return v ? 'oui' : 'non';
+    if (typeof v !== 'number') return v == null ? '—' : String(v);
+    return (Math.round(v * 100) / 100).toLocaleString('fr-FR') + (unit ? ' ' + unit : '');
+  }
+  function diagnosis(id, params) {
+    var d = DIAG[id];
+    if (!d) return null;
+    var byId = {};
+    (Array.isArray(params) ? params : []).forEach(function (p) { if (p && p.id) byId[p.id] = p; });
+    var changes = [], lines = [];
+    d.fixes.forEach(function (f) {
+      var p = byId[f.id];
+      if (!p) return; // réglage absent du slicer : on n'invente rien
+      var before = p.value, after;
+      if ('value' in f) after = f.value;
+      else if (typeof before !== 'number') return;
+      else if (f.add) after = Math.round((before + f.add) * 100) / 100;
+      else if (f.scale) after = Math.round(before * f.scale);
+      else after = f.set(before);
+      if (after === before && !f.with) return;
+      (f.with || []).forEach(function (w) { changes.push({ id: w.id, value: w.value }); });
+      changes.push({ id: f.id, value: after });
+      lines.push(p.label + ' : ' + shown(before, p.unit) + ' → ' + shown(after, p.unit));
+    });
+    return { id: id, title: d.title, why: d.why, tip: d.tip || '', calib: d.calib || '', changes: changes, lines: lines };
+  }
+
   function symptomPrompt(id, part) {
     var s = SYMPTOMS.filter(function (x) { return x.id === id; })[0];
     if (!s) return '';
@@ -191,10 +241,32 @@
     return 'result';
   }
 
-  var api = { durationText: durationText, shortDuration: shortDuration, printSummary: printSummary, stats: stats, sendOf: sendOf, sendRecord: sendRecord, newSend: newSend,
+  // ---------- « Changé par l'assistant » (audit du 24/11) ----------
+  // Chaque lot de réglages appliqué par l'assistant (`applied` d'un résultat : label, before, after) : son titre, ses lignes
+  // « avant → après » et son annulation (`undo`, l'annulation d'Orca). Gardé avec le projet (project.changes), 20 lots au plus.
+  var CHANGES_MAX = 20, ITEMS_MAX = 8;
+  function valueText(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    if (typeof v === 'boolean') return v ? 'oui' : 'non';
+    if (typeof v === 'number') return (Math.round(v * 1000) / 1000).toLocaleString('fr-FR');
+    return String(v).slice(0, 40);
+  }
+  function noteChange(list, undo, title, applied, unitOf) {
+    var items = (Array.isArray(applied) ? applied : []).filter(function (a) { return a && (a.label || a.id || a.key); }).slice(0, ITEMS_MAX).map(function (a) {
+      var unit = unitOf ? unitOf(a.id || a.key) : '', u = function (v) { var t = valueText(v); return unit && t !== '—' && typeof v === 'number' ? t + ' ' + unit : t; };
+      return { label: String(a.label || a.id || a.key).slice(0, 80), before: u(a.before), after: u(a.after) };
+    });
+    var out = (Array.isArray(list) ? list : []).filter(function (e) { return e && e.undo !== undo; });
+    if (!(undo > 0) || !items.length) return out;
+    return out.concat([{ undo: undo, title: String(title || 'Réglages de l’assistant').slice(0, 120), items: items }]).slice(-CHANGES_MAX);
+  }
+  function forgetChange(list, undo) { return (Array.isArray(list) ? list : []).filter(function (e) { return e && e.undo !== undo; }); }
+  function changeLine(entry) { return (entry && entry.items || []).map(function (i) { return i.label + ' : ' + i.before + ' → ' + i.after; }).join(' · '); }
+
+  var api = { brimOn: hasBrim, noteChange: noteChange, forgetChange: forgetChange, changeLine: changeLine, durationText: durationText, shortDuration: shortDuration, printSummary: printSummary, stats: stats, sendOf: sendOf, sendRecord: sendRecord, newSend: newSend,
     noteWatched: noteWatched, endOutcome: endOutcome, endQuestionNow: endQuestionNow, spoolAsk: spoolAsk, watching: watching, intentAnswers: intentAnswers,
     intentState: intentState, intentPending: intentPending, useCards: useCards, intentLabels: intentLabels, readyChecks: readyChecks, autoFixes: autoFixes,
-    SYMPTOMS: SYMPTOMS, symptomPrompt: symptomPrompt, CALIB: CALIB, screen: screen };
+    SYMPTOMS: SYMPTOMS, diagnosis: diagnosis, symptomPrompt: symptomPrompt, CALIB: CALIB, screen: screen };
   root.PlyoImprimer = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

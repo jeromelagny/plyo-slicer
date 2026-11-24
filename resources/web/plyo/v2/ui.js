@@ -113,5 +113,22 @@
     return wrap;
   }
 
-  V2.ui = { icon: icon, txt: txt, el: el, button: button, rich: rich, fr: fr, ICONS: ICONS };
+  // Message court en bas du panneau (role="status"), avec un bouton facultatif (« Annuler ») : 6 s avec bouton, 2,6 s sinon.
+  // Un seul à la fois : le suivant remplace le précédent.
+  var toastTimer = null;
+  function toast(text, actLabel, onAct) {
+    var host = document.getElementById('toast');
+    if (!host) return null;
+    clearTimeout(toastTimer);
+    host.textContent = '';
+    var box = el('div', 'toast');
+    box.appendChild(el('span', 'grow', text));
+    if (actLabel) box.appendChild(button(actLabel, function () { host.textContent = ''; host.classList.add('hidden'); onAct(); }, 'tbtn'));
+    host.appendChild(box);
+    host.classList.remove('hidden');
+    toastTimer = setTimeout(function () { host.textContent = ''; host.classList.add('hidden'); }, actLabel ? 6000 : 2600);
+    return box;
+  }
+
+  V2.ui = { toast: toast, icon: icon, txt: txt, el: el, button: button, rich: rich, fr: fr, ICONS: ICONS };
 })(typeof window !== 'undefined' ? window : globalThis);

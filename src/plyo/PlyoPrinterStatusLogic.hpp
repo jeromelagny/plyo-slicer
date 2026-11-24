@@ -52,4 +52,21 @@ std::string end_verdict(const Status& started, const Status& now, int silent_sec
 // au code inconnu ne termine pas le suivi. "" tant que ce n'est pas confirmé ; les autres verdicts passent tels quels.
 std::string settle_end(const std::string& verdict, const std::string& previous, bool creality);
 
+// Pause, reprise, arrêt d'une impression en cours (boutons du suivi). `kind` : "crealityprint" ou "moonraker" ; `action` :
+// "pause", "resume" ou "stop". Creality : message du WebSocket 9999 ({"method":"set","params":{"pause":1}}…, format repris de
+// l'intégration Home Assistant ha_creality_ws). Moonraker : chemin à appeler en POST (API /printer/print/…). Vide si la machine
+// ou l'action ne le permet pas : le panneau masque alors les boutons.
+struct Control
+{
+    std::string creality_message; // texte à écrire sur le WebSocket
+    std::string moonraker_path;    // chemin HTTP, sans l'adresse
+    bool        empty() const { return creality_message.empty() && moonraker_path.empty(); }
+};
+Control control_request(const std::string& kind, const std::string& action);
+bool    controllable(const std::string& kind);
+
+// Suivi pendant l'impression : l'avancement (ou l'état, en pause ou non) a-t-il changé depuis le dernier envoyé au panneau ?
+// Seulement pour une impression en cours ou en pause dont la machine donne un pourcentage.
+bool progress_changed(const Status& sent, const Status& now);
+
 } // namespace Plyo::PrinterStatus

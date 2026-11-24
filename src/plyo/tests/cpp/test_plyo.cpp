@@ -2245,6 +2245,25 @@ TEST_CASE("PrinterStatus : dossier d'un fichier dans la liste d'une Creality")
     CHECK(creality_file_dir(R"({"retGcodeFileInfo":{"fileInfo":"../etc:x.gcode:1"}})", "x.gcode").empty()); // dossier qui n'est pas un chemin absolu propre
 }
 
+TEST_CASE("PrinterStatus : pause, reprise et arrêt selon la machine")
+{
+    using namespace Plyo::PrinterStatus;
+    CHECK(control_request("crealityprint", "pause").creality_message == R"({"method":"set","params":{"pause":1}})");
+    CHECK(control_request("crealityprint", "resume").creality_message == R"({"method":"set","params":{"pause":0}})");
+    CHECK(control_request("crealityprint", "stop").creality_message == R"({"method":"set","params":{"stop":1}})");
+    CHECK(control_request("crealityprint", "pause").moonraker_path.empty());
+    CHECK(control_request("moonraker", "pause").moonraker_path == "/printer/print/pause");
+    CHECK(control_request("moonraker", "resume").moonraker_path == "/printer/print/resume");
+    CHECK(control_request("moonraker", "stop").moonraker_path == "/printer/print/cancel");
+    CHECK(control_request("moonraker", "home").empty()); // seulement les trois actions
+    CHECK(control_request("elegoolink", "pause").empty()); // machine qui ne sait pas : rien, les boutons sont masqués
+    CHECK(control_request("other", "stop").empty());
+    CHECK(controllable("crealityprint"));
+    CHECK(controllable("moonraker"));
+    CHECK_FALSE(controllable("elegoolink"));
+    CHECK_FALSE(controllable(""));
+}
+
 TEST_CASE("PrinterStatus : état d'impression lu, puis verdict après un envoi")
 {
     using namespace Plyo::PrinterStatus;
@@ -2261,6 +2280,16 @@ TEST_CASE("PrinterStatus : état d'impression lu, puis verdict après un envoi")
     CHECK(moonraker_status({{"result", {{"status", {{"print_stats", {{"state", "paused"}}}}}}}}).state == "paused");
     CHECK(moonraker_status({{"result", {{"status", {{"print_stats", {{"state", "error"}}}}}}}}).state == "error");
     CHECK(moonraker_status(nlohmann::json()).state == "unknown");
+    // Avancement : virtual_sdcard.progress (0 à 1), demandé avec print_stats.
+    CHECK(moonraker_status({{"result", {{"status", {{"print_stats", {{"state", "printing"}}}, {"virtual_sdcard", {{"progress", 0.426}}}}}}}}).progress == 43);
+    CHECK(moonraker_status({{"result", {{"status", {{"print_stats", {{"state", "printing"}}}, {"virtual_sdcard", {{"progress", 7}}}}}}}}).progress == -1);
+    CHECK(moonraker_status({{"result", {{"status", {{"print_stats", {{"state", "printing"}}}}}}}}).progress == -1);
+    // Envoyé au panneau seulement quand l'avancement ou la pause change, pendant l'impression.
+    CHECK(progress_changed(Status{"printing", "", -2}, Status{"printing", "b.gcode", 12}));
+    CHECK_FALSE(progress_changed(Status{"printing", "", 12}, Status{"printing", "b.gcode", 12}));
+    CHECK(progress_changed(Status{"printing", "", 12}, Status{"paused", "b.gcode", 12}));
+    CHECK_FALSE(progress_changed(Status{"printing", "", 12}, Status{"printing", "b.gcode", -1})); // machine muette sur l'avancement
+    CHECK_FALSE(progress_changed(Status{"printing", "", 12}, Status{"idle", "", 100}));
 
     const Status idle{"idle", "", -1};
     const Status other{"printing", "autre.gcode", 50};
@@ -3738,6 +3767,35 @@ TEST_CASE("Project: sanitize garde les réglages posés par l'assistant, bornés
     CHECK(sanitize({{"assistant", nlohmann::json::object()}})["assistant"] == nlohmann::json::object()); // connu et vide
     CHECK_FALSE(sanitize({{"assistant", "oui"}}).contains("assistant"));
     CHECK_FALSE(sanitize(nlohmann::json::object()).contains("assistant")); // conversation ancienne : inconnu
+}
+
+TEST_CASE("Project: sanitize garde la pause et l'arrêt d'un envoi suivi")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json send = sanitize({{"send", {{"watch", "w1"}, {"control", true}, {"paused", true}, {"stopped", "oui"}, {"progress", 40}}}})["send"];
+    CHECK(send["control"] == true);
+    CHECK(send["paused"] == true);
+    CHECK_FALSE(send.contains("stopped")); // seulement un vrai booléen
+    CHECK_FALSE(send.contains("progress")); // relu sur la machine, jamais enregistré
+}
+
+TEST_CASE("Project: sanitize garde les changements de l'assistant (avant → après, annulation), bornés")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json clean = sanitize({{"changes", {{{"undo", 4}, {"title", "Plus solide"}, {"items", {{{"label", "Parois"}, {"before", "3"}, {"after", "4"}}, {{"before", "x"}}}}},
+                                                        {{"undo", 0}, {"items", {{{"label", "Parois"}}}}},
+                                                        {{"undo", 5}, {"items", nlohmann::json::array()}},
+                                                        "pas un objet"}}});
+    REQUIRE(clean.contains("changes"));
+    REQUIRE(clean["changes"].size() == 1);
+    CHECK(clean["changes"][0]["undo"] == 4);
+    CHECK(clean["changes"][0]["title"] == "Plus solide");
+    CHECK(clean["changes"][0]["items"] == nlohmann::json::array({{{"label", "Parois"}, {"before", "3"}, {"after", "4"}}}));
+    nlohmann::json many = nlohmann::json::array();
+    for (int i = 1; i <= 30; ++i)
+        many.push_back({{"undo", i}, {"items", {{{"label", "Parois"}, {"before", "3"}, {"after", "4"}}}}});
+    CHECK(sanitize({{"changes", many}})["changes"].size() == 20);
+    CHECK_FALSE(sanitize({{"changes", "oui"}}).contains("changes"));
 }
 
 // --- Lot 4 de l'audit : retours arrière, réglages réussis, une seule question par impression ---

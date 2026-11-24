@@ -387,6 +387,8 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
   .row2.manual, .row2.colour-line { align-items: center; flex-wrap: nowrap; }
   .row2.manual select, .row2.colour-line select { flex: 1; }
   .hint { font-size: 12.5px; color: var(--muted); margin: 0; }
+  /* Sur un avis coloré (orange, rouge, vert), le gris d'aide passe sous 4,5:1 : il se fonce un peu (AA). */
+  .note.warn .hint, .note.error .hint, .note.ok .hint, .notice.warn .hint, .notice.error .hint { color: color-mix(in srgb, var(--fg) 72%, var(--bg)); }
   ol.hint { padding-left: 18px; }
   .err { font-size: 12.5px; color: var(--danger-text); margin: 0; }
   .hwline { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
@@ -468,6 +470,19 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
   .calib-choose { display: flex; flex-direction: column; gap: 8px; }
 
   .composer { border-top: 1px solid var(--border); padding: 10px 12px 12px; }
+  /* Toast (v2/ui.js) : « Pièce tournée », « Parois : 3 → 4 » avec « Annuler ». */
+  .toast-host { position: fixed; left: 12px; right: 12px; bottom: 86px; display: flex; justify-content: center; z-index: 40; pointer-events: none; }
+  .toast { pointer-events: auto; display: flex; align-items: center; gap: 12px; max-width: 100%; background: var(--fg); color: var(--bg); padding: 10px 14px; border-radius: 12px; font-size: 13px; box-shadow: var(--shadow); }
+  html .toast .tbtn { color: inherit; font-weight: 700; text-decoration: underline; padding: 2px 0; min-height: 24px; flex: none; }
+  /* « Changé par l'assistant » et « Réglages en chiffres » (« Tout est prêt »). */
+  .checks.changed li { border-left: 3px solid var(--accent); padding-left: 10px; }
+  .vals { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .vals label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+  html .vals select { border: 0; background: none; font: inherit; font-weight: 650; color: var(--fg); font-size: 14px; padding: 0; }
+  .field-row { font-size: 12px; color: var(--muted); font-weight: 650; margin: 12px 0 6px; }
+  .pausebar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .prog-row { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; }
+  .prog-row .muted { font-weight: 500; }
   /* « Tu regardes : … » (clic sur un réglage d'Orca) */
   .focus-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px; margin-bottom: 8px; border-radius: var(--pill); border: 1px solid var(--border); background: var(--surface); font-size: 12.5px; max-width: 100%; }
   .focus-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -535,6 +550,7 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
       </div>
     </div>
   </div>
+  <div class="toast-host hidden" id="toast" role="status" aria-live="polite"></div>
   <div class="composer" id="composer">
     <div class="focus-chip hidden" id="focus-chip"><span>Tu regardes :</span><b id="focus-label"></b><button type="button" class="go" id="focus-explain">Explique-moi</button><button type="button" class="x" id="focus-close" title="Masquer" aria-label="Masquer"></button></div>
     <div class="cbox">

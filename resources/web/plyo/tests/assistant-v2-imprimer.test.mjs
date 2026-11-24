@@ -21,7 +21,7 @@ function bridge(cfg = {}) {
   const signals = () => ({ type: 'tour_signals', objects: 1, sliced: S.sliced, slicing: false, linked: cfg.linked !== false, time_s: S.sliced ? 3900 : 0, weight_g: S.sliced ? 41.6 : 0,
     ...(S.sliced && cfg.cost ? { cost: 0.92 } : {}), ready_for_print: true, notices: [] });
   const values = () => ({ type: 'values', locale: 'fr', context: { printer: K1C, filament: cfg.orcaFilament || 'Sunlu PLA blanc @K1C', process: '0.20mm Standard', nozzle_mm: 0.4 },
-    params: [{ id: 'brim_width', key: 'brim_width', label: 'Largeur de la bordure', unit: 'mm', value: 0 }] });
+    params: [{ id: 'brim_width', key: 'brim_width', label: 'Largeur de la bordure', unit: 'mm', value: 0 }].concat(cfg.params || []) });
   const fn = (m, emit) => {
     if (m.type === 'ready') emit(values());
     else if (m.type === 'session_load') emit({ type: 'session', session: cfg.session || null });
@@ -39,7 +39,15 @@ function bridge(cfg = {}) {
     else if (m.type === 'apply') {
       (m.changes || []).forEach((c) => { const k = c.id || c.key; if (k === 'support') S.settings.support = c.value; if (k === 'brim_type') S.settings.brim_type = c.value; if (k === 'brim_width') S.settings.brim_width = c.value; });
       S.sliced = false;
-      emit({ type: 'result', request: m.request, ok: true, text: 'Réglages appliqués.', undo_id: 7, applied: [] });
+      // Le slicer dit ce qu'il a changé (avant → après) : « Changé par l'assistant » et le toast « Annuler » s'en servent.
+      const labels = { support: 'Supports activés', brim_type: 'Type de bordure', brim_width: 'Largeur de bordure', wall_loops: 'Nombre de parois' };
+      const applied = (m.changes || []).map((c) => ({ id: c.id || c.key, label: labels[c.id || c.key] || c.label || c.id, before: cfg.before ? cfg.before[c.id || c.key] : null, after: c.value }));
+      emit({ type: 'result', request: m.request, ok: true, text: 'Réglages appliqués.', undo_id: cfg.undoSeq ? (S.undo = (S.undo || 20) + 1) : 7, applied: cfg.withApplied ? applied : [] });
+    } else if (m.type === 'undo') {
+      if (cfg.withApplied) emit({ type: 'result', request: m.request, ok: true, text: 'Annulé.', undone_id: m.undo_id });
+    } else if (m.type === 'print_control') {
+      S.controls = (S.controls || []).concat([m.action]);
+      emit({ type: 'print_control', request: m.request, ok: !cfg.controlFails, action: m.action });
     } else if (m.type === 'print_start') {
       if (m.export) { emit({ type: 'print_started', ok: true, export: true, file: 'petit-bateau.gcode' }); return; }
       S.watch = m.watch_id;
@@ -75,10 +83,16 @@ test('lot 4 : une question d’usage (réponse suggérée), puis la préparation
     assert.match(texts(card(p)), /Étape 3 sur 3.*À quoi va servir ta pièce \?/);
     const cards = card(p).querySelectorAll('.card');
     assert.equal(cards.length, 5);
-    assert.match(texts(cards[2]), /M’en servir tous les jours.*Suggéré/, 'sans indice dans le nom : la réponse la plus sûre');
+    // Audit du 24/11 : la suggestion en premier, déjà choisie (vrais boutons radio) ; « Préparer l'impression » lance tout.
+    assert.match(texts(cards[0]), /M’en servir tous les jours.*Suggéré/, 'sans indice dans le nom : la réponse la plus sûre');
+    assert.equal(cards[0].getAttribute('role'), 'radio');
+    assert.equal(cards[0].getAttribute('aria-checked'), 'true', 'présélectionnée');
+    assert.ok(cards.slice(1).every((c) => c.getAttribute('aria-checked') === 'false'));
+    assert.equal(card(p).querySelector('.cards.uses').getAttribute('role'), 'radiogroup');
     assert.equal(card(p).querySelectorAll('.badge').length, 1);
-    assert.ok(byText(card(p), /Je ne sais pas : choisis pour moi/));
-    byText(card(p), /M’en servir tous les jours/).click();
+    assert.equal(sent(p, 'apply').length, 0, 'choisir ne lance rien');
+    assert.equal(texts(p.$('card-primary')), 'Préparer l’impression');
+    p.$('card-primary').click();
     await sleep(40);
     const apply = sent(p, 'apply')[0];
     assert.ok(apply, 'réglages de l’usage appliqués, comme le classique');
@@ -103,7 +117,7 @@ test('lot 4 : « Tout est prêt » : supports et bordure ajoutés d’office, Re
       assert.match(t, /Elle tient sur le plateau de Creality K1C.*J’ai ajouté des supports.*Retirer.*J’ai ajouté une bordure.*Retirer.*Températures de ta bobine.*210 °C \/ 60 °C.*Montre-moi/);
       const fix = sent(p, 'apply').find((m) => m.why === 'Vérification avant impression');
       assert.deepEqual(fix.changes.map((c) => c.id), ['support', 'brim_type', 'brim_width'], 'les corrections conseillées, en un seul lot');
-      assert.match(t, /Réglages : Objet du quotidien.*Équilibrée · Normal.*Ajuster/);
+      assert.match(t, /Réglages pour un objet de tous les jours.*Équilibrée · Normal.*Ajuster/);
       assert.equal(texts(p.$('card-primary')), 'Lancer l’impression sur Creality K1C');
       assert.doesNotMatch(t, /crédit|token/i);
       if (!cost) continue;
@@ -119,7 +133,7 @@ test('lot 4 : « Tout est prêt » : supports et bordure ajoutés d’office, Re
       byText(card(p), /^Pièce qui force$/).click();
       await sleep(80);
       assert.match(sent(p, 'apply').filter((m) => /^Intention/.test(m.why)).at(-1).why, /pièce qui force/);
-      assert.match(texts(card(p)), /Réglages : Pièce qui force/);
+      assert.match(texts(card(p)), /Réglages pour une pièce qui force/);
     } finally { p.stop(); }
   }
 });
@@ -143,11 +157,11 @@ test('lot 4 : envoi (print_start avec suivi), transfert, démarrage vérifié, f
     assert.equal(conv.project.step, 'after');
     assert.equal(conv.project.send.watch, ps.watch_id);
     assert.ok(sent(p, 'outcome_printed').length && sent(p, 'journal_add').length, 'impression lancée : corrections et journal');
-    assert.match(texts(card(p)), /Impression en cours.*Creality K1C imprime Petit bateau.*Ça a l’air de mal se passer/);
+    assert.match(texts(card(p)), /Impression en cours.*Petit bateau, sur la Creality K1C.*Ça a l’air de mal se passer/);
     p.emit({ type: 'print_watch', id: 'autre', verdict: 'started' });
     assert.doesNotMatch(texts(card(p)), /a démarré/, 'un autre envoi est ignoré');
     p.emit({ type: 'print_watch', id: ps.watch_id, verdict: 'started', file: 'petit-bateau.gcode' });
-    assert.match(texts(card(p)), /Creality K1C a démarré l’impression/);
+    assert.match(texts(card(p)), /Bien démarrée\. Je surveille le début avec toi\./);
     // « Ça a l’air de mal se passer » : les symptômes, « Retour » revient au suivi.
     byText(card(p), /mal se passer/).click();
     assert.match(texts(card(p)), /Qu’est-ce qui ne va pas \?/);
@@ -155,7 +169,7 @@ test('lot 4 : envoi (print_start avec suivi), transfert, démarrage vérifié, f
     byText(card(p), /^Retour$/).click();
     assert.match(texts(card(p)), /Impression en cours/);
     p.emit({ type: 'print_watch', id: ps.watch_id, phase: 'end', verdict: 'finished', file: 'petit-bateau.gcode' });
-    assert.match(texts(card(p)), /Résultat.*C’est fini ! Alors, c’est réussi \?.*Creality K1C a fini d’imprimer « petit-bateau\.gcode ».*Réussi.*Raté.*Je montre/);
+    assert.match(texts(card(p)), /Résultat.*C’est fini ! Alors, c’est réussi \?.*Creality K1C a fini d’imprimer « petit-bateau\.gcode ».*Réussi.*Raté.*Montrer une photo/);
     byText(card(p), /Réussi/).click();
     await sleep(20);
     assert.deepEqual(sent(p, 'spool_success')[0], { type: 'spool_success', spool: 's1', change_of_mind: false });
@@ -196,7 +210,12 @@ test('lot 4 : Raté, symptôme, diagnostic de l’IA, « Appliquer et réimprime
     byText(card(p), /Montrer une photo/).click();
     assert.match(texts(card(p)), /Avec mon téléphone.*Depuis l’ordinateur/);
     byText(card(p), /Elle se décolle du plateau/).click();
+    // Audit du 24/11 : sans photo, le diagnostic se fait sur place, sans IA ni connexion ; l'assistant reste à un clic.
     p.$('card-primary').click();
+    await sleep(20);
+    assert.ok(!p.calls.some((c) => c.url.endsWith('/api/diagnose')), 'diagnostic sans photo : rien ne part au service');
+    assert.match(texts(card(p)), /Ta pièce s’est décollée du plateau.*Ce que je change pour la prochaine fois.*Largeur de la bordure : 0 mm → 8 mm.*Nettoie le plateau.*Appliquer et réimprimer/);
+    byText(card(p), /En parler à l’assistant/).click();
     await sleep(80);
     const diag = p.calls.find((c) => c.url.endsWith('/api/diagnose'));
     assert.match(JSON.parse(diag.init.body).note, /est ratée : elle se décolle du plateau/);
@@ -236,9 +255,10 @@ test('lot 4 : clé USB (export), confirmé (trois questions), fiche gratuite, re
 
   p = await start({ level: 'expert', holdSlice: true });
   try {
-    byText(card(p), /M’en servir tous les jours/).click();
-    assert.match(texts(card(p)), /Pour aller plus loin.*Elle doit surtout être….*Équilibrée.*Tu es pressé \?/);
-    assert.ok(p.$('card-primary').disabled);
+    // Confirmé : trois groupes étiquetés (Usage, Priorité, Vitesse), préremplis ; le bouton est prêt d'office.
+    assert.match(texts(card(p)), /Usage.*Objet du quotidien \(suggéré\).*Priorité.*Équilibrée.*Vitesse.*Normal/);
+    assert.equal(card(p).querySelectorAll('.chips').filter((c) => c.getAttribute('role') === 'radiogroup').length, 3);
+    assert.equal(p.$('card-primary').disabled, false);
     byText(card(p), /^Robuste$/).click();
     byText(card(p), /^Soigné$/).click();
     assert.equal(p.$('card-primary').disabled, false);
@@ -302,5 +322,148 @@ for (const fails of [false, true]) test('« Faire de … une bobine que je retie
       assert.ok(!/une bobine que je retiens/.test(texts(root)), 'la question est fermée');
       assert.equal(p.ctx.PlyoV2.panel.conv().project.filament.spool.name, 'Hyper PLA Creality @K2-all (Plyo)');
     }
+  } finally { p.stop(); }
+});
+
+
+// ---------- Audit du 24/11 ----------
+const PRINTING = (patch) => conversation(Object.assign({ step: 'after', intent: { skipped: true }, send: { spool: { id: 's1', name: 'Sunlu PLA blanc' }, watch: 'w1', answered: false } }, patch || {}));
+
+test('audit du 24/11 : pendant l’impression, Pause / Reprendre / Arrêter (confirmé) sur une machine qui le permet ; rien ailleurs', async () => {
+  let p = await start({ sliced: true, conversation: PRINTING() });
+  try {
+    p.emit({ type: 'print_watch', id: 'w1', verdict: 'started', file: 'b.gcode', control: false });
+    assert.match(texts(card(p)), /Impression en cours.*Petit bateau, sur la Creality K1C.*Bien démarrée\./);
+    assert.equal(byText(card(p), /Mettre en pause/), undefined, 'machine sans pause : pas de bouton qui ferait semblant');
+    assert.equal(byText(card(p), /^Arrêter$/), undefined);
+  } finally { p.stop(); }
+
+  p = await start({ sliced: true, conversation: PRINTING() });
+  try {
+    p.emit({ type: 'print_watch', id: 'w1', verdict: 'started', file: 'b.gcode', control: true });
+    byText(card(p), /Mettre en pause/).click();
+    await sleep(10);
+    assert.deepEqual(sent(p, 'print_control').at(-1), { type: 'print_control', preset: K1C, action: 'pause', request: 1 });
+    assert.match(texts(card(p)), /Impression en pause.*En pause\. La buse reste écartée/);
+    assert.match(texts(p.$('toast')), /Impression en pause/);
+    byText(card(p), /^Reprendre$/).click();
+    await sleep(10);
+    assert.equal(sent(p, 'print_control').at(-1).action, 'resume');
+    assert.match(texts(card(p)), /Impression en cours/);
+    // Arrêter demande une confirmation : « Elle ne pourra pas reprendre ».
+    byText(card(p), /^Arrêter$/).click();
+    const win = p.$('fenetre');
+    assert.match(texts(win), /Arrêter l’impression \?.*Elle ne pourra pas reprendre/);
+    assert.equal(sent(p, 'print_control').at(-1).action, 'resume', 'rien n’est envoyé sans confirmation');
+    byText(win, /^Arrêter$/).click();
+    await sleep(10);
+    assert.equal(sent(p, 'print_control').at(-1).action, 'stop');
+    assert.match(texts(card(p)), /Impression arrêtée\. Qu’est-ce qui n’allait pas \?/);
+    assert.equal(p.ctx.PlyoV2.panel.conv().project.send.stopped, true);
+  } finally { p.stop(); }
+
+  // La machine refuse : rien ne change, et c'est dit.
+  p = await start({ sliced: true, controlFails: true, conversation: PRINTING() });
+  try {
+    p.emit({ type: 'print_watch', id: 'w1', verdict: 'started', control: true });
+    byText(card(p), /Mettre en pause/).click();
+    await sleep(10);
+    assert.match(texts(card(p)), /Impression en cours/);
+    assert.match(texts(p.$('stepalert')), /n’a pas pu se mettre en pause/);
+  } finally { p.stop(); }
+});
+
+test('audit du 24/11 : « Ça a l’air de mal se passer » met en pause ; diagnostic sans photo, « Arrêter et réimprimer avec ces réglages »', async () => {
+  const p = await start({ sliced: true, session: null, withApplied: true, params: [{ id: 'nozzle_temp', key: 'nozzle_temperature', label: 'Température de buse', unit: '°C', value: 210 }, { id: 'retraction', key: 'filament_retraction_length', label: 'Longueur de rétraction', unit: 'mm', value: 0.8 }], conversation: PRINTING() });
+  try {
+    p.emit({ type: 'print_watch', id: 'w1', verdict: 'started', control: true });
+    byText(card(p), /mal se passer/).click();
+    await sleep(10);
+    assert.equal(sent(p, 'print_control').at(-1).action, 'pause');
+    const t = texts(card(p));
+    assert.match(t, /Impression en pause.*Qu’est-ce qui ne va pas \?.*En pause.*Montrer une photo.*Ou choisis ce qui ressemble le plus/);
+    assert.ok(card(p).querySelectorAll('.card').every((c) => c.getAttribute('aria-checked') !== 'true'), 'aucune carte présélectionnée');
+    assert.equal(p.$('card-primary').disabled, true);
+    byText(card(p), /Des fils comme des cheveux/).click();
+    p.$('card-primary').click();
+    await sleep(10);
+    assert.ok(!p.calls.some((c) => c.url.endsWith('/api/diagnose')), 'sans connexion et sans photo : diagnostic sur place');
+    assert.match(texts(card(p)), /Des fils entre les parties.*Température de buse : 210 °C → 205 °C.*Longueur de rétraction : 0,8 mm → 1 mm.*Tour de température/);
+    assert.equal(texts(p.$('card-primary')), 'Arrêter et réimprimer avec ces réglages');
+    p.$('card-primary').click();
+    await sleep(40);
+    assert.equal(sent(p, 'print_control').at(-1).action, 'stop');
+    const ap = sent(p, 'apply').find((m) => /^Correction/.test(m.why));
+    assert.deepEqual(ap.changes, [{ id: 'nozzle_temp', value: 205 }, { id: 'retraction', value: 1 }]);
+    assert.match(ap.why, /^Correction « des fils entre les parties »/);
+    assert.ok(['slice', 'print'].includes(p.ctx.PlyoV2.panel.conv().project.step), 'la prochaine impression se prépare');
+  } finally { p.stop(); }
+});
+
+test('audit du 24/11 : chaque changement de l’assistant : toast « avant → après » avec Annuler, et « Changé par l’assistant » sur « Tout est prêt »', async () => {
+  const p = await start({ withApplied: true, undoSeq: true, before: { support: false, brim_type: 'no_brim', wall_loops: 3 },
+    conversation: conversation({ intent: { use: 'daily', pref: 'balanced', speed: 'normal', applied: true, for: K1C + '|Sunlu PLA blanc @K1C' } }) });
+  try {
+    await sleep(400);
+    assert.match(texts(card(p)), /Tout est prêt/);
+    const changes = () => p.ctx.PlyoV2.panel.conv().project.changes || [];
+    assert.ok(changes().length >= 1, 'les corrections de la préparation sont notées');
+    assert.match(texts(card(p)), /Changé par l’assistant.*Supports activés : non → oui/);
+    assert.match(texts(p.$('toast')), /→.*Annuler/);
+    const n = changes().length, last = changes().at(-1).undo;
+    // Annuler depuis la liste : le lot part, la liste suit.
+    const row = card(p).querySelector('.checks.changed').querySelectorAll('li')[0];
+    byText(row, /^Annuler$/).click();
+    await sleep(20);
+    assert.equal(sent(p, 'undo').at(-1).undo_id, last);
+    assert.equal(changes().length, n - 1);
+    assert.match(texts(p.$('toast')), /^Annulé : /);
+  } finally { p.stop(); }
+});
+
+test('audit du 24/11 : « Réglages en chiffres » (confirmé) juste sous la durée, le poids et le coût ; la bordure suit une seule règle', async () => {
+  const params = [{ id: 'layer_height', key: 'layer_height', label: 'Hauteur de couche', unit: 'mm', value: 0.2 }, { id: 'wall_loops', key: 'wall_loops', label: 'Nombre de parois', unit: '', value: 3 },
+    { id: 'sparse_infill_density', key: 'sparse_infill_density', label: 'Taux de remplissage', unit: '%', value: 15 }, { id: 'brim_type', key: 'brim_type', label: 'Type de bordure', unit: '', value: 'outer_only' }];
+  const p = await start({ level: 'expert', cost: true, params, conversation: conversation({ intent: { use: 'deco', pref: 'top', speed: 'normal', applied: true, for: K1C + '|Sunlu PLA blanc @K1C' } }) });
+  try {
+    await sleep(120);
+    const t = texts(card(p));
+    assert.match(t, /Tout est prêt.*d’impression.*de filament.*Réglages en chiffres.*Hauteur de couche.*Parois.*Remplissage.*Bordure.*Elle tient sur le plateau/);
+    assert.match(t, /Réglages pour une déco/);
+    // La bordure ajoutée par la préparation se dit pareil dans les chiffres et dans la liste (une seule règle, une seule source).
+    assert.match(t, /J’ai ajouté une bordure/);
+    const brimSel = card(p).querySelectorAll('select')[3];
+    assert.equal(brimSel.value, 'on');
+    const sel = card(p).querySelectorAll('select');
+    assert.equal(sel.length, 4);
+    sel[1].value = '4';
+    sel[1].dispatch('change');
+    await sleep(20);
+    assert.deepEqual(sent(p, 'apply').at(-1).changes, [{ id: 'wall_loops', value: 4 }]);
+    assert.equal(sent(p, 'apply').at(-1).why, 'Réglages en chiffres');
+    assert.ok(sent(p, 'plate_action').some((m) => m.kind === 'slice'), 'la plaque est redécoupée');
+  } finally { p.stop(); }
+  // Une seule règle pour la bordure : dite dès qu'il y en a une, même sans besoin.
+  const X = p.ctx.PlyoImprimer;
+  assert.equal(X.brimOn({ brim_type: 'no_brim', brim_width: 5 }), false);
+  assert.equal(X.brimOn({ brim_type: 'outer_only', brim_width: 5 }), true);
+  const checks = X.readyChecks({ settings: { brim_type: 'outer_only', brim_width: 5, support: false }, objects: [{ name: 'a', height: 10, contact_mm2: 900, foot: [30, 30], fits: true }] }, {});
+  assert.ok(checks.some((c) => c.key === 'brim' && c.ok), 'bordure présente : la ligne est là');
+});
+
+test('audit du 24/11 : l’avancement lu sur la machine (jamais inventé) ; une pause faite sur son écran se voit', async () => {
+  const p = await start({ sliced: true, conversation: PRINTING() });
+  try {
+    p.emit({ type: 'print_watch', id: 'w1', verdict: 'started', control: true });
+    assert.doesNotMatch(texts(card(p)), /\d+ %/, 'pas d’avancement tant que la machine ne l’a pas dit');
+    p.emit({ type: 'print_watch', id: 'w1', verdict: 'progress', phase: 'progress', state: 'printing', progress: 43, control: true });
+    assert.match(texts(card(p)), /Impression en cours.*43 %.*encore/);
+    const bar = card(p).querySelectorAll('.progress')[0];
+    assert.equal(bar.getAttribute('aria-valuenow'), '43');
+    p.emit({ type: 'print_watch', id: 'w1', verdict: 'progress', phase: 'progress', state: 'paused', progress: 43, control: true });
+    assert.match(texts(card(p)), /Impression en pause.*43 %.*Reprendre/);
+    assert.equal(p.ctx.PlyoV2.panel.conv().project.send.paused, true);
+    p.emit({ type: 'print_watch', id: 'autre', verdict: 'progress', phase: 'progress', state: 'printing', progress: 90 });
+    assert.match(texts(card(p)), /43 %/, 'un autre envoi est ignoré');
   } finally { p.stop(); }
 });

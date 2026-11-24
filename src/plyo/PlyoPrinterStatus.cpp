@@ -118,7 +118,7 @@ Status read_moonraker(const Slic3r::DynamicPrintConfig& c)
         base.pop_back();
     std::string body;
     bool        ok   = false;
-    auto        http = Slic3r::Http::get(base + "/printer/objects/query?print_stats");
+    auto        http = Slic3r::Http::get(base + "/printer/objects/query?print_stats&virtual_sdcard");
     if (c.has("printhost_apikey") && !c.opt_string("printhost_apikey").empty())
         http.header("X-Api-Key", c.opt_string("printhost_apikey"));
     http.timeout_connect(4).timeout_max(6)
@@ -168,7 +168,12 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
     }
     auto              config = std::make_shared<Slic3r::DynamicPrintConfig>(p->config);
     const std::string kind   = host_type_of(*config);
-    std::thread([config, kind, post, gen]() {
+    // Chaque message dit si la machine sait mettre en pause, reprendre et arrêter (boutons du suivi dans le panneau).
+    auto tell = [post, kind](nlohmann::json r) {
+        r["control"] = controllable(kind);
+        post(r);
+    };
+    std::thread([config, kind, tell, gen]() {
         // Un nouvel envoi (ou stop()) remplace ce suivi ; Orca qui se ferme l'arrête aussi.
         const auto alive = [gen]() { return gen == g_generation.load() && !Lifetime::closing(); };
         const auto pause = [&alive](int seconds) {
@@ -179,7 +184,7 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
         std::string  logged;
         const Status before = read(kind, *config, false, logged);
         if (before.state == "unknown") {
-            post(to_json("unknown", before));
+            tell(to_json("unknown", before));
             return;
         }
         Status last = before;
@@ -192,23 +197,24 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
                 return;
             const std::string v = verdict(before, last);
             if (v == "busy" || v == "error") {
-                post(to_json(v, last));
+                tell(to_json(v, last));
                 return;
             }
             if (v == "started") {
-                post(to_json(v, last));
+                tell(to_json(v, last));
                 started = true;
             }
         }
         if (!started) {
             if (alive())
-                post(to_json("timeout", last));
+                tell(to_json("timeout", last));
             return;
         }
         // L'impression a démarré : relue toutes les 30 s jusqu'à sa fin, sans limite de durée.
         const Status printing = last;
         auto         answered = std::chrono::steady_clock::now();
         std::string  previous; // verdict brut de la lecture d'avant (Creality : une sortie d'impression confirmée deux fois)
+        Status       shown{printing.state, "", -2}; // avancement déjà envoyé au panneau
         while (pause(END_POLL_SECONDS)) {
             Status now = read(kind, *config, true, logged);
             if (!alive())
@@ -216,6 +222,13 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
             if (now.state != "unknown")
                 answered = std::chrono::steady_clock::now();
             const int silent = int(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - answered).count());
+            // Pendant l'impression : l'avancement et la pause, lus par la machine (le panneau ne l'invente pas).
+            if (progress_changed(shown, now)) {
+                shown = now;
+                nlohmann::json p = to_json("progress", now);
+                p["phase"]       = "progress";
+                tell(p);
+            }
             const std::string raw = end_verdict(printing, now, silent);
             const std::string v   = settle_end(raw, previous, kind == "crealityprint");
             previous              = raw;
@@ -224,12 +237,78 @@ void watch(const std::string& preset, std::function<void(nlohmann::json)> notify
             now.file             = printing.file; // la question de fin parle du fichier envoyé
             nlohmann::json ended = to_json(v, now);
             ended["phase"]       = "end"; // « error » existe aussi au démarrage : le panneau les distingue
-            post(ended);
+            tell(ended);
             return;
         }
     }).detach();
 }
 
 void stop() { ++g_generation; }
+
+namespace {
+
+// Creality : un message sur le WebSocket 9999 (comme la lecture d'état), sans attendre de réponse.
+bool send_creality(const std::string& print_host, const std::string& message)
+{
+    try {
+        const std::string host = Slic3r::Http::get_host_from_url(print_host.find("://") == std::string::npos ? "http://" + print_host : print_host);
+        boost::asio::io_context              ioc;
+        websocket::stream<beast::tcp_stream> ws{ioc};
+        tcp::resolver                        resolver{ioc};
+        beast::get_lowest_layer(ws).expires_after(std::chrono::seconds(5));
+        beast::get_lowest_layer(ws).connect(resolver.resolve(host, "9999"));
+        ws.handshake(host + ":9999", "/");
+        ws.text(true);
+        ws.write(boost::asio::buffer(message));
+        beast::error_code close_ec;
+        ws.close(websocket::close_code::normal, close_ec);
+        return true;
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(info) << "Plyo: commande Creality refusée : " << e.what();
+        return false;
+    }
+}
+
+bool post_moonraker(const Slic3r::DynamicPrintConfig& c, const std::string& path)
+{
+    std::string base = c.opt_string("print_host");
+    if (base.find("://") == std::string::npos)
+        base = "http://" + base;
+    while (!base.empty() && base.back() == '/')
+        base.pop_back();
+    bool ok   = false;
+    auto http = Slic3r::Http::post(base + path);
+    if (c.has("printhost_apikey") && !c.opt_string("printhost_apikey").empty())
+        http.header("X-Api-Key", c.opt_string("printhost_apikey"));
+    http.timeout_connect(4).timeout_max(8)
+        .on_complete([&](std::string, unsigned status) { ok = status == 200; })
+        .on_error([](std::string, std::string error, unsigned status) { BOOST_LOG_TRIVIAL(info) << "Plyo: commande Moonraker refusée : " << status << " " << error; })
+        .perform_sync();
+    return ok;
+}
+
+} // namespace
+
+void control(const std::string& preset, const std::string& action, std::function<void(nlohmann::json)> notify)
+{
+    watch_closing();
+    const Slic3r::Preset* p = Slic3r::GUI::wxGetApp().preset_bundle->printers.find_preset(preset, false);
+    if (p == nullptr || !p->config.has("print_host") || p->config.opt_string("print_host").empty()) {
+        notify({{"ok", false}, {"action", action}});
+        return;
+    }
+    auto          config = std::make_shared<Slic3r::DynamicPrintConfig>(p->config);
+    const Control req    = control_request(host_type_of(*config), action);
+    if (req.empty()) {
+        notify({{"ok", false}, {"action", action}, {"unsupported", true}});
+        return;
+    }
+    std::thread([config, req, action, notify]() {
+        const bool ok = req.creality_message.empty() ? post_moonraker(*config, req.moonraker_path) : send_creality(config->opt_string("print_host"), req.creality_message);
+        if (Lifetime::closing())
+            return;
+        Slic3r::GUI::wxGetApp().CallAfter([notify, ok, action]() { if (!Lifetime::closing()) notify({{"ok", ok}, {"action", action}}); });
+    }).detach();
+}
 
 } // namespace Plyo::PrinterStatus

@@ -108,6 +108,15 @@ Status moonraker_status(const nlohmann::json& reply)
     else if (state == "cancelled" || state == "error")
         s.end = state;
     s.file = base_name(text(ps, "filename"));
+    // Avancement (0 à 1) de virtual_sdcard, demandé avec print_stats : en pourcentage entier.
+    if (r["status"].contains("virtual_sdcard") && r["status"]["virtual_sdcard"].is_object()) {
+        const nlohmann::json& vs = r["status"]["virtual_sdcard"];
+        if (vs.contains("progress") && vs["progress"].is_number()) {
+            const double p = vs["progress"].get<double>();
+            if (p >= 0 && p <= 1)
+                s.progress = int(p * 100 + 0.5);
+        }
+    }
     return s;
 }
 
@@ -162,6 +171,28 @@ std::string end_verdict(const Status& started, const Status& now, int silent_sec
 std::string settle_end(const std::string& verdict, const std::string& previous, bool creality)
 {
     return creality && verdict == "unknown_end" && previous != "unknown_end" ? std::string() : verdict;
+}
+
+bool progress_changed(const Status& sent, const Status& now)
+{
+    if ((now.state != "printing" && now.state != "paused") || now.progress < 0 || now.progress > 100)
+        return false;
+    return now.state != sent.state || now.progress != sent.progress;
+}
+
+bool controllable(const std::string& kind) { return kind == "crealityprint" || kind == "moonraker"; }
+
+Control control_request(const std::string& kind, const std::string& action)
+{
+    Control c;
+    if (action != "pause" && action != "resume" && action != "stop")
+        return c;
+    if (kind == "crealityprint") {
+        const nlohmann::json params = action == "stop" ? nlohmann::json{{"stop", 1}} : nlohmann::json{{"pause", action == "pause" ? 1 : 0}};
+        c.creality_message          = nlohmann::json{{"method", "set"}, {"params", params}}.dump();
+    } else if (kind == "moonraker")
+        c.moonraker_path = "/printer/print/" + std::string(action == "stop" ? "cancel" : action);
+    return c;
 }
 
 } // namespace Plyo::PrinterStatus
