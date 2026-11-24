@@ -33,23 +33,24 @@ function service(routes = {}) {
 const BOAT = { type: 'model_added', ok: true, name: 'Petit bateau', size_mm: [60, 31, 48], bed_mm: [220, 220, 250], fits: true, count: 1, sample: 'benchy' };
 const PLATE = { objects: [{ ref: '7', name: 'Petit bateau', size_mm: [60, 31, 48], copies: 1 }], bed_mm: [220, 220, 250] };
 
-test('lot 2 : étape 1 vide : zone de dépôt, ouvrir, galerie, créer avec l’IA (le petit bateau est dans la galerie)', async () => {
+test('lot 2 : étape 1 vide : une seule zone de dépôt (clavier), le petit bateau dessous, galerie, créer avec l’IA', async () => {
   const p = loadV2({ bridge: bridge(), fetch: service() });
   try {
     await sleep(30);
     const card = p.$('stepcard');
     assert.match(texts(card), /Qu’est-ce qu’on imprime \?/);
     assert.ok(card.querySelector('.dropzone'), 'zone « Dépose ta pièce ici »');
-    assert.match(texts(card.querySelector('.dropzone')), /Dépose ta pièce ici.*STL, 3MF, OBJ ou STEP/);
-    assert.deepEqual(card.querySelectorAll('.card').map((c) => texts(c.querySelector('strong'))), ['Ouvrir un fichier', 'Choisir dans la galerie', 'Créer avec l’IA']);
-    assert.match(texts(card.querySelectorAll('.card')[2]), /IA/, 'badge IA');
+    assert.match(texts(card.querySelector('.dropzone')), /Dépose ta pièce ici, ou clique pour l’ouvrir.*STL, 3MF, OBJ ou STEP/);
+    // Audit du 24/11 : la zone est le seul moyen d'ouvrir un fichier, au clavier aussi ; pas de badge IA.
+    assert.deepEqual(card.querySelectorAll('.card').map((c) => texts(c.querySelector('strong'))), ['Choisir dans la galerie', 'Créer avec l’IA']);
+    assert.equal(card.querySelectorAll('.badge').length, 0, 'pas de badge IA');
+    const dz = card.querySelector('.dropzone');
+    assert.equal(dz.getAttribute('role'), 'button');
+    assert.equal(dz.getAttribute('tabindex'), '0');
     assert.ok(!/Mes pièces récentes/.test(texts(card)), 'premier lancement : pas de pièces récentes');
     assert.equal(card.querySelector('#card-primary'), null, 'aucun bouton plein avant le choix');
-    // Plus de lien « essaie avec le petit bateau » : il est dans la galerie. Posé depuis la galerie, le slicer le pose comme un
-    // fichier choisi (même message que le classique).
-    assert.equal(p.$('piece-boat'), null);
-    assert.doesNotMatch(texts(card), /petit bateau/);
-    p.ctx.PlyoV2.piece.sample('benchy');
+    // Le lien « petit bateau » juste sous la zone : le slicer le pose comme un fichier choisi (même message que le classique).
+    byText(card, /essaie avec le petit bateau/).click();
     const add = p.posted.at(-1);
     assert.equal(add.type, 'model_add');
     assert.equal(add.sample, 'benchy');
@@ -266,7 +267,7 @@ test('lot 2 : « Créer avec l’IA » : connexion au premier appel, questions, 
     assert.match(body.request_id, /^[0-9a-f-]{36}$/);
     assert.ok(p.posted.some((m) => m.type === 'design_lib_get'), 'bibliothèque de dessin demandée en parallèle');
     assert.match(texts(card), /Quelle largeur \?/);
-    assert.equal(texts(p.$('gauge-pct')), '43 %', 'la jauge suit la réponse');
+    assert.equal(texts(p.$('gauge-pct')), '57 %', 'la jauge suit la réponse (43 % utilisés)');
     // La réponse aux questions repart toute seule ; la pièce est construite et posée.
     reply = response(200, { status: 'design', message: 'Voici ton crochet.', part: { name: 'Crochet serviette', dimensions: [{ label: 'largeur', value_mm: 40, assumed: true }] }, credits: { gauge: GAUGE(45) } });
     p.ctx.PlyoPiece.designFile = (M, part) => ({ ok: true, name: 'Crochet serviette.stl', data: 'U1RMIQ==', size: [40, 20, 60] });
@@ -439,5 +440,33 @@ test('une seule pièce : pas de question, le geste va droit à la pièce', async
     p.emit(BOAT);
     await sleep(20);
     assert.equal(p.$('stepcard').querySelector('.target-pick'), null);
+  } finally { p.stop(); }
+});
+
+test('audit du 24/11 : « Créer ma pièce » attend une description ; la discussion et le champ de saisie s’effacent pendant la création', async () => {
+  const p = loadV2({ bridge: bridge(), fetch: service() });
+  try {
+    await sleep(30);
+    assert.equal(p.$('composer').classList.contains('hidden'), false);
+    byText(p.$('stepcard'), /Créer avec l’IA/).click();
+    const go = p.$('card-primary'), hint = p.$('card-primary-hint');
+    assert.equal(go.disabled, true, 'description vide : bouton désactivé');
+    assert.equal(texts(hint), 'Décris ta pièce d’abord');
+    assert.equal(hint.classList.contains('hidden'), false);
+    assert.equal(p.$('composer').classList.contains('hidden'), true, 'le champ de saisie s’efface : la création a le sien');
+    assert.equal(p.$('zone-chat').classList.contains('hidden'), true);
+    const ta = p.$('design-text');
+    ta.value = 'Une équerre';
+    ta.dispatch('input');
+    assert.equal(go.disabled, false, 'le bouton s’active dès qu’il y a du texte');
+    assert.equal(hint.classList.contains('hidden'), true);
+    ta.value = '  ';
+    ta.dispatch('input');
+    assert.equal(go.disabled, true);
+    byText(p.$('stepcard'), /Une boîte 8 × 5 cm/).click();
+    assert.equal(go.disabled, false, 'un exemple choisi remplit la description');
+    byText(p.$('stepcard'), /^Retour$/).click();
+    assert.equal(p.$('composer').classList.contains('hidden'), false, 'de retour : la discussion revient');
+    assert.equal(p.$('zone-chat').classList.contains('hidden'), false);
   } finally { p.stop(); }
 });

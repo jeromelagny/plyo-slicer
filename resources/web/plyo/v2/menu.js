@@ -367,9 +367,9 @@
       foot: [ui.button('Voir les formules', function () { openPlans(); }, 'btn sm'), ui.el('span', 'grow'), ui.button('Fermer', function () { W.close(); }, 'btn sm')],
       fill: function (body) {
         var big = ui.el('div', 'gbig');
-        var name = ui.el('small', '', 'Jauge IA');
+        var name = ui.el('small', '', 'IA restante');
         var pct = ui.el('div', 'pct', '…');
-        var used = ui.el('small', '', 'utilisés ce mois-ci');
+        var used = ui.el('small', '', 'te restent ce mois-ci');
         var bar = ui.el('div', 'progress'), fill = ui.el('i');
         bar.appendChild(fill);
         var when = ui.el('p', 'hint', '');
@@ -387,9 +387,11 @@
         function show(g) {
           var v = Logic.gaugeView(g);
           if (!v) return;
-          name.textContent = ui.fr('Jauge IA · formule ' + v.plan);
-          pct.textContent = ui.fr(v.label);
-          fill.style.width = Math.max(2, v.pct) + '%';
+          // Ce qu'il reste (comme l'en-tête), pas ce qui est utilisé.
+          var left = Math.max(0, 100 - v.pct);
+          name.textContent = ui.fr('IA restante · formule ' + v.plan);
+          pct.textContent = ui.fr(left + ' %');
+          fill.style.width = Math.max(2, left) + '%';
           big.classList.toggle('low', v.state === 'low');
           big.classList.toggle('empty', v.state === 'empty');
           when.textContent = ui.fr(Logic.gaugeResetText(g));

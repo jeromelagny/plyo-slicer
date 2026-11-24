@@ -163,11 +163,12 @@ test('lot 5 : jauge en pourcentage, « Mon utilisation » au clic, « Les formul
   const p = await start({ session: SESSION });
   try {
     await sleep(40);
-    assert.match(texts(p.$('gauge')), /41 %/);
+    // Audit du 24/11 : la jauge dit ce qu'il reste (41 % utilisés → 59 % restants).
+    assert.match(texts(p.$('gauge')), /IA restante.*59 %/);
     p.$('gauge').click();
     await sleep(20);
     assert.match(texts(win(p)), /Mon utilisation/);
-    assert.match(texts(win(p)), /41 %/);
+    assert.match(texts(win(p)), /IA restante.*59 %.*te restent ce mois-ci/);
     assert.doesNotMatch(texts(win(p)), /questions|crédit|token/i, 'pas de nombre de questions dans « Mon utilisation »');
     byText(win(p), /Voir les formules/).click();
     assert.match(texts(win(p)), /Les formules arrivent/);
@@ -203,7 +204,7 @@ test('lot 5 : message doux de la jauge vers 80 %, une fois ; « Signaler » sous
     p.$('c-send').click();
     await sleep(80);
     const t = texts(p.$('msgs'));
-    assert.match(t, /Tu as utilisé 81 % de ta jauge ce mois-ci/);
+    assert.match(t, /Il te reste 19 % d’IA ce mois-ci/);
     byText(p.$('msgs'), /^Signaler$/).click();
     p.$('msgs').querySelector('.feedback').querySelector('textarea').value = 'Faux';
     byText(p.$('msgs'), /Envoyer le signalement/).click();

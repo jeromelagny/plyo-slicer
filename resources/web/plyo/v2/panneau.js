@@ -184,10 +184,12 @@
     function render() {
       renderBar();
       var key = opened || hold || E.barKeyOf(conv.project);
-      E.renderCard($('stepcard'), key, { project: conv.project, step: J.currentStep(conv.project), revisit: !!opened, held: !opened && !!hold, panel: V2.panel,
+      var spec = E.renderCard($('stepcard'), key, { project: conv.project, step: J.currentStep(conv.project), revisit: !!opened, held: !opened && !!hold, panel: V2.panel,
         actions: { classic: backToClassic, closeRevisit: function () { openStep(null); } } });
       renderHello();
       renderStepBar();
+      ownField(!!spec.noChat);
+      announce();
       if (alertKey && $('stepcard').dataset.step !== alertKey) hideStepAlert(); // autre étape : l'avis ne la concerne plus
       followCompletion();
     }
@@ -211,6 +213,20 @@
       keepHeld();
       render();
       stepScroller.scrollTop = 0; // la carte depuis son début : la pièce posée, ou l'étape suivante
+    }
+    // Changement d'écran annoncé aux lecteurs d'écran par son titre (#announce), une fois : pas toute la carte à chaque rendu.
+    var announced = '';
+    function announce() {
+      var t = $('stepcard').querySelector('h2.t'), text = t ? t.textContent : '';
+      if (!text || text === announced) return;
+      announced = text;
+      $('announce').textContent = text;
+    }
+    // Écran qui a son propre champ (« Créer avec l'IA ») : la conversation et le champ de saisie s'effacent pendant ce temps.
+    function ownField(on) {
+      $('composer').classList.toggle('hidden', on);
+      $('zone-chat').classList.toggle('hidden', on);
+      if (on) showZone('step');
     }
     function renderHello() { $('hello').classList.toggle('hidden', thread.children.length > 0); }
     function clearThread() { thread.textContent = ''; dropLoginCard(); hideStepAlert(); renderHello(); }
@@ -420,7 +436,8 @@
 
     // ---------- En-tête : jauge, téléphone, menu ----------
     function showLoggedIn(on) { $('gauge').classList.toggle('hidden', !on); }
-    // Jauge du mois en pourcentage, comme dans le panneau classique (assistant-logic.js, gaugeView).
+    // Jauge du mois en pourcentage (assistant-logic.js, gaugeView). La v2 montre ce qu'il reste (« IA restante », 100 % en
+    // début de mois, audit du 24/11) ; le service et le classique comptent ce qui est utilisé.
     // `quiet` : relevé sans message doux (fenêtre « Mon utilisation », erreur « jauge pleine » déjà affichée).
     function setGauge(g, quiet) {
       var v = Logic.gaugeView(g);
@@ -430,13 +447,15 @@
       gaugeState = v.state;
       if (quiet) { noticeShown = Logic.noticeKey(v.state, g); try { root.localStorage.setItem(NOTICE_KEY, noticeShown); } catch (e) { /* stockage indisponible */ } }
       else setTimeout(function () { gaugeNotice(g, v, prev); }, 0);
-      $('gauge-pct').textContent = ui.fr(v.label);
-      $('gauge-fill').style.width = Math.max(3, v.pct) + '%';
+      var left = leftPct(v);
+      $('gauge-pct').textContent = ui.fr(left + ' %');
+      $('gauge-fill').style.width = Math.max(3, left) + '%';
       $('gauge').classList.toggle('low', v.state === 'low');
       $('gauge').classList.toggle('empty', v.state === 'empty');
-      $('gauge').title = ui.fr('Jauge IA : ' + v.label + ' utilisés ce mois-ci. Elle se recharge ' + v.resets + '.');
-      $('gauge').setAttribute('aria-label', ui.fr('Jauge IA du mois : ' + v.label + ' utilisés'));
+      $('gauge').title = ui.fr('Il te reste ' + left + ' % d’IA ce mois-ci. Elle se recharge ' + v.resets + '.');
+      $('gauge').setAttribute('aria-label', ui.fr('IA restante ce mois-ci : ' + left + ' %'));
     }
+    function leftPct(v) { return Math.max(0, 100 - v.pct); }
     // Message doux vers 80 %, puis quand la jauge est pleine : une seule fois par mois (comme le classique, assistant-logic.js).
     function gaugeNotice(g, v, prev) {
       var last = noticeShown;
@@ -445,7 +464,7 @@
       if (!kind || !thread.children.length) return;
       noticeShown = Logic.noticeKey(kind, g);
       try { root.localStorage.setItem(NOTICE_KEY, noticeShown); } catch (e) { /* idem */ }
-      say(kind === 'low' ? 'Tu as utilisé **' + v.label + '** de ta jauge ce mois-ci. Elle se recharge ' + v.resets + '.' : 'Ta jauge du mois est pleine. Elle se recharge ' + v.resets + '.', 'warn',
+      say(kind === 'low' ? 'Il te reste **' + leftPct(v) + ' %** d’IA ce mois-ci. Elle se recharge ' + v.resets + '.' : 'Tu as utilisé toute ton IA du mois. Elle se recharge ' + v.resets + '.', 'warn',
         [{ label: 'Voir mon utilisation', run: function () { if (V2.menu) V2.menu.openUsage(); } }]);
     }
     // Vérifie la session (et la renouvelle au besoin) ; met à jour la jauge. Résout à true si la session est valide.
@@ -470,13 +489,16 @@
     function openLogin() { post({ type: 'login' }); }
     function dropLoginCard() { if (loginCard) { loginCard.remove(); loginCard = null; } if (alertLogin) hideStepAlert(); }
     // Connexion demandée seulement au premier appel à l'IA : la demande est gardée et repart après la connexion.
-    function requireLogin(reason, retry) {
+    // « Plus tard » ferme la demande sans rien perdre : `later` remet la demande là où elle était (la question dans le champ).
+    function requireLogin(reason, retry, later) {
       if (session) return false;
       afterLogin = retry || null;
       dropLoginCard();
+      var acts = [{ label: 'Me connecter', run: openLogin, primary: true },
+        { label: 'Plus tard', run: function () { afterLogin = null; dropLoginCard(); if (later) later(); } }];
       // Demandé depuis la carte de l'étape (« Créer ma pièce », téléphone) : la demande se voit là, pas seulement dans la conversation.
-      if (zoneOpen() === 'step') { showStepAlert(reason, 'info', [{ label: 'Me connecter', run: openLogin, primary: true }]); alertLogin = true; }
-      loginCard = addToThread(D.notice('info', reason, [{ label: 'Me connecter', run: openLogin, primary: true }]));
+      if (zoneOpen() === 'step') { showStepAlert(reason, 'info', acts); alertLogin = true; }
+      loginCard = addToThread(D.notice('info', reason, acts));
       return true;
     }
 
@@ -730,6 +752,13 @@
       // « C'est quoi la rétraction ? » : la fiche du réglage répond, gratuitement et sans compte (comme le classique).
       var ficheKey = !opts.photos && !photos.length && !opts.shown ? root.PlyoFirstSteps.matchSettingQuestion(note, root.PLYO_FICHES) : null;
       if (ficheKey) { addMe(note, [], false); clearNoteIfSent(note); explain(ficheKey); return; }
+      // Pas encore connecté : la question reste dans le champ (et ses photos jointes) ; elle part dès la connexion.
+      if (!session && !opts.shown) {
+        var keep = { photos: opts.photos, fromPhone: opts.fromPhone };
+        requireLogin('Pour te répondre, j’envoie ta demande à l’IA : connecte-toi, sans mot de passe (tu reçois un code par e-mail). Ta question est gardée : elle partira dès que tu seras connecté.',
+          function () { send(note, keep); }, function () { if (!input.value.trim()) input.value = note; input.focus(); });
+        return;
+      }
       if (!opts.photos) { attachments = []; renderAttachments(); clearNoteIfSent(note); }
       var me = opts.me || null;
       if (!opts.shown) me = addMe(note, photos, opts.fromPhone);

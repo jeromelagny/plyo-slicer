@@ -64,7 +64,7 @@ test('lot 1 : une question part au service (même flux que le classique) et la r
   try {
     await sleep(30);
     assert.equal(p.$('gauge').classList.contains('hidden'), false);
-    assert.equal(texts(p.$('gauge-pct')), '41 %');
+    assert.equal(texts(p.$('gauge-pct')), '59 %', 'IA restante : 41 % utilisés');
     p.$('note').value = 'Je veux un dessus bien lisse';
     p.$('c-send').click();
     await sleep(60);
@@ -84,7 +84,7 @@ test('lot 1 : une question part au service (même flux que le classique) et la r
     // Fiche de réglages à appliquer (lot 4) : valeur d’avant et valeur proposée, case cochée, « Appliquer 1 réglage ».
     assert.match(texts(ai), /Réglages proposés.*Lissage.*Non → Oui.*Appliquer 1 réglage.*Ignorer/);
     assert.equal(p.$('msgs').querySelectorAll('.waiting').length, 0, 'l’attente disparaît');
-    assert.equal(texts(p.$('gauge-pct')), '42 %', 'jauge de la réponse');
+    assert.equal(texts(p.$('gauge-pct')), '58 %', 'jauge de la réponse (42 % utilisés)');
     assert.equal(p.$('note').value, '', 'champ vidé');
     assert.equal(p.$('hello').classList.contains('hidden'), true);
     await sleep(450);
@@ -273,4 +273,36 @@ test('reprise : l’étape gardée à l’écran est notée dans le projet et re
     await sleep(60);
     assert.equal(q.$('stepcard').dataset.step, 'piece');
   } finally { q.stop(); }
+});
+
+test('audit du 24/11 : « Plus tard » garde la question dans le champ ; le changement d’écran est annoncé par son titre', async () => {
+  const p = loadV2({ bridge: bridge(), fetch: service() });
+  try {
+    await sleep(30);
+    assert.equal(p.$('stepcard').getAttribute('aria-live'), null, 'pas d’aria-live sur la carte entière');
+    assert.equal(p.$('announce').getAttribute('aria-live'), 'polite');
+    assert.equal(texts(p.$('announce')), 'Qu’est-ce qu’on imprime ?');
+    p.$('note').value = 'Plus vite ?';
+    p.$('c-send').click();
+    await sleep(20);
+    const card = p.$('msgs').querySelector('.notice');
+    assert.match(texts(card), /connecte-toi/);
+    assert.equal(p.$('msgs').querySelectorAll('.msg.me').length, 0, 'rien n’est envoyé ni affiché comme envoyé');
+    assert.equal(p.$('note').value, 'Plus vite ?', 'la question reste dans le champ');
+    card.querySelectorAll('button').find((b) => texts(b) === 'Plus tard').click();
+    assert.equal(p.$('msgs').querySelectorAll('.notice').length, 0, 'la demande de connexion se ferme');
+    assert.equal(p.$('note').value, 'Plus vite ?');
+    p.emit({ type: 'session', session: SESSION });
+    await sleep(60);
+    assert.ok(!p.calls.some((c) => c.url.endsWith('/api/diagnose')), 'après « Plus tard », rien ne part tout seul');
+  } finally { p.stop(); }
+});
+
+test('audit du 24/11 : accessibilité de la page : moins d’animations, pas de halo sur le bouton plein, accent sombre AA, jauge « IA restante »', () => {
+  const page = read('v2/index.html');
+  assert.match(page, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.doesNotMatch(page, /\.btn\.primary \{[^}]*box-shadow/, 'pas de halo sur le bouton plein');
+  assert.match(page, /\[data-orca-theme="dark"\] \{[^}]*--accent-fill: #0f766e/);
+  assert.match(page, /<span class="gname">IA restante<\/span>/);
+  assert.match(page, /:focus-visible \{ outline: 2px solid/);
 });

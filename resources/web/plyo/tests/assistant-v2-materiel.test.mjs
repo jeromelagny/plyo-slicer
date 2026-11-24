@@ -173,7 +173,9 @@ test('lot 3 : imprimante trouvée sur le Wi-Fi en carte ; « Ajouter mon imprima
     card = p.$('stepcard');
     assert.match(texts(card), /Ajouter mon imprimante.*Allume-la et branche-la au Wi-Fi si elle peut/);
     assert.ok(sent(p, 'setup_catalog').length === 1);
-    assert.match(texts(card), /Trouvée sur ton Wi-Fi.*Creality K2 Plus.*Adresse 192\.168\.1\.42/);
+    // Audit du 24/11 : l'adresse IP n'apparaît qu'en mode confirmé.
+    assert.match(texts(card), /Trouvée sur ton Wi-Fi.*Creality K2 Plus.*Creality · sur ton Wi-Fi/);
+    assert.doesNotMatch(texts(card), /192\.168/, 'débutant : pas d’adresse IP');
     // Le catalogue : la recherche filtre sans redessiner la carte (le champ garde ce qu'on tape).
     const input = p.$('model-search');
     input.value = 'ender v3';
@@ -486,5 +488,29 @@ test('Températures : une ligne par emplacement ; même marque, ce qui est tapé
     assert.deepEqual(apply.changes.map((c) => [c.id, c.value]), [['nozzle_temp', 225], ['nozzle_temp_initial', 225]], 'la couleur 1 par l’onglet, après les autres');
     const slots = sent(p, 'habits_set').at(-1).habits.slot_temps;
     assert.equal(Object.keys(slots).length, 3, 'les trois emplacements sont retenus');
+  } finally { p.stop(); }
+});
+
+test('audit du 24/11 : « Comme la dernière fois » : chaque carte ouvre son choix ; les imprimantes sont de vrais boutons radio', async () => {
+  const last = { printer: { preset: K1C.preset, name: K1C.name, proposed: true }, part: { name: 'Crochet' },
+    filament: { type: 'PLA', preset: 'Sunlu PLA blanc', proposed: true, spool: { id: 's1', name: 'Sunlu PLA blanc' } } };
+  const spools = [{ id: 's1', name: 'Sunlu PLA blanc', material: 'PLA', last_ok_at: '2026-11-20', last_outcome: 'ok' }];
+  const p = await start({ printers: [K1C, ENDER], spools, conversation: conversation(last) });
+  try {
+    await sleep(30);
+    let cards = p.$('stepcard').querySelectorAll('.card');
+    assert.equal(cards.length, 2);
+    assert.ok(cards.every((c) => c.getAttribute('role') !== 'radio'), 'résumé : des cartes qui s’ouvrent, pas des choix cochés');
+    cards[0].click();
+    assert.match(texts(p.$('stepcard')), /Sur quelle imprimante \?/);
+    assert.equal(sent(p, 'printer_select_profile').length, 0, 'ouvrir le choix ne change rien');
+    const group = p.$('stepcard').querySelector('.cards.printers');
+    assert.equal(group.getAttribute('role'), 'radiogroup');
+    const radios = group.querySelectorAll('.card');
+    assert.ok(radios.length >= 2 && radios.every((c) => c.getAttribute('role') === 'radio' && /^(true|false)$/.test(c.getAttribute('aria-checked'))));
+    byText(p.$('stepcard'), /^Retour$/).click();
+    cards = p.$('stepcard').querySelectorAll('.card');
+    cards[1].click();
+    assert.match(texts(p.$('stepcard')), /Sur quelle imprimante \?.*Ta bobine/, 'la carte de la bobine ouvre le choix avec la bobine');
   } finally { p.stop(); }
 });

@@ -95,7 +95,8 @@
   if (!cards.imprimer) cards.imprimer = minimal(function (ctx) { return J.prompt(ctx.step, {}); }, null);
 
   // Carte de l'étape affichée (`key`) dans `section` : en-tête (« Étape N sur 3 »), contenu, puis le bouton plein collé en bas
-  // de la carte. Une étape rouverte a son bouton : « Revenir à l'étape en cours ».
+  // de la carte. Une étape rouverte a son bouton : « Revenir à l'étape en cours ». `primary.hint` : la phrase sous un bouton
+  // désactivé (« Décris ta pièce d'abord »). Rend la description de la carte (`noChat` : écran qui a son propre champ).
   function renderCard(section, key, ctx) {
     var spec = (cards[key] || cards.piece)(ctx) || {};
     section.textContent = '';
@@ -116,9 +117,22 @@
       b.id = 'card-primary';
       foot.appendChild(b);
     }
+    if (primary && primary.hint) {
+      var hint = ui.el('p', 'hint' + (primary.disabled ? '' : ' hidden'), primary.hint);
+      hint.id = 'card-primary-hint';
+      foot.appendChild(hint);
+    }
     extra.forEach(function (x) { foot.appendChild(x); });
     section.appendChild(foot);
+    return spec;
+  }
+  // Bouton plein activé ou non sans redessiner la carte (champ en cours de saisie) : la phrase d'aide et la barre suivent.
+  function setPrimaryEnabled(on) {
+    var b = root.document.getElementById('card-primary'), hint = root.document.getElementById('card-primary-hint'), go = root.document.getElementById('stepbar-go');
+    if (b) b.disabled = !on;
+    if (hint) hint.classList.toggle('hidden', !!on);
+    if (go) go.disabled = !on;
   }
 
-  V2.etapes = { LABELS: LABELS, bar: bar, barKeyOf: barKeyOf, renderBar: renderBar, renderCard: renderCard, chosenRows: chosenRows };
+  V2.etapes = { LABELS: LABELS, bar: bar, barKeyOf: barKeyOf, renderBar: renderBar, renderCard: renderCard, chosenRows: chosenRows, setPrimaryEnabled: setPrimaryEnabled };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -36,7 +36,7 @@
     color-scheme: light;
   }
   :root[data-orca-theme="dark"] {
-    --accent-fill: #1f9488;
+    --accent-fill: #0f766e; /* audit 24/11 : blanc sur l'accent sombre en AA (maquette) */
     --accent-text: #6fd1c5;
     --accent-soft: color-mix(in srgb, var(--accent) 18%, var(--bg));
     --warn-text: #f2b544;
@@ -56,6 +56,10 @@
   html textarea { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .hidden { display: none !important; }
+  /* Lu par les lecteurs d'écran seulement (#announce : le changement d'étape). */
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  /* Moins d'animations demandées : rien ne bouge ni ne clignote. */
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
   svg.i { flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   /* Bouton d'une seule icône : une boîte fixe et l'icône au centre exact (ni marge de texte ni ligne de base). */
   html button.only-icon, html .iconbtn, html .send { display: inline-grid; place-items: center; padding: 0; line-height: 0; }
@@ -220,6 +224,7 @@
   .chosen-line .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   /* Bouton plein en bas de la carte, dans le fil (lot 5) : plus collé par-dessus le contenu, rien de la carte n'est masqué. */
   .stepcard .foot { padding: 14px 0 2px; display: flex; flex-direction: column; gap: 8px; }
+  .stepcard .foot .hint { text-align: center; }
   .note { display: flex; gap: 10px; align-items: flex-start; border-radius: 12px; padding: 11px 13px; background: var(--surface); font-size: 13px; }
   .note.tip { background: var(--accent-soft); }
   .note.tip > svg { color: var(--accent-text); margin-top: 1px; }
@@ -228,7 +233,7 @@
   html .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); padding: 10px 16px; font-weight: 600; }
   html .btn:hover { background: var(--surface); }
   html .btn.primary, html .notice .acts .btn.main, html .questions .acts .btn { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent); }
-  html .btn.primary { padding: 14px 18px; font-size: 15px; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+  html .btn.primary { padding: 14px 18px; font-size: 15px; }
   html .btn.primary:hover, html .notice .acts .btn.main:hover { filter: brightness(1.06); background: var(--accent-fill); }
   html .btn[disabled] { opacity: .45; box-shadow: none; }
   html .btn.sm { padding: 7px 12px; font-size: 13px; border-radius: 10px; }
@@ -353,10 +358,11 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
   /* Étape 2 « Imprimante et bobine » (v2/materiel.js) : cartes à cocher, emplacements, « Préciser ma bobine ». */
   html .card.sel { border-color: var(--accent); background: var(--accent-soft); }
   .card.sel .ic { background: var(--bg); }
+  .card.sel small { color: color-mix(in srgb, var(--fg) 72%, var(--accent-soft)); }
   html .card[disabled] { opacity: .6; cursor: default; }
   .card .check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); display: grid; place-items: center; flex: none; }
   .card.sel .check { background: var(--accent-fill); border-color: var(--accent-fill); color: #fff; }
-  .badge.usb { background: var(--raised); color: var(--muted); }
+  .badge.usb { background: var(--raised); color: color-mix(in srgb, var(--fg) 78%, var(--raised)); }
   .cyl { width: 26px; height: 26px; border-radius: 50%; border: 3px solid rgba(0, 0, 0, .12); background: var(--raised); display: block; }
   .cyl.small { width: 16px; height: 16px; border-width: 2px; flex: none; }
   .slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
@@ -384,7 +390,7 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
   ol.hint { padding-left: 18px; }
   .err { font-size: 12.5px; color: var(--danger-text); margin: 0; }
   .hwline { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
-  html .hwline .link { padding: 0; font-size: 12.5px; }
+  html .hwline .link { padding: 0; font-size: 12.5px; min-height: 24px; }
   .fixed { padding: 9px 0; color: var(--fg); font-size: 14px; }
   .left { display: flex; }
   .num { width: 18px; text-align: center; flex: none; }
@@ -483,7 +489,7 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
   .attached { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
   .att { position: relative; }
   .att img { width: 52px; height: 52px; object-fit: cover; border-radius: 8px; display: block; }
-  html .att-x { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%; background: var(--fg); color: var(--bg); display: grid; place-items: center; }
+  html .att-x { position: absolute; top: -7px; right: -7px; width: 24px; height: 24px; border-radius: 50%; background: var(--fg); color: var(--bg); display: grid; place-items: center; }
   html .att-x > svg.i { width: 11px; height: 11px; }
 </style>
 </head>
@@ -491,7 +497,7 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
   <header class="phead">
     <span class="pdot" aria-hidden="true">P</span><strong>Assistant Plyo</strong><span class="spacer"></span>
     <button class="phone-pill hidden" id="phone-pill" type="button" title="Téléphone relié : clique pour revoir le QR code" aria-label="Téléphone relié"></button>
-    <button class="gauge hidden" id="gauge" type="button" title="Jauge IA : ton utilisation ce mois-ci" aria-label="Jauge IA du mois"><span class="gname">Jauge IA</span><span class="bar"><i id="gauge-fill"></i></span><b id="gauge-pct">…</b></button>
+    <button class="gauge hidden" id="gauge" type="button" title="Ce qu’il te reste d’IA ce mois-ci" aria-label="IA restante ce mois-ci"><span class="gname">IA restante</span><span class="bar"><i id="gauge-fill"></i></span><b id="gauge-pct">…</b></button>
     <button class="iconbtn" id="btn-more" type="button" title="Menu" aria-label="Menu" aria-haspopup="menu" aria-expanded="false"></button>
     <div class="menu hidden" id="menu" role="menu">
       <div id="menu-items"></div>
@@ -510,10 +516,11 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
       </div>
       <div class="zbody" id="stepscroll">
         <div class="stepalert hidden" id="stepalert" role="alert"></div>
-        <section class="stepcard" id="stepcard" aria-live="polite"></section>
+        <div id="announce" class="sr-only" aria-live="polite"></div>
+        <section class="stepcard" id="stepcard"></section>
       </div>
     </div>
-    <div class="zone-chat">
+    <div class="zone-chat" id="zone-chat">
       <div class="zbar" id="chatbar" role="button" tabindex="0" aria-label="Afficher la conversation avec l’assistant">
         <span class="pdot" aria-hidden="true">P</span>
         <span class="zt"><span class="zl">Conversation</span><small id="chatbar-last">Pose une question à l’assistant quand tu veux.</small></span>
@@ -528,7 +535,7 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
       </div>
     </div>
   </div>
-  <div class="composer">
+  <div class="composer" id="composer">
     <div class="focus-chip hidden" id="focus-chip"><span>Tu regardes :</span><b id="focus-label"></b><button type="button" class="go" id="focus-explain">Explique-moi</button><button type="button" class="x" id="focus-close" title="Masquer" aria-label="Masquer"></button></div>
     <div class="cbox">
       <div class="attached hidden" id="attached"></div>

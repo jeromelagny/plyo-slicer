@@ -105,11 +105,12 @@
     b.appendChild(ui.txt(kind === 'usb' ? 'USB' : 'Wi-Fi'));
     return b;
   }
-  // Carte de choix (maquette) : icône, titre, sous-titre, badge, rond coché (radio) ou chevron.
+  // Carte de choix (maquette) : icône, titre, sous-titre, badge, rond coché (radio) ou chevron. Une carte à cocher est un vrai
+  // bouton radio (role, aria-checked), dans une liste `radioGroup`.
   function card(o) {
     var b = ui.el('button', 'card' + (o.sel ? ' sel' : ''));
     b.type = 'button';
-    if (o.radio) b.setAttribute('aria-pressed', o.sel ? 'true' : 'false');
+    if (o.radio) { b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', o.sel ? 'true' : 'false'); }
     var ic = ui.el('span', 'ic');
     if (o.swatch) { var sw = ui.el('span', 'cyl'); sw.style.background = o.swatch; ic.appendChild(sw); } else ic.appendChild(ui.icon(o.icon || 'printer', 22));
     b.appendChild(ic);
@@ -126,6 +127,7 @@
     if (o.disabled) b.disabled = true;
     return b;
   }
+  function radioGroup(cls, label) { var g = ui.el('div', cls); g.setAttribute('role', 'radiogroup'); g.setAttribute('aria-label', ui.fr(label)); return g; }
   function chip(label, on, sel, id) {
     var b = ui.button(label, on, 'chip' + (sel ? ' sel' : ''));
     b.setAttribute('aria-pressed', sel ? 'true' : 'false');
@@ -1036,7 +1038,7 @@
       body.appendChild(section('Trouvée sur ton Wi-Fi'));
       var list = ui.el('div', 'cards');
       s.printers.forEach(function (p) {
-        list.appendChild(card({ icon: 'wifi', title: p.match ? p.match.model : (p.name || p.brand || 'Imprimante'), sub: 'Adresse ' + p.ip + (p.match ? ' · ' + p.match.vendor : ' · modèle inconnu'),
+        list.appendChild(card({ icon: 'wifi', title: p.match ? p.match.model : (p.name || p.brand || 'Imprimante'), sub: (expert() ? 'Adresse ' + p.ip + ' · ' : '') + (p.match ? p.match.vendor : 'Modèle inconnu') + (expert() ? '' : ' · sur ton Wi-Fi'),
           on: function () { if (p.match) chooseModel(p.match, p); else { s.found = p; s.query = p.brand || ''; s.phase = 'search'; render(); } } }));
       });
       body.appendChild(list);
@@ -1086,8 +1088,10 @@
     var row = (spoolRows() || []).filter(function (r) { return r.id === f.spool.id || r.name === f.spool.name; })[0];
     var list = ui.el('div', 'cards');
     var linked = k ? k.linked : true;
-    list.appendChild(card({ icon: 'printer', title: shortName(pr), sub: linked ? 'Reliée en Wi-Fi' + (reachable[pr.preset] === true ? ' · prête' : '') : 'Impression par clé USB', badge: badge(linked ? 'wifi' : 'usb'), sel: true, radio: true }));
-    list.appendChild(card({ icon: 'spool', swatch: row && row.colour, title: f.spool.name, sub: row ? (row.detail.charAt(0).toUpperCase() + row.detail.slice(1)) : f.type, sel: true, radio: true }));
+    // Chaque carte ouvre directement son choix : la liste des imprimantes, ou la bobine (audit du 24/11).
+    var change = function (focus) { return function () { st.showList = true; st.focus = focus; render(); }; };
+    list.appendChild(card({ icon: 'printer', title: shortName(pr), sub: linked ? 'Reliée en Wi-Fi' + (reachable[pr.preset] === true ? ' · prête' : '') : 'Impression par clé USB', badge: badge(linked ? 'wifi' : 'usb'), on: change('printer') }));
+    list.appendChild(card({ icon: 'spool', swatch: row && row.colour, title: f.spool.name, sub: row ? (row.detail.charAt(0).toUpperCase() + row.detail.slice(1)) : f.type, on: change('spool') }));
     body.appendChild(list);
     if (st.error.printer || st.error.filament) body.appendChild(noteBox('error', 'alert', st.error.printer || st.error.filament));
     body.appendChild(noteBox('tip', 'info', 'Vérifie juste que c’est bien cette bobine qui est dans la machine.'));
@@ -1287,7 +1291,7 @@
     if (k && k.slots && k.linked && read && !read.ok && !st.canvas.useList) body.appendChild(ui.el('p', 'hint', k.slots === 'canvas' ? 'Je ne lis pas ton Canvas pour l’instant : choisis ta bobine ici, l’imprimante choisira l’emplacement.' : 'Je ne lis pas les emplacements de ta machine pour l’instant : choisis ta bobine ici.'));
     if (k && k.slots_reason === 'link_incomplete') body.appendChild(noteBox('', 'info', 'Ta machine a été reliée sans son numéro de série ni son code d’accès : je ne lis pas ses emplacements.', [ui.button('Relier à nouveau', startSetup, 'link')]));
     if (Array.isArray(rows) && rows.length) {
-      var list = ui.el('div', 'cards spools');
+      var list = radioGroup('cards spools', 'Ta bobine');
       rows.slice(0, 6).forEach(function (r) {
         list.appendChild(card({ icon: 'spool', swatch: r.colour, title: r.label, sub: r.detail.charAt(0).toUpperCase() + r.detail.slice(1), radio: true,
           sel: pick.kind === 'spool' && (pick.id === r.id || pick.name === r.name),
@@ -1388,7 +1392,7 @@
     var primary = null;
     if (!printers) body.appendChild(spinLine('Je cherche tes imprimantes…'));
     else {
-      var list = ui.el('div', 'cards printers');
+      var list = radioGroup('cards printers', 'Ton imprimante');
       visible.cards.forEach(function (m) {
         var on = reachable[m.preset] === true;
         list.appendChild(card({ icon: 'printer', title: J.shortMachine(m), sub: m.linked ? 'Reliée en Wi-Fi' + (on ? ' · prête' : '') : 'Impression par clé USB', badge: badge(m.linked ? 'wifi' : 'usb'),
@@ -1412,7 +1416,11 @@
     }
     if (pr && printers) {
       if (!pr.proposed) hardwareLine(body);
-      body.appendChild(section('Ta bobine'));
+      var spoolSec = section('Ta bobine');
+      body.appendChild(spoolSec);
+      // Ouvert depuis la carte de la bobine de « Comme la dernière fois » : on y va directement.
+      if (st.focus === 'spool') setTimeout(function () { if (spoolSec.isConnected && spoolSec.scrollIntoView) spoolSec.scrollIntoView({ block: 'start' }); }, 0);
+      st.focus = null;
       if (!pr.proposed) { ensureSpools(pr.preset); ensureSlots(); }
       else ensureSpools(pr.preset);
       mode = pr.proposed ? null : slotMode();

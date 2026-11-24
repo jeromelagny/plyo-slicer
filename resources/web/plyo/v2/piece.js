@@ -56,7 +56,7 @@
     b.body = body;
     return b;
   }
-  function choice(iconName, title, sub, run, badge) {
+  function choice(iconName, title, sub, run) {
     var b = ui.el('button', 'card');
     b.type = 'button';
     var ic = ui.el('span', 'ic');
@@ -67,7 +67,6 @@
     if (sub) mid.appendChild(ui.el('small', '', sub));
     b.appendChild(mid);
     var end = ui.el('span', 'end');
-    if (badge) end.appendChild(ui.el('span', 'badge ai', badge));
     end.appendChild(ui.icon('right', 16));
     b.appendChild(end);
     b.addEventListener('click', run);
@@ -77,15 +76,16 @@
   function spinLine(text) { var l = ui.el('div', 'scan'); l.appendChild(ui.el('span', 'spin')); l.appendChild(ui.el('span', '', text)); return l; }
 
   // ---------- Choisir la pièce ----------
+  // Une seule zone pour un fichier (audit du 24/11) : déposer, cliquer, ou Entrée / Espace au clavier ouvre le fichier.
   function openFile() { var input = document.getElementById('model-input'); if (input) input.click(); }
   function dropzone() {
     var dz = ui.el('div', 'dropzone');
     dz.setAttribute('role', 'button');
     dz.setAttribute('tabindex', '0');
-    dz.setAttribute('aria-label', ui.fr('Dépose ta pièce ici, ou clique pour choisir un fichier'));
+    dz.setAttribute('aria-label', ui.fr('Ouvrir un fichier ou déposer ta pièce'));
     dz.appendChild(ui.icon('upload', 28));
-    dz.appendChild(ui.el('strong', '', 'Dépose ta pièce ici'));
-    dz.appendChild(ui.el('span', '', 'STL, 3MF, OBJ ou STEP'));
+    dz.appendChild(ui.el('strong', '', 'Dépose ta pièce ici, ou clique pour l’ouvrir'));
+    dz.appendChild(ui.el('span', '', 'STL, 3MF, OBJ ou STEP depuis ton ordinateur'));
     dz.addEventListener('click', openFile);
     dz.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFile(); } });
     ['dragenter', 'dragover'].forEach(function (t) { dz.addEventListener(t, function (e) { e.preventDefault(); dz.classList.add('over'); }); });
@@ -108,13 +108,14 @@
     if (st.placing) body.appendChild(spinLine(st.placing));
     if (st.error) body.appendChild(errorBox(st.error));
     body.appendChild(dropzone());
-    var cards = ui.el('div', 'cards');
-    cards.appendChild(choice('folder', 'Ouvrir un fichier', 'STL, 3MF, OBJ, STEP depuis ton ordinateur', openFile));
     if (!adding) {
+      // Rien sous la main : le petit bateau de test, juste sous la zone de dépôt (comme la maquette).
+      body.appendChild(ui.el('div', 'center')).appendChild(ui.button('Je n’ai rien sous la main : essaie avec le petit bateau', function () { whenChanging(function () { importSample('benchy'); }); }, 'link'));
+      var cards = ui.el('div', 'cards');
       cards.appendChild(choice('grid', 'Choisir dans la galerie', 'Des modèles testés, prêts à imprimer', openGallery));
-      cards.appendChild(choice('spark', 'Créer avec l’IA', 'Décris la pièce ou montre un croquis', function () { whenChanging(function () { openDesign(false); }); }, 'IA'));
+      cards.appendChild(choice('spark', 'Créer avec l’IA', 'Décris la pièce ou montre un croquis', function () { whenChanging(function () { openDesign(false); }); }));
+      body.appendChild(cards);
     }
-    body.appendChild(cards);
     if (!adding) {
       body.appendChild(ui.el('p', 'small muted center', 'Un 3MF d’un autre créateur sera adapté à ta machine et à ta bobine.'));
     }
@@ -385,7 +386,7 @@
     var body = ui.el('div', 'card-content');
     if (d.busy) {
       body.appendChild(spinLine('Je trace les contours, puis je place les trous.'));
-      return { title: 'Je dessine ta pièce…', sub: 'Ça prend une dizaine de secondes.', body: body, primary: null, extra: [] };
+      return { title: 'Je dessine ta pièce…', sub: 'Ça prend une dizaine de secondes.', body: body, primary: null, extra: [], noChat: true };
     }
     if (d.questions.length) {
       if (d.message) body.appendChild(ui.rich(d.message));
@@ -403,7 +404,7 @@
         });
         body.appendChild(row);
       });
-      return { title: 'Une précision', sub: 'Clique sur ta réponse.', body: body, primary: null,
+      return { title: 'Une précision', sub: 'Clique sur ta réponse.', body: body, primary: null, noChat: true,
         extra: [ui.button('Annuler', closeDesign, 'link muted')] };
     }
     if (d.message) body.appendChild(box(d.failed ? 'error' : 'tip', d.failed ? 'alert' : 'info', null, d.message));
@@ -414,11 +415,13 @@
     ta.value = d.text || '';
     ta.placeholder = ui.fr(d.retouch ? 'Ex. : plus épaisse de 2 mm, un trou de 5 mm au centre' : 'Ex. : une équerre de 6 cm avec deux trous de vis de 4 mm');
     ta.setAttribute('aria-label', ui.fr(d.retouch ? 'Ce que je change' : 'Ta pièce'));
-    ta.addEventListener('input', function () { d.text = ta.value; });
+    // « Créer ma pièce » attend une description : le bouton s'active dès qu'il y a du texte (sans redessiner la carte).
+    var described = function () { return !!String(d.text || '').trim(); };
+    ta.addEventListener('input', function () { d.text = ta.value; V2.etapes.setPrimaryEnabled(described()); });
     body.appendChild(ta);
     if (!d.retouch) {
       var ex = ui.el('div', 'chips');
-      EXAMPLES.forEach(function (t) { ex.appendChild(ui.button(t, function () { d.text = t; ta.value = t; }, 'chip')); });
+      EXAMPLES.forEach(function (t) { ex.appendChild(ui.button(t, function () { d.text = t; ta.value = t; V2.etapes.setPrimaryEnabled(true); }, 'chip')); });
       body.appendChild(ex);
     }
     d.images.forEach(function (img, i) {
@@ -437,14 +440,16 @@
     body.appendChild(box('tip', 'info', null, d.retouch ? F.TEXT.retouchHelp : 'Mesure la place disponible avant : je dessine au millimètre près. ' + F.TEXT.scope));
     if (d.planRequired) {
       // Formule requise : les formules s'ouvrent d'ici (fenêtre de la v2, v2/menu.js), comme après une question.
-      return { title: 'Créer avec l’IA', sub: null, body: body, primary: { label: 'Voir les formules', run: function () { if (V2.menu) V2.menu.openPlans(); } },
+      return { title: 'Créer avec l’IA', sub: null, body: body, noChat: true, primary: { label: 'Voir les formules', run: function () { if (V2.menu) V2.menu.openPlans(); } },
         extra: [ui.button('Retour', closeDesign, 'link muted')] };
     }
     return {
       title: d.retouch ? F.TEXT.retouchTitle : 'Créer avec l’IA',
       sub: d.retouch ? null : 'Décris la pièce avec tes mots, avec ses mesures si tu les connais.',
       body: body,
-      primary: { label: d.retouch ? F.TEXT.retouchGo : 'Créer ma pièce', icon: 'spark', run: designSubmit },
+      primary: { label: d.retouch ? F.TEXT.retouchGo : 'Créer ma pièce', icon: 'spark', run: designSubmit, disabled: !described(),
+        hint: d.retouch ? 'Dis ce que je change d’abord' : 'Décris ta pièce d’abord' },
+      noChat: true,
       extra: [ui.button(d.retouch ? 'Annuler' : 'Retour', closeDesign, 'link muted')]
     };
   }
