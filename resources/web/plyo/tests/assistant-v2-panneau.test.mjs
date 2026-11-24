@@ -255,3 +255,22 @@ test('barre de l’étape : son bouton fait la même chose que le bouton plein d
     if (primary) assert.equal(texts(go), texts(primary));
   } finally { p.stop(); }
 });
+
+test('reprise : l’étape gardée à l’écran est notée dans le projet et revient quand le plateau est encore attaché', async () => {
+  const p = loadV2({ bridge: bridge({ session: SESSION }), fetch: service() });
+  try {
+    await sleep(30);
+    const panel = p.ctx.PlyoV2.panel;
+    panel.hold('piece');
+    assert.equal(panel.conv().project.held, 'piece');
+    panel.hold(null);
+    assert.equal(panel.conv().project.held, undefined, 'relâchée : oubliée');
+  } finally { p.stop(); }
+  // Panneau rouvert (bascule) sur ce projet, plateau encore attaché : l'étape gardée revient.
+  const conversation = { title: 'Bateau', entries: [], history: [], project: { part: { name: 'Petit bateau' }, printer: { preset: 'K1C', name: 'K1C' }, held: 'piece' } };
+  const q = loadV2({ bridge: bridge({ session: SESSION, attached: 'c1', conversation }), fetch: service() });
+  try {
+    await sleep(60);
+    assert.equal(q.$('stepcard').dataset.step, 'piece');
+  } finally { q.stop(); }
+});

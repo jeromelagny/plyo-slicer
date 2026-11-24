@@ -18,7 +18,8 @@ export const TEXTS = {
   // PlateActions / Commands
   plate_busy: 'Plyo Slicer est déjà occupé sur le plateau. Réessaie dans un instant.',
   plate_empty: 'Le plateau est vide : ajoute d\'abord un modèle.',
-  no_commands: 'Aucun ordre à exécuter.',
+  no_commands: 'Aucun changement à faire sur le plateau.',
+  too_many_commands: 'Je fais 6 changements au plus à la fois : redemande le reste ensuite.',
   which_piece: 'Je ne sais pas quelle pièce modifier : clique d\'abord sur la pièce, puis redemande-moi.',
   tool_which: 'Clique d\'abord sur la pièce, puis redemande-moi d\'ouvrir l\'outil.',
   undo_wait: 'Attends la fin de l\'opération en cours, puis réessaie.',
@@ -169,7 +170,8 @@ export function createSlicer(cfg = {}) {
     return null;
   }
   function runCommands(list) {
-    if (!Array.isArray(list) || !list.length || list.length > 6) return refuse('commands', TEXTS.no_commands, { done: [] });
+    if (!Array.isArray(list) || !list.length) return refuse('commands', TEXTS.no_commands, { done: [] });
+    if (list.length > 6) return refuse('commands', TEXTS.too_many_commands, { done: [] });
     if (S.jobBusy) return refuse('commands', TEXTS.plate_busy, { done: [] });
     const before = clone(S.plate.objects);
     const done = [];
@@ -360,8 +362,11 @@ export function createSlicer(cfg = {}) {
         return;
       }
       case 'commands': {
-        const byUser = !!m.by_user && Array.isArray(m.commands) && m.commands.length > 0 && m.commands.every((c) => c && USER_OPS.indexOf(c.op) >= 0);
-        const refused = !byUser ? projectRefusal(m) : S.editsBlocked ? refuse('commands', TEXTS.busy) : null;
+        // Gestes simples, à la main ou demandés à l'IA : sans fiche complète (PlyoAssistant.cpp, user_plate_edit).
+        const byUser = Array.isArray(m.commands) && m.commands.length > 0 && m.commands.every((c) => c && USER_OPS.indexOf(c.op) >= 0);
+        const hasPart = !!(m.project && m.project.part && m.project.part.name);
+        const refused = !byUser ? projectRefusal(m) : S.editsBlocked ? refuse('commands', TEXTS.busy)
+          : !hasPart ? refuse('commands', 'Pour faire ça, pose d\'abord ta pièce sur le plateau.', { can_restore: false, missing: ['part'] }) : null;
         const done = refused || runCommands(m.commands);
         emit(Object.assign({ type: 'commands', request: m.request || 0 }, done));
         return;

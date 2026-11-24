@@ -27,6 +27,8 @@ std::vector<std::string> missing_for(const nlohmann::json& project, bool filamen
 // Gestes faits à la main sur la pièce (« Envie d'ajuster ? » de l'étape 1) : tourner, taille, copies, poser à plat. Ils ne
 // dépendent ni de l'imprimante ni de la bobine ; vrai seulement si la liste n'a que ces ordres (au moins un).
 bool user_plate_edit(const nlohmann::json& commands);
+// La fiche du projet a sa pièce (les gestes simples n'attendent qu'elle).
+bool has_part(const nlohmann::json& project);
 std::string refusal(const nlohmann::json& project, const std::string& current_printer, const std::string& current_filament, bool filament_only = false);
 
 // Le projet réduit à ses clés connues (aucun secret, aucun chemin de fichier), prêt à être enregistré avec la

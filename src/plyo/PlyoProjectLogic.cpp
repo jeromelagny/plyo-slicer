@@ -99,6 +99,12 @@ std::vector<std::string> missing_for(const nlohmann::json& project, bool filamen
     return out;
 }
 
+bool has_part(const nlohmann::json& project)
+{
+    const std::vector<std::string> todo = missing(project);
+    return std::find(todo.begin(), todo.end(), "part") == todo.end();
+}
+
 bool user_plate_edit(const nlohmann::json& commands)
 {
     if (!commands.is_array() || commands.empty())
@@ -231,6 +237,18 @@ nlohmann::json sanitize(const nlohmann::json& project)
     }
     if (const std::string adapted = Json::str(project, "adapted", 200); !adapted.empty())
         out["adapted"] = adapted;
+    // Assistant v2 : l'étape gardée à l'écran (pièce posée, « Envie d'ajuster ? ») et ce que l'assistant a ajouté à la plaque
+    // (supports, bordure) : une reprise (bascule, panneau rouvert) revient exactement là où l'on était.
+    if (const std::string held = Json::str(project, "held", 20); held == "piece" || held == "materiel" || held == "imprimer")
+        out["held"] = held;
+    if (const nlohmann::json* ad = Json::field(project, "added"); ad != nullptr && ad->is_object()) {
+        nlohmann::json o = nlohmann::json::object();
+        for (const char* key : {"support", "brim"})
+            if (Json::boolean(*ad, key, false))
+                o[key] = true;
+        if (!o.empty())
+            out["added"] = o;
+    }
     // Lot 21 : couleurs prévues par le 3MF joint (t = rang), gardées pour la carte « Couleurs » rouverte depuis la fiche, même
     // après le choix des bobines. 16 au plus, « #RRGGBB » ou vide (rang sans couleur lisible).
     if (const nlohmann::json* fc = Json::field(project, "file_colours"); fc != nullptr && fc->is_array()) {

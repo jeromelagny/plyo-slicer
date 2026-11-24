@@ -536,13 +536,18 @@ void handle_page_message(const nlohmann::json& data)
                 PlateActions::run_when_ready(kind, reply);
         } else if (type == "commands") {
             // Ordres de l'IA (« penche la pièce de 20° ») : exécutés aussitôt, annulables d'un clic (plate_action « undo »).
-            // Un geste fait à la main sur la pièce (tourner, taille, copies, poser à plat) n'attend pas l'imprimante ni la
-            // bobine ; il ne touche jamais le plateau d'une autre conversation.
+            // Les gestes simples sur la pièce (tourner, taille, copies, poser à plat), faits à la main ou demandés à l'IA,
+            // n'attendent pas l'imprimante ni la bobine : ils ne dépendent pas de la machine. Jamais sur le plateau d'une autre
+            // conversation. Les autres ordres (orienter, ranger, réduire pour tenir…) restent soumis à la fiche du projet.
             const nlohmann::json list    = data.contains("commands") ? data["commands"] : nlohmann::json();
-            const bool           by_user = Json::boolean(data, "by_user", false) && ProjectLogic::user_plate_edit(list);
-            const nlohmann::json refused = !by_user                      ? project_refusal(data)
+            const bool           simple  = ProjectLogic::user_plate_edit(list);
+            const nlohmann::json project = data.contains("project") ? data["project"] : nlohmann::json();
+            const nlohmann::json refused = !simple                       ? project_refusal(data)
                                            : ProjectFiles::edits_blocked() ? nlohmann::json{{"ok", false}, {"text", ProjectFiles::busy_text()}}
-                                                                          : nlohmann::json();
+                                           : !ProjectLogic::has_part(project)
+                                               ? nlohmann::json{{"ok", false}, {"text", "Pour faire ça, pose d'abord ta pièce sur le plateau."},
+                                                                {"can_restore", false}, {"missing", {"part"}}}
+                                               : nlohmann::json();
             if (!refused.is_null()) {
                 nlohmann::json done = refused;
                 done["type"]        = "commands";

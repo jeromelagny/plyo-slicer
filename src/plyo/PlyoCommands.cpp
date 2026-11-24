@@ -429,8 +429,10 @@ std::string execute(const nlohmann::json& c, const std::optional<Slic3r::ObjectI
 
 nlohmann::json run(const nlohmann::json& commands)
 {
-    if (!commands.is_array() || commands.empty() || commands.size() > 6)
-        return {{"ok", false}, {"text", "Aucun ordre à exécuter."}, {"done", nlohmann::json::array()}};
+    if (!commands.is_array() || commands.empty())
+        return {{"ok", false}, {"text", "Aucun changement à faire sur le plateau."}, {"done", nlohmann::json::array()}};
+    if (commands.size() > 6)
+        return {{"ok", false}, {"text", "Je fais 6 changements au plus à la fois : redemande le reste ensuite."}, {"done", nlohmann::json::array()}};
     if (!plater().get_ui_job_worker().is_idle())
         return {{"ok", false}, {"text", "Plyo Slicer est déjà occupé sur le plateau. Réessaie dans un instant."}, {"done", nlohmann::json::array()}};
     if (auto* frame = wxGetApp().mainframe)

@@ -838,15 +838,8 @@
     if (entry.commandsResult) { show(entry.commandsResult); return wrap; }
     if (archived) { wrap.appendChild(line('Ces changements n’ont pas été faits sur le plateau.', '')); return wrap; }
     var list = (a.commands || []).map(function (c) { return c && typeof c === 'object' && !Array.isArray(c) ? Object.assign({}, c, { summary: Logic.commandSummary(c) }) : c; });
-    // Fiche du projet incomplète : le slicer refuse les ordres de l'IA. Des gestes simples (tourner, taille, copies, poser à
-    // plat) se font quand même, sur ton clic, comme dans « Envie d'ajuster ? » ; les autres attendent la machine et la bobine.
-    var incomplete = J.stillMissing(project(), ['printer', 'part', 'filament']);
-    var simple = list.length > 0 && list.length <= MAX_COMMANDS && list.every(function (c) { return c && USER_OPS.indexOf(c.op) >= 0; });
-    if (incomplete.length && incomplete.indexOf('part') < 0 && simple) {
-      wrap.appendChild(line(list.map(function (c) { return c.summary; }).filter(Boolean).join(' · ') || 'Changements proposés sur la pièce', ''));
-      wrap.appendChild(ui.button('Faire ces changements sur le plateau', function () { wrap.textContent = ''; wrap.appendChild(line('Je modifie le plateau…', '')); run(true); }, 'btn sm main', 'spark'));
-      return wrap;
-    }
+    // Les gestes simples (tourner, taille, copies, poser à plat) se font tout de suite, même sans machine ni bobine choisies
+    // (le slicer les accepte : ProjectLogic::user_plate_edit) ; les autres ordres attendent la fiche du projet complète.
     wrap.appendChild(line('Je modifie le plateau…', ''));
     run(false);
     return wrap;
@@ -859,7 +852,11 @@
       refreshPlate();
       // Refus parce que la fiche est incomplète : le bouton qui mène au choix, puis « Réessayer » ici.
       if (!msg.ok && Array.isArray(msg.missing) && msg.missing.length) {
-        var acts = panel.refusalActions(msg, null, 'C’est noté. Retourne dans la conversation : « Réessayer » fait les changements proposés sur le plateau.');
+        // La même réponse a aussi une fiche de réglages : son refus porte déjà le bouton qui débloque. Un seul refus à l'écran ;
+        // ici, seulement « Réessayer » pour les changements sur le plateau.
+        var withSheet = Array.isArray(a.suggestions) && a.suggestions.length > 0;
+        if (withSheet) wrap.appendChild(line('Le bouton de ta fiche, au-dessus, débloque aussi ces changements : ensuite, « Réessayer ».', ''));
+        var acts = withSheet ? [] : panel.refusalActions(msg, null, 'C’est noté. Retourne dans la conversation : « Réessayer » fait les changements proposés sur le plateau.');
         acts.forEach(function (x) { wrap.appendChild(ui.button(x.label, x.run, 'btn sm main')); });
         wrap.appendChild(ui.button('Réessayer', function () { delete entry.commandsResult; wrap.textContent = ''; wrap.appendChild(line('Je modifie le plateau…', '')); run(byUser); }, 'btn sm'));
         return;

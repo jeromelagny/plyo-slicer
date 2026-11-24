@@ -186,16 +186,13 @@ test('parcours 6 : l’IA avant tout choix, à l’étape 1 et à l’étape 3 :
     await tap(p, /^Continuer$/, 'Continuer', 300);
     await click(p, p.$('card-primary'), 'Oui avec du PLA', 500);
     assert.match(norm(p.$('stepalert').textContent), /Ta fiche de réglages t'attend dans la conversation/);
-    // Étape 1 d'un nouveau projet : un quart de tour proposé par l'IA se fait sur ton clic (sans machine ni bobine).
+    // Étape 1 d'un nouveau projet : un quart de tour proposé par l'IA se fait tout de suite (sans machine ni bobine).
     p.ctx.PlyoV2.panel.newConversation();
     await sleep(50);
     await pickBoat(p);
     p.$('note').value = 'Tourne-la';
     await click(p, p.$('c-send'), 'Envoyer (étape 1)', 250);
-    const doIt = byText(p.$('msgs'), /Faire ces changements sur le plateau/);
-    assert.ok(doIt, 'les gestes simples de l’IA attendent un clic');
-    await click(p, doIt, 'Faire ces changements', 200);
-    assert.equal(sent(p, 'commands').at(-1).by_user, true);
+    assert.equal(byText(p.$('msgs'), /Faire ces changements sur le plateau/), undefined, 'plus de clic de confirmation');
     assert.match(norm(p.$('msgs').textContent), /tournée/);
   } finally { p.stop(); }
 });

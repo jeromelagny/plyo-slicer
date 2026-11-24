@@ -25,10 +25,20 @@
   var adoptAsked = {};
 
   // ---------- État de l'étape, pour la conversation affichée ----------
+  // Ce que l'assistant a ajouté à la plaque (supports, bordure), noté dans le projet : une reprise le dit pareil.
+  function savedAdded(id) { var c = conv(); return c && c.id === id && c.project.added ? Object.assign({}, c.project.added) : {}; }
+  function keepAdded(st) {
+    var c = conv();
+    if (!c || c.id !== st.conv) return;
+    var a = {};
+    ['support', 'brim'].forEach(function (k) { if (st.added[k]) a[k] = true; });
+    if (Object.keys(a).length) c.project.added = a; else delete c.project.added;
+    panel.scheduleSave();
+  }
   function fresh(id) {
     return { conv: id, idk: false, changing: false, manual: null, applying: false, expert: null, adjust: false, intentLine: null,
       slicing: false, sliceTimer: null, sliceSince: 0, sliceAsked: false, sliceTried: '', issues: [], blockSig: '', sliceSig: null, checkAsked: null,
-      preflight: null, added: {}, autoFixed: false, fixing: '', sending: null, lock: null, exported: null, failure: null,
+      preflight: null, added: savedAdded(id), autoFixed: false, fixing: '', sending: null, lock: null, exported: null, failure: null,
       screen: '', symptom: '', asked: false, watchLine: null, readId: 0, refused: '', successNote: '', calibOpen: false, diverge: null, recheckTimer: null };
   }
   var S = fresh(null);
@@ -231,6 +241,7 @@
         st.fixing = '';
         if (!ok) { note(text || 'Je n’ai pas pu corriger ta plaque.', 'error'); advance(); return; }
         fixes.forEach(function (f) { st.added[f.key] = true; });
+        keepAdded(st);
         slice();
       };
       // Même lot que « Tout corriger » du classique (une étape à annuler) ; les profils seulement pour les réglages du catalogue.
@@ -382,6 +393,7 @@
     st.preflight = null;
     if (signals) signals.sliced = false;
     st.added = {};
+    keepAdded(st);
     st.autoFixed = false;
     st.sliceTried = '';
     setStep('slice');
@@ -977,7 +989,7 @@
       if (a.kind === 'plate') { plateAction(a.action, function (ok) { if (ok) { st.preflight = null; slice(); } else render(); }); return; }
       var done = function (ok, text, result) {
         if (!ok) { refused(text, result, function () { b.disabled = false; b.click(); }); render(); return; }
-        if (c.key === 'support' || c.key === 'brim') st.added[c.key] = st.added[c.key] || a.label !== 'Retirer';
+        if (c.key === 'support' || c.key === 'brim') { st.added[c.key] = st.added[c.key] || a.label !== 'Retirer'; keepAdded(st); }
         st.preflight = null;
         slice();
       };

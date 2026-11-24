@@ -17,7 +17,7 @@ test('le menu du panneau classique propose « Essayer le nouvel assistant », qu
   const handler = page.slice(page.indexOf("$('m-ui').addEventListener"), page.indexOf('var LAYOUT_NOTES'));
   assert.ok(handler.indexOf('flushSave()') > 0 && handler.indexOf('flushSave()') < handler.indexOf('firststeps_set'), 'flushSave avant la bascule');
   assert.match(handler, /blockedWhileBusy\(\)/, 'pas de bascule pendant une découpe ou un envoi');
-  assert.match(handler, /type: 'firststeps_set', patch: \{ ui: 'v2' \}/);
+  assert.match(handler, /type: 'firststeps_set', patch: \{ ui: 'v2', ui_chosen: true \}/);
 });
 
 test('la page v2 : en-tête « Assistant Plyo » et retour à l’ancien assistant par le menu, après l’enregistrement en attente', async () => {
@@ -34,7 +34,7 @@ test('la page v2 : en-tête « Assistant Plyo » et retour à l’ancien assista
     p.$('btn-more').click();
     assert.equal(menu.classList.contains('hidden'), false, 'le menu s’ouvre');
     p.$('m-ui').click();
-    assert.deepEqual(p.posted.at(-1), { type: 'firststeps_set', patch: { ui: 'classique' } });
+    assert.deepEqual(p.posted.at(-1), { type: 'firststeps_set', patch: { ui: 'classique', ui_chosen: true } });
     assert.equal(menu.classList.contains('hidden'), true, 'le menu se referme');
     // Une conversation à enregistrer part avant la bascule (même stockage que le classique).
     p.ctx.PlyoV2.panel.conv().entries.push({ kind: 'note', text: 'x' });
@@ -52,7 +52,7 @@ test('la page v2 : en-tête « Assistant Plyo » et retour à l’ancien assista
 
 test('le slicer : la clé « ui » vaut « classique » par défaut, choisit la page à l’ouverture et rouvre le panneau à la bascule', () => {
   const sanitize = cppSrc('PlyoSanitize.cpp');
-  assert.match(sanitize, /\{"ui", "classique"\}/);
+  assert.match(sanitize, /\{"ui", "v2"\}, \{"ui_chosen", false\}/, 'la v2 par défaut ; le classique seulement choisi exprès');
   const assistant = cppSrc('PlyoAssistant.cpp');
   const load = assistant.slice(assistant.indexOf('std::string load_page()'), assistant.indexOf('bool allowed_navigation'));
   assert.match(load, /PageLogic::page_for_ui\(Json::str\(FirstSteps::state\(\), "ui", 20\)\)/);

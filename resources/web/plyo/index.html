@@ -4293,7 +4293,7 @@
     menu.classList.add('hidden');
     if (blockedWhileBusy()) return;
     flushSave();
-    window.orca.postMessage({ type: 'firststeps_set', patch: { ui: 'v2' } });
+    window.orca.postMessage({ type: 'firststeps_set', patch: { ui: 'v2', ui_chosen: true } });
   });
   var LAYOUT_NOTES = {
     simple: 'Disposition simple : la barre de réglages de Plyo Slicer est repliée, tu vois ta pièce et moi. Pour la rouvrir : « Disposition simple » dans le menu ⋯, ou Maj + Tab.',

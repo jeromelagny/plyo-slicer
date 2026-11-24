@@ -109,7 +109,8 @@
       if (!attached) unlinkPhone(true);
       conv = Conv.fromSaved(id, c);
       opened = null;
-      hold = null;
+      // Reprise du projet dont le plateau est encore attaché (bascule, panneau rouvert) : l'étape qui était gardée à l'écran.
+      hold = attached && conv.project.held ? conv.project.held : null;
       if (attached) { if (P.mayAttach(tourSignals)) post({ type: 'project_attach', conv: id }); }
       else if (P.opensProjectFile(conv.project)) post({ type: 'project_open', conv: id });
       else post({ type: 'project_detach' });
@@ -192,15 +193,22 @@
     }
     function openStep(key) {
       opened = key;
-      if (!key) hold = null; // « Revenir à l'étape en cours » : là où en est le projet
+      if (!key) { hold = null; keepHeld(); } // « Revenir à l'étape en cours » : là où en est le projet
       render();
       showZone('step');
       stepScroller.scrollTop = 0;
+    }
+    // L'étape gardée est notée dans le projet : une reprise (bascule, panneau rouvert) revient dessus.
+    function keepHeld() {
+      if (!conv || (conv.project.held || null) === hold) return;
+      if (hold) conv.project.held = hold; else delete conv.project.held;
+      scheduleSave();
     }
     // Garde une étape à l'écran (`key`), ou la relâche (null) : la carte suit alors le projet.
     function setHold(key) {
       hold = key || null;
       if (hold) opened = null;
+      keepHeld();
       render();
       stepScroller.scrollTop = 0; // la carte depuis son début : la pièce posée, ou l'étape suivante
     }
@@ -486,7 +494,7 @@
       closeMenu();
       if (busy) { say('Attends la fin de la réponse (ou annule-la) avant de changer d’assistant.'); return; }
       flushSave();
-      post({ type: 'firststeps_set', patch: { ui: 'classique' } });
+      post({ type: 'firststeps_set', patch: { ui: 'classique', ui_chosen: true } }); // choisi exprès : il reste
     }
     $('m-ui').addEventListener('click', backToClassic);
 

@@ -8,15 +8,17 @@ using nlohmann::json;
 json first_steps(const json& stored)
 {
     // layout : disposition de la fenêtre (mode Simple, lot 8) ; « advanced » par défaut, pour ne rien changer à qui utilise déjà Plyo.
-    // ui : version du panneau (« classique » ou « v2 », bascule du menu) ; « classique » par défaut tant que la v2 n'est pas finie.
+    // ui : version du panneau, « v2 » par défaut ; « classique » seulement choisi exprès dans le menu (ui_chosen). Un ancien
+    // « classique » écrit sans ce choix (valeur par défaut d'avant, enregistrée avec le reste) repasse en v2.
     json s = {{"seen", false}, {"level", nullptr}, {"tour_step", nullptr}, {"greeted", false}, {"share_outcomes", false}, {"layout", "advanced"},
-              {"ui", "classique"}};
+              {"ui", "v2"}, {"ui_chosen", false}};
     if (!stored.is_object())
         return s;
     if (Json::str(stored, "layout", 20) == "simple")
         s["layout"] = "simple";
-    if (Json::str(stored, "ui", 20) == "v2")
-        s["ui"] = "v2";
+    s["ui_chosen"] = Json::boolean(stored, "ui_chosen", false);
+    if (s["ui_chosen"] == true && Json::str(stored, "ui", 20) == "classique")
+        s["ui"] = "classique";
     for (const char* key : {"seen", "greeted", "share_outcomes"})
         s[key] = Json::boolean(stored, key, false);
     for (const char* key : {"level", "tour_step"}) {

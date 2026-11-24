@@ -193,11 +193,14 @@ TEST_CASE("Sanitize::first_steps garde seulement les valeurs du bon type")
     CHECK(Plyo::Sanitize::first_steps({{"layout", "simple"}})["layout"] == "simple");
     CHECK(Plyo::Sanitize::first_steps({{"layout", "plein écran"}})["layout"] == "advanced");
     CHECK(Plyo::Sanitize::first_steps({{"layout", 1}})["layout"] == "advanced");
-    // Version du panneau : « classique » par défaut, « v2 » seulement si demandé, jamais autre chose.
-    CHECK(s["ui"] == "classique");
-    CHECK(Plyo::Sanitize::first_steps({{"ui", "v2"}})["ui"] == "v2");
-    CHECK(Plyo::Sanitize::first_steps({{"ui", "v3"}})["ui"] == "classique");
-    CHECK(Plyo::Sanitize::first_steps({{"ui", 2}})["ui"] == "classique");
+    // Version du panneau : la v2 par défaut ; le classique seulement choisi exprès dans le menu (ui_chosen).
+    CHECK(s["ui"] == "v2");
+    CHECK(s["ui_chosen"] == false);
+    CHECK(Plyo::Sanitize::first_steps({{"ui", "classique"}})["ui"] == "v2"); // ancienne valeur par défaut, jamais choisie
+    CHECK(Plyo::Sanitize::first_steps({{"ui", "classique"}, {"ui_chosen", true}})["ui"] == "classique");
+    CHECK(Plyo::Sanitize::first_steps({{"ui", "v2"}, {"ui_chosen", true}})["ui"] == "v2");
+    CHECK(Plyo::Sanitize::first_steps({{"ui", "v3"}, {"ui_chosen", true}})["ui"] == "v2");
+    CHECK(Plyo::Sanitize::first_steps({{"ui", 2}})["ui"] == "v2");
 }
 
 TEST_CASE("Sanitize::memory écarte les fiches abîmées (anciennes versions) et garde les bonnes")
@@ -4707,14 +4710,14 @@ TEST_CASE("Assistant v2 · un script peut venir d'un seul sous-dossier, jamais d
     CHECK(include_names(page) == std::vector<std::string>{"v2/vue.js", "assistant-logic.js"});
 }
 
-TEST_CASE("Assistant v2 · la page du panneau suit la clé « ui » : classique par défaut")
+TEST_CASE("Assistant v2 · la page du panneau suit la clé « ui » : la v2 par défaut")
 {
     using Plyo::PageLogic::page_for_ui;
     CHECK(page_for_ui("v2") == "v2/index.html");
     CHECK(page_for_ui("classique") == "index.html");
     CHECK(page_for_ui("") == "index.html");
     CHECK(page_for_ui("../v2") == "index.html");
-    CHECK(page_for_ui(Plyo::Sanitize::first_steps(json::object())["ui"].get<std::string>()) == "index.html");
+    CHECK(page_for_ui(Plyo::Sanitize::first_steps(json::object())["ui"].get<std::string>()) == "v2/index.html");
     // La bascule rouvre le panneau, qui relit la clé : le choix de la page est fait à l'ouverture (load_page).
     const std::string cpp = lot12_read(lot12_root() / "src" / "plyo" / "PlyoAssistant.cpp");
     CHECK(cpp.find("PageLogic::page_for_ui(Json::str(FirstSteps::state(), \"ui\"") != std::string::npos);
@@ -5795,9 +5798,27 @@ TEST_CASE("Assistant v2 · les gestes faits à la main sur la pièce n'attendent
     CHECK_FALSE(user_plate_edit(json::array()));
     CHECK_FALSE(user_plate_edit(json::object()));
     CHECK_FALSE(user_plate_edit(json::array({"set_copies"})));
-    // Le slicer ne les laisse passer que marqués « by_user », et jamais sur le plateau d'une autre conversation.
+    // Sans pièce dans la fiche, un geste simple est refusé avec « missing : part » (le panneau propose d'en choisir une).
+    CHECK_FALSE(Plyo::ProjectLogic::has_part(json::object()));
+    CHECK(Plyo::ProjectLogic::has_part({{"part", {{"name", "bateau"}}}}));
+    // Faits à la main ou demandés à l'IA, ces gestes passent sans fiche complète ; jamais sur le plateau d'une autre conversation.
     const std::string cpp = lot12_read(lot12_root() / "src" / "plyo" / "PlyoAssistant.cpp");
-    CHECK(cpp.find("Json::boolean(data, \"by_user\", false) && ProjectLogic::user_plate_edit(list)") != std::string::npos);
-    CHECK(cpp.find("!by_user                      ? project_refusal(data)") != std::string::npos);
+    CHECK(cpp.find("const bool           simple  = ProjectLogic::user_plate_edit(list);") != std::string::npos);
+    CHECK(cpp.find("!simple                       ? project_refusal(data)") != std::string::npos);
+    CHECK(cpp.find("by_user") == std::string::npos);
+    const std::string commands = lot12_read(lot12_root() / "src" / "plyo" / "PlyoCommands.cpp");
+    CHECK(commands.find("Aucun ordre à exécuter") == std::string::npos);
+    CHECK(commands.find("Je fais 6 changements au plus à la fois") != std::string::npos);
     CHECK(cpp.find(": ProjectFiles::edits_blocked() ? nlohmann::json{{\"ok\", false}, {\"text\", ProjectFiles::busy_text()}}") != std::string::npos);
+}
+
+TEST_CASE("Assistant v2 · le projet garde l'étape tenue à l'écran et ce que l'assistant a ajouté à la plaque")
+{
+    using Plyo::ProjectLogic::sanitize;
+    const json p = sanitize({{"held", "piece"}, {"added", {{"support", true}, {"brim", false}, {"autre", true}}}});
+    CHECK(p["held"] == "piece");
+    CHECK(p["added"] == json({{"support", true}}));
+    CHECK_FALSE(sanitize({{"held", "ailleurs"}}).contains("held"));
+    CHECK_FALSE(sanitize({{"added", {{"brim", false}}}}).contains("added"));
+    CHECK_FALSE(sanitize({{"added", "oui"}}).contains("added"));
 }
