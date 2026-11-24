@@ -48,6 +48,8 @@ function bridge(cfg = {}) {
     else if (m.type === 'calib_start') emit({ type: 'calib_started', request: m.request, test: m.test, pass: 1, instructions: 'Imprime-la.', sections: [{ index: 0, label: '215 °C', value: 215 }, { index: 1, label: '210 °C', value: 210 }] });
     else if (m.type === 'calib_save') emit({ type: 'result', request: m.request, ok: true, text: '210 °C gardé pour ta bobine.' });
     else if (m.type === 'spool_success') emit({ type: 'spool_success_done', ok: true, name: 'Sunlu PLA blanc', date: '2026-11-23' });
+    else if (m.type === 'spool_adopt_check') emit({ type: 'spool_adopt_offer', preset: m.preset, offer: true });
+    else if (m.type === 'spool_adopt') emit(cfg.adoptFails ? { type: 'spool_adopted', ok: false, preset: m.preset, text: 'Ce nom est déjà pris.' } : { type: 'spool_adopted', ok: true, preset: m.preset, id: 'sp-9', name: m.name });
     else if (m.type === 'explain') emit({ type: 'explain', key: m.key, label: 'Rétraction', value: 0.8, unit: 'mm', min: 0, max: 5 });
   };
   fn.S = S;
@@ -275,4 +277,30 @@ test('lot 4 : page et inclusions (modules partagés, aucun HTML ni gestionnaire 
   assert.doesNotMatch(js, /innerHTML|insertAdjacentHTML|onclick=|eval\(/);
   for (const t of ['print_start', 'print_watch_start', 'print_watch_replay', 'print_declared', 'outcome_printed', 'outcome_result', 'spool_success', 'spool_failure', 'journal_add', 'calib_start', 'calib_save', 'calib_restore', 'preflight', 'orca_issues', 'canvas_send', 'spool_adopt_check', 'project_restore', 'show_preview', 'open_calibration'])
     assert.ok(js.includes("'" + t + "'"), t);
+});
+
+for (const fails of [false, true]) test('« Faire de … une bobine que je retiens ? » : ' + (fails ? 'refusée, « C’est ma bobine » se reclique' : 'retenue, la question se ferme'), async () => {
+  const preset = 'Hyper PLA @K2-all (Plyo)';
+  const p = await start({ orcaFilament: preset, adoptFails: fails, conversation: conversation({ filament: { type: 'PLA', preset, nozzle_temp: 220, bed_temp: 55, temps_ok: true } }) });
+  try {
+    await sleep(40);
+    const root = p.document.body;
+    const yes = byText(root, /^Oui, retiens-la$/);
+    assert.ok(yes, 'la question est posée');
+    yes.click();
+    const input = root.querySelectorAll('input').find((i) => i.value === preset);
+    input.value = 'Hyper PLA Creality @K2-all (Plyo)';
+    const ok = byText(root, /^C’est ma bobine$/);
+    ok.click();
+    await sleep(30);
+    if (fails) {
+      assert.match(texts(root), /Ce nom est déjà pris\./);
+      assert.equal(byText(root, /^C’est ma bobine$/).disabled, false, 'le bouton se reclique');
+    } else {
+      assert.match(texts(root), /C’est noté : « Hyper PLA Creality @K2-all \(Plyo\) » fait partie de tes bobines\./);
+      assert.ok(!byText(root, /^C’est ma bobine$/), 'le formulaire est fermé');
+      assert.ok(!/une bobine que je retiens/.test(texts(root)), 'la question est fermée');
+      assert.equal(p.ctx.PlyoV2.panel.conv().project.filament.spool.name, 'Hyper PLA Creality @K2-all (Plyo)');
+    }
+  } finally { p.stop(); }
 });

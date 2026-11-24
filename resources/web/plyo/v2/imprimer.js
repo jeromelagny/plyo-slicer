@@ -855,6 +855,7 @@
       var code = Sp.nameError(input.value);
       if (code) { err.textContent = ui.fr(Sp.nameErrorText(code)); err.classList.remove('hidden'); return; }
       ok.disabled = true;
+      adoptButton = ok;
       st.adoptAttach = attach ? { preset: preset, material: st.diverge && st.diverge.material } : null;
       panel.post({ type: 'spool_adopt', preset: preset, name: Sp.cleanName(input.value) });
     }, 'btn sm main');
@@ -873,16 +874,21 @@
     adoptAsked[f] = true;
     panel.post({ type: 'spool_adopt_check', preset: f });
   }
+  // La question « Faire de … une bobine que je retiens ? » (et son formulaire) : fermée une fois la bobine retenue ; le bouton
+  // « C'est ma bobine » envoyé, rendu cliquable si le slicer refuse.
+  var adoptBox = null, adoptButton = null;
   function onAdoptOffer(msg) {
     var ctx = values() && values().context;
     if (!msg.offer || !ctx || ctx.filament !== msg.preset) return;
-    var box = panel.say(Sp.adoptQuestion(msg.preset) + ' Je garderai ses réglages qui marchent et je te la proposerai à l’étape 2.', 'info', [
+    var box = adoptBox = panel.say(Sp.adoptQuestion(msg.preset) + ' Je garderai ses réglages qui marchent et je te la proposerai à l’étape 2.', 'info', [
       { label: 'Oui, retiens-la', primary: true, run: function () { box.body.querySelector('.acts').remove(); box.body.appendChild(adoptForm(msg.preset, false)); } },
       { label: 'Non merci', run: function () { box.remove(); habits = Sp.declineAdopt(habits, msg.preset); saveHabits(); } }]);
   }
   function onSpoolAdopted(msg) {
     var st = state();
-    if (!msg.ok) { note(msg.text || 'Je n’ai pas pu retenir cette bobine.', 'error'); render(); return; }
+    if (!msg.ok) { if (adoptButton) adoptButton.disabled = false; adoptButton = null; note(msg.text || 'Je n’ai pas pu retenir cette bobine.', 'error'); render(); return; }
+    adoptButton = null;
+    if (adoptBox) { adoptBox.remove(); adoptBox = null; }
     var attach = st.adoptAttach && st.adoptAttach.preset === msg.preset ? st.adoptAttach : null;
     st.adoptAttach = null;
     st.diverge = null;
