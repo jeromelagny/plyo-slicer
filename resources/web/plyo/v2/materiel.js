@@ -320,14 +320,19 @@
       return;
     }
     if (pend.kind !== 'filament') return;
-    p.filament = { type: pend.type, preset: msg.filament_preset, nozzle_temp: msg.nozzle_temp, bed_temp: msg.bed_temp, temps_ok: true };
+    // Comme le classique : les températures de l'étiquette sont demandées (tempsCard) après un choix d'emplacements ou une
+    // nouvelle bobine sans étiquette saisie ; gardées sans question pour une bobine connue (son préréglage les a déjà), choisie
+    // d'un clic, ou dont l'étiquette vient d'être recopiée.
+    var labelGiven = !!(pend.temps && Mat.tempChanges(pend.temps.nozzle, pend.temps.bed).length);
+    var tempsOk = !pend.canvas && !!pend.spool && (!pend.fresh || pend.quick || labelGiven);
+    p.filament = { type: pend.type, preset: msg.filament_preset, nozzle_temp: msg.nozzle_temp, bed_temp: msg.bed_temp, temps_ok: tempsOk };
     if (pend.spool) p.filament.spool = pend.spool;
     if (pend.spool && pend.brand) { p.filament.brand = pend.brand; if (pend.range) p.filament.range = pend.range; if (pend.brandProfile) p.filament.brand_profile = true; }
     if (!pend.canvas) delete p.canvas; // une bobine de la liste remplace les emplacements choisis avant
     st.pick = null; st.precise = false; st.temps = { nozzle: '', bed: '' }; st.name = ''; st.nameSuggested = '';
     changed();
     closeRevisit(); // étape rouverte depuis la barre : le choix fait, on revient où on en était
-    if (pend.canvas) { syncCanvasPlan(true); note('J’ai pris les températures conseillées pour ce filament : buse ' + tempOf(msg.nozzle_temp) + ', plateau ' + tempOf(msg.bed_temp) + '.', 'ok'); return; }
+    if (pend.canvas) { syncCanvasPlan(true); return; } // la carte des températures (tempsCard) prend la suite
     announceSpool(pend, msg);
     // Températures de l'étiquette (« Préciser ma bobine ») : appliquées au profil de la bobine, comme dans le classique.
     var t = pend.temps;
@@ -989,10 +994,15 @@
       extra: [changeLink] };
   }
 
-  // Températures de l'étiquette demandées après le choix (projet venu du panneau classique) : garder ou entrer les siennes.
+  // Températures de l'étiquette demandées après le choix (emplacements, nouvelle bobine) : garder ou entrer les siennes.
+  // Avec des emplacements, elles valent pour la couleur 1 (le filament du projet) : on dit laquelle.
   function tempsCard() {
-    var f = project().filament, st = state(), body = ui.el('div', 'card-content');
+    var p = project(), f = p.filament, st = state(), body = ui.el('div', 'card-content');
+    var slots = Array.isArray(p.canvas) ? p.canvas : [], first = slots[0];
     body.appendChild(ui.el('p', '', 'J’ai mis les températures conseillées pour du ' + f.type + ' : buse ' + tempOf(f.nozzle_temp) + ', plateau ' + tempOf(f.bed_temp) + '. Ton étiquette dit autre chose ?'));
+    if (first && first.label) body.appendChild(ui.el('p', 'hint', slots.length > 1
+      ? 'C’est la bobine de l’emplacement ' + first.label + ' (couleur 1). Les autres couleurs gardent les températures conseillées.'
+      : 'C’est la bobine de l’emplacement ' + first.label + '.'));
     body.appendChild(ui.el('p', 'hint', 'La buse fait fondre le fil, le plateau garde ta pièce collée. Rien d’écrit sur ton étiquette ? Garde-les, elles conviennent.'));
     var row = ui.el('div', 'row2');
     row.appendChild(field('Buse (°C) sur l’étiquette', textInput(st.temps.nozzle, function (v) { st.temps.nozzle = v; }, { inputmode: 'numeric', placeholder: 'ex. 200-220' })));

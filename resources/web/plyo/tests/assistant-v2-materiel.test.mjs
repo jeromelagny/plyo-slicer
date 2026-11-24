@@ -43,7 +43,7 @@ function bridge(cfg = {}) {
     else if (m.type === 'printer_select_profile') { orca.printer = m.name; emit({ type: 'printer_profile_selected', ok: true }); emit(values()); }
     else if (m.type === 'spools_get') emit({ type: 'spools', items: cfg.spools || [] });
     else if (m.type === 'brands_get') emit({ type: 'brands', material: m.material, printer: m.printer, ok: true, brands: BRANDS });
-    else if (m.type === 'spool_choose') { material = m.material; orca.filament = m.name + ' @K1C'; emit({ type: 'spool_chosen', ok: true, id: 'id-' + m.name, name: m.name, created: true, preset_created: true, success: { available: false } }); }
+    else if (m.type === 'spool_choose') { material = m.material; orca.filament = m.name + ' @K1C'; const known = (cfg.spools || []).some((x) => x.name === m.name); emit({ type: 'spool_chosen', ok: true, id: 'id-' + m.name, name: m.name, created: !known, preset_created: !known, success: { available: false } }); }
     else if (m.type === 'project_state') emit({ type: 'project_state', printer_preset: orca.printer, filament_preset: orca.filament, nozzle_temp: material === 'PETG' ? 240 : 210, bed_temp: material === 'PETG' ? 75 : 60 });
     else if (m.type === 'apply') emit({ type: 'result', request: m.request, ok: true, text: 'ok', undo_id: 3 });
     else if (m.type === 'bed_type_set') { const before = orca.bed; orca.bed = m.value; emit({ type: 'bed_type_set', token: m.token, ok: true, value: m.value, before, changed: before !== m.value }); emit(values()); }
@@ -229,6 +229,19 @@ test('lot 3 : CFS lu sur la machine : grille des emplacements, « Oui, l’empla
     assert.equal(project.filament.preset, 'CFS PLA');
     const plan = sent(p, 'canvas_plan').at(-1);
     assert.deepEqual([plan.preset, plan.map[0].tray_id, plan.map[0].label], [K2.preset, 1, '1B']);
+    // Les températures de l'étiquette sont demandées ensuite (comme le classique), pour la bobine de l'emplacement choisi.
+    assert.equal(project.filament.temps_ok, false);
+    const tcard = p.$('stepcard');
+    assert.match(texts(tcard), /Quelles températures indique ta bobine \?/);
+    assert.match(texts(tcard), /emplacement 1B/);
+    const [buse, plateau] = tcard.querySelectorAll('input');
+    buse.value = '200-220'; buse.dispatch('input');
+    plateau.value = '60'; plateau.dispatch('input');
+    p.$('card-primary').click();
+    await sleep(30);
+    assert.equal(project.filament.temps_ok, true);
+    const apply = sent(p, 'apply').at(-1);
+    assert.deepEqual(apply.changes.map((c) => [c.id, c.value]), [['nozzle_temp', 210], ['nozzle_temp_initial', 210], ['bed_temp', 60], ['bed_temp_initial', 60]]);
   } finally { p.stop(); }
 });
 
