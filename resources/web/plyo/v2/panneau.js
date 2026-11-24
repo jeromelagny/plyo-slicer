@@ -304,7 +304,7 @@
       var acts = (actions || []).map(function (a) { return { label: a.label, primary: a.primary, run: function () { hideStepAlert(); a.run(); } }; });
       acts.push({ label: 'Voir la conversation', run: function () { hideStepAlert(); showZone('chat'); } });
       var box = D.notice(kind, text, acts);
-      var close = ui.button('×', hideStepAlert, 'x');
+      var close = ui.button('', hideStepAlert, 'x', 'x');
       close.setAttribute('aria-label', ui.fr('Fermer'));
       box.appendChild(close);
       stepAlert.textContent = '';

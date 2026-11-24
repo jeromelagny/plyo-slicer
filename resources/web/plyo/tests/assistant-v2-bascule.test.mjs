@@ -62,3 +62,15 @@ test('le slicer : la clé « ui » vaut « classique » par défaut, choisit la 
   // Réouverture après la destruction de l'ancien panneau, jamais pendant la fermeture d'Orca.
   assert.match(assistant, /if \(s_reopen\) \{\s*s_reopen = false;\s*if \(!Slic3r::GUI::wxGetApp\(\)\.is_closing\(\)\)/);
 });
+
+test('icônes seules : boîte fixe et icône au centre exact ; plus de « × » en texte dans les boutons', () => {
+  const ui = read(path.join('v2', 'ui.js'));
+  assert.match(ui, /else if \(iconName\) b\.classList\.add\('only-icon'\);/, 'un bouton sans texte est marqué');
+  const page = read(path.join('v2', 'index.html'));
+  assert.match(page, /html button\.only-icon, html \.iconbtn, html \.send \{ display: inline-grid; place-items: center; padding: 0; line-height: 0; \}/);
+  assert.match(page, /html button\.only-icon > svg\.i, html \.iconbtn > svg\.i, html \.send > svg\.i \{ display: block; margin: 0; \}/);
+  assert.doesNotMatch(page, />×<\/button>/, 'pas de « × » en texte dans la page');
+  for (const f of fs.readdirSync(path.join(dir, 'v2')).filter((n) => n.endsWith('.js'))) {
+    assert.doesNotMatch(read(path.join('v2', f)), /ui\.button\('×'/, f + ' : « × » en texte');
+  }
+});

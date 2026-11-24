@@ -85,6 +85,7 @@
     b.type = 'button';
     if (iconName) b.appendChild(icon(iconName, 16));
     if (label) b.appendChild(txt(label));
+    else if (iconName) b.classList.add('only-icon'); // icône seule : centrée exactement (index.html, .only-icon)
     if (onClick) b.addEventListener('click', onClick);
     return b;
   }
