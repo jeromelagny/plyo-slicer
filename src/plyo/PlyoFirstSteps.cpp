@@ -57,6 +57,8 @@ void store_state(const nlohmann::json& s) { Store::write(state_path(), Sanitize:
 // L'assistant est la raison d'installer Plyo Slicer : il s'ouvre à chaque lancement, pour tout le monde (décision de Jérôme
 // du 2026-11-24, qui remplace l'exception « Je connais déjà »), et à chaque nouveau projet ou projet ouvert
 // (on_project_changed). Le bouton « Assistant » de la barre du haut le ferme toujours d'un clic.
+} // namespace
+
 void open_panel()
 {
     auto* frame = wxGetApp().mainframe;
@@ -67,6 +69,8 @@ void open_panel()
         frame->select_tab(TAB_ID_PREPARE);
     toggle_assistant(wxGetApp().plater());
 }
+
+namespace {
 
 void open_panel_at_startup() { open_panel(); }
 
