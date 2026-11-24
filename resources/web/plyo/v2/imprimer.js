@@ -568,8 +568,36 @@
     render();
   }
   function onSendWaiting() { var st = state(); if (st.sending) { st.sending.text = C.orcaConfirm(project().canvas) || PF.SEND_TEXTS.waiting; render(); } }
+  // Bouton « Imprimer la plaque » d'Orca (audit du 24/11) : il reste celui d'Orca ; la v2 suit ce qu'il lance. L'envoi est repris
+  // dans le projet affiché s'il vise sa machine (envoi, démarrage, fin, résultat) ; sinon, c'est dit, sans rien attribuer au projet.
+  function onOrcaSend(msg) {
+    var c = conv(), p = project(), st = state();
+    if (!c) return;
+    var mine = p.part && p.part.name && p.printer && p.printer.preset && p.printer.preset === msg.preset;
+    if (!mine) {
+      panel.say('Plyo Slicer envoie la plaque' + (msg.preset ? ' à ' + J.shortMachine({ preset: msg.preset, name: msg.preset }) : '') + ' depuis son bouton « Imprimer la plaque ». Elle ne correspond pas au projet affiché : je ne la suis pas ici.', 'info');
+      return;
+    }
+    if (st.sending || st.lock) return; // un envoi du panneau est déjà en cours : c'est lui qu'on suit
+    var checked = J.currentStep(p) === 'imprimer' && sliced();
+    thread('Lancée depuis le bouton « Imprimer la plaque » de Plyo Slicer' + (checked ? '.' : ', avant la fin de mes vérifications.'));
+    lockSend('print');
+    waitLonger(UPLOAD_WAIT_MS);
+    rememberHabit();
+    X.newSend(p);
+    st.watchId = newWatchId();
+    X.noteWatched(p, st.watchId);
+    save();
+    panel.post({ type: 'print_declared' }); // la bobine sera retenue si elle réussit, comme pour un envoi du panneau
+    panel.post({ type: 'print_watch_start', preset: msg.preset, id: st.watchId });
+    st.sending = { text: PF.SEND_TEXTS.sending(shortName()), percent: 0 };
+    if (panel.hold) panel.hold(null); // une étape gardée à l'écran (pièce posée) laisse place au suivi
+    if (panel.showStep) panel.showStep();
+    render();
+  }
   function onPrintUpload(msg) {
     var st = state(), T = PF.SEND_TEXTS, name = shortName();
+    if (msg.phase === 'orca') { onOrcaSend(msg); return; }
     if (!st.sending) return;
     if (msg.phase === 'progress') { st.sending.text = T.progress(name, msg.percent); st.sending.percent = msg.percent; render(); return; }
     unlockSend();

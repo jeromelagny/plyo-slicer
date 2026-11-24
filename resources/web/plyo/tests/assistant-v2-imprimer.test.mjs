@@ -467,3 +467,35 @@ test('audit du 24/11 : l’avancement lu sur la machine (jamais inventé) ; une 
     assert.match(texts(card(p)), /43 %/, 'un autre envoi est ignoré');
   } finally { p.stop(); }
 });
+
+test('audit du 24/11 : le bouton « Imprimer la plaque » d’Orca reste le sien ; la v2 suit ce qu’il lance sur la machine du projet', async () => {
+  let p = await start({ sliced: true, conversation: conversation({ step: 'print', intent: { skipped: true } }) });
+  try {
+    await sleep(60);
+    p.emit({ type: 'print_upload', phase: 'orca', preset: K1C, job: -1 });
+    await sleep(10);
+    const w = sent(p, 'print_watch_start').at(-1);
+    assert.equal(w.preset, K1C, 'le démarrage est suivi sur la machine');
+    assert.ok(sent(p, 'print_declared').length, 'la bobine sera retenue si elle réussit');
+    assert.equal(sent(p, 'print_start').length, 0, 'le panneau n’envoie rien lui-même');
+    assert.match(texts(card(p)), /J’envoie le fichier à Creality K1C/);
+    p.emit({ type: 'print_upload', phase: 'arrived' });
+    await sleep(10);
+    const conv = p.ctx.PlyoV2.panel.conv();
+    assert.equal(conv.project.step, 'after');
+    assert.equal(conv.project.send.watch, w.id);
+    assert.match(texts(card(p)), /Impression en cours.*Petit bateau, sur la Creality K1C/);
+    assert.ok(conv.entries.some((e) => /bouton « Imprimer la plaque »/.test(JSON.stringify(e))) || /bouton « Imprimer la plaque »/.test(JSON.stringify(conv)), 'c’est noté dans le fil du projet');
+  } finally { p.stop(); }
+
+  // Une autre machine que celle du projet : c'est dit, rien n'est attribué au projet.
+  p = await start({ sliced: true, conversation: conversation({ step: 'print', intent: { skipped: true } }) });
+  try {
+    await sleep(60);
+    p.emit({ type: 'print_upload', phase: 'orca', preset: 'Creality Ender-3 V3 SE 0.4 nozzle', job: -1 });
+    await sleep(10);
+    assert.equal(sent(p, 'print_watch_start').length, 0);
+    assert.match(texts(p.$('msgs')), /Elle ne correspond pas au projet affiché : je ne la suis pas ici/);
+    assert.equal(p.ctx.PlyoV2.panel.conv().project.step, 'print');
+  } finally { p.stop(); }
+});

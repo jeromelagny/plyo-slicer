@@ -244,17 +244,26 @@ bool Scope::handed() const { return s_handed; }
 void on_upload_handed()
 {
     guarded("la prise d'un envoi par Orca", [] {
-        if (s_scopes <= 0)
-            return; // envoi lancé par le bouton d'Orca : le panneau ne le suit pas
-        s_handed = true;
+        // Lancé par le bouton « Imprimer la plaque » d'Orca (aucun envoi du panneau en cours) : suivi de la même façon dans sa
+        // file, et le panneau est prévenu avec l'imprimante visée (il le reprend dans le projet affiché s'il vise la même).
+        const bool from_orca = s_scopes <= 0;
+        attach(); // le panneau n'a peut-être encore rien envoyé : la file est liée avant d'y entrer (export_gcode suit)
+        if (!from_orca)
+            s_handed = true;
         stop_arrival();
         s_track          = Track();
         s_track.active   = true;
-        s_track.expected = s_expected;
-        if (const Slic3r::PresetBundle* bundle = wxGetApp().preset_bundle)
+        s_track.expected = from_orca ? queue_count() : s_expected;
+        std::string preset;
+        if (const Slic3r::PresetBundle* bundle = wxGetApp().preset_bundle) {
             s_track.host_type = host_type_name(bundle->printers.get_edited_preset().config);
+            preset            = bundle->printers.get_edited_preset().name;
+        }
         s_issue = nullptr;
-        BOOST_LOG_TRIVIAL(info) << "Plyo: envoi du panneau pris par Orca (" << s_track.host_type << ", rang attendu " << s_expected << ")";
+        BOOST_LOG_TRIVIAL(info) << "Plyo: envoi " << (from_orca ? "du bouton d'Orca" : "du panneau") << " pris par Orca (" << s_track.host_type
+                                << ", rang attendu " << s_track.expected << ")";
+        if (from_orca)
+            notify({{"type", "print_upload"}, {"phase", "orca"}, {"preset", preset}, {"job", -1}});
     });
 }
 

@@ -12,10 +12,13 @@
 // Ensuite, les événements publics de la file (EVT_PRINTHOST_PROGRESS, _ERROR, _CANCEL, PrintHostDialogs.hpp) disent la
 // progression, l'arrivée ou l'échec : Plyo s'y lie sans rien changer à leur traitement par Orca (evt.Skip()). Les imprimantes
 // Bambu Lab passent par leur module réseau : rien ici ne les concerne. Fil de l'interface seulement.
+// Un envoi lancé par le bouton « Imprimer la plaque » d'Orca passe par le même appel : il est suivi pareil, et le panneau en
+// est prévenu ({type: "print_upload", phase: "orca", preset}) pour le reprendre dans le projet affiché.
 namespace Plyo { namespace Send {
 
 // Qui prévient le panneau : {type: "print_send_waiting"} avant la fenêtre d'envoi d'Orca, puis {type: "print_upload", phase:
-// "progress" (percent) | "arrived" | "failed" (failure) | "cancelled"} pour l'envoi suivi.
+// "orca" (preset : envoi lancé par le bouton d'Orca) | "progress" (percent) | "arrived" | "failed" (failure) | "cancelled"}
+// pour l'envoi suivi.
 void set_listener(std::function<void(const nlohmann::json&)> listener);
 
 // Se lier à la file d'envoi d'Orca (une fois par fenêtre principale).
