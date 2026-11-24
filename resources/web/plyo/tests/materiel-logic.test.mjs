@@ -93,3 +93,14 @@ test('profil copié « (Plyo) » : le filament du projet suit (followSaved, ex-s
   assert.equal(P.followSaved({ filament: null }, [{ type: 'filament', from: 'a', name: 'b' }]), false);
   assert.equal(P.followSaved(project, null), false);
 });
+
+test('nouvelle bobine : couleurs proposées et nom (marque, puis couleur ; matière et couleur ; sinon rien)', () => {
+  assert.deepEqual(M.COLOURS.slice(0, 3).map((c) => c.name), ['blanc', 'noir', 'gris']);
+  assert.ok(M.COLOURS.every((c) => /^#[0-9A-F]{6}$/.test(c.hex)));
+  assert.equal(M.colourOf('noir').hex, '#1F1F1F');
+  assert.equal(M.colourOf('fuchsia'), null);
+  assert.equal(M.spoolName('Sunlu PLA+', 'PLA', 'noir', ''), 'Sunlu PLA+ noir');
+  assert.equal(M.spoolName('', 'PETG', 'rouge', ''), 'PETG rouge');
+  assert.equal(M.spoolName('Sunlu PLA+', 'PLA', '', ''), 'Sunlu PLA+');
+  assert.equal(M.spoolName('', 'PLA', '', 'PLA du 24 novembre'), 'PLA du 24 novembre');
+});

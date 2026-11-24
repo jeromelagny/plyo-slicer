@@ -17,6 +17,22 @@
   };
   function materialHelp(type) { return MATERIAL_HELP[type] || ''; }
 
+  // Couleurs proposées pour une nouvelle bobine (pastilles) : le mot, comme on le dit, et la teinte donnée à la pièce.
+  var COLOURS = [
+    { name: 'blanc', hex: '#F4F4F4' }, { name: 'noir', hex: '#1F1F1F' }, { name: 'gris', hex: '#8A8A8A' },
+    { name: 'rouge', hex: '#D1343A' }, { name: 'orange', hex: '#F07F1F' }, { name: 'jaune', hex: '#F5D02F' },
+    { name: 'vert', hex: '#3BA55C' }, { name: 'bleu', hex: '#2F6FD6' }, { name: 'violet', hex: '#7E4CC2' },
+    { name: 'rose', hex: '#EE8FB8' }, { name: 'marron', hex: '#7A4E2D' }, { name: 'beige', hex: '#E3D3B0' }
+  ];
+  function colourOf(name) { return COLOURS.filter(function (c) { return c.name === name; })[0] || null; }
+  // Nom proposé pour une nouvelle bobine : la base (marque et gamme, ou la matière) suivie de la couleur
+  // (« Sunlu PLA noir », « PLA rouge ») ; `fallback` (matière et jour) sans marque ni couleur.
+  function spoolName(base, material, colour, fallback) {
+    var c = colourOf(colour), head = String(base || '').trim();
+    if (!c) return head || fallback || '';
+    return (head || String(material || '').trim()) + ' ' + c.name;
+  }
+
   // La machine du projet dans la liste du slicer (project_printers), ou null.
   function knownPrinter(printers, preset) {
     if (!preset || !Array.isArray(printers)) return null;
@@ -98,7 +114,7 @@
     return out;
   }
 
-  var api = { labelTemp: labelTemp, tempChanges: tempChanges, MATERIALS: MATERIALS, materialHelp: materialHelp, knownPrinter: knownPrinter, slotsWanted: slotsWanted, manualWanted: manualWanted, slotState: slotState,
+  var api = { COLOURS: COLOURS, colourOf: colourOf, spoolName: spoolName, labelTemp: labelTemp, tempChanges: tempChanges, MATERIALS: MATERIALS, materialHelp: materialHelp, knownPrinter: knownPrinter, slotsWanted: slotsWanted, manualWanted: manualWanted, slotState: slotState,
     canvasColours: canvasColours, canvasProposal: canvasProposal, canvasMode: canvasMode };
   root.PlyoMateriel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

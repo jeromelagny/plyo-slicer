@@ -48,6 +48,7 @@
 #include "PlyoSession.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoSpools.hpp"
+#include "PlyoSpoolsLogic.hpp"
 
 #include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/DockPanel.hpp"
@@ -936,6 +937,11 @@ void handle_page_message(const nlohmann::json& data)
                 // Ce qui a marché avec cette bobine dans l'onglet Impression (débit de première couche, vitesses…) est remis
                 // dans ce projet sans question : le panneau le dit, avec « Annuler ».
                 r["print_restored"] = Profiles::restore_spool_print();
+                // Couleur choisie dans le panneau pour une nouvelle bobine : donnée au filament 1 de la plaque, notée sur la bobine.
+                if (const std::string colour = SpoolsLogic::clean_colour(Json::str(data, "colour", 16)); !colour.empty()) {
+                    Canvas::set_project_colour(0, colour);
+                    Spools::note_colour(Json::str(r, "id"));
+                }
                 // Bobine déjà connue sans couleur notée (d'avant cette version) : celle de la plaque, corrigée à chaque envoi.
                 if (!Json::boolean(r, "created", false))
                     Spools::note_colour(Json::str(r, "id"), true);

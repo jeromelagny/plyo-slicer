@@ -30,8 +30,8 @@
   function freshSetup() { return { phase: '', printers: [], query: '', pick: null, found: null, retried: false, error: false, nozzle: '', preset: '', change: null, nozzleAuto: false, link: null, noneHelp: false }; }
   function fresh(id) {
     return { conv: id, screen: 'main', showList: false, showOthers: false, pending: null, error: {}, hwOpen: false, auto: false,
-      pick: null, material: 'PLA', moreMats: false, precise: false, name: '', nameSuggested: '', nameError: '', temps: { nozzle: '', bed: '' },
-      brands: null, brandsFor: '', brandSel: '', rangeSel: '', otherBrand: '', brandTimer: null,
+      pick: null, material: 'PLA', moreMats: false, name: '', nameSuggested: '', nameError: '', temps: { nozzle: '', bed: '' }, colour: '',
+      brands: null, brandsFor: '', brandsPr: '', brandSel: '', rangeSel: '', otherBrand: '', brandTimer: null,
       spools: { printer: null, items: null },
       canvas: { preset: null, state: null, loading: false, mapping: null, useList: false, error: '', readId: 0, applying: null, planKey: null, brands: { of: null, id: 0, items: null }, choice: {}, dismissed: {} },
       manual: { preset: null, state: null, loading: false, confirmed: false, form: false, draft: null, count: 2, error: '' },
@@ -218,6 +218,7 @@
     var st = state(), pr = chosenPreset();
     st.brands = null;
     st.brandsFor = material;
+    st.brandsPr = pr || '';
     st.brandSel = ''; st.rangeSel = ''; st.otherBrand = '';
     clearTimeout(st.brandTimer);
     if (!pr || !material) { st.brands = []; return; }
@@ -230,7 +231,7 @@
     if (msg.material !== st.brandsFor || msg.printer !== chosenPreset()) return;
     clearTimeout(st.brandTimer);
     st.brands = msg.ok && Array.isArray(msg.brands) ? msg.brands : [];
-    if (st.precise) render();
+    render();
   }
   // La marque choisie dans « Préciser ma bobine » (PlyoSpools.brandChoice), ou null tant que rien n'est dit.
   function brandChoice() {
@@ -244,10 +245,12 @@
     return Sp.brandChoice(g, r || null);
   }
   function dayToday() { var d = new Date(), pad = function (n) { return (n < 10 ? '0' : '') + n; }; return Logic.dayText(d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())); }
-  // Le nom proposé : la marque et la gamme quand elles sont dites, sinon la matière et le jour (« PLA du 23 novembre »).
+  // Le nom proposé : la marque (et la gamme) puis la couleur (« Sunlu PLA noir »), ou la matière et la couleur (« PLA rouge ») ;
+  // sans l'une ni l'autre, la matière et le jour (« PLA du 23 novembre »), unique parmi les bobines de la machine.
   function suggestedName() {
     var st = state(), c = brandChoice(), rows = spoolRows() || [];
-    return (c && Sp.suggestedName(c, st.material)) || Sp.autoName(st.material, dayToday(), rows.map(function (r) { return r.name; }));
+    var named = Mat.spoolName(c && Sp.suggestedName(c, st.material), st.material, st.colour, '');
+    return named || Sp.autoName(st.material, dayToday(), rows.map(function (r) { return r.name; }));
   }
   function syncName() {
     var st = state(), sugg = suggestedName();
@@ -257,24 +260,18 @@
   function pickMaterial(type) {
     var st = state();
     st.pick = { kind: 'new' };
-    if (st.material !== type) { st.material = type; if (st.precise) { askBrands(type); syncName(); } }
+    if (st.material !== type) { st.material = type; askBrands(type); syncName(); }
     render();
   }
-  function togglePrecise() {
-    var st = state(), p = project();
-    // Machine seulement proposée : elle est d'abord choisie (les marques dépendent d'elle).
-    if (!st.precise && p.printer && !chosenPreset()) { pickPrinter(p.printer.preset, p.printer.name, function () { if (!state().precise) togglePrecise(); }); return; }
-    st.precise = !st.precise;
-    if (st.precise) { st.pick = { kind: 'new' }; if (st.brandsFor !== st.material) askBrands(st.material); syncName(); }
-    render();
-  }
-  // `choice` : la marque d'une NOUVELLE bobine ; `opts` : { quick (un clic, nom du jour), temps ({nozzle, bed} de l'étiquette) }.
+  // `choice` : la marque d'une NOUVELLE bobine ; `opts` : { temps ({nozzle, bed} de l'étiquette), asked (étiquette demandée dans
+  // le formulaire : pas de seconde question), colour (teinte choisie, #RRGGBB, donnée à la pièce) }.
   function chooseSpool(name, material, choice, opts) {
     var st = state(), pr = chosenPreset(), v = values();
     if (!pr) return;
     st.error = {};
-    st.pending = { kind: 'spool', type: material, quick: !!(opts && opts.quick), temps: opts && opts.temps || null, profileBefore: v && v.context ? v.context.filament : '' };
+    st.pending = { kind: 'spool', type: material, asked: !!(opts && opts.asked), temps: opts && opts.temps || null, profileBefore: v && v.context ? v.context.filament : '' };
     var msg = { type: 'spool_choose', name: name, material: material, printer: pr };
+    if (opts && opts.colour) msg.colour = opts.colour;
     if (choice && choice.brand) { msg.brand = choice.brand; msg.range = choice.kind === 'brand' ? choice.range : ''; msg.brand_preset = choice.kind === 'brand' ? choice.preset : ''; }
     panel.post(msg);
     render();
@@ -292,7 +289,7 @@
     }
     st.spools = { printer: null, items: null }; // relue la prochaine fois (une bobine de plus)
     st.pending = { kind: 'filament', type: pend.type, spool: { id: msg.id, name: msg.name }, fresh: msg.preset_created === undefined ? !!msg.created : !!msg.preset_created,
-      success: msg.success || null, printRestored: msg.print_restored || null, quick: pend.quick, temps: pend.temps,
+      success: msg.success || null, printRestored: msg.print_restored || null, asked: pend.asked, temps: pend.temps,
       brand: typeof msg.brand === 'string' ? msg.brand : '', range: typeof msg.range === 'string' ? msg.range : '', brandProfile: msg.brand_profile === true };
     panel.post({ type: 'project_state' }); // le préréglage choisi et ses températures
   }
@@ -324,12 +321,12 @@
     // nouvelle bobine sans étiquette saisie ; gardées sans question pour une bobine connue (son préréglage les a déjà), choisie
     // d'un clic, ou dont l'étiquette vient d'être recopiée.
     var labelGiven = !!(pend.temps && Mat.tempChanges(pend.temps.nozzle, pend.temps.bed).length);
-    var tempsOk = !pend.canvas && !!pend.spool && (!pend.fresh || pend.quick || labelGiven);
+    var tempsOk = !pend.canvas && !!pend.spool && (!pend.fresh || pend.asked || labelGiven);
     p.filament = { type: pend.type, preset: msg.filament_preset, nozzle_temp: msg.nozzle_temp, bed_temp: msg.bed_temp, temps_ok: tempsOk };
     if (pend.spool) p.filament.spool = pend.spool;
     if (pend.spool && pend.brand) { p.filament.brand = pend.brand; if (pend.range) p.filament.range = pend.range; if (pend.brandProfile) p.filament.brand_profile = true; }
     if (!pend.canvas) delete p.canvas; // une bobine de la liste remplace les emplacements choisis avant
-    st.pick = null; st.precise = false; st.temps = { nozzle: '', bed: '' }; st.name = ''; st.nameSuggested = '';
+    st.pick = null; st.temps = { nozzle: '', bed: '' }; st.colour = ''; st.name = ''; st.nameSuggested = '';
     changed();
     closeRevisit(); // étape rouverte depuis la barre : le choix fait, on revient où on en était
     if (pend.canvas) { syncCanvasPlan(true); return; } // la carte des températures (tempsCard) prend la suite
@@ -353,7 +350,8 @@
       note(Sp.printRestoredText(name, r), 'ok', undo ? [undo] : null);
       thread(Sp.printRestoredText(name, r) + (r.summary ? ' (' + r.summary + ')' : ''));
     }
-    if (pend.quick && pend.fresh) note('« ' + name + ' » : réglages courants du ' + pend.type + ' (buse ' + tempOf(msg.nozzle_temp) + ', plateau ' + tempOf(msg.bed_temp) + ').', 'ok');
+    var label = !!(pend.temps && Mat.tempChanges(pend.temps.nozzle, pend.temps.bed).length); // ses températures suivent (setTemps)
+    if (pend.fresh && pend.asked) note('« ' + name + ' » fait partie de tes bobines' + (label ? '.' : ' : je prends les températures conseillées (buse ' + tempOf(msg.nozzle_temp) + ', plateau ' + tempOf(msg.bed_temp) + ').'), 'ok');
     else if (pend.success && pend.success.available && !(r && r.ok && r.count > 0 && !pend.success.differs)) note(Sp.resumeText(name, pend.success), pend.success.differs ? 'info' : 'ok');
     else if (pend.fresh) note('« ' + name + ' » fait partie de tes bobines : je retiens ce qui marche avec elle.', 'ok');
   }
@@ -1131,7 +1129,7 @@
       rows.slice(0, 6).forEach(function (r) {
         list.appendChild(card({ icon: 'spool', swatch: r.colour, title: r.label, sub: r.detail.charAt(0).toUpperCase() + r.detail.slice(1), radio: true,
           sel: pick.kind === 'spool' && (pick.id === r.id || pick.name === r.name),
-          on: function () { st.pick = { kind: 'spool', id: r.id, name: r.name, material: r.material }; st.precise = false; render(); } }));
+          on: function () { st.pick = { kind: 'spool', id: r.id, name: r.name, material: r.material }; render(); } }));
       });
       body.appendChild(list);
       body.appendChild(ui.el('p', 'sub', 'Ou une nouvelle bobine : regarde son étiquette. Pas sûr ? Prends PLA, c’est le plus courant.'));
@@ -1145,23 +1143,19 @@
     if (!st.moreMats) chips.appendChild(chip('Autres…', function () { st.moreMats = true; render(); }, false));
     body.appendChild(chips);
     if (isNew) body.appendChild(ui.el('p', 'hint', Mat.materialHelp(st.material)));
-    // « Préciser ma bobine » : marque, nom (pour la retrouver), températures de l'étiquette. Replié par défaut.
-    var fold = ui.el('div', 'fold' + (st.precise ? ' open' : ''));
-    var head = ui.button('Préciser ma bobine (facultatif)', togglePrecise, '', 'sliders');
-    head.id = 'spool-precise';
-    head.setAttribute('aria-expanded', st.precise ? 'true' : 'false');
-    head.appendChild(ui.icon('chev', 16));
-    fold.appendChild(head);
-    if (st.precise) fold.appendChild(preciseForm());
-    body.appendChild(fold);
+    // Une nouvelle bobine : après la matière, sa marque, sa couleur et les températures écrites sur l'étiquette.
+    if (isNew) {
+      if (st.brandsFor !== st.material || st.brandsPr !== (chosenPreset() || '')) { askBrands(st.material); syncName(); }
+      body.appendChild(newSpoolForm());
+    }
     if (Mat.manualWanted(k, wantsFilament(), readCtx()) && k && !(k.slots && k.linked)) body.appendChild(ui.button(expert() ? 'Ma machine a plusieurs bobines (AMS, CFS…)' : 'Ma machine a plusieurs bobines à la fois (AMS, CFS…)', openManual, 'link'));
     // Le bouton plein : la machine et la bobine ensemble.
     var name = shortName(pr), busy = !!st.pending;
-    var label = pick.kind === 'spool' ? 'Oui, sur ' + name + ' avec ' + pick.name : st.precise ? 'Oui, sur ' + name + ' avec cette bobine' : 'Oui, sur ' + name + ' avec du ' + st.material;
+    var label = pick.kind === 'spool' ? 'Oui, sur ' + name + ' avec ' + pick.name : 'Oui, sur ' + name + ' avec cette bobine';
     return { label: busy ? 'Je prépare…' : label, disabled: busy, run: commitSpool };
   }
-  function preciseForm() {
-    var st = state(), box = ui.el('div', 'in');
+  function newSpoolForm() {
+    var st = state(), box = ui.el('div', 'in new-spool');
     // Marque : celles du slicer pour cette matière et cette machine ; « Je ne sais pas » et la marque écrite à la main.
     var groups = st.brands, opts = [{ value: '', label: groups === null ? 'Je cherche les marques…' : 'Choisir…' }, { value: '__unknown', label: 'Je ne sais pas' }];
     if (Array.isArray(groups)) Sp.brandButtons(groups, true).shown.forEach(function (g) { opts.push({ value: g.brand, label: g.brand }); });
@@ -1170,22 +1164,35 @@
     row.appendChild(field('Marque', select(opts, st.brandSel, function (v) { st.brandSel = v; st.rangeSel = ''; syncName(); render(); }, 'Marque de ta bobine')));
     var g = (groups || []).filter(function (x) { return x.brand === st.brandSel; })[0];
     if (g && g.ranges.length > 1) row.appendChild(field('Gamme', select([{ value: '', label: 'Je ne sais pas' }].concat(g.ranges.map(function (r) { return { value: r.preset, label: r.short || r.label }; })), st.rangeSel, function (v) { st.rangeSel = v; syncName(); render(); }, 'Gamme de ta bobine')));
-    if (st.brandSel === '__other') row.appendChild(field('Sa marque', textInput(st.otherBrand, function (v) { st.otherBrand = v; }, { maxlength: '60', 'aria-label': 'Marque de ta bobine' })));
+    if (st.brandSel === '__other') row.appendChild(field('Sa marque', textInput(st.otherBrand, function (v) { st.otherBrand = v; syncName(); }, { maxlength: '60', 'aria-label': 'Marque de ta bobine' })));
     box.appendChild(row);
     if (g && g.ranges.length > 1 && !st.rangeSel) box.appendChild(ui.el('p', 'hint', Sp.rangeHelp(g.brand)));
     var c = brandChoice();
     if (c) box.appendChild(ui.el('p', 'hint', Sp.brandNote(c, st.material)));
-    // Le nom : obligatoire pour la retrouver, prérempli, avec l'aide de l'étiquette (comme « Quelle bobine ? » du classique).
+    // Couleur : une pastille par couleur courante ; elle colore la pièce dans Plyo Slicer et entre dans le nom.
+    var colourBox = ui.el('div', 'fld');
+    colourBox.appendChild(ui.el('span', '', 'Couleur'));
+    var chips = ui.el('div', 'chips colours-pick');
+    Mat.COLOURS.forEach(function (col) {
+      var b = chip(col.name.charAt(0).toUpperCase() + col.name.slice(1), function () { st.colour = st.colour === col.name ? '' : col.name; syncName(); render(); }, st.colour === col.name, col.name);
+      b.classList.add('colour');
+      var sw = ui.el('span', 'cyl small'); sw.style.background = col.hex;
+      b.insertBefore(sw, b.firstChild);
+      chips.appendChild(b);
+    });
+    colourBox.appendChild(chips);
+    box.appendChild(colourBox);
+    // Températures : presque toujours imprimées sur l'étiquette, souvent en fourchette.
+    var temps = ui.el('div', 'row2');
+    temps.appendChild(field('Buse (°C)', textInput(st.temps.nozzle, function (v) { st.temps.nozzle = v; }, { inputmode: 'numeric', placeholder: 'ex. 190-220', 'aria-label': 'Température de buse sur l’étiquette' })));
+    temps.appendChild(field('Plateau (°C)', textInput(st.temps.bed, function (v) { st.temps.bed = v; }, { inputmode: 'numeric', placeholder: 'ex. 50-60', 'aria-label': 'Température de plateau sur l’étiquette' })));
+    box.appendChild(temps);
+    box.appendChild(ui.el('p', 'hint', 'Elles sont écrites sur l’étiquette de la bobine, souvent en fourchette. Rien d’écrit ? Laisse vide : je prends les températures conseillées.'));
+    // Le nom : obligatoire pour la retrouver, prérempli d'après la marque et la couleur.
     var name = textInput(st.name, function (v) { st.name = v; st.nameError = ''; }, { maxlength: '60', 'aria-label': 'Nom de ta bobine' });
     name.id = 'spool-name';
     box.appendChild(field('Nom (pour la retrouver)', name));
-    box.appendChild(ui.el('p', 'hint', c && Sp.suggestedName(c, st.material) ? 'Tu peux ajouter la couleur, par exemple « ' + Sp.suggestedName(c, st.material) + ' noir ».' : Sp.NAME_HELP));
     if (st.nameError) box.appendChild(ui.el('p', 'err', Sp.nameErrorText(st.nameError) || st.nameError));
-    var temps = ui.el('div', 'row2');
-    temps.appendChild(field('Buse (°C) sur l’étiquette', textInput(st.temps.nozzle, function (v) { st.temps.nozzle = v; }, { inputmode: 'numeric', placeholder: 'ex. 200-220', 'aria-label': 'Température de buse sur l’étiquette' })));
-    temps.appendChild(field('Plateau (°C)', textInput(st.temps.bed, function (v) { st.temps.bed = v; }, { inputmode: 'numeric', placeholder: 'ex. 60', 'aria-label': 'Température de plateau sur l’étiquette' })));
-    box.appendChild(temps);
-    box.appendChild(ui.el('p', 'hint', 'Rien d’écrit sur l’étiquette ? Laisse vide : je prends les températures conseillées.'));
     return box;
   }
   // « Oui, sur … » : la machine d'abord si elle n'est que proposée, puis la bobine (connue, en un clic, ou précisée).
@@ -1203,15 +1210,11 @@
     }
     var pick = currentPick();
     if (pick.kind === 'spool') { chooseSpool(pick.name, pick.material || (p.filament && p.filament.type) || 'PLA'); return; }
-    if (!st.precise) {
-      var rows = spoolRows() || [];
-      chooseSpool(Sp.autoName(st.material, dayToday(), rows.map(function (r) { return r.name; })), st.material, null, { quick: true });
-      return;
-    }
     st.nameError = Sp.nameError(st.name);
     if (st.brandSel === '__other' && !Sp.otherChoice(st.otherBrand)) { st.nameError = 'Écris la marque (au moins 2 lettres), ou choisis « Je ne sais pas ».'; render(); return; }
     if (st.nameError) { render(); return; }
-    chooseSpool(Sp.cleanName(st.name), st.material, brandChoice(), { temps: { nozzle: st.temps.nozzle, bed: st.temps.bed } });
+    var col = Mat.colourOf(st.colour);
+    chooseSpool(Sp.cleanName(st.name), st.material, brandChoice(), { temps: { nozzle: st.temps.nozzle, bed: st.temps.bed }, asked: true, colour: col ? col.hex : '' });
   }
 
   function mainCard(ctx) {
@@ -1256,7 +1259,7 @@
     // Étape rouverte depuis la barre, rien de changé : on revient à l'étape en cours.
     var f = p.filament, withSlots = Array.isArray(p.canvas) && p.canvas.length > 0;
     if (ctx.revisit && f && !f.proposed && pr && !pr.proposed && primary && !primary.disabled) {
-      var same = mode ? withSlots && Col.sameAsChosen(st.canvas.mapping, p.canvas, colours()) : !st.pick && !st.precise && !withSlots;
+      var same = mode ? withSlots && Col.sameAsChosen(st.canvas.mapping, p.canvas, colours()) : !st.pick && !withSlots;
       if (same) primary = { label: 'Garder ces choix', run: ctx.actions.closeRevisit };
     }
     var extra = [];

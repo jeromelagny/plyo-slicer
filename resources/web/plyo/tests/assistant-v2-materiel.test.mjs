@@ -57,7 +57,7 @@ function bridge(cfg = {}) {
 const start = async (cfg) => { const p = loadV2({ bridge: bridge(cfg), fetch: async () => response(404, {}) }); await sleep(40); return p; };
 const sent = (p, type) => p.posted.filter((m) => m.type === type);
 
-test('lot 3 : une seule imprimante reliée, choisie d’office ; PLA présélectionné, « Oui, sur … avec du PLA » choisit la bobine en un clic', async () => {
+test('lot 3 : une seule imprimante reliée, choisie d’office ; nouvelle bobine : matière (PLA présélectionné), puis marque, couleur et températures de l’étiquette', async () => {
   const p = await start({ printers: [K1C, ENDER], conversation: conversation(PART_ONLY) });
   try {
     await sleep(30);
@@ -74,27 +74,33 @@ test('lot 3 : une seule imprimante reliée, choisie d’office ; PLA présélect
     assert.match(texts(card), /Buse 0,4 mm · Plaque PEI texturée.*changer/, 'buse et plateau lus sur la machine');
     assert.deepEqual(card.querySelector('.mats').querySelectorAll('.chip').map(texts), ['PLA', 'PETG', 'Autres…']);
     assert.ok(card.querySelector('.mats').querySelector('.chip.sel').dataset.value === 'PLA', 'PLA présélectionné');
-    assert.ok(!card.querySelector('.fold').classList.contains('open'), '« Préciser ma bobine » replié');
-    assert.equal(texts(p.$('card-primary')), 'Oui, sur Creality K1C avec du PLA');
+    // Le formulaire de la nouvelle bobine, ouvert d'office : marque, couleur, températures de l'étiquette, nom.
+    assert.ok(card.querySelectorAll('select').some((s) => s.getAttribute('aria-label') === 'Marque de ta bobine'));
+    assert.deepEqual(card.querySelector('.colours-pick').querySelectorAll('.chip').map(texts).slice(0, 3), ['Blanc', 'Noir', 'Gris']);
+    assert.match(texts(card), /Buse \(°C\).*Plateau \(°C\).*écrites sur l’étiquette de la bobine/);
+    assert.equal(texts(p.$('card-primary')), 'Oui, sur Creality K1C avec cette bobine');
     // PETG, puis « Autres… »
     byText(card, /^PETG$/).click();
-    assert.equal(texts(p.$('card-primary')), 'Oui, sur Creality K1C avec du PETG');
+    assert.equal(sent(p, 'brands_get').at(-1).material, 'PETG', 'marques de la matière choisie');
     byText(p.$('stepcard'), /^Autres…$/).click();
     assert.deepEqual(p.$('stepcard').querySelector('.mats').querySelectorAll('.chip').map(texts), ['PLA', 'PETG', 'ABS', 'ASA', 'TPU']);
     byText(p.$('stepcard'), /^PLA$/).click();
+    byText(p.$('stepcard').querySelector('.colours-pick'), /^Noir$/).click();
+    assert.equal(p.$('spool-name').value, 'PLA noir', 'le nom suit la couleur');
     p.$('card-primary').click();
     await sleep(30);
     const choose = sent(p, 'spool_choose').at(-1);
     assert.equal(choose.material, 'PLA');
-    assert.match(choose.name, /^PLA du \d+(er)? \w+/, 'nom du jour, comme le classique');
+    assert.equal(choose.name, 'PLA noir');
+    assert.equal(choose.colour, '#1F1F1F', 'la couleur part avec la bobine');
     assert.equal(choose.printer, K1C.preset);
     assert.ok(!('brand_preset' in choose), 'pas de marque sans geste');
     assert.equal(conv.project.filament.type, 'PLA');
     assert.equal(conv.project.filament.temps_ok, true);
     assert.equal(conv.project.filament.spool.name, choose.name);
     assert.equal(p.$('stepper').querySelector('.st.cur').dataset.step, 'imprimer', 'étape suivante');
-    assert.match(texts(p.$('msgs')), /réglages courants du PLA \(buse 210 °C, plateau 60 °C\)/);
-    assert.match(conv.project.thread.map((t) => t.text).join(' '), /Bobine : « PLA du/);
+    assert.match(texts(p.$('msgs')), /« PLA noir » fait partie de tes bobines : je prends les températures conseillées \(buse 210 °C, plateau 60 °C\)/);
+    assert.match(conv.project.thread.map((t) => t.text).join(' '), /Bobine : « PLA noir/);
     assert.ok(!/crédit|token|question(s)? restante/i.test(texts(p.document.body)), 'jamais de crédits ni de tokens');
   } finally { p.stop(); }
 });
@@ -108,13 +114,13 @@ test('lot 3 : mes bobines nommées, « Préciser ma bobine » (marque, gamme, no
     assert.match(texts(card.querySelector('.spools')), /Sunlu PLA blanc.*✓ réussie le 20\/11/);
     card.querySelector('.spools').querySelector('.card').click();
     assert.equal(texts(p.$('card-primary')), 'Oui, sur Creality K1C avec Sunlu PLA blanc');
-    // Préciser : marques du slicer pour cette matière et cette machine.
-    p.$('spool-precise').click();
+    assert.ok(!p.$('spool-name'), 'bobine connue : pas de formulaire');
+    // Une nouvelle bobine : la matière, puis le formulaire (marques du slicer pour cette matière et cette machine).
+    byText(card, /^PLA$/).click();
     await sleep(10);
     assert.equal(sent(p, 'brands_get').at(-1).material, 'PLA');
     card = p.$('stepcard');
-    assert.ok(card.querySelector('.fold').classList.contains('open'));
-    assert.match(texts(card), /Regarde l’étiquette de ta bobine : écris la marque et le type/, 'l’aide du nom, comme le classique');
+    assert.ok(p.$('spool-name'));
     // Nom vide : refusé avec la raison, rien ne part.
     p.$('spool-name').value = '';
     p.$('spool-name').dispatch('input');
@@ -203,7 +209,8 @@ test('lot 3 : débutant : buse et plateau repliés derrière « changer »', asy
   const p = await start({ printers: [K1C], conversation: conversation(PART_ONLY) });
   try {
     await sleep(30);
-    assert.equal(p.$('stepcard').querySelectorAll('select').length, 0);
+    const hw = (s) => ['Plateau', 'Buse'].includes(s.getAttribute('aria-label'));
+    assert.equal(p.$('stepcard').querySelectorAll('select').filter(hw).length, 0);
     p.$('hw-change').click();
     assert.ok(p.$('stepcard').querySelectorAll('select').some((s) => s.getAttribute('aria-label') === 'Plateau'));
   } finally { p.stop(); }
@@ -325,7 +332,7 @@ test('lot 3 : l’étape rouverte depuis la barre : « Garder ces choix », ou u
     assert.match(texts(p.$('stepcard')), /Étape 2 sur 3 · rouverte/);
     assert.equal(texts(p.$('card-primary')), 'Garder ces choix');
     byText(p.$('stepcard'), /^PETG$/).click();
-    assert.equal(texts(p.$('card-primary')), 'Oui, sur Creality K1C avec du PETG');
+    assert.equal(texts(p.$('card-primary')), 'Oui, sur Creality K1C avec cette bobine');
     p.$('card-primary').click();
     await sleep(30);
     assert.equal(sent(p, 'spool_choose').at(-1).material, 'PETG');

@@ -242,6 +242,8 @@
   html .chip { border: 1.5px solid var(--border); background: var(--bg); border-radius: var(--pill); padding: 6px 11px; font-weight: 550; font-size: 12.5px; text-align: left; }
   html .chip:not([disabled]):hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
   html .chip.sel { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+  html .chip.colour { display: inline-flex; align-items: center; gap: 6px; padding-left: 7px; }
+  .new-spool { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
   .msg { max-width: 88%; padding: 10px 13px; border-radius: 14px; background: var(--surface); overflow-wrap: anywhere; }
   .msg.me { align-self: flex-end; background: var(--accent-fill); color: #fff; border-bottom-right-radius: 4px; }
   .msg.ai { align-self: flex-start; border-bottom-left-radius: 4px; }
