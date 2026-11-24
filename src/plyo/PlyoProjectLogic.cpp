@@ -467,6 +467,25 @@ nlohmann::json sanitize_habits(const nlohmann::json& habits)
         if (!kept.empty())
             out["beds"] = kept;
     }
+    // Températures de l'étiquette confirmées pour un emplacement (CFS, Canvas…) : clé « imprimante|emplacement », la bobine
+    // qu'il montrait (matière, couleur, marque) et les températures gardées (absentes : celles conseillées). Reprises sans
+    // question tant que l'emplacement montre la même bobine.
+    if (const nlohmann::json* slots = Json::field(habits, "slot_temps"); slots != nullptr && slots->is_object()) {
+        nlohmann::json kept = nlohmann::json::object();
+        for (auto it = slots->begin(); it != slots->end() && kept.size() < 60; ++it) {
+            const nlohmann::json& v = it.value();
+            if (it.key().empty() || it.key().size() > 260 || !v.is_object())
+                continue;
+            nlohmann::json rec = {{"type", Json::str(v, "type", 30)}, {"color", Json::str(v, "color", 16)}, {"brand", Json::str(v, "brand", 60)}};
+            if (const nlohmann::json* n = Json::field(v, "nozzle"); n != nullptr && n->is_number_integer() && n->get<long long>() >= 150 && n->get<long long>() <= 350)
+                rec["nozzle"] = n->get<long long>();
+            if (const nlohmann::json* b = Json::field(v, "bed"); b != nullptr && b->is_number_integer() && b->get<long long>() >= 0 && b->get<long long>() <= 130)
+                rec["bed"] = b->get<long long>();
+            kept[it.key()] = rec;
+        }
+        if (!kept.empty())
+            out["slot_temps"] = kept;
+    }
     return out;
 }
 

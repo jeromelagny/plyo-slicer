@@ -180,7 +180,8 @@
     body.appendChild(ui.rich(text));
     if (actions && actions.length) {
       var acts = ui.el('div', 'acts');
-      actions.forEach(function (a) { acts.appendChild(ui.button(a.label, a.run, a.primary ? 'btn sm main' : 'btn sm')); });
+      // Une action est { label, run, primary }, ou un bouton déjà fait (ex. « Annuler » qui se grise une fois utilisé).
+      actions.forEach(function (a) { acts.appendChild(a && a.tagName ? a : ui.button(a.label, a.run, a.primary ? 'btn sm main' : 'btn sm')); });
       body.appendChild(acts);
     }
     box.appendChild(body);

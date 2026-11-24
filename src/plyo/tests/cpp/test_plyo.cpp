@@ -1145,6 +1145,18 @@ TEST_CASE("Habits: niveau d'explication et questions d'intention")
     CHECK_FALSE(sanitize_habits({{"level_hold", "oui"}}).contains("level_hold"));
 }
 
+TEST_CASE("Habits: les températures confirmées pour un emplacement sont gardées, bornées, sans champ inconnu")
+{
+    using namespace Plyo::ProjectLogic;
+    const nlohmann::json clean = sanitize_habits({{"slot_temps", {
+        {"K2|0:1", {{"type", "PLA"}, {"color", "#222222"}, {"brand", "Creality"}, {"nozzle", 210}, {"bed", 55}, {"code", "secret"}}},
+        {"K2|0:2", {{"type", "PETG"}, {"color", "#FFFFFF"}, {"brand", ""}, {"nozzle", 999}, {"bed", "60"}}},
+        {"", {{"type", "PLA"}}}, {"x", 3}}}});
+    CHECK(clean["slot_temps"] == nlohmann::json({{"K2|0:1", {{"type", "PLA"}, {"color", "#222222"}, {"brand", "Creality"}, {"nozzle", 210}, {"bed", 55}}},
+                                                 {"K2|0:2", {{"type", "PETG"}, {"color", "#FFFFFF"}, {"brand", ""}}}}));
+    CHECK_FALSE(sanitize_habits({{"slot_temps", "PLA"}}).contains("slot_temps"));
+}
+
 TEST_CASE("Habits: le plateau posé sur chaque imprimante est gardé, seulement s'il est un type connu ou « unknown »")
 {
     using namespace Plyo::ProjectLogic;

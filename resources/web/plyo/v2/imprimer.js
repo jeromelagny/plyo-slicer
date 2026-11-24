@@ -74,7 +74,8 @@
     panel.record({ kind: 'note', text: text, tone: tone === 'error' ? 'error' : tone === 'warn' ? 'warn' : 'ok' });
     return panel.say(text, tone === 'error' ? 'error' : tone === 'warn' ? 'warn' : 'info', acts);
   }
-  function saveHabits() { panel.post({ type: 'habits_set', habits: habits }); }
+  // Par le panneau : les autres étapes reçoivent la même copie (sinon l'une effacerait ce que l'autre vient de retenir).
+  function saveHabits() { if (panel.setHabits) panel.setHabits(habits); else panel.post({ type: 'habits_set', habits: habits }); }
 
   // Machine ou bobine changée, étape changée (comme projectChanged du classique) : une découpe faite est périmée.
   function changed() {

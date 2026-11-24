@@ -114,7 +114,34 @@
     return out;
   }
 
-  var api = { COLOURS: COLOURS, colourOf: colourOf, spoolName: spoolName, labelTemp: labelTemp, tempChanges: tempChanges, MATERIALS: MATERIALS, materialHelp: materialHelp, knownPrinter: knownPrinter, slotsWanted: slotsWanted, manualWanted: manualWanted, slotState: slotState,
+  // Températures de l'étiquette confirmées pour un emplacement (habits.slot_temps, gardé par le slicer) : clé
+  // « imprimante|emplacement », la bobine qu'il montrait (matière, couleur, marque), les températures gardées (absentes :
+  // celles conseillées). Reprises sans question tant que l'emplacement montre la même bobine.
+  function slotTempsKey(printer, e) {
+    return printer && e && e.canvas_id !== undefined && e.canvas_id !== null && e.tray_id !== undefined && e.tray_id !== null ? printer + '|' + e.canvas_id + ':' + e.tray_id : '';
+  }
+  function same(a, b, n) { return String(a || '').trim().toUpperCase().slice(0, n || 60) === String(b || '').trim().toUpperCase().slice(0, n || 60); }
+  function slotTempsFor(habits, printer, e) {
+    var k = slotTempsKey(printer, e), all = habits && habits.slot_temps, rec = k && all && typeof all === 'object' ? all[k] : null;
+    return rec && same(rec.type, e.type) && same(rec.color, e.color, 7) && same(rec.brand, e.brand) ? rec : null;
+  }
+  function rememberSlotTemps(habits, printer, e, nozzle, bed) {
+    var h = JSON.parse(JSON.stringify(habits || {})), k = slotTempsKey(printer, e);
+    if (!k) return h;
+    if (!h.slot_temps || typeof h.slot_temps !== 'object') h.slot_temps = {};
+    var rec = { type: e.type || '', color: String(e.color || '').slice(0, 16), brand: e.brand || '' };
+    if (typeof nozzle === 'number') rec.nozzle = nozzle;
+    if (typeof bed === 'number') rec.bed = bed;
+    h.slot_temps[k] = rec;
+    return h;
+  }
+  function forgetSlotTemps(habits, printer, e) {
+    var h = JSON.parse(JSON.stringify(habits || {})), k = slotTempsKey(printer, e);
+    if (k && h.slot_temps) delete h.slot_temps[k];
+    return h;
+  }
+
+  var api = { slotTempsKey: slotTempsKey, slotTempsFor: slotTempsFor, rememberSlotTemps: rememberSlotTemps, forgetSlotTemps: forgetSlotTemps, COLOURS: COLOURS, colourOf: colourOf, spoolName: spoolName, labelTemp: labelTemp, tempChanges: tempChanges, MATERIALS: MATERIALS, materialHelp: materialHelp, knownPrinter: knownPrinter, slotsWanted: slotsWanted, manualWanted: manualWanted, slotState: slotState,
     canvasColours: canvasColours, canvasProposal: canvasProposal, canvasMode: canvasMode };
   root.PlyoMateriel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

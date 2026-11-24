@@ -104,3 +104,18 @@ test('nouvelle bobine : couleurs proposées et nom (marque, puis couleur ; mati�
   assert.equal(M.spoolName('Sunlu PLA+', 'PLA', '', ''), 'Sunlu PLA+');
   assert.equal(M.spoolName('', 'PLA', '', 'PLA du 24 novembre'), 'PLA du 24 novembre');
 });
+
+test('températures d’un emplacement : retenues, reprises seulement pour la même bobine (matière, couleur, marque), oubliées', () => {
+  const e = { canvas_id: 0, tray_id: 1, type: 'PLA', color: '#222222FF', brand: 'Creality', label: '1B' };
+  let h = M.rememberSlotTemps({ beds: { K2: 'unknown' } }, 'K2', e, 210, 55);
+  assert.deepEqual(h.slot_temps['K2|0:1'], { type: 'PLA', color: '#222222FF', brand: 'Creality', nozzle: 210, bed: 55 });
+  assert.deepEqual(h.beds, { K2: 'unknown' }, 'le reste est gardé');
+  assert.equal(M.slotTempsFor(h, 'K2', Object.assign({}, e, { color: '#222222' })).nozzle, 210, 'couleur lue avec ou sans opacité');
+  assert.equal(M.slotTempsFor(h, 'K2', Object.assign({}, e, { color: '#FFFFFF' })), null, 'autre couleur : autre bobine');
+  assert.equal(M.slotTempsFor(h, 'K2', Object.assign({}, e, { type: 'PETG' })), null);
+  assert.equal(M.slotTempsFor(h, 'K2', Object.assign({}, e, { brand: '' })), null);
+  assert.equal(M.slotTempsFor(h, 'K1C', e), null, 'autre imprimante');
+  assert.deepEqual(M.rememberSlotTemps({}, 'K2', e, null, null).slot_temps['K2|0:1'], { type: 'PLA', color: '#222222FF', brand: 'Creality' }, 'conseillées gardées');
+  assert.equal(M.slotTempsFor(M.forgetSlotTemps(h, 'K2', e), 'K2', e), null);
+  assert.equal(M.slotTempsKey('K2', { type: 'PLA' }), '', 'sans emplacement : rien');
+});

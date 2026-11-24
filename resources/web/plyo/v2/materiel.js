@@ -66,7 +66,8 @@
     panel.record({ kind: 'note', text: text, tone: tone === 'error' ? 'error' : tone === 'warn' ? 'warn' : 'ok' });
     return panel.say(text, tone === 'error' ? 'error' : tone === 'warn' ? 'warn' : 'info', acts);
   }
-  function saveHabits() { panel.post({ type: 'habits_set', habits: habits }); }
+  // Par le panneau : les autres étapes reçoivent la même copie (sinon l'une effacerait ce que l'autre vient de retenir).
+  function saveHabits() { if (panel.setHabits) panel.setHabits(habits); else panel.post({ type: 'habits_set', habits: habits }); }
 
   // Machine ou bobine changée (comme projectChanged du classique) : une découpe déjà faite est périmée, un 3MF est adapté au
   // projet dès que la fiche est complète.
@@ -321,7 +322,9 @@
     // nouvelle bobine sans étiquette saisie ; gardées sans question pour une bobine connue (son préréglage les a déjà), choisie
     // d'un clic, ou dont l'étiquette vient d'être recopiée.
     var labelGiven = !!(pend.temps && Mat.tempChanges(pend.temps.nozzle, pend.temps.bed).length);
-    var tempsOk = !pend.canvas && !!pend.spool && (!pend.fresh || pend.asked || labelGiven);
+    // Emplacement dont l'étiquette a déjà été confirmée, et qui montre la même bobine : ses températures sont reprises.
+    var slotRec = pend.canvas && p.printer && Array.isArray(p.canvas) ? Mat.slotTempsFor(habits, p.printer.preset, p.canvas[0]) : null;
+    var tempsOk = !!slotRec || (!pend.canvas && !!pend.spool && (!pend.fresh || pend.asked || labelGiven));
     p.filament = { type: pend.type, preset: msg.filament_preset, nozzle_temp: msg.nozzle_temp, bed_temp: msg.bed_temp, temps_ok: tempsOk };
     if (pend.spool) p.filament.spool = pend.spool;
     if (pend.spool && pend.brand) { p.filament.brand = pend.brand; if (pend.range) p.filament.range = pend.range; if (pend.brandProfile) p.filament.brand_profile = true; }
@@ -329,11 +332,23 @@
     st.pick = null; st.temps = { nozzle: '', bed: '' }; st.colour = ''; st.name = ''; st.nameSuggested = '';
     changed();
     closeRevisit(); // étape rouverte depuis la barre : le choix fait, on revient où on en était
-    if (pend.canvas) { syncCanvasPlan(true); return; } // la carte des températures (tempsCard) prend la suite
+    if (pend.canvas) { syncCanvasPlan(true); if (slotRec) reuseSlotTemps(slotRec, msg); return; } // sinon la carte des températures (tempsCard)
     announceSpool(pend, msg);
     // Températures de l'étiquette (« Préciser ma bobine ») : appliquées au profil de la bobine, comme dans le classique.
     var t = pend.temps;
     if (t && Mat.tempChanges(t.nozzle, t.bed).length && (Mat.labelTemp(t.nozzle) !== msg.nozzle_temp || Mat.labelTemp(t.bed) !== msg.bed_temp)) setTemps(t.nozzle, t.bed);
+  }
+  function reuseSlotTemps(rec, msg) {
+    var p = project(), first = p.canvas[0], printer = p.printer.preset;
+    var n = typeof rec.nozzle === 'number' ? rec.nozzle : null, b = typeof rec.bed === 'number' ? rec.bed : null;
+    if ((n !== null && n !== msg.nozzle_temp) || (b !== null && b !== msg.bed_temp)) setTemps(n !== null ? String(n) : '', b !== null ? String(b) : '', true);
+    var again = ui.button('Ce n’est plus la même bobine', function () {
+      again.disabled = true;
+      habits = Mat.forgetSlotTemps(habits, printer, first); saveHabits();
+      if (project() === p && p.filament) { p.filament.temps_ok = false; changed(); }
+    }, 'link');
+    note('Même bobine que la dernière fois' + (first.label ? ' dans l’emplacement ' + first.label : '') + ' : je reprends ses températures (buse '
+      + tempOf(n !== null ? n : msg.nozzle_temp) + ', plateau ' + tempOf(b !== null ? b : msg.bed_temp) + ').', 'ok', [again]);
   }
   function closeRevisit() { if (actions && actions.revisit && actions.closeRevisit) { var close = actions.closeRevisit; actions = null; close(); } }
   function tempOf(v) { return v != null ? v + ' °C' : '?'; }
@@ -369,13 +384,13 @@
     delete waiters[msg.request];
     w(!!msg.ok, msg.text, msg);
   }
-  function setTemps(nozzle, bed) {
+  function setTemps(nozzle, bed, quiet) {
     var changes = Mat.tempChanges(nozzle, bed);
     if (!changes.length) return;
     applyRequest({ type: 'apply', project_edit: true, changes: changes, why: 'Étiquette de la bobine' }, function (ok, text) {
       if (!ok) { note(text || 'Je n’ai pas pu régler ces températures.', 'error'); return; }
       var n = Mat.labelTemp(nozzle), b = Mat.labelTemp(bed);
-      note('Températures de ta bobine enregistrées : ' + [n !== null ? 'buse ' + n + ' °C' : '', b !== null ? 'plateau ' + b + ' °C' : ''].filter(Boolean).join(', ') + '.', 'ok');
+      if (!quiet) note('Températures de ta bobine enregistrées : ' + [n !== null ? 'buse ' + n + ' °C' : '', b !== null ? 'plateau ' + b + ' °C' : ''].filter(Boolean).join(', ') + '.', 'ok');
       state().pending = { kind: 'temps' };
       panel.post({ type: 'project_state' });
     });
@@ -1009,6 +1024,8 @@
     return { title: 'Quelles températures indique ta bobine ?', sub: null, body: body, primary: { label: 'C’est bon', run: function () {
       f.temps_ok = true;
       var t = st.temps;
+      // Emplacement : retenu, pour ne plus reposer la question tant qu'il montre la même bobine.
+      if (first && p.printer) { habits = Mat.rememberSlotTemps(habits, p.printer.preset, first, Mat.labelTemp(t.nozzle), Mat.labelTemp(t.bed)); saveHabits(); }
       changed();
       if (Mat.tempChanges(t.nozzle, t.bed).length) setTemps(t.nozzle, t.bed);
     } } };

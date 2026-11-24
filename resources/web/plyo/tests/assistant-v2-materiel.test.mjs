@@ -252,6 +252,43 @@ test('lot 3 : CFS lu sur la machine : grille des emplacements, « Oui, l’empla
   } finally { p.stop(); }
 });
 
+test('CFS : températures confirmées pour un emplacement, reprises au projet suivant tant qu’il montre la même bobine', async () => {
+  // Premier projet : la question, puis l'emplacement est retenu.
+  let p = await start({ printers: [K2], orca: K2.preset, canvas: CFS, conversation: conversation(PART_ONLY) });
+  let habits;
+  try {
+    await sleep(40);
+    p.$('stepcard').querySelectorAll('.slot')[1].click();
+    p.$('card-primary').click();
+    await sleep(30);
+    const [buse, plateau] = p.$('stepcard').querySelectorAll('input');
+    buse.value = '200-220'; buse.dispatch('input');
+    plateau.value = '55'; plateau.dispatch('input');
+    p.$('card-primary').click();
+    await sleep(30);
+    habits = sent(p, 'habits_set').at(-1).habits;
+    assert.deepEqual(Object.values(habits.slot_temps)[0], { type: 'PLA', color: '#222222', brand: '', nozzle: 210, bed: 55 });
+  } finally { p.stop(); }
+  // Projet suivant, même emplacement, même bobine : pas de question, les températures sont remises.
+  p = await start({ printers: [K2], orca: K2.preset, canvas: CFS, habits, conversation: conversation(PART_ONLY) });
+  try {
+    await sleep(40);
+    p.$('stepcard').querySelectorAll('.slot')[1].click();
+    p.$('card-primary').click();
+    await sleep(40);
+    const project = p.ctx.PlyoV2.panel.conv().project;
+    assert.equal(project.filament.temps_ok, true);
+    assert.ok(!/Quelles températures indique ta bobine/.test(texts(p.$('stepcard'))), 'pas de seconde question');
+    assert.deepEqual(sent(p, 'apply').at(-1).changes.map((c) => [c.id, c.value]), [['nozzle_temp', 210], ['nozzle_temp_initial', 210], ['bed_temp', 55], ['bed_temp_initial', 55]]);
+    assert.match(texts(p.document.body), /Même bobine que la dernière fois dans l’emplacement 1B : je reprends ses températures \(buse 210 °C, plateau 55 °C\)\./);
+    // « Ce n'est plus la même bobine » : la question revient.
+    byText(p.document.body, /^Ce n’est plus la même bobine$/).click();
+    await sleep(20);
+    assert.equal(project.filament.temps_ok, false);
+    assert.deepEqual(sent(p, 'habits_set').at(-1).habits.slot_temps, {}, 'l’emplacement est oublié');
+  } finally { p.stop(); }
+});
+
 test('lot 3 : pièce multicolore : la note « Ta pièce a 2 couleurs », la carte Couleurs (vue partagée) et « Utiliser ces bobines »', async () => {
   const p = await start({ printers: [K2], orca: K2.preset, canvas: Object.assign({}, CFS, { colours: KEY.colours }), colours: KEY, conversation: conversation(PART_ONLY) });
   try {
