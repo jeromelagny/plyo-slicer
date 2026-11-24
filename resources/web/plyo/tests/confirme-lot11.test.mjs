@@ -29,21 +29,23 @@ test('UX-02 : le confirmé commence sur « Poser une question », un nouveau pro
 });
 
 test('UX-02 : changer d’avis depuis le menu, et le panneau qui le dit', () => {
-  assert.equal(J.startMenuLabel('expert'), 'Me guider pas à pas, panneau ouvert au lancement');
-  assert.equal(J.startMenuLabel('beginner'), 'Je connais déjà : panneau fermé au lancement');
-  assert.equal(J.startMenuLabel('skipped'), 'Je connais déjà : panneau fermé au lancement');
-  // Un seul fil (parcours débutant, lot 5) : plus d'onglet à nommer.
-  assert.match(J.startChangeNote('expert'), /reste fermé.*un clic sur « Assistant ».*le parcours en étapes et ta discussion/);
-  assert.match(J.startChangeNote('beginner'), /s’ouvre sur le parcours en étapes/);
+  // L'assistant s'ouvre toujours (2026-11-24) : le niveau ne change que la façon de guider, jamais l'ouverture du panneau.
+  assert.equal(J.startMenuLabel('expert'), 'Me guider pas à pas, étape par étape');
+  assert.equal(J.startMenuLabel('beginner'), 'Je connais déjà : moins de questions, réponses courtes');
+  assert.equal(J.startMenuLabel('skipped'), 'Je connais déjà : moins de questions, réponses courtes');
+  assert.match(J.startChangeNote('expert'), /je vais à l’essentiel/);
+  assert.match(J.startChangeNote('beginner'), /je te guide pas à pas/);
+  for (const level of ['expert', 'beginner']) assert.doesNotMatch(J.startChangeNote(level) + J.startMenuLabel(level), /lancement|fermé/);
   const page = read('index.html');
   assert.match(page, /if \(first && state\.level === 'expert'\) noteInput\.focus\(\);/);
   assert.ok(!page.includes('id="hello-guide"'), 'plus de lien vers un onglet « Étapes »');
   // Lot 6 : un seul geste (setJourneyLevel) pour le menu, la ligne de l'accueil du panneau et l'offre faite d'après l'usage.
   assert.match(page, /var patch = \{ level: level \};[\s\S]{0,400}type: 'firststeps_set', patch: patch/);
-  // Côté slicer : panneau fermé au lancement pour « expert » seulement ; l'accueil le dit.
-  assert.match(cpp('PlyoFirstSteps.cpp'), /ProjectLogic::opens_panel_at_startup\(Json::str\(load_state\(\), "level"\)\)/);
-  assert.match(cpp('PlyoProjectLogic.cpp'), /return level != "expert";/);
-  assert.match(read('welcome.html'), /Je me débrouille : tu restes à un clic, sous « Assistant »\./);
+  // Côté slicer (2026-11-24) : l'assistant s'ouvre pour tout le monde, « Je connais déjà » compris ; l'accueil ne promet plus
+  // qu'il reste fermé.
+  assert.doesNotMatch(cpp('PlyoFirstSteps.cpp'), /opens_panel_at_startup/);
+  assert.doesNotMatch(read('welcome.html'), /tu restes à un clic/);
+  assert.match(read('welcome.html'), /Je me débrouille : réponses courtes et techniques/);
 });
 
 test('UX-33 : « Comme la dernière fois » pour le confirmé seulement, avec des réponses valides', () => {

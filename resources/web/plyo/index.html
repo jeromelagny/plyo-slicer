@@ -587,7 +587,7 @@
       <div class="group" role="presentation">Préférences</div>
       <button type="button" id="m-level" role="menuitemcheckbox" aria-checked="false" data-icon="check">Réponses courtes</button>
       <button type="button" id="m-layout" role="menuitemcheckbox" aria-checked="false" data-icon="check" title="Coché : seulement le plateau et l’assistant ; la barre de réglages de Plyo Slicer est repliée">Disposition simple</button>
-      <button type="button" id="m-start" role="menuitemcheckbox" aria-checked="true" data-icon="check">Me guider pas à pas (panneau ouvert au lancement)</button>
+      <button type="button" id="m-start" role="menuitemcheckbox" aria-checked="true" data-icon="check">Me guider pas à pas</button>
       <button type="button" id="m-ui" role="menuitem" data-icon="spark" title="Le panneau se rouvre avec la nouvelle présentation ; ton projet reste ouvert. Retour possible depuis son menu.">Essayer le nouvel assistant</button>
       <hr id="m-account-sep">
       <div class="group" role="presentation">Compte</div>
@@ -4272,7 +4272,7 @@
     updateLevelLabel();
     noteLine(PlyoMachines.levelOf(habits) === 'short' ? 'Je te répondrai de façon courte et technique.' : 'Je t’expliquerai les choses en détail.', '', 'info');
   });
-  // Changer d'avis sur « Je connais déjà » (UX-02) : panneau fermé ou ouvert au prochain lancement.
+  // Changer d'avis sur « Je connais déjà » (UX-02) : guidé pas à pas, ou moins de questions (l'assistant s'ouvre toujours).
   $('m-start').addEventListener('click', function () {
     menu.classList.add('hidden');
     setJourneyLevel(fsState.level === 'expert' ? 'beginner' : 'expert');
@@ -4283,7 +4283,7 @@
     menu.classList.add('hidden');
     var layout = fsState.layout === 'simple' ? 'advanced' : 'simple';
     fsState.layout = layout;
-    window.orca.postMessage({ type: 'firststeps_set', patch: { layout: layout } });
+    window.orca.postMessage({ type: 'firststeps_set', patch: { layout: layout, layout_chosen: true } });
     updateStartMenu();
     noteLine(LAYOUT_NOTES[layout], 'ok', 'check');
   });
@@ -4304,8 +4304,9 @@
   function setJourneyLevel(level) {
     fsState.level = level;
     var patch = { level: level };
-    // Confirmé : l'accueil du débutant n'a plus lieu d'être, et l'écran d'Orca revient tel quel (disposition complète).
-    if (level === 'expert') { fsState.greeted = true; patch.greeted = true; fsState.layout = 'advanced'; patch.layout = 'advanced'; }
+    // Confirmé : l'accueil du débutant n'a plus lieu d'être.
+    // « Je connais déjà » ne déplie plus la barre de réglages (repliée pour tout le monde, 2026-11-24 ; « Disposition simple » se décoche).
+    if (level === 'expert') { fsState.greeted = true; patch.greeted = true; }
     window.orca.postMessage({ type: 'firststeps_set', patch: patch });
     updateStartMenu();
     if (conv) renderProject(); // la fiche montre ou cache les températures modifiables

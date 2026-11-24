@@ -437,14 +437,14 @@
     }
   }
 
-  // Entrée du menu « ⋯ » qui change d'avis sur l'ouverture au lancement (UX-02) : elle dit ce que le clic va faire.
+  // Entrée du menu « ⋯ » qui change d'avis sur le niveau (UX-02 ; l'assistant s'ouvre toujours au lancement) : elle dit ce que le clic va faire.
   function startMenuLabel(level) {
-    return level === 'expert' ? 'Me guider pas à pas, panneau ouvert au lancement' : 'Je connais déjà : panneau fermé au lancement';
+    return level === 'expert' ? 'Me guider pas à pas, étape par étape' : 'Je connais déjà : moins de questions, réponses courtes';
   }
   function startChangeNote(level) {
     return level === 'expert'
-      ? 'C’est noté : au prochain lancement, le panneau reste fermé. Il est à un clic sur « Assistant », en haut, avec le parcours en étapes et ta discussion.'
-      : 'C’est noté : au prochain lancement, le panneau s’ouvre sur le parcours en étapes.';
+      ? 'C’est noté : je vais à l’essentiel, avec moins de questions et des réponses courtes. Les étapes restent là si tu en as besoin.'
+      : 'C’est noté : je te guide pas à pas, étape par étape.';
   }
 
   // Texte d'accueil de l'onglet « Poser une question » (conversation vide). Sans projet complet, il renvoie vers « Étapes ».

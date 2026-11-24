@@ -94,7 +94,7 @@
     box.appendChild(item('info', 'Réponses courtes', toggleShort, { id: 'm-level', toggle: M.levelOf(habits()) === 'short' }));
     box.appendChild(item('grid', 'Disposition simple', toggleLayout, { id: 'm-layout', toggle: fs.layout === 'simple',
       title: 'Coché : seulement le plateau et l’assistant ; la barre de réglages de Plyo Slicer est repliée' }));
-    box.appendChild(item('home', 'Me guider pas à pas (panneau ouvert au lancement)', toggleGuide, { id: 'm-start', toggle: fs.level !== 'expert', title: J.startMenuLabel(fs.level) }));
+    box.appendChild(item('home', 'Me guider pas à pas', toggleGuide, { id: 'm-start', toggle: fs.level !== 'expert', title: J.startMenuLabel(fs.level) }));
     group(box, 'Compte');
     if (session) {
       if (panel.email() || session.email) box.appendChild(ui.el('div', 'who', panel.email() || session.email));
@@ -346,14 +346,15 @@
   function toggleLayout() {
     var layout = fs.layout === 'simple' ? 'advanced' : 'simple';
     fs.layout = layout;
-    panel.post({ type: 'firststeps_set', patch: { layout: layout } });
+    panel.post({ type: 'firststeps_set', patch: { layout: layout, layout_chosen: true } });
     panel.say(LAYOUT_NOTES[layout]);
   }
-  // « Me guider pas à pas » (débutant) ou « Je connais déjà » (confirmé) : panneau ouvert ou fermé au prochain lancement.
+  // « Me guider pas à pas » (débutant) ou « Je connais déjà » (confirmé) : guidé ou moins de questions ; l'assistant s'ouvre toujours.
   function setLevel(level, quiet) {
     fs.level = level;
     var patch = { level: level };
-    if (level === 'expert') { fs.greeted = true; patch.greeted = true; fs.layout = 'advanced'; patch.layout = 'advanced'; }
+    // « Je connais déjà » ne déplie plus la barre de réglages (repliée pour tout le monde ; « Disposition simple » se décoche).
+    if (level === 'expert') { fs.greeted = true; patch.greeted = true; }
     panel.post({ type: 'firststeps_set', patch: patch });
     if (!quiet) panel.say(J.startChangeNote(level));
   }
@@ -464,7 +465,7 @@
         // « Je connais déjà » devient une case à cocher (maquette) ; la préférence reste dans le menu.
         var lab = ui.el('label', 'check-line');
         lab.appendChild(box);
-        lab.appendChild(ui.el('span', '', 'Je connais déjà l’impression 3D : moins de questions, panneau fermé au lancement'));
+        lab.appendChild(ui.el('span', '', 'Je connais déjà l’impression 3D : moins de questions, réponses courtes'));
         body.appendChild(lab);
       },
       foot: [ui.button(w.go, go, 'btn primary wide')] });

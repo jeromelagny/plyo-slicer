@@ -44,5 +44,7 @@ void on_export_done(bool finished, const std::string& error, const std::string& 
 nlohmann::json explain(const std::string& key);
 // Appelé avec {key, label} quand l'utilisateur clique dans un champ d'un onglet de réglages.
 void set_focus_listener(std::function<void(const nlohmann::json&)> listener);
+// Ouvre l'assistant (onglet « Préparer ») s'il est fermé : au lancement, et à chaque nouveau projet ou projet ouvert.
+void open_panel();
 
 }} // namespace Plyo::FirstSteps

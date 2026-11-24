@@ -342,8 +342,8 @@ test('lot 8 · mode Simple : menu à coche, appliqué par le slicer avec les fon
   const page = read('index.html');
   assert.match(page, /id="m-layout" role="menuitemcheckbox"[^>]*>Disposition simple</);
   assert.match(page, /\$\('m-layout'\)\.setAttribute\('aria-checked', String\(fsState\.layout === 'simple'\)\);/);
-  assert.match(page, /window\.orca\.postMessage\(\{ type: 'firststeps_set', patch: \{ layout: layout \} \}\);/);
-  assert.match(page, /fsState\.layout = 'advanced'; patch\.layout = 'advanced';/, '« Je connais déjà » rend l’écran d’Orca');
+  assert.match(page, /window\.orca\.postMessage\(\{ type: 'firststeps_set', patch: \{ layout: layout, layout_chosen: true \} \}\);/);
+  assert.doesNotMatch(page, /patch\.layout = 'advanced'/, '« Je connais déjà » ne déplie plus la barre (repliée pour tout le monde)');
   const cpp = (f) => fs.readFileSync(new URL('../../../../src/plyo/' + f, import.meta.url), 'utf8');
   const a = cpp('PlyoAssistant.cpp');
   assert.match(a, /if \(simple \|\| changed\)\s*plater->collapse_sidebar\(simple\);/);
@@ -355,11 +355,11 @@ test('lot 8 · mode Simple : menu à coche, appliqué par le slicer avec les fon
   const plater = fs.readFileSync(new URL('../../../../src/slic3r/GUI/Plater.hpp', import.meta.url), 'utf8');
   assert.match(plater, /bool is_sidebar_collapsed\(\) const;/);
   assert.match(plater, /void collapse_sidebar\(bool collapse\);/);
-  // Nouvelle installation : Simple (sauf « Je connais déjà ») ; qui utilise déjà Plyo garde l'écran d'Orca (défaut « advanced »).
+  // Barre de réglages repliée pour tout le monde (2026-11-24) ; la disposition complète seulement décochée exprès.
   const first = cpp('PlyoFirstSteps.cpp');
-  assert.match(first, /s\["layout"\] = dialog\.choice\(\) == "expert" \? "advanced" : "simple";/);
+  assert.match(first, /s\["layout"\] = "simple";/);
   assert.match(first, /s\["layout"\]      = "simple";/);
-  assert.match(cpp('PlyoSanitize.cpp'), /\{"layout", "advanced"\}/);
+  assert.match(cpp('PlyoSanitize.cpp'), /\{"layout", "simple"\},\s*\{"layout_chosen", false\}/);
 });
 
 test('lot 7 · galerie remplie à la main : modèles vérifiés par le slicer d’abord, vignette et attribution, puis ceux d’Orca', () => {

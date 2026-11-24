@@ -189,10 +189,12 @@ TEST_CASE("Sanitize::first_steps garde seulement les valeurs du bon type")
     CHECK_FALSE(s.contains("autre"));
     CHECK(Plyo::Sanitize::first_steps(json::array()) == Plyo::Sanitize::first_steps(json::object()));
     // Mode Simple (lot 8) : « simple » ou la disposition d'Orca, jamais autre chose.
-    CHECK(s["layout"] == "advanced");
-    CHECK(Plyo::Sanitize::first_steps({{"layout", "simple"}})["layout"] == "simple");
-    CHECK(Plyo::Sanitize::first_steps({{"layout", "plein écran"}})["layout"] == "advanced");
-    CHECK(Plyo::Sanitize::first_steps({{"layout", 1}})["layout"] == "advanced");
+    // Barre de réglages repliée pour tout le monde ; la disposition complète seulement choisie exprès (layout_chosen).
+    CHECK(s["layout"] == "simple");
+    CHECK(Plyo::Sanitize::first_steps({{"layout", "advanced"}})["layout"] == "simple"); // ancienne valeur par défaut
+    CHECK(Plyo::Sanitize::first_steps({{"layout", "advanced"}, {"layout_chosen", true}})["layout"] == "advanced");
+    CHECK(Plyo::Sanitize::first_steps({{"layout", "plein écran"}, {"layout_chosen", true}})["layout"] == "simple");
+    CHECK(Plyo::Sanitize::first_steps({{"layout", 1}})["layout"] == "simple");
     // Version du panneau : la v2 par défaut ; le classique seulement choisi exprès dans le menu (ui_chosen).
     CHECK(s["ui"] == "v2");
     CHECK(s["ui_chosen"] == false);
@@ -4665,17 +4667,13 @@ TEST_CASE("RetouchesLogic::spool_undo_refusal : même bobine, rien retouché dep
     CHECK(spool_undo_refusal(nlohmann::json(), "Sunlu PLA+ noir", false, {}) == "other_spool");
 }
 
-TEST_CASE("ProjectLogic : habitude « comme la dernière fois » et panneau au lancement selon le niveau")
+TEST_CASE("ProjectLogic : habitude « comme la dernière fois » ; l'assistant s'ouvre pour tout le monde")
 {
     using namespace Plyo::ProjectLogic;
     const nlohmann::json h = sanitize_habits({{"last_intent", {{"use", "everyday"}, {"pref", "balanced"}, {"speed", "normal"}, {"x", "y"}}}});
     CHECK(h["last_intent"] == nlohmann::json{{"use", "everyday"}, {"pref", "balanced"}, {"speed", "normal"}});
     CHECK_FALSE(sanitize_habits({{"last_intent", {{"pref", "balanced"}}}}).contains("last_intent")); // sans usage : rien
     CHECK(sanitize_habits({{"last_intent", {{"use", "<script>"}, {"speed", "fast"}}}}).contains("last_intent") == false);
-    CHECK(opens_panel_at_startup("beginner"));
-    CHECK(opens_panel_at_startup("skipped"));
-    CHECK(opens_panel_at_startup(""));
-    CHECK_FALSE(opens_panel_at_startup("expert"));
 }
 
 
@@ -5821,4 +5819,13 @@ TEST_CASE("Assistant v2 · le projet garde l'étape tenue à l'écran et ce que 
     CHECK_FALSE(sanitize({{"held", "ailleurs"}}).contains("held"));
     CHECK_FALSE(sanitize({{"added", {{"brim", false}}}}).contains("added"));
     CHECK_FALSE(sanitize({{"added", "oui"}}).contains("added"));
+}
+
+TEST_CASE("Assistant toujours à l'écran : au lancement pour tout le monde, et à chaque nouveau projet ou projet ouvert")
+{
+    const std::string first = lot12_read(lot12_root() / "src" / "plyo" / "PlyoFirstSteps.cpp");
+    CHECK(first.find("opens_panel_at_startup") == std::string::npos); // plus d'exception « Je connais déjà »
+    CHECK(first.find("void open_panel_at_startup() { open_panel(); }") != std::string::npos);
+    const std::string cpp = lot12_read(lot12_root() / "src" / "plyo" / "PlyoAssistant.cpp");
+    CHECK(cpp.find("Slic3r::GUI::wxGetApp().CallAfter([] { FirstSteps::open_panel(); });") != std::string::npos);
 }

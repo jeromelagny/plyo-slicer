@@ -86,8 +86,5 @@ struct Adaptation
 Adaptation adapt_3mf(const nlohmann::json& file_values, const nlohmann::json& project,
                      const std::function<nlohmann::json(const std::string&)>& range_of);
 
-// Le panneau s'ouvre-t-il au lancement ? Oui, sauf pour qui a répondu « Je connais déjà » à l'accueil (« expert », décision D5) :
-// il reste à un clic sur « Assistant ». Débutant, accueil passé ou pas encore vu : comme avant.
-bool opens_panel_at_startup(const std::string& level);
 
 }} // namespace Plyo::ProjectLogic

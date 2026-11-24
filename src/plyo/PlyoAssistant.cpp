@@ -1200,6 +1200,9 @@ void on_project_changed()
         return; // calibration : la pièce reviendra, le panneau garde sa conversation et son plan d'envoi
     Canvas::clear_plan(); // la carte des emplacements visait la pièce d'avant
     send({{"type", "project_changed"}});
+    // Nouveau projet ou projet ouvert : l'assistant revient à l'écran s'il avait été fermé (une fois Orca libre).
+    if (!s_panel && !Slic3r::GUI::wxGetApp().is_closing())
+        Slic3r::GUI::wxGetApp().CallAfter([] { FirstSteps::open_panel(); });
 }
 
 ProjectNotificationsPause::ProjectNotificationsPause() { ++s_project_pauses; }

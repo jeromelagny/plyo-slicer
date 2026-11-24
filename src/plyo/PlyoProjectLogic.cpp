@@ -508,6 +508,5 @@ Adaptation adapt_3mf(const nlohmann::json& file_values, const nlohmann::json& pr
     return out;
 }
 
-bool opens_panel_at_startup(const std::string& level) { return level != "expert"; }
 
 }} // namespace Plyo::ProjectLogic

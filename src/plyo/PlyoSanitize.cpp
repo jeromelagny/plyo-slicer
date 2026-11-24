@@ -10,12 +10,15 @@ json first_steps(const json& stored)
     // layout : disposition de la fenêtre (mode Simple, lot 8) ; « advanced » par défaut, pour ne rien changer à qui utilise déjà Plyo.
     // ui : version du panneau, « v2 » par défaut ; « classique » seulement choisi exprès dans le menu (ui_chosen). Un ancien
     // « classique » écrit sans ce choix (valeur par défaut d'avant, enregistrée avec le reste) repasse en v2.
-    json s = {{"seen", false}, {"level", nullptr}, {"tour_step", nullptr}, {"greeted", false}, {"share_outcomes", false}, {"layout", "advanced"},
-              {"ui", "v2"}, {"ui_chosen", false}};
+    json s = {{"seen", false}, {"level", nullptr}, {"tour_step", nullptr}, {"greeted", false}, {"share_outcomes", false}, {"layout", "simple"},
+              {"layout_chosen", false}, {"ui", "v2"}, {"ui_chosen", false}};
     if (!stored.is_object())
         return s;
-    if (Json::str(stored, "layout", 20) == "simple")
-        s["layout"] = "simple";
+    // Barre de réglages repliée pour tout le monde (décision du 2026-11-24) ; la disposition complète seulement décochée exprès
+    // dans le menu ⋯ (layout_chosen). Un « advanced » écrit comme valeur par défaut d'avant repasse en « simple ».
+    s["layout_chosen"] = Json::boolean(stored, "layout_chosen", false);
+    if (s["layout_chosen"] == true && Json::str(stored, "layout", 20) == "advanced")
+        s["layout"] = "advanced";
     s["ui_chosen"] = Json::boolean(stored, "ui_chosen", false);
     if (s["ui_chosen"] == true && Json::str(stored, "ui", 20) == "classique")
         s["ui"] = "classique";

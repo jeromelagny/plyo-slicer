@@ -54,23 +54,21 @@ nlohmann::json load_state() { return Sanitize::first_steps(Store::read(state_pat
 
 void store_state(const nlohmann::json& s) { Store::write(state_path(), Sanitize::first_steps(s)); }
 
-// Le panneau s'ouvre à chaque lancement ; le bouton « Assistant » de la barre du haut le ferme d'un clic. Sauf pour qui a
-// répondu « Je connais déjà » à l'accueil (UX-02, décision D5) : il reste à un clic sur « Assistant ».
-void open_panel_at_startup()
+// L'assistant est la raison d'installer Plyo Slicer : il s'ouvre à chaque lancement, pour tout le monde (décision de Jérôme
+// du 2026-11-24, qui remplace l'exception « Je connais déjà »), et à chaque nouveau projet ou projet ouvert
+// (on_project_changed). Le bouton « Assistant » de la barre du haut le ferme toujours d'un clic.
+void open_panel()
 {
     auto* frame = wxGetApp().mainframe;
-    if (frame == nullptr || is_assistant_shown())
+    if (frame == nullptr || is_assistant_shown() || wxGetApp().is_closing())
         return;
-    if (!ProjectLogic::opens_panel_at_startup(Json::str(load_state(), "level"))) {
-        BOOST_LOG_TRIVIAL(info) << "Plyo: « Je connais déjà » : le panneau reste fermé au lancement";
-        SelfTest::startup_kept_closed(); // banc d'essai seulement : le relève, puis ouvre le panneau comme un clic
-        return;
-    }
     // Le panneau vit dans le plateau : Orca démarre sur l'Accueil, où il resterait caché. On passe sur « Préparer ».
     if (!frame->is_prepare_or_preview_tab())
         frame->select_tab(TAB_ID_PREPARE);
     toggle_assistant(wxGetApp().plater());
 }
+
+void open_panel_at_startup() { open_panel(); }
 
 void show_welcome(wxWindow* parent, bool with_setup_tips)
 {
@@ -81,7 +79,7 @@ void show_welcome(wxWindow* parent, bool with_setup_tips)
     dialog.ShowModal();
     s          = load_state();
     s["level"] = dialog.choice();
-    s["layout"] = dialog.choice() == "expert" ? "advanced" : "simple"; // mode Simple (lot 8) pour une nouvelle installation
+    s["layout"] = "simple"; // barre de réglages repliée pour tout le monde ; « Disposition simple » se décoche dans le menu ⋯
     if (dialog.choice() == "beginner")
         s["tour_step"] = "model";
     store_state(s);

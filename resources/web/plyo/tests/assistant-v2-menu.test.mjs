@@ -91,9 +91,9 @@ test('lot 5 : Nouveau projet, Annuler les derniers réglages, préférences (ré
     assert.equal(sent(p, 'habits_set').at(-1).habits.level, 'short');
     assert.match(texts(p.$('msgs')), /courte et technique/);
     menuItem(p, /Disposition simple/).click();
-    assert.deepEqual(sent(p, 'firststeps_set').at(-1).patch, { layout: 'simple' });
+    assert.deepEqual(sent(p, 'firststeps_set').at(-1).patch, { layout: 'simple', layout_chosen: true });
     menuItem(p, /Me guider pas à pas/).click();
-    assert.deepEqual(sent(p, 'firststeps_set').at(-1).patch, { level: 'expert', greeted: true, layout: 'advanced' });
+    assert.deepEqual(sent(p, 'firststeps_set').at(-1).patch, { level: 'expert', greeted: true });
     p.$('btn-more').click();
     assert.equal(byText(p.$('menu'), /Réponses courtes/).getAttribute('aria-checked'), 'true');
     assert.equal(byText(p.$('menu'), /Me guider/).getAttribute('aria-checked'), 'false');
@@ -309,7 +309,7 @@ test('lot 5 : reprise de project_open quand Orca est occupé, phone_pick_files, 
     assert.match(texts(win(p)), /Je t’aide à imprimer, étape par étape/);
     win(p).querySelector('input').checked = true;
     byText(win(p), /C’est parti/).click();
-    assert.deepEqual(sent(p, 'firststeps_set').at(-1).patch, { level: 'expert', greeted: true, layout: 'advanced' });
+    assert.deepEqual(sent(p, 'firststeps_set').at(-1).patch, { level: 'expert', greeted: true });
     // Mes projets › Rouvrir : Orca occupé, la v2 le dit et redemande.
     p.ctx.PlyoV2.panel.openConversation('c-2');
     await sleep(20);
