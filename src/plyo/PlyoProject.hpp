@@ -12,6 +12,10 @@ namespace Plyo { namespace Project {
 // {printer_preset, filament_preset, nozzle_temp, bed_temp} : les profils édités d'Orca. Températures null si illisibles.
 nlohmann::json state();
 
+// Couleur 1 de la plaque (premier filament d'Orca) : {preset, type, nozzle_temp, bed_temp}. Températures null si l'onglet
+// Filament montre une autre couleur. Sert à la fiche quand une couleur est supprimée dans la barre latérale.
+nlohmann::json first_filament();
+
 // Imprimantes installées et visibles : [{preset, name, linked}] ; `linked` = une adresse de connexion est enregistrée.
 nlohmann::json printers();
 

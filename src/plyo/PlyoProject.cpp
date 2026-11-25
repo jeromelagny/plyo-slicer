@@ -94,6 +94,23 @@ nlohmann::json state()
             {"bed_temp", param_value(values, "bed_temp")}};
 }
 
+nlohmann::json first_filament()
+{
+    const Slic3r::PresetBundle& b = bundle();
+    if (b.filament_presets.empty())
+        return nullptr;
+    const std::string     name = b.filament_presets.front();
+    std::string           type;
+    if (const Slic3r::Preset* p = b.filaments.find_preset(name, false))
+        if (const auto* ft = p->config.option<Slic3r::ConfigOptionStrings>("filament_type"); ft != nullptr && !ft->values.empty())
+            type = ft->values.front();
+    // Les températures lues sont celles de l'onglet : seulement s'il montre bien cette couleur.
+    const nlohmann::json now = state();
+    const bool           tab = ProjectLogic::same_filament(name, Json::str(now, "filament_preset"));
+    return {{"preset", name}, {"type", type}, {"nozzle_temp", tab ? now["nozzle_temp"] : nlohmann::json()},
+            {"bed_temp", tab ? now["bed_temp"] : nlohmann::json()}};
+}
+
 nlohmann::json printers()
 {
     nlohmann::json out = nlohmann::json::array();

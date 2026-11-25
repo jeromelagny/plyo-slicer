@@ -75,6 +75,7 @@
 #include <wx/weakref.h>
 #include <wx/webview.h>
 
+#include <algorithm>
 #include <exception>
 #include <fstream>
 #include <map>
@@ -262,6 +263,17 @@ void send_watch(nlohmann::json w, const std::string& id)
         s_watch_ends[id] = w;
     }
     send(w);
+}
+
+// Couleurs supprimées dans la barre latérale d'Orca, par conversation attachée, le temps de la session : gardées jusqu'à ce que
+// le panneau dise que la fiche les a suivies (filament_deletions_done). Panneau fermé ou autre conversation affichée : il les
+// redemande (filament_deletions_get) en rouvrant cette conversation.
+std::map<std::string, nlohmann::json> s_filament_deletions;
+
+void send_filament_deletions(const std::string& conv)
+{
+    if (const auto it = s_filament_deletions.find(conv); it != s_filament_deletions.end())
+        send({{"type", "filament_deleted"}, {"conv", conv}, {"deletions", it->second}});
 }
 
 // Réponse à une demande du panneau (apply, undo, calib_*…) : `request`, l'identifiant de la demande, est renvoyé tel quel
@@ -886,6 +898,18 @@ void handle_page_message(const nlohmann::json& data)
             // Conversation rouverte : la fin de son envoi, si le suivi l'a lue pendant qu'elle n'était pas affichée.
             if (const auto it = s_watch_ends.find(Json::str(data, "id")); it != s_watch_ends.end())
                 send(it->second);
+        } else if (type == "filament_deletions_get") {
+            send_filament_deletions(Json::str(data, "conv"));
+        } else if (type == "filament_deletions_done") {
+            // La fiche a suivi les `count` premières suppressions (d'autres ont pu arriver entre-temps : elles restent).
+            const std::string conv = Json::str(data, "conv");
+            if (const auto it = s_filament_deletions.find(conv); it != s_filament_deletions.end()) {
+                const long long count = std::min<long long>(Json::integer(data, "count", 0), static_cast<long long>(it->second.size()));
+                if (count > 0)
+                    it->second.erase(it->second.begin(), it->second.begin() + count);
+                if (it->second.empty())
+                    s_filament_deletions.erase(it);
+            }
         } else if (type == "canvas_start_plain") {
             Canvas::start_plain(Json::str(data, "preset"), [](nlohmann::json r) {
                 r["type"] = "canvas_started";
@@ -1227,6 +1251,23 @@ void on_project_changed()
     // Nouveau projet ou projet ouvert : l'assistant revient à l'écran s'il avait été fermé (une fois Orca libre).
     if (!s_panel && !Slic3r::GUI::wxGetApp().is_closing())
         Slic3r::GUI::wxGetApp().CallAfter([] { FirstSteps::open_panel(); });
+}
+
+void on_filament_deleted(int filament_id, int replace_id)
+{
+    guarded("le suivi d'une couleur supprimée", [&] {
+        // Plateau d'un fichier de l'utilisateur : aucune fiche à suivre.
+        const std::string conv = ProjectFiles::attached();
+        if (conv.empty() || filament_id < 0)
+            return;
+        nlohmann::json& list = s_filament_deletions[conv];
+        if (!list.is_array())
+            list = nlohmann::json::array();
+        // `first` : la couleur 1 juste après cette suppression (elle ne vaut que pour cette plaque, d'où une copie par suppression).
+        list.push_back({{"t", filament_id}, {"replace", replace_id}, {"first", Project::first_filament()}});
+        BOOST_LOG_TRIVIAL(info) << "Plyo: couleur " << filament_id + 1 << " supprimée dans la barre latérale, la fiche de la conversation suit";
+        send_filament_deletions(conv);
+    });
 }
 
 ProjectNotificationsPause::ProjectNotificationsPause() { ++s_project_pauses; }

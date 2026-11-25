@@ -514,7 +514,14 @@
       if (check.block.length) { unlockSend(); st.refused = check.block.join(' ') + ' Choisis à nouveau les emplacements : rien n’est envoyé.'; render(); return; }
       check.notes.forEach(function (t) { note(t, 'info'); });
     }
-    if (route === 'armed') { waitLonger(ARMED_WAIT_MS); panel.post({ type: 'canvas_send', preset: p.printer.preset }); }
+    if (route === 'armed') {
+      waitLonger(ARMED_WAIT_MS);
+      // La carte des emplacements n'est gardée par le slicer qu'après une lecture de la machine dans la même session : posée au
+      // choix des emplacements, elle manque après un redémarrage ou une conversation rouverte (« pas d'emplacements à imposer »).
+      // Cette relecture vient d'avoir lieu : la carte de la fiche est renvoyée juste avant l'envoi (messages traités dans l'ordre).
+      if (V2.materiel && V2.materiel.syncPlan) V2.materiel.syncPlan();
+      panel.post({ type: 'canvas_send', preset: p.printer.preset });
+    }
     else startPrint();
   }
   function onCanvasSent(msg) {

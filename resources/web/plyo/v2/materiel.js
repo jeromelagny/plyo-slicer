@@ -5,7 +5,7 @@
 // d'une pièce multicolore et, au deuxième projet, « Comme la dernière fois ? ».
 // Mêmes messages au slicer que le panneau classique (project_printers, printer_select_profile, printer_scan, setup_catalog,
 // setup_install, printer_link_*, spools_get, brands_get, spool_choose, project_state, apply, bed_type_set, canvas_read,
-// canvas_apply, canvas_plan, slots_manual_*, colours_get, colour_set) ; logique partagée : machines-logic.js, spools-logic.js,
+// canvas_apply, canvas_plan, slots_manual_*, colours_get, colour_set, filament_deletions_get/done) ; logique partagée : machines-logic.js, spools-logic.js,
 // canvas-logic.js, colours-logic.js, materiel-logic.js, project-logic.js, journey-logic.js. Vue seulement : PlyoV2.cards.materiel.
 (function (root) {
   var V2 = root.PlyoV2 = root.PlyoV2 || {};
@@ -47,6 +47,8 @@
       S = fresh(c.id);
       // Le projet tel qu'on le trouve : une machine ou une bobine changée ensuite refait la préparation (resetStepOnChange).
       if (!c.seenProject) c.seenProject = JSON.parse(JSON.stringify(c.project));
+      // Couleurs supprimées dans la barre latérale pendant que cette conversation n'était pas affichée : la fiche les suit.
+      if (panel) panel.post({ type: 'filament_deletions_get', conv: c.id });
     }
     return S;
   }
@@ -683,6 +685,21 @@
     if (!force && key === st.canvas.planKey) return;
     st.canvas.planKey = key;
     panel.post(map.length ? { type: 'canvas_plan', preset: p.printer.preset, map: map } : { type: 'canvas_plan', clear: true });
+  }
+  // Couleur supprimée ou fusionnée dans la barre latérale d'Orca (filament_deleted) : la fiche suit la nouvelle couleur 1 et
+  // les emplacements renumérotés. Sans cela, l'assistant refuserait tout réglage (« plus sur le filament de ce projet »). Ce
+  // n'est pas une bobine changée dans la fiche : l'étape en cours ne recommence pas (seenProject suit aussi).
+  function onFilamentDeleted(msg) {
+    var c = conv();
+    if (!c || msg.conv !== c.id || !Array.isArray(msg.deletions)) return;
+    if (P.followDeletions(c.project, msg.deletions)) {
+      c.seenProject = JSON.parse(JSON.stringify(c.project));
+      msg.deletions.forEach(function (d) { if (d && typeof d.t === 'number') thread('Couleur ' + (d.t + 1) + ' retirée dans Plyo Slicer : la fiche suit.'); });
+      panel.scheduleSave();
+      syncCanvasPlan(true);
+      recheck(); // emplacements et couleurs relus avec les nouveaux numéros
+    }
+    panel.post({ type: 'filament_deletions_done', conv: c.id, count: msg.deletions.length });
   }
   function useList() { var st = state(); st.canvas.useList = true; st.colours.open = false; delete project().canvas; panel.scheduleSave(); render(); }
   function recheck() { var st = state(); st.canvas.preset = null; st.manual.preset = null; st.colours.picker = null; st.colours.error = ''; requestColours(); render(); }
@@ -1470,6 +1487,7 @@
     p.on('bed_type_set', onBedSet);
     p.on('canvas_state', onCanvasState);
     p.on('canvas_applied', onCanvasApplied);
+    p.on('filament_deleted', onFilamentDeleted);
     p.on('slots_manual_state', onManualState);
     p.on('slots_manual_saved', onManualSaved);
     p.on('colours', onColours);
@@ -1513,5 +1531,7 @@
     startSetup();
     if (J.barKey(J.currentStep(project())) !== 'materiel' && panel.openStep) panel.openStep('materiel');
   }
-  V2.materiel = { state: function () { return state(); }, printers: function () { return printers; }, pickPrinter: function (preset, name) { pickPrinter(preset, name); }, attachSpool: attachSpool, addPrinter: addPrinter };
+  V2.materiel = { state: function () { return state(); }, printers: function () { return printers; }, pickPrinter: function (preset, name) { pickPrinter(preset, name); }, attachSpool: attachSpool, addPrinter: addPrinter,
+    // Envoi (v2/imprimer.js) : la carte renvoyée juste après la relecture des emplacements, que le slicer exige dans la même session.
+    syncPlan: function () { syncCanvasPlan(true); } };
 })(typeof window !== 'undefined' ? window : globalThis);

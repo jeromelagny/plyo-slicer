@@ -151,7 +151,37 @@
     return moved;
   }
 
-  var api = { followSaved: followSaved, hasPrinter: hasPrinter, opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, openRetryStep: openRetryStep, openGiveUpText: openGiveUpText, OPEN_RETRY_MS: OPEN_RETRY_MS, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, projectFileText: projectFileText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
+  // Couleurs supprimées ou fusionnées dans la barre latérale d'Orca (message filament_deleted, dans l'ordre) : les couleurs
+  // suivantes ont reculé d'un rang. Les emplacements de la fiche sont renumérotés (celui de la couleur retirée part ; ses
+  // pièces sont passées à une autre). Si c'est la couleur 1, le filament de la fiche devient la nouvelle couleur 1 (`first`,
+  // lue par le slicer juste après), sans sa bobine notée. Un filament seulement proposé ou absent n'est pas touché.
+  function followDeletions(project, deletions) {
+    if (!project || !Array.isArray(deletions)) return false;
+    var moved = false;
+    deletions.forEach(function (d) {
+      if (!d || typeof d.t !== 'number' || d.t < 0 || Math.floor(d.t) !== d.t) return;
+      if (Array.isArray(project.canvas)) {
+        var kept = [];
+        project.canvas.forEach(function (e) {
+          if (!e || e.t === d.t) { moved = true; return; }
+          if (typeof e.t === 'number' && e.t > d.t) { e.t -= 1; moved = true; }
+          kept.push(e);
+        });
+        if (kept.length) project.canvas = kept; else delete project.canvas;
+      }
+      var f = project.filament, first = d.first || {};
+      if (d.t !== 0 || !f || f.proposed || !first.preset) return;
+      f.preset = first.preset;
+      if (first.type) f.type = first.type;
+      if (typeof first.nozzle_temp === 'number') f.nozzle_temp = first.nozzle_temp;
+      if (typeof first.bed_temp === 'number') f.bed_temp = first.bed_temp;
+      ['spool', 'brand', 'range', 'brand_profile'].forEach(function (k) { delete f[k]; });
+      moved = true;
+    });
+    return moved;
+  }
+
+  var api = { followSaved: followSaved, followDeletions: followDeletions,hasPrinter: hasPrinter, opensProjectFile: opensProjectFile, projectOpenedText: projectOpenedText, openRetryStep: openRetryStep, openGiveUpText: openGiveUpText, OPEN_RETRY_MS: OPEN_RETRY_MS, restoresAfterOpen: restoresAfterOpen, tooHeavyText: tooHeavyText, projectFileText: projectFileText, mayAttach: mayAttach, afterDetached: afterDetached, replacesPlate: replacesPlate, replacedText: replacedText, filamentChoiceError: filamentChoiceError, restorable: restorable, needsAdaptation: needsAdaptation, partFromPlate: partFromPlate, emptyProject: emptyProject, nextStep: nextStep, proposeFrom: proposeFrom, confirm: confirm,
     GUIDED_STEPS: GUIDED_STEPS, nextGuidedStep: nextGuidedStep };
   root.PlyoProject = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

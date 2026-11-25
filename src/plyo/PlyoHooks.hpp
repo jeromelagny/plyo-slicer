@@ -46,6 +46,11 @@ void refresh_values();
 // Fin de Plater::new_project et de Plater::load_project : le panneau revient à son accueil.
 void on_project_changed();
 
+// Sidebar::delete_filament, une fois la couleur retirée et les suivantes renumérotées (suppression ou fusion depuis la
+// barre latérale, nombre d'extrudeurs réduit) : la fiche de la conversation attachée suit (couleur 1, emplacements).
+// `filament_id` : la couleur retirée (dès 0) ; `replace_id` : celle qui reprend ses pièces, déjà renumérotée (-1 : aucune).
+void on_filament_deleted(int filament_id, int replace_id);
+
 namespace FirstSteps {
 // Fin du constructeur de MainFrame : accueil du premier lancement, ouverture du panneau.
 void on_startup();

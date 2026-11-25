@@ -5875,6 +5875,7 @@ void Sidebar::delete_filament(size_t filament_id, int replace_filament_id) {
     wxGetApp().preset_bundle->export_selections(*wxGetApp().app_config);
 
     wxGetApp().plater()->update();
+    Plyo::on_filament_deleted(int(filament_id), replace_filament_id > (int)filament_id ? (replace_filament_id - 1) : replace_filament_id); // PLYO: la fiche de la conversation suit la couleur retirée
 
     auto filament_list = p->m_panel_filament_content;
     if(!filament_list->IsShown()){

@@ -178,3 +178,55 @@ test('ouverture refusée parce qu’Orca est occupé : le panneau redemande, pui
   assert.match(P.projectOpenedText('occupe'), /dès qu’il a fini/);
   assert.match(P.openGiveUpText(), /Mes projets/);
 });
+
+// Couleur supprimée ou fusionnée dans la barre latérale d'Orca : la fiche suit (bug du 25/11, porte-clés 3 couleurs sur AD5X).
+test('followDeletions : couleur 1 inutile supprimée, la fiche prend la nouvelle couleur 1 et renumérote les emplacements', () => {
+  const project = {
+    printer: { preset: 'Ma Flashforge AD5X 0.4 nozzle' },
+    filament: { type: 'TPU', preset: 'Generic PLA @Flashforge', nozzle_temp: 220, bed_temp: 50, temps_ok: true, spool: { name: 'Ma bobine' } },
+    canvas: [{ t: 1, tray_id: 2, type: 'TPU', preset: 'Generic TPU @System' }, { t: 2, tray_id: 4, type: 'TPU', preset: 'Generic TPU @System' }]
+  };
+  const first = { preset: 'Generic TPU @System', type: 'TPU', nozzle_temp: 230, bed_temp: 45 };
+  assert.equal(P.followDeletions(project, [{ t: 0, replace: -1, first }]), true);
+  assert.equal(project.filament.preset, 'Generic TPU @System');
+  assert.equal(project.filament.type, 'TPU');
+  assert.equal(project.filament.nozzle_temp, 230);
+  assert.equal(project.filament.bed_temp, 45);
+  assert.equal(project.filament.temps_ok, true);
+  assert.equal(project.filament.spool, undefined, 'la bobine notée était celle de la couleur retirée');
+  assert.deepEqual(project.canvas.map((e) => [e.t, e.tray_id]), [[0, 2], [1, 4]]);
+});
+
+test('followDeletions : couleur du milieu retirée, la couleur 1 ne change pas ; fusion ; suite de suppressions', () => {
+  const project = {
+    filament: { type: 'PLA', preset: 'Generic PLA', nozzle_temp: 210 },
+    canvas: [{ t: 1, tray_id: 1 }, { t: 2, tray_id: 2 }, { t: 3, tray_id: 3 }]
+  };
+  assert.equal(P.followDeletions(project, [{ t: 2, replace: 0, first: { preset: 'Autre' } }]), true);
+  assert.equal(project.filament.preset, 'Generic PLA');
+  assert.equal(project.filament.nozzle_temp, 210);
+  assert.deepEqual(project.canvas.map((e) => [e.t, e.tray_id]), [[1, 1], [2, 3]]);
+  // Deux suppressions d'un coup (panneau fermé entre-temps) : appliquées dans l'ordre.
+  assert.equal(P.followDeletions(project, [{ t: 0, replace: -1, first: { preset: 'X', type: 'PETG' } }, { t: 1, replace: -1, first: { preset: 'X', type: 'PETG' } }]), true);
+  assert.equal(project.filament.preset, 'X');
+  assert.equal(project.filament.type, 'PETG');
+  assert.equal(project.filament.nozzle_temp, 210, 'températures illisibles : celles de la fiche restent');
+  assert.deepEqual(project.canvas.map((e) => [e.t, e.tray_id]), [[0, 1]]);
+  // Dernier emplacement retiré : plus de carte.
+  P.followDeletions(project, [{ t: 0, replace: -1, first: { preset: 'X' } }]);
+  assert.equal(project.canvas, undefined);
+});
+
+test('followDeletions : rien à suivre', () => {
+  assert.equal(P.followDeletions(null, [{ t: 0 }]), false);
+  assert.equal(P.followDeletions({ filament: null }, 'abîmé'), false);
+  assert.equal(P.followDeletions({ filament: null }, [{ t: -1 }, { t: 'a' }, null]), false);
+  // Filament pas encore choisi : la fiche n'en invente pas un.
+  const p = { filament: null };
+  assert.equal(P.followDeletions(p, [{ t: 0, first: { preset: 'X' } }]), false);
+  assert.equal(p.filament, null);
+  // Filament seulement proposé (« Comme la dernière fois ? ») : pas touché non plus.
+  const q = { filament: { preset: 'A', proposed: true } };
+  assert.equal(P.followDeletions(q, [{ t: 0, first: { preset: 'X' } }]), false);
+  assert.equal(q.filament.preset, 'A');
+});
