@@ -86,6 +86,14 @@ std::string origin_of(const std::string& url)
     return lower.substr(0, scheme_end) + host;
 }
 
+bool is_payment_url(const std::string& url)
+{
+    if (url.size() > 2048 || std::any_of(url.begin(), url.end(), [](unsigned char c) { return c <= 0x20 || c == 0x7f; }))
+        return false;
+    const std::string origin = origin_of(url);
+    return origin == "https://checkout.stripe.com" || origin == "https://billing.stripe.com";
+}
+
 std::string new_nonce()
 {
     std::random_device                 device;

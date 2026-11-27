@@ -23,6 +23,11 @@ std::string page_for_ui(const std::string& ui);
 // une ou porte des caractères qui casseraient la politique (espace, « ; », guillemets…).
 std::string origin_of(const std::string& url);
 
+// Vrai pour une page de paiement Stripe que le panneau peut ouvrir dans le navigateur (message « open_payment ») : en
+// https, sur checkout.stripe.com (paiement) ou billing.stripe.com (portail de l'abonnement), sans port ni caractère de
+// contrôle, et de longueur raisonnable. Toute autre adresse est refusée.
+bool is_payment_url(const std::string& url);
+
 // Jeton aléatoire (32 caractères hexadécimaux) pour les balises <script> de la page : seules celles qui le portent
 // s'exécutent. Nouveau à chaque assemblage.
 std::string new_nonce();

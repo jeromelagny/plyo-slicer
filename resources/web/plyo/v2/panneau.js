@@ -468,8 +468,9 @@
       try { root.localStorage.setItem(NOTICE_KEY, noticeShown); } catch (e) { /* idem */ }
       var text = v.left !== null ? Logic.gaugeNoticeText(kind, g)
         : kind === 'low' ? 'Il te reste **' + leftPct(v) + ' %** d’IA ce mois-ci. Elle se recharge ' + v.resets + '.' : 'Tu as utilisé toute ton IA du mois. Elle se recharge ' + v.resets + '.';
-      say(text, 'warn',
-        [{ label: 'Voir mon utilisation', run: function () { if (V2.menu) V2.menu.openUsage(); } }]);
+      say(text, 'warn', kind === 'empty'
+        ? [{ label: Logic.offerView('pack_25').label, primary: true, run: function () { if (V2.menu) V2.menu.buy('pack_25'); } }, { label: 'Voir les formules', run: function () { if (V2.menu) V2.menu.openPlans(); } }]
+        : [{ label: 'Voir mon utilisation', run: function () { if (V2.menu) V2.menu.openUsage(); } }]);
     }
     // Vérifie la session (et la renouvelle au besoin) ; met à jour la jauge. Résout à true si la session est valide.
     function refreshAccount() {
@@ -896,7 +897,11 @@
       if (view.action === 'login') acts.push({ label: 'Me reconnecter', run: openLogin, primary: true });
       // plan_required : les formules (fenêtre de la v2, v2/menu.js) ; jauge pleine : « Mon utilisation ». Logique inchangée.
       else if (view.action === 'plans') acts.push({ label: 'Voir les formules', run: function () { if (V2.menu) V2.menu.openPlans(); }, primary: true });
-      else if (view.action === 'credits') acts.push({ label: 'Voir mon utilisation', run: function () { if (V2.menu) V2.menu.openUsage(); }, primary: true });
+      // Plus assez de crédits : le pack secours en bouton principal (sans abonnement), les formules à côté.
+      else if (view.action === 'credits') {
+        acts.push({ label: Logic.offerView('pack_25').label, run: function () { if (V2.menu) V2.menu.buy('pack_25'); }, primary: true });
+        acts.push({ label: 'Voir les formules', run: function () { if (V2.menu) V2.menu.openPlans(); } });
+      }
       else if (view.action === 'photo') acts.push({ label: 'Choisir une autre photo', run: function () { box.remove(); fileInput.click(); }, primary: true });
       else if (view.action === 'edit') acts.push({ label: 'Modifier ma demande', run: function () { box.remove(); input.focus(); }, primary: true });
       else if (view.action === 'retry' && retry) acts.push({ label: 'Réessayer', run: function () { box.remove(); retry(); }, primary: true });
@@ -1035,6 +1040,7 @@
       iso: iso,
       record: record,
       setGauge: setGauge,
+      refreshAccount: refreshAccount,
       hold: setHold,
       held: function () { return hold; },
       tourSignals: function () { return tourSignals; },

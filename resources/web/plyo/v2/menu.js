@@ -21,12 +21,8 @@
   var PLAN_TEXT = { gratuit: 'Pour découvrir l’assistant : 15 crédits de bienvenue, puis 2 crédits chaque mois.',
     plus: 'Pour imprimer chaque semaine : 60 crédits chaque mois, environ 30 diagnostics photo.',
     pro: 'Pour un usage intensif ou professionnel : 160 crédits chaque mois.' };
-  // Bloc des formules du brief « coût IA », repris tel quel du panneau classique (ni prix ni promesse) : la v2 l'affiche
-  // dans sa propre fenêtre, la seule où paraît « environ N questions ».
-  var FORMULES = [
-    'Bientôt : Plyo+, 60 crédits chaque mois (environ 30 diagnostics photo), avec les pièces sur mesure et plusieurs photos dans une même demande. Et des packs sans abonnement, valables 12 mois.',
-    'Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne coûtent jamais de crédits. Tu verras les formules ici dès qu’elles seront prêtes ; d’ici là, tes 2 crédits gratuits reviennent chaque mois.'
-  ];
+  // Sous les formules : ce qui ne coûte jamais rien, et qui voit la carte.
+  var PAYMENT_NOTE = 'Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne coûtent jamais de crédits. Le paiement passe par Stripe ; Plyo ne voit jamais ta carte.';
   var HOW = [
     'Chaque demande à l’IA coûte toujours le même nombre de crédits : **1** pour une question écrite, **2** avec une ou deux photos, **3** à partir de trois photos. Le coût s’affiche sous le champ avant l’envoi. Une réponse commencée va toujours jusqu’au bout.',
     'Une réponse ne t’a pas aidé ? « Récupérer mes crédits », sous la réponse, te les rend (3 fois par mois). Une question hors impression 3D ne coûte rien, jusqu’à 3 par jour.',
@@ -372,7 +368,9 @@
   function openUsage() {
     if (panel.requireLogin('Tes crédits sont liés à ton compte. Pour les voir, connecte-toi : pas de mot de passe, tu reçois un code par e-mail.', openUsage)) return;
     W.open({ title: 'Mon utilisation', sub: null,
-      foot: [ui.button('Voir les formules', function () { openPlans(); }, 'btn sm'), ui.el('span', 'grow'), ui.button('Fermer', function () { W.close(); }, 'btn sm')],
+      foot: [ui.button('Voir les formules', function () { openPlans(); }, 'btn sm')]
+        .concat(panel.gauge() && panel.gauge().plan === 'plus' ? [ui.button('Gérer mon abonnement', openPortal, 'link')] : [])
+        .concat([ui.el('span', 'grow'), ui.button('Fermer', function () { W.close(); }, 'btn sm')]),
       fill: function (body) {
         var big = ui.el('div', 'gbig');
         var name = ui.el('small', '', 'IA restante');
@@ -425,6 +423,33 @@
           .catch(function () { loading.textContent = ui.fr('Le détail n’a pas pu être chargé. Vérifie ta connexion, puis rouvre cette fenêtre.'); if (!loading.parentNode) body.appendChild(loading); });
       } });
   }
+  // ---------- Paiement (plyo-api /api/checkout, /api/billing/portal ; page Stripe ouverte par le slicer) ----------
+  // Après l'ouverture de la page, la jauge est relue quelques fois : le webhook de Stripe arrive en quelques secondes.
+  function refreshAfterPayment() { [8000, 20000, 45000, 90000, 180000].forEach(function (ms) { setTimeout(function () { if (panel.session()) panel.refreshAccount(); }, ms); }); }
+  function openStripe(path, body, opened, done) {
+    if (panel.requireLogin('Pour payer, connecte-toi d’abord : pas de mot de passe, tu reçois un code par e-mail. Tes crédits seront liés à ce compte.', function () { openStripe(path, body, opened, done); })) return;
+    panel.apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (data) { return { ok: r.ok, status: r.status, data: data }; }); })
+      .then(function (r) {
+        if (!r.ok || !r.data.url) { panel.say(Logic.buyErrorText(r.status === 401 ? 'unauthorized' : r.data.error), 'warn'); if (done) done(false); return; }
+        panel.post({ type: 'open_payment', url: r.data.url });
+        W.close();
+        panel.say(opened, 'info');
+        refreshAfterPayment();
+        if (done) done(true);
+      })
+      .catch(function () { panel.say(Logic.buyErrorText('network'), 'warn'); if (done) done(false); });
+  }
+  function buy(offer) { openStripe('/api/checkout', { offer: offer }, Logic.PAYMENT_OPENED); }
+  function openPortal() { openStripe('/api/billing/portal', {}, Logic.PORTAL_OPENED); }
+  // Bouton d'une offre : désactivé le temps de préparer la page.
+  function offerButton(offer, cls) {
+    var b = ui.button(Logic.offerView(offer).label, function () { b.disabled = true; openStripe('/api/checkout', { offer: offer }, Logic.PAYMENT_OPENED, function () { b.disabled = false; }); }, cls);
+    return b;
+  }
+
+  // Un écran, peu de choix (règle du 16/11) : Plyo+ au mois en bouton principal, l'année en lien ; les packs et l'offre
+  // fondateur repliés sous « Sans abonnement ».
   function openPlans() {
     W.open({ title: 'Les formules', wide: true, sub: 'Le parcours, les explications des réglages, la galerie et les tests de calibration sont gratuits. Les crédits servent aux réponses de l’IA et à la lecture des photos.',
       fill: function (body) {
@@ -436,19 +461,43 @@
           b.appendChild(ui.el('h4', '', x[1]));
           b.appendChild(ui.el('p', 'hint', PLAN_TEXT[x[0]]));
           if (cur === x[0] && panel.session()) b.appendChild(ui.el('span', 'badge', 'Ta formule'));
+          if (x[0] === 'plus' && cur === 'gratuit') {
+            var acts = ui.el('div', 'acts');
+            acts.appendChild(offerButton('plus_monthly', 'btn sm main'));
+            acts.appendChild(offerButton('plus_yearly', 'link'));
+            b.appendChild(acts);
+            b.appendChild(ui.el('p', 'hint', Logic.offerView('plus_yearly').detail));
+          }
+          if (x[0] === 'plus' && cur === 'plus') b.appendChild(ui.button('Gérer mon abonnement', openPortal, 'link'));
           plans.appendChild(b);
         });
         body.appendChild(plans);
-        var soon = ui.el('div', 'note tip');
-        soon.appendChild(ui.icon('info', 18));
-        var sb = ui.el('div', 'note-body');
-        sb.appendChild(ui.el('p', 'note-title', 'Les formules arrivent'));
-        FORMULES.forEach(function (t) { sb.appendChild(ui.el('p', '', t)); });
-        soon.appendChild(sb);
-        body.appendChild(soon);
+        if (cur === 'gratuit') body.appendChild(ui.rich(Logic.FILAMENT_COMPARE, 'hint'));
+        var fold = ui.el('details', 'fold-detail');
+        fold.appendChild(ui.el('summary', '', 'Sans abonnement'));
+        ['pack_25', 'pack_55'].concat(cur === 'gratuit' ? ['founder_yearly'] : []).forEach(function (offer) {
+          var row = ui.el('div', 'offer');
+          row.appendChild(offerButton(offer, 'btn sm'));
+          row.appendChild(ui.el('p', 'hint', Logic.offerView(offer).detail));
+          fold.appendChild(row);
+        });
+        body.appendChild(fold);
+        body.appendChild(ui.el('p', 'hint', PAYMENT_NOTE));
         body.appendChild(ui.el('h4', 'mh', 'Comment les crédits se dépensent'));
         HOW.forEach(function (t) { body.appendChild(ui.rich(t, 'hint')); });
       } });
+  }
+
+  // Juste après une impression réussie, en formule gratuite : Plyo+, une fois par mois au plus (stratégie de prix).
+  var PLUS_SUGGEST_KEY = 'plyo.plusSuggested';
+  function suggestPlus() {
+    var g = panel.gauge();
+    if (!panel.session() || !g || g.plan !== 'gratuit') return;
+    var month = new Date().toISOString().slice(0, 7), last = null;
+    try { last = root.localStorage.getItem(PLUS_SUGGEST_KEY); } catch (e) { /* stockage indisponible */ }
+    if (last === month) return;
+    try { root.localStorage.setItem(PLUS_SUGGEST_KEY, month); } catch (e) { /* idem */ }
+    panel.say(Logic.plusAfterSuccessText(), 'info', [{ label: 'Voir Plyo+', run: openPlans }]);
   }
 
   // ---------- Aide ----------
@@ -507,6 +556,6 @@
   }
   (V2.plugins = V2.plugins || []).push(plug);
 
-  V2.menu = { render: renderMenu, openUsage: openUsage, openPlans: openPlans, openProjects: openProjects, openParts: openParts, openMachines: openMachines,
+  V2.menu = { render: renderMenu, openUsage: openUsage, openPlans: openPlans, buy: buy, openPortal: openPortal, suggestPlus: suggestPlus, openProjects: openProjects, openParts: openParts, openMachines: openMachines,
     openSpools: openSpools, openCalib: openCalib, openJournal: openJournal, openHelp: openHelp, state: function () { return fs; } };
 })(typeof window !== 'undefined' ? window : globalThis);

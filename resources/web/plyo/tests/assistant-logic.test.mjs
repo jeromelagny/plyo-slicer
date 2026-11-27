@@ -420,3 +420,14 @@ test('tarif fixe : limites de sécurité du compte et du service, sans « Réess
   assert.equal(L.errorView('service_cap', {}).action, 'none');
   assert.match(L.errorView('service_cap').text, /réessaie demain/);
 });
+
+test('paiement : pack au moment du raté seulement s’il ne reste pas de quoi diagnostiquer ; textes des refus', () => {
+  assert.equal(L.packAtFailureText({ credits_left: 5 }), '');
+  assert.equal(L.packAtFailureText({}), '', 'service d’avant le tarif fixe');
+  assert.match(L.packAtFailureText({ credits_left: 1 }), /^Il te reste 1 crédit : un \*\*pack secours\*\* \(25 crédits, 4,99 €/);
+  assert.match(L.packAtFailureText({ credits_left: 0 }), /^Tu n’as plus de crédits/);
+  assert.match(L.plusAfterSuccessText(), /moins d’une demi-bobine/);
+  assert.equal(L.offerView('plus_yearly').label, 'À l’année · 8,25 € par mois');
+  assert.equal(L.offerView('pro_monthly'), null);
+  assert.match(L.buyErrorText('billing_unavailable'), /pas disponible pour le moment/);
+});

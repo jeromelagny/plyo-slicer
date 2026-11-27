@@ -2028,6 +2028,10 @@
     if (items.length) { var s = X.sendRecord(c.project); s.corrections = items.map(function (it) { return it.at; }); save(); }
     if (msg.outcome === 'ok' && items.length) note(msg.reliable ? 'C’est noté : ces réglages ont marché. Je m’en souviendrai, et je les garde comme réglages réussis de ce filament.' : 'C’est noté : ces réglages ont marché, je m’en souviendrai pour mes prochains conseils.', 'ok');
     if (msg.outcome === 'bad' && items.length) outcomeBad(Logic.mergeCorrections(items), '');
+    // Stratégie de prix : Plyo+ juste après un succès ; le pack au moment du raté, s'il ne reste pas de quoi diagnostiquer.
+    if (msg.outcome === 'ok' && V2.menu && V2.menu.suggestPlus) V2.menu.suggestPlus();
+    var pack = msg.outcome === 'bad' && panel.session() ? Logic.packAtFailureText(panel.gauge()) : '';
+    if (pack) panel.say(pack, 'info', [{ label: Logic.offerView('pack_25').label, primary: true, run: function () { V2.menu.buy('pack_25'); } }]);
   }
 
   // ---------- La carte de l'étape ----------

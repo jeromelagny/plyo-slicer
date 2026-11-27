@@ -189,6 +189,39 @@
   }
   // Phrase ajoutée à « plus assez de crédits » : quand la part du mois revient.
   function insufficientMore(g) { return monthlyText(g); }
+
+  // ---------- Offres payantes (plyo-api, billing.ts OFFERS ; grille du 26/11) ----------
+  // Prix TTC affichés ; l'annuel est dit en mensuel, le mensuel reste le choix par défaut (décision du 25/10).
+  var OFFER_VIEWS = {
+    plus_monthly: { label: 'Plyo+ · 9,99 € par mois', detail: '60 crédits chaque mois, environ 30 diagnostics photo, plusieurs photos par demande et les pièces sur mesure. Résiliable en un clic.' },
+    plus_yearly: { label: 'À l’année · 8,25 € par mois', detail: '99 € par an, soit 2 mois offerts.' },
+    founder_yearly: { label: 'Offre fondateur · 79 € par an', detail: 'Plyo+ à l’année, prix gardé tant que tu restes abonné. Réservée aux 300 premiers.' },
+    pack_25: { label: 'Pack secours · 4,99 €', detail: '25 crédits, environ 12 diagnostics photo, valables 12 mois. Sans abonnement.' },
+    pack_55: { label: 'Grand pack · 9,99 €', detail: '55 crédits, environ 27 diagnostics photo, valables 12 mois. Sans abonnement.' }
+  };
+  function offerView(id) { return OFFER_VIEWS[id] || null; }
+  var PAYMENT_OPENED = 'La page de paiement s’ouvre dans ton navigateur. Une fois payé, reviens ici : tes crédits arrivent tout seuls.';
+  var PORTAL_OPENED = 'La page de ton abonnement s’ouvre dans ton navigateur : tu peux y résilier en un clic, changer de carte ou voir tes factures.';
+  // Comparer au filament, pas aux logiciels (stratégie de prix, section 5).
+  var FILAMENT_COMPARE = 'Une impression ratée de 200 g, c’est 4 à 6 € de filament. Plyo+ coûte 9,99 € par mois, moins d’une demi-bobine.';
+  // Juste après un succès, une fois par mois au plus, en formule gratuite seulement.
+  function plusAfterSuccessText() {
+    return 'Content que ça ait marché ! Si tu imprimes chaque semaine, **Plyo+** te donne 60 crédits chaque mois, environ 30 diagnostics photo. ' + FILAMENT_COMPARE;
+  }
+  // Au moment du raté, quand il ne reste pas de quoi faire un diagnostic photo.
+  function packAtFailureText(g) {
+    var left = creditsLeft(g);
+    if (left === null || left >= PRICES.photo) return '';
+    return (left === 0 ? 'Tu n’as plus de crédits' : 'Il te reste ' + creditsText(left)) + ' : un **pack secours** (25 crédits, 4,99 €, sans abonnement) suffit pour diagnostiquer ce raté et les suivants.';
+  }
+  function buyErrorText(code) {
+    if (code === 'founder_sold_out') return 'Les 300 places de l’offre fondateur sont prises. Plyo+ à l’année reste à 99 € par an.';
+    if (code === 'already_subscribed') return 'Tu es déjà abonné à Plyo+ : tu gères ton abonnement depuis « Mon utilisation ».';
+    if (code === 'no_customer') return 'Tu n’as pas encore d’abonnement à gérer.';
+    if (code === 'billing_unavailable') return 'Le paiement n’est pas disponible pour le moment. Réessaie un peu plus tard.';
+    if (code === 'unauthorized') return 'Ta session a expiré : reconnecte-toi, puis réessaie.';
+    return 'Le service Plyo ne répond pas : réessaie dans un instant.';
+  }
   // Une seule jauge : les crédits ajoutés (recharges, offerts) l'agrandissent ; la part incluse dans la formule se
   // renouvelle chaque mois, les crédits ajoutés non utilisés restent.
   function gaugeExtraText(g) {
@@ -1143,6 +1176,7 @@
     newRequestId: newRequestId, formatUuid: formatUuid, resendRequestId: resendRequestId, sameQuestion: sameQuestion, inProgressDelay: inProgressDelay, waitingText: waitingText,
     utf8Bytes: utf8Bytes, sizePlan: sizePlan, limitFrom413: limitFrom413, MAX_SEND_BYTES: MAX_SEND_BYTES, SHRINK_STEPS: SHRINK_STEPS, unansweredView: unansweredView, projectSwitchText: projectSwitchText, STALE_PROJECT_TEXT: STALE_PROJECT_TEXT,
     requestCost: requestCost, creditsText: creditsText, creditsLeft: creditsLeft, diagnosticsText: diagnosticsText, costLine: costLine, monthlyText: monthlyText, gaugeTitle: gaugeTitle, gaugeNoticeText: gaugeNoticeText,
+    offerView: offerView, PAYMENT_OPENED: PAYMENT_OPENED, PORTAL_OPENED: PORTAL_OPENED, FILAMENT_COMPARE: FILAMENT_COMPARE, plusAfterSuccessText: plusAfterSuccessText, packAtFailureText: packAtFailureText, buyErrorText: buyErrorText,
     refundOffer: refundOffer, refundDoneText: refundDoneText, refundErrorText: refundErrorText, insufficientMore: insufficientMore,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;

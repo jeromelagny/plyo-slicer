@@ -72,6 +72,7 @@
 #include <wx/panel.h>
 #include <wx/sizer.h>
 #include <wx/uri.h>
+#include <wx/utils.h>
 #include <wx/weakref.h>
 #include <wx/webview.h>
 
@@ -572,6 +573,12 @@ void handle_page_message(const nlohmann::json& data)
             done["type"]        = "commands";
             done["request"]     = Json::integer(data, "request", 0);
             send(done);
+        } else if (type == "open_payment") {
+            // Page Stripe (paiement ou portail de l'abonnement) ouverte dans le navigateur du système : le panneau ancré ne
+            // peut pas ouvrir de fenêtre. Seulement checkout.stripe.com et billing.stripe.com (PageLogic::is_payment_url).
+            const std::string url = Json::str(data, "url", 4096);
+            const bool        ok  = PageLogic::is_payment_url(url) && wxLaunchDefaultBrowser(wxString::FromUTF8(url));
+            send({{"type", "open_payment"}, {"ok", ok}});
         } else if (type == "open_tool") {
             nlohmann::json done = Commands::open_tool(Json::str(data, "tool"), Json::str(data, "object", 20));
             done["type"]        = "open_tool";

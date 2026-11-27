@@ -54,6 +54,8 @@ function service(cfg = {}) {
     if (url.endsWith('/api/me')) return response(200, { gauge: cfg.gauge || gauge(41), email: 'a@b.fr' });
     if (url.endsWith('/api/me/credits')) return response(200, { gauge: cfg.gauge || gauge(41) });
     if (url.endsWith('/api/feedback')) return response(200, { ok: true });
+    if (url.endsWith('/api/checkout')) { (cfg.checkouts = cfg.checkouts || []).push(JSON.parse(init.body)); return cfg.checkout ? response(cfg.checkout.status, cfg.checkout.body) : response(200, { url: 'https://checkout.stripe.com/c/pay/cs_test_1' }); }
+    if (url.endsWith('/api/billing/portal')) return response(200, { url: 'https://billing.stripe.com/p/session/test_1' });
     if (url.endsWith('/api/refunds')) { (cfg.refunds = cfg.refunds || []).push(JSON.parse(init.body)); return cfg.refund ? response(cfg.refund.status, cfg.refund.body) : response(200, { refunded: 2, balance: 15, gauge: credits(15) }); }
     if (url.endsWith('/api/outcomes')) return response(200, { ok: true });
     if (url.endsWith('/api/diagnose')) return cfg.error ? response(cfg.error.status, cfg.error.body) : response(200, null, { lines: [cfg.answer] });
@@ -175,9 +177,9 @@ test('lot 5 : jauge en pourcentage, « Mon utilisation » au clic, « Les formul
     assert.match(texts(win(p)), /IA restante.*59 %.*te restent ce mois-ci/);
     assert.doesNotMatch(texts(win(p)), /questions|token/i, 'pas de nombre de questions dans « Mon utilisation »');
     byText(win(p), /Voir les formules/).click();
-    assert.match(texts(win(p)), /Les formules arrivent/);
-    assert.match(texts(win(p)), /Plyo\+, 60 crédits chaque mois \(environ 30 diagnostics photo\)/);
-    assert.doesNotMatch(texts(win(p)), /€|\$/);
+    // Phase 4 (Stripe) : Plyo+ au mois en bouton principal, l'année en lien, packs et fondateur repliés ; Pro caché.
+    assert.match(texts(win(p)), /Plyo\+ · 9,99 € par mois.*À l’année · 8,25 € par mois.*Sans abonnement.*Pack secours · 4,99 €.*Grand pack · 9,99 €.*Offre fondateur · 79 € par an/);
+    assert.match(texts(win(p)), /moins d’une demi-bobine/);
     assert.doesNotMatch(texts(win(p)), /160 crédits/, 'Pro caché au lancement');
     p.ctx.PlyoV2.fenetre.close();
     assert.doesNotMatch(texts(p.document.body), /environ \d+ questions/);
@@ -185,9 +187,10 @@ test('lot 5 : jauge en pourcentage, « Mon utilisation » au clic, « Les formul
 });
 
 test('lot 5 : bloc des formules à la grille du 26/11 ; plan_required garde sa logique et ouvre les formules', async () => {
-  const v2 = read('v2/menu.js');
-  for (const t of ['60 crédits chaque mois (environ 30 diagnostics photo)', 'Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne coûtent jamais de crédits.'])
-    assert.ok(v2.includes(t), t);
+  const v2 = read('v2/menu.js'), logic = read('assistant-logic.js');
+  assert.ok(v2.includes('60 crédits chaque mois, environ 30 diagnostics photo.'));
+  assert.ok(v2.includes('Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne coûtent jamais de crédits.'));
+  assert.ok(logic.includes('Plyo+ · 9,99 € par mois'));
   const p = await start({ session: SESSION, error: { status: 403, body: { error: 'plan_required', plan: 'plus' } } });
   try {
     await sleep(30);
@@ -401,5 +404,53 @@ test('tarif fixe : limite de sécurité atteinte → message clair avec la date,
     await sleep(60);
     assert.match(texts(p.$('msgs')), /ton compte a atteint sa limite de sécurité\. Elle se lève le 1er décembre\./);
     assert.ok(!byText(p.$('msgs'), /^Réessayer$/));
+  } finally { p.stop(); }
+});
+
+test('paiement : plus assez de crédits → le pack secours en bouton principal ouvre la page Stripe dans le navigateur', async () => {
+  const cfg = { session: SESSION, gauge: credits(0, { state: 'empty' }), error: { status: 402, body: { error: 'insufficient_credits', gauge: credits(0, { state: 'empty' }) } } };
+  const p = await start(cfg);
+  try {
+    await sleep(30);
+    p.$('note').value = 'Des fils partout';
+    p.$('c-send').click();
+    await sleep(60);
+    assert.match(texts(p.$('msgs')), /Il ne te reste plus assez de crédits pour cette demande\. Tes 2 crédits du mois se renouvellent le 1er décembre\./);
+    byText(p.$('msgs'), /Pack secours · 4,99 €/).click();
+    await sleep(40);
+    assert.deepEqual(cfg.checkouts, [{ offer: 'pack_25' }]);
+    assert.deepEqual(sent(p, 'open_payment').map((m) => m.url), ['https://checkout.stripe.com/c/pay/cs_test_1']);
+    assert.match(texts(p.$('msgs')), /La page de paiement s’ouvre dans ton navigateur/);
+  } finally { p.stop(); }
+});
+
+test('paiement : « S’abonner » dans les formules ; offre fondateur complète → message clair, rien ne s’ouvre', async () => {
+  const cfg = { session: SESSION, gauge: credits(13) };
+  const p = await start(cfg);
+  try {
+    await sleep(30);
+    p.ctx.PlyoV2.menu.openPlans();
+    byText(win(p), /Plyo\+ · 9,99 € par mois/).click();
+    await sleep(40);
+    assert.deepEqual(cfg.checkouts, [{ offer: 'plus_monthly' }]);
+    assert.equal(sent(p, 'open_payment').length, 1);
+    cfg.checkout = { status: 409, body: { error: 'founder_sold_out' } };
+    p.ctx.PlyoV2.menu.openPlans();
+    byText(win(p), /Offre fondateur · 79 € par an/).click();
+    await sleep(40);
+    assert.equal(sent(p, 'open_payment').length, 1, 'aucune page de plus');
+    assert.match(texts(p.$('msgs')), /Les 300 places de l’offre fondateur sont prises/);
+  } finally { p.stop(); }
+});
+
+test('paiement : abonné → « Gérer mon abonnement » ouvre le portail Stripe', async () => {
+  const p = await start({ session: SESSION, gauge: credits(40, { plan: 'plus', monthly: 60 }) });
+  try {
+    await sleep(30);
+    p.$('gauge').click();
+    await sleep(20);
+    byText(win(p), /Gérer mon abonnement/).click();
+    await sleep(40);
+    assert.deepEqual(sent(p, 'open_payment').map((m) => m.url), ['https://billing.stripe.com/p/session/test_1']);
   } finally { p.stop(); }
 });

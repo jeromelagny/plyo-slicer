@@ -4845,6 +4845,21 @@ TEST_CASE("Lot 12 · CSP : origine du service, sans chemin ni caractère qui cas
     CHECK(origin_of("https://a.example'").empty());
 }
 
+TEST_CASE("Paiement : seules les pages Stripe Checkout et du portail s'ouvrent dans le navigateur")
+{
+    using Plyo::PageLogic::is_payment_url;
+    CHECK(is_payment_url("https://checkout.stripe.com/c/pay/cs_test_a1B2#fidkdWxOYHwnPyd1blpxYHZxWjA0"));
+    CHECK(is_payment_url("https://billing.stripe.com/p/session/test_YWNjdF8x"));
+    CHECK_FALSE(is_payment_url("http://checkout.stripe.com/c/pay/cs_test"));
+    CHECK_FALSE(is_payment_url("https://checkout.stripe.com.evil.example/c/pay"));
+    CHECK_FALSE(is_payment_url("https://evil.example/?u=https://checkout.stripe.com"));
+    CHECK_FALSE(is_payment_url("https://checkout.stripe.com:8443/c/pay"));
+    CHECK_FALSE(is_payment_url("https://user@checkout.stripe.com/c/pay"));
+    CHECK_FALSE(is_payment_url("https://checkout.stripe.com/c/pay x"));
+    CHECK_FALSE(is_payment_url("javascript:alert(1)"));
+    CHECK_FALSE(is_payment_url("https://checkout.stripe.com/" + std::string(3000, 'a')));
+}
+
 TEST_CASE("Lot 12 · CSP : seulement ce que la page charge, construite d'après l'adresse du service")
 {
     using Plyo::PageLogic::content_security_policy;
