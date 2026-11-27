@@ -16,4 +16,11 @@ boost::filesystem::path dir(const std::string& sub = std::string());
 nlohmann::json          read(const boost::filesystem::path& path);
 bool                    write(const boost::filesystem::path& path, const nlohmann::json& value);
 
+// Verrou d'instance (ROB-16), datadir/plyo/.lock : pris au démarrage (FirstSteps::on_startup) et tenu jusqu'à la fin du
+// processus ; le système le rend tout seul si l'application s'arrête net. Sans effet après le premier appel.
+void claim_instance();
+// Vrai si une autre instance de Plyo tient le verrou de ce dossier de données : ses écritures et les nôtres peuvent
+// s'écraser. Faux si le verrou est à nous, ou si le système de fichiers ne sait pas verrouiller (rien n'est affirmé).
+bool other_instance();
+
 }} // namespace Plyo::Store

@@ -1,8 +1,14 @@
 #include "PlyoCalibration.hpp"
+#include "PlyoCalibrationLogic.hpp"
+#include "PlyoAssistant.hpp"
+#include "PlyoAutoSave.hpp"
+#include "PlyoCatalog.hpp"
+#include "PlyoConfigRulesLogic.hpp"
 #include "PlyoStore.hpp"
 #include "PlyoSanitize.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoSettingsBridge.hpp"
+#include "PlyoSpools.hpp"
 
 #include "libslic3r/Format/STL.hpp"
 #include "libslic3r/Model.hpp"
@@ -49,6 +55,7 @@ struct Snapshot
 {
     bool                     has_project = false;
     std::string              project_file; // fichier du projet de l'utilisateur ("" s'il n'était pas enregistré)
+    std::string              capture_file; // copie 3MF du plateau, dans plyo_dir() ("" si le plateau était vide)
     bool                     project_dirty = false;
     std::string              printer, print;
     std::vector<std::string> filaments;
@@ -57,6 +64,8 @@ struct Snapshot
 
 std::optional<Snapshot> s_before;
 std::vector<size_t>     s_test_objects; // objets du plateau de test (pour savoir si l'utilisateur a ouvert autre chose)
+std::vector<std::string> s_kept_files;  // captures remplacées par une plus récente : jamais effacées, signalées par restore()
+std::string              s_restored_file; // capture déjà remise sur le plateau : retirée du disque à la capture suivante
 
 std::vector<size_t> object_ids()
 {
@@ -90,16 +99,21 @@ std::string origin_filament(const std::string& name)
     return name.size() > suffix.size() && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0 ? name.substr(0, name.size() - suffix.size()) : name;
 }
 
-std::string calibrated_name() { return origin_filament(filament_name()) + " — " + printer_name() + CALIBRATED_SUFFIX; }
+// Le filament en cours est-il une bobine ? Alors la calibration s'écrit dans son préréglage.
+bool filament_is_spool() { return Spools::is_spool_preset(filament_name()); }
+
+std::string calibrated_name(bool spool)
+{
+    return CalibrationLogic::target_name(spool, filament_name(), origin_filament(filament_name()), printer_name(), CALIBRATED_SUFFIX);
+}
 
 // Capture puis projet vide, sans fenêtre : Orca n'a plus de projet ni de préréglage modifié à signaler.
-// Un plateau qui n'est plus celui du test (l'utilisateur a ouvert autre chose entre-temps) est capturé à son tour.
+// Un plateau sans aucun objet du test (l'utilisateur a ouvert autre chose entre-temps) est capturé à son tour, dans un
+// nouveau fichier : celui de la capture d'avant reste sur le disque.
 // Renvoie false si le projet n'a pas pu être gardé : rien n'est alors effacé.
 bool capture()
 {
-    if (s_before && !plater()->model().objects.empty() && object_ids() != s_test_objects)
-        s_before.reset();
-    if (!s_before) {
+    if (CalibrationLogic::capture_step(s_before.has_value(), object_ids(), s_test_objects) != CalibrationLogic::CaptureStep::Keep) {
         Snapshot snap;
         snap.printer         = bundle().printers.get_selected_preset_name();
         snap.print           = bundle().prints.get_selected_preset_name();
@@ -110,13 +124,25 @@ bool capture()
         if (!plater()->model().objects.empty()) {
             boost::system::error_code ec;
             fs::create_directories(plyo_dir(), ec);
-            if (!plater()->export_3mf_copy(plyo_dir() / "avant-calibration.3mf"))
+            const fs::path file = CalibrationLogic::free_capture_path(plyo_dir());
+            if (file.empty() || !plater()->export_3mf_copy(file))
                 return false;
+            snap.capture_file  = file.string();
             snap.has_project   = true;
             snap.project_file  = plater()->get_project_filename(".3mf").ToUTF8().data();
             snap.project_dirty = plater()->is_project_dirty();
         }
+        if (s_before && !s_before->capture_file.empty())
+            s_kept_files.push_back(s_before->capture_file);
+        const bool saved_plate = snap.has_project;
         s_before = std::move(snap);
+        // La capture déjà remise sur le plateau ne sert plus, une fois le plateau d'aujourd'hui gardé à son tour. Avec un
+        // plateau vide, rien ne la remplace : elle reste sur le disque.
+        if (saved_plate && !s_restored_file.empty()) {
+            boost::system::error_code ec;
+            fs::remove(s_restored_file, ec);
+            s_restored_file.clear();
+        }
     }
     discard_unsaved_changes();
     plater()->new_project(true, true);
@@ -149,14 +175,20 @@ std::string number(double v, int decimals)
 
 nlohmann::json section(int index, const std::string& label, double value) { return {{"index", index}, {"label", label}, {"value", value}}; }
 
-// Tour de température : un bloc tous les 5 °C, le plus chaud en bas (Plater::calib_temp).
-nlohmann::json temperature_test()
+// La tour qui convient au filament en cours (ou le refus), à partir de son type et des limites de son profil.
+CalibrationLogic::TempTower temperature_tower_now()
 {
-    static const std::map<std::string, std::pair<int, int>> ranges{{"PLA", {230, 190}}, {"PETG", {260, 220}}, {"ABS", {270, 230}},
-                                                                   {"ASA", {270, 230}}, {"TPU", {240, 200}}, {"PA", {290, 250}},
-                                                                   {"PC", {300, 260}}};
-    const auto it              = ranges.find(filament_type());
-    const auto [start, end]    = it != ranges.end() ? it->second : std::pair<int, int>{230, 190};
+    const Slic3r::DynamicPrintConfig& config = bundle().filaments.get_edited_preset().config;
+    const auto first_int = [&config](const char* key) {
+        const auto* v = config.option<Slic3r::ConfigOptionInts>(key);
+        return v != nullptr && !v->values.empty() ? v->values.front() : 0;
+    };
+    return CalibrationLogic::temperature_tower(filament_type(), first_int("nozzle_temperature_range_low"), first_int("nozzle_temperature_range_high"), first_int("nozzle_temperature"));
+}
+
+// Tour de température : un bloc tous les 5 °C, le plus chaud en bas (Plater::calib_temp).
+nlohmann::json temperature_test(int start, int end)
+{
     Slic3r::Calib_Params params;
     params.mode  = Slic3r::CalibMode::Calib_Temp_Tower;
     params.start = start;
@@ -184,8 +216,8 @@ nlohmann::json flow_test(int pass, double base_value)
             tab->load_config(cfg);
     }
     const double   base     = pass == 2 && base_value > 0 ? base_value : ratio->values.front();
-    nlohmann::json sections = nlohmann::json::array();
-    int            i        = 0;
+    struct Square { double mod; std::string modifier; double value; };
+    std::vector<Square> squares;
     for (const Slic3r::ModelObject* obj : plater()->model().objects) {
         // Noms « flowrate_m5 », « flowrate_10 » : même lecture que Plater::calib_flowrate.
         if (obj->name.size() <= 9)
@@ -198,9 +230,14 @@ nlohmann::json flow_test(int pass, double base_value)
         in.imbue(std::locale::classic());
         if (!(in >> mod))
             continue;
-        const double value = std::round(base * (1.0 + mod / 100.0) * 1000.0) / 1000.0;
-        sections.push_back(section(i++, "carré « " + modifier + " » (" + number(value, 3) + ")", value));
+        squares.push_back({mod, modifier, std::round(base * (1.0 + mod / 100.0) * 1000.0) / 1000.0});
     }
+    // Rangés par valeur : Orca les crée dans un ordre qui ne se lit pas (20, 5, -10, -15, -20, -5).
+    std::sort(squares.begin(), squares.end(), [](const Square& a, const Square& b) { return a.mod < b.mod; });
+    nlohmann::json sections = nlohmann::json::array();
+    int            i        = 0;
+    for (const Square& square : squares)
+        sections.push_back(section(i++, "carré « " + square.modifier + " » (" + number(square.value, 3) + ")", square.value));
     if (sections.size() < 2)
         return {{"ok", false}, {"text", "Les carrés de débit n'ont pas pu être préparés."}};
     return {{"sections", sections},
@@ -370,12 +407,28 @@ nlohmann::json start_test(const std::string& test, int pass, double base_value)
     static const std::vector<std::string> known{"temperature", "flow", "retraction", "pressure_advance", "ironing"};
     if (std::find(known.begin(), known.end(), test) == known.end())
         return {{"ok", false}, {"text", "Test de calibration inconnu."}};
+    // Avant toute capture : rien n'est touché si la valeur est refusée.
+    if (test == "flow" && pass == 2 && !CalibrationLogic::flow_base_valid(base_value))
+        return {{"ok", false}, {"text", "Refusé : le débit de départ de la passe 2 doit rester entre 0,7 et 1,3."}};
 
+    CalibrationLogic::TempTower tower;
+    if (test == "temperature") {
+        tower = temperature_tower_now();
+        if (!tower.refusal.empty())
+            return {{"ok", false}, {"text", tower.refusal}};
+    }
+
+    // Avant la capture : la bobine en cours, modifiée, est écrite (la capture vide les modifications). Pendant un test déjà
+    // lancé, le filament porte les valeurs du test : elles n'entrent jamais dans la bobine (flush_spool refuse, on ne
+    // lance rien), et les tests suivants repartent de la capture du premier.
+    if (!s_before.has_value() && AutoSave::flush_spool() == SpoolsLogic::Flush::Refuse)
+        return {{"ok", false}, {"text", SpoolsLogic::FLUSH_REFUSED_TEXT}};
+    const ProjectNotificationsPause quiet; // capture et fonctions calib_* d'Orca : plusieurs « nouveau projet »
     if (!capture())
         return {{"ok", false}, {"text", "Ta pièce n'a pas pu être mise de côté : le test n'est pas lancé."}};
     nlohmann::json result;
     if (test == "temperature")
-        result = temperature_test();
+        result = temperature_test(tower.start, tower.end);
     else if (test == "flow")
         result = flow_test(pass == 2 ? 2 : 1, base_value);
     else if (test == "retraction")
@@ -395,7 +448,7 @@ nlohmann::json start_test(const std::string& test, int pass, double base_value)
     result["test"] = test;
     result["pass"] = test == "flow" ? (pass == 2 ? 2 : 1) : 1;
     s_active       = result;
-    SettingsBridge::clear_undo();
+    SettingsBridge::clear_undo(SettingsBridge::DropReason::Calibration);
     BOOST_LOG_TRIVIAL(info) << "Plyo: test de calibration lancé (" << test << ")";
     return result;
 }
@@ -409,11 +462,12 @@ nlohmann::json save_result(const std::string& test, double value)
         return {{"ok", false}, {"text", "Refusé : valeur de test invalide."}};
     for (const auto& [range, v] : keys)
         if (!(v >= range.min - 1e-9 && v <= range.max + 1e-9))
-            return {{"ok", false}, {"text", std::string("Refusé : ") + range.key + " hors des limites de Plyo."}};
+            return {{"ok", false}, {"text", "Refusé : la valeur trouvée pour « " + ConfigRules::label_of(range.key, [](const std::string& k) { return Catalog::policy().title(k); }) + " » sort des plages sûres de Plyo."}};
 
     // Base : le préréglage de filament ENREGISTRÉ (pas l'édité, qui porte les réglages du test). Si le préréglage
     // calibré existe déjà, on part de lui pour garder les valeurs des tests précédents.
-    const std::string name      = calibrated_name();
+    const bool        spool     = filament_is_spool();
+    const std::string name      = calibrated_name(spool);
     const std::string base_name = bundle().filaments.find_preset(name, false) != nullptr ? name : filament_name();
     if (bundle().filaments.find_preset(base_name, false) == nullptr)
         return {{"ok", false}, {"text", "Refusé : ton filament d'avant le test est introuvable."}};
@@ -438,7 +492,9 @@ nlohmann::json save_result(const std::string& test, double value)
         }
         cfg.set_deserialize_strict(range.key, serialized);
     }
-    cfg.set_key_value("compatible_printers", new Slic3r::ConfigOptionStrings({s_before->printer}));
+    // Une bobine garde ses `inherits` (repris du préréglage) et son imprimante : seuls les préréglages calibrés sont liés ici.
+    if (!spool)
+        cfg.set_key_value("compatible_printers", new Slic3r::ConfigOptionStrings({s_before->printer}));
 
     Slic3r::GUI::Tab* tab = Slic3r::GUI::wxGetApp().get_tab(Preset::TYPE_FILAMENT);
     if (tab == nullptr)
@@ -447,7 +503,7 @@ nlohmann::json save_result(const std::string& test, double value)
     tab->save_preset(name); // nom fourni : pas de fenêtre ; crée ou met à jour le préréglage calibré
     // Orca peut refuser l'enregistrement sans le dire (ex. températures de plateau incohérentes dans le filament).
     if (bundle().filaments.get_selected_preset_name() != name || bundle().filaments.current_is_dirty())
-        return {{"ok", false}, {"text", "Orca n'a pas pu enregistrer le préréglage « " + name + " ». Vérifie ton filament dans ses réglages."}};
+        return {{"ok", false}, {"text", "Plyo Slicer n'a pas pu enregistrer le profil « " + name + " » : le résultat du test n'est pas retenu."}};
 
     // « Remettre ma pièce » reprendra le préréglage calibré à la place du filament d'avant.
     if (!s_before->filaments.empty())
@@ -469,13 +525,14 @@ nlohmann::json restore()
     if (!s_before)
         return {{"ok", false}, {"text", "Rien à remettre."}};
     const Snapshot snap = *s_before;
+    const ProjectNotificationsPause quiet; // la pièce revient : pour le panneau, le projet n'a pas changé
 
     // Projet vidé d'abord (sans question), puis rechargé sans fenêtre de choix ; la capture n'est oubliée
     // qu'une fois la pièce revenue.
     discard_unsaved_changes();
     plater()->new_project(true, true);
     if (snap.has_project) {
-        plater()->load_project(wxString::FromUTF8((plyo_dir() / "avant-calibration.3mf").string()), "<loadall>");
+        plater()->load_project(wxString::FromUTF8(snap.capture_file), "<loadall>");
         if (plater()->model().objects.empty())
             return {{"ok", false}, {"text", "Ta pièce n'a pas pu être rechargée. Réessaie « Remettre ma pièce »."}};
         // Le projet redevient celui de l'utilisateur (pas la copie de Plyo), pour que l'enregistrer écrive au bon endroit.
@@ -484,6 +541,9 @@ nlohmann::json restore()
             plater()->take_snapshot("Pièce remise par Plyo"); // modifications non enregistrées : le projet reste à enregistrer
     }
     s_before.reset();
+    s_restored_file = snap.capture_file;
+    const std::string kept = CalibrationLogic::kept_note(s_kept_files);
+    s_kept_files.clear();
     s_active = nullptr;
     s_test_objects.clear();
 
@@ -500,9 +560,11 @@ nlohmann::json restore()
                                 std::pair{Preset::TYPE_FILAMENT, &snap.filament_config}})
         if (Slic3r::GUI::Tab* tab = Slic3r::GUI::wxGetApp().get_tab(type))
             tab->load_config(*config);
-    SettingsBridge::clear_undo();
-    return {{"ok", true}, {"text", snap.has_project ? "Ta pièce et tes réglages sont de retour." : "Tes réglages sont de retour."}};
+    SettingsBridge::clear_undo(SettingsBridge::DropReason::Calibration);
+    return {{"ok", true}, {"text", (snap.has_project ? "Ta pièce et tes réglages sont de retour." : "Tes réglages sont de retour.") + kept}};
 }
+
+bool active() { return s_before.has_value(); }
 
 nlohmann::json history_for_current()
 {

@@ -4,7 +4,12 @@
 
 #include <nlohmann/json.hpp>
 
+#include <functional>
 #include <string>
+
+namespace Slic3r {
+class ModelObject;
+} // namespace Slic3r
 
 // Le plateau vu par l'assistant (ce qui est posé, tient ou pas, découpé ou pas) et les actions que l'utilisateur
 // déclenche depuis une réponse : chacune passe par la commande d'Orca correspondante, donc par son « Annuler ».
@@ -14,11 +19,20 @@ namespace Plyo { namespace PlateActions {
 Slic3r::Vec3d  bed_size();
 // Tient sur le plateau, au besoin tourné d'un quart de tour (une dimension du plateau à 0 est ignorée).
 bool           fits(const Slic3r::Vec3d& size, const Slic3r::Vec3d& bed);
-// {objects: [{name, size_mm}], bed_mm, sliced, time_s, weight_g} pour la plaque en cours.
+// Verdict sur une pièce de la plaque en cours, qui ne contredit jamais Orca (ERR-11) : un exemplaire qu'Orca juge dans la
+// plaque (ModelInstance::print_volume_state, calculé par Orca sur la vraie forme du plateau) tient ; sinon, la mesure
+// `fits` (boîte englobante de la zone imprimable) dit si la pièce pourrait tenir une fois rangée.
+bool           fits_on_plate(const Slic3r::ModelObject& object, const Slic3r::Vec3d& bed);
+// {objects: [{ref, name, size_mm, …}], bed_mm, sliced, time_s, weight_g, issues} pour la plaque en cours (issues : OrcaMessages::report).
 nlohmann::json context();
 // `kind` : orient | arrange | scale_to_fit | slice. Renvoie {ok, text} et, pour une action annulable, `undo_token`
-// (l'instantané d'annulation d'Orca pris juste avant l'action).
+// (l'instantané d'annulation d'Orca pris juste avant l'action). Découpe refusée : reason « too_big » (avec la mesure) ou
+// « orca_refused » (avec `issues`, la raison donnée par Orca).
 nlohmann::json run(const std::string& kind);
+// Comme run(), avec la réponse rendue à `reply`. Pour « slice » : un réglage changé à l'instant n'est lu par Orca qu'au passage
+// de sa minuterie (500 ms) ; la découpe attend ce passage (3 s au plus, sur le fil de l'interface, sans le bloquer), puis
+// vérifie la plaque et découpe. Les autres actions répondent tout de suite.
+void           run_when_ready(const std::string& kind, std::function<void(nlohmann::json)> reply);
 // Annule l'action `undo_token`, seulement si rien n'a changé sur le plateau depuis et qu'aucune tâche ne tourne.
 nlohmann::json undo(long long undo_token);
 

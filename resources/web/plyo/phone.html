@@ -19,12 +19,15 @@
   html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 14px; line-height: 1.5; display: flex; flex-direction: column; }
   main { flex: 1; padding: 24px 28px 10px; display: grid; grid-template-columns: 172px 1fr; gap: 22px; align-content: start; }
-  .qr { width: 172px; height: 172px; border-radius: 12px; background: #fff; padding: 8px; display: grid; place-items: center; }
+  .qr { width: 172px; height: 172px; border-radius: 12px; background: #fff; padding: 8px; display: grid; place-items: center; border: 1px solid #e4e4e4; }
   .qr img { width: 100%; height: 100%; image-rendering: pixelated; }
   .qr .wait { color: #888; font-size: 12px; }
-  h1 { margin: 2px 0 8px; font-size: 18px; font-weight: 600; line-height: 1.25; }
-  ol { margin: 0; padding-left: 20px; }
-  ol li { margin-bottom: 4px; }
+  h1 { margin: 2px 0 4px; font-size: 19px; font-weight: 700; line-height: 1.25; }
+  .why { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; counter-reset: step; }
+  ol li { display: flex; gap: 9px; align-items: flex-start; font-size: 13.5px; counter-increment: step; }
+  ol li::before { content: counter(step); flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700;
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg)); }
   .live { margin: 4px 28px 0; padding: 14px; border-radius: 12px; border: 1px dashed var(--border); background: color-mix(in srgb, var(--fg) 4%, var(--bg)); }
   .status { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 13.5px; }
   .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
@@ -32,11 +35,14 @@
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); } 70% { box-shadow: 0 0 0 9px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
   @media (prefers-reduced-motion: reduce) { .pulse.on { animation: none; } }
   .slots { display: flex; gap: 6px; margin-top: 10px; }
-  .slot { width: 40px; height: 40px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 22%, var(--bg)); display: grid; place-items: center; color: var(--accent); font-size: 18px; }
+  .slot { width: 48px; height: 48px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 22%, var(--bg)); display: grid; place-items: center; color: var(--accent); }
+  .slot svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; display: block; }
   .hint { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
   .error { color: var(--danger); }
   footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 28px 22px; }
   footer .note { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .linkbtn { height: auto; padding: 0; border: 0; background: none; color: var(--accent); font-weight: 600; font-size: 12.5px; text-decoration: underline; cursor: pointer; }
   button { height: 38px; padding: 0 18px; border-radius: 8px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
   .primary { color: var(--orca-accent-fg, #fff); background: var(--accent); border: 1px solid var(--accent); }
   .ghost { color: var(--fg); background: transparent; border: 1px solid var(--border); }
@@ -47,11 +53,12 @@
   <main>
     <div class="qr" id="qr"><span class="wait">Génération…</span></div>
     <div>
-      <h1>Prends tes photos avec ton téléphone</h1>
+      <h1 id="title">Montre-moi le défaut</h1>
+      <p class="why" id="why">Avec ton téléphone : les photos arrivent ici, dans ton projet.</p>
       <ol>
-        <li>Ouvre l’appareil photo de ton téléphone</li>
-        <li>Vise le QR code et ouvre le lien</li>
-        <li>Photographie la pièce sous plusieurs angles</li>
+        <li>Ouvre l’appareil photo et vise ce code</li>
+        <li>Suis les consignes sur ton téléphone</li>
+        <li>Appuie sur « Envoyer à Plyo »</li>
       </ol>
     </div>
   </main>
@@ -59,11 +66,11 @@
   <div class="live">
     <div class="status"><span class="pulse" id="pulse"></span><span id="status">En attente du téléphone…</span></div>
     <div class="slots" id="slots"></div>
-    <p class="hint" id="hint">Le téléphone doit être sur le même Wi-Fi que cet ordinateur.</p>
+    <p class="hint" id="hint"></p>
   </div>
 
   <footer>
-    <span class="note" id="note">Un seul scan suffit pour toute la conversation&nbsp;: chaque «&nbsp;Envoyer&nbsp;» sur le téléphone arrive directement à l’assistant.</span>
+    <span class="note" id="note">Pas de téléphone sous la main&nbsp;? <button class="linkbtn" id="btn-computer" type="button">Choisir des photos sur l’ordinateur</button></span>
     <button class="ghost" id="btn-close" type="button">Fermer</button>
   </footer>
 
@@ -73,27 +80,50 @@
   var PLYO_API_URL = window.PLYO_API_URL;
   var POLL_MS = 2000;
 
-  // Transmis par Orca : jeton de connexion et lien téléphone de la conversation ({ id, qr_svg }).
+  // Transmis par Orca : jeton de connexion et lien téléphone de la conversation ({ id, qr_svg, purpose, label }).
   var plyo = window.PLYO || {};
   var link = plyo.link || {};
+  // Même titre que la page du téléphone (plyo-api, phone-purpose.ts), et le projet où arrivent les photos.
+  var TITLES = { defect: 'Montre-moi le défaut', calibration: 'Montre-moi ton test', sketch: 'Montre-moi ton croquis' };
+  document.getElementById('title').textContent = TITLES[link.purpose] || TITLES.defect;
+  var where = link.purpose === 'sketch' ? 'ta pièce sur mesure' : link.label ? '« ' + link.label + ' »' : 'ton projet';
+  document.getElementById('why').textContent = 'Avec ton téléphone : les photos arrivent ici, dans ' + where + '.';
   var qr = document.getElementById('qr');
   var pulse = document.getElementById('pulse');
   var statusLine = document.getElementById('status');
   var slots = document.getElementById('slots');
   var hint = document.getElementById('hint');
   var timer = null;
+  // Le QR vise le service hébergé (https) : Internet suffit, Wi-Fi ou données mobiles. Service local de développement
+  // (http) : le QR vise l'adresse de cet ordinateur sur le Wi-Fi (plyo-api, publicBaseUrl), le même Wi-Fi est nécessaire.
+  hint.textContent = /^https:\/\//i.test(String(PLYO_API_URL || '')) ? 'Ton téléphone a juste besoin d’Internet (Wi-Fi ou données mobiles).'
+    : 'Ton téléphone doit être sur le même Wi-Fi que cet ordinateur.';
   var receivedAtOpen = null; // envois déjà reçus à l'ouverture : on ferme dès que ce nombre augmente
 
   function toSlicer(message) {
     if (window.wx && window.wx.postMessage) window.wx.postMessage(JSON.stringify(message));
   }
 
-  function setPhotos(count) {
+  // Photos prises sur le téléphone : leur miniature (`thumbs` du service, data:image/jpeg vérifiée), sinon l'icône.
+  var shown = '';
+  function setPhotos(count, thumbs) {
+    var list = Array.isArray(thumbs) ? thumbs : [], key = count + '|' + list.map(function (t) { return String(t).length; }).join(',');
+    if (key === shown) return; // rien de neuf : pas de clignotement toutes les 2 secondes
+    shown = key;
     slots.textContent = '';
     for (var i = 0; i < count; i++) {
       var slot = document.createElement('div');
       slot.className = 'slot';
-      slot.textContent = '📷';
+      var t = typeof list[i] === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(list[i]) ? list[i] : '';
+      if (t) {
+        var img = document.createElement('img');
+        img.alt = 'Photo ' + (i + 1);
+        img.src = t;
+        slot.appendChild(img);
+      } else {
+        // Icône « camera » du jeu dessiné du panneau (ICONS dans index.html), jamais d'émoji.
+        slot.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg>';
+      }
       slots.appendChild(slot);
     }
   }
@@ -118,12 +148,13 @@
           statusLine.textContent = 'Photos reçues : l’assistant les analyse…';
           return toSlicer({ command: 'phone_done' });
         }
-        setPhotos(s.photo_count);
+        setPhotos(s.photo_count, s.thumbs);
         if (s.status === 'waiting') return;
         pulse.classList.add('on');
+        // Ce qu'il reste à faire sur le téléphone, avec le nom du bouton.
         statusLine.textContent = s.photo_count
-          ? 'Téléphone relié · ' + s.photo_count + ' photo' + (s.photo_count > 1 ? 's' : '') + ' prête' + (s.photo_count > 1 ? 's' : '') + ' à envoyer'
-          : 'Téléphone relié';
+          ? 'Téléphone relié · ' + s.photo_count + ' photo' + (s.photo_count > 1 ? 's' : '') + ' prise' + (s.photo_count > 1 ? 's' : '') + ' : appuie sur « Envoyer à Plyo »'
+          : 'Téléphone relié : prends tes photos';
       })
       .catch(function (status) {
         if (status === 401) stop('Ta session a expiré.', 'Ferme cette fenêtre et reconnecte-toi.');
@@ -142,6 +173,8 @@
     timer = setInterval(poll, POLL_MS);
   }
   document.getElementById('btn-close').addEventListener('click', function () { toSlicer({ command: 'close_page' }); });
+  // Sans téléphone : la fenêtre se ferme, et le panneau propose de choisir les photos sur l'ordinateur.
+  document.getElementById('btn-computer').addEventListener('click', function () { toSlicer({ command: 'pick_files' }); });
 })();
 </script>
 </body>

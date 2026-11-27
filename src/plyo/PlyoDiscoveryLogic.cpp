@@ -58,6 +58,66 @@ std::vector<std::string> neighbours(const std::string& local_ip)
     return out;
 }
 
+std::string creality_mdns_name(const std::string& model_code, const std::string& orca_model_name,
+                               const std::map<std::string, std::string>& learned)
+{
+    if (!orca_model_name.empty())
+        return "Creality " + orca_model_name;
+    if (const auto it = learned.find(model_code); it != learned.end())
+        return it->second;
+    // Codes de /info absents de la table d'Orca (qui ne connaît que les modèles à CFS). N'ajouter un code que constaté sur
+    // une vraie machine.
+    static const std::map<std::string, std::string> CODES = {
+        {"F003", "CR-10 SE"}, // CR-10 SE de Jérôme, 2026-11-10
+    };
+    if (const auto it = CODES.find(model_code); it != CODES.end())
+        return "Creality " + it->second;
+    return "Imprimante Creality";
+}
+
+namespace {
+bool safe_chars(const std::string& s, const std::string& extra)
+{
+    return std::all_of(s.begin(), s.end(), [&](unsigned char c) { return std::isalnum(c) || extra.find(static_cast<char>(c)) != std::string::npos || c >= 0x80; });
+}
+} // namespace
+
+bool valid_learned(const std::string& brand, const std::string& code, const std::string& model)
+{
+    const bool brand_ok = !brand.empty() && brand.size() <= 30 && std::isalnum(static_cast<unsigned char>(brand[0])) && safe_chars(brand, " .-");
+    const bool code_ok  = !code.empty() && code.size() <= 20 && std::all_of(code.begin(), code.end(), [](unsigned char c) { return std::isalnum(c) || c == '_' || c == '.' || c == '-'; });
+    const bool model_ok = model.size() >= 2 && model.size() <= 100 && safe_chars(model, " ()+.,'/_-");
+    return brand_ok && code_ok && model_ok;
+}
+
+std::map<std::string, std::string> learned_for(const nlohmann::json& store, const std::string& brand)
+{
+    std::map<std::string, std::string> out;
+    for (const char* part : {"shared", "local"}) { // local en dernier : il remplace
+        if (!store.is_object() || !store.contains(part) || !store[part].is_object() || !store[part].contains(brand) || !store[part][brand].is_object())
+            continue;
+        for (auto it = store[part][brand].begin(); it != store[part][brand].end(); ++it)
+            if (it.value().is_string() && valid_learned(brand, it.key(), it.value().get<std::string>()))
+                out[it.key()] = it.value().get<std::string>();
+    }
+    return out;
+}
+
+nlohmann::json shared_from_server(const nlohmann::json& reply)
+{
+    nlohmann::json out = nlohmann::json::object();
+    if (!reply.is_object() || !reply.contains("models") || !reply["models"].is_array())
+        return out;
+    for (const nlohmann::json& m : reply["models"]) {
+        if (!m.is_object())
+            continue;
+        const std::string brand = m.value("brand", std::string()), code = m.value("code", std::string()), model = m.value("model", std::string());
+        if (valid_learned(brand, code, model))
+            out[brand][code] = model;
+    }
+    return out;
+}
+
 std::string brand_from_name(const std::string& name)
 {
     const std::string n = lower(name);
@@ -193,6 +253,37 @@ std::optional<Printer> from_elegoo_sdcp(const std::string& datagram)
     return p;
 }
 
+std::optional<Printer> from_elegoo_cc2(const std::string& ip, const std::string& datagram)
+{
+    if (!octets(ip))
+        return std::nullopt;
+    const nlohmann::json j = nlohmann::json::parse(datagram, nullptr, false);
+    if (!j.is_object() || !j.contains("result") || !j["result"].is_object())
+        return std::nullopt;
+    const nlohmann::json& r    = j["result"];
+    std::string           name = text_of(r, "host_name");
+    if (name.empty())
+        name = text_of(r, "machine_model");
+    // Une réponse sans nom ni modèle n'est pas celle d'une imprimante (le serveur UDP répond aussi « Hello from UDP Server! »).
+    if (name.empty())
+        return std::nullopt;
+    Printer p;
+    p.ip        = ip;
+    p.name      = name;
+    p.brand     = "Elegoo";
+    p.host_type = "elegoolink";
+    p.host      = ip;
+    p.priority  = 2;
+    return p;
+}
+
+bool valid_serial(const std::string& serial)
+{
+    if (serial.empty() || serial.size() > 64)
+        return false;
+    return std::all_of(serial.begin(), serial.end(), [](unsigned char c) { return c < 0x80 && std::isalnum(c) != 0; });
+}
+
 std::vector<Printer> merge(std::vector<Printer> found)
 {
     std::map<std::string, Printer> by_ip;
@@ -201,15 +292,18 @@ std::vector<Printer> merge(std::vector<Printer> found)
             continue;
         auto it = by_ip.find(p.ip);
         if (it == by_ip.end() || p.priority > it->second.priority) {
-            // La source plus précise garde un nom ou une marque que seule l'autre connaissait.
+            // La source plus précise garde un nom, une marque ou une série que seule l'autre connaissait.
             if (it != by_ip.end()) {
                 if (p.name.empty())
                     p.name = it->second.name;
                 if (p.brand.empty())
                     p.brand = it->second.brand;
+                if (p.serial.empty())
+                    p.serial = it->second.serial;
             }
             by_ip[p.ip] = std::move(p);
-        }
+        } else if (it->second.serial.empty())
+            it->second.serial = p.serial;
     }
     std::vector<Printer> out;
     for (auto& [ip, p] : by_ip)
@@ -222,7 +316,12 @@ nlohmann::json to_json(const std::vector<Printer>& printers)
 {
     nlohmann::json out = nlohmann::json::array();
     for (const Printer& p : printers)
-        out.push_back({{"ip", p.ip}, {"name", p.name}, {"brand", p.brand}, {"host_type", p.host_type}, {"host", p.host}});
+    {
+        nlohmann::json item = {{"ip", p.ip}, {"name", p.name}, {"brand", p.brand}, {"host_type", p.host_type}, {"host", p.host}};
+        if (!p.code.empty())
+            item["code"] = p.code;
+        out.push_back(item);
+    }
     return out;
 }
 

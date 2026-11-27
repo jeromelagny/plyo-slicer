@@ -11,8 +11,7 @@
 	<key>CFBundleIconFile</key>
 	<string>${MACOSX_BUNDLE_ICON_FILE}</string>
 	<key>CFBundleIdentifier</key>
-	<!-- PLYO: identifiant propre à Plyo Slicer, pour que macOS ne le confonde pas avec OrcaSlicer -->
-	<string>fr.codika.PlyoSlicer</string>
+	<string>fr.codika.PlyoSlicer</string> <!-- PLYO: identifiant propre, sinon macOS le confond avec OrcaSlicer -->
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleLongVersionString</key>
@@ -140,7 +139,7 @@
 		<key>NSAllowsArbitraryLoadsInWebContent</key>
 		<true/>
 	</dict>
-	<!-- PLYO: texte de la demande d'accès au réseau local (recherche d'imprimantes) et services mDNS recherchés -->
+	<!-- PLYO: begin texte de la demande d'accès au réseau local (recherche d'imprimantes) et services mDNS recherchés -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Plyo Slicer cherche ton imprimante 3D sur le réseau de ta maison pour l'y relier. Rien ne sort de chez toi.</string>
 	<key>NSBonjourServices</key>
@@ -149,5 +148,6 @@
 		<string>_moonraker._tcp</string>
 		<string>_services._dns-sd._udp</string>
 	</array>
+	<!-- PLYO: end -->
 </dict>
 </plist>

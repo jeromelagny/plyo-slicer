@@ -1,4 +1,5 @@
 #include "Plater.hpp"
+#include "plyo/PlyoHooks.hpp" // PLYO: appels du panneau Assistant Plyo, liste dans docs/plyo/FICHIERS-MODIFIES.md
 #include "../Utils/NetworkAgent.hpp"
 #include "IPrinterAgent.hpp"
 #include "CalibUtils.hpp"
@@ -5874,6 +5875,7 @@ void Sidebar::delete_filament(size_t filament_id, int replace_filament_id) {
     wxGetApp().preset_bundle->export_selections(*wxGetApp().app_config);
 
     wxGetApp().plater()->update();
+    Plyo::on_filament_deleted(int(filament_id), replace_filament_id > (int)filament_id ? (replace_filament_id - 1) : replace_filament_id); // PLYO: la fiche de la conversation suit la couleur retirée
 
     auto filament_list = p->m_panel_filament_content;
     if(!filament_list->IsShown()){
@@ -13364,7 +13366,9 @@ void Plater::priv::on_process_completed(SlicingProcessCompletedEvent &evt)
     // so the following call just confirms, that the produced data were consumed.
     this->background_process.stop();
     notification_manager->set_slicing_progress_export_possible();
+    Plyo::OrcaMessages::on_slicing_done(evt); // PLYO: le panneau Assistant voit tout de suite une découpe en erreur ou finie (lu avant le crochet d'export)
 
+    Plyo::FirstSteps::on_process_completed(evt, this->background_process.is_export_scheduled(), last_output_path); // PLYO: fin réelle d'un export demandé par le panneau Assistant
     // Reset the "export G-code path" name, so that the automatic background processing will be enabled again.
     this->background_process.reset_export();
     // This bool stops showing export finished notification even when process_completed_with_error is false
@@ -16131,6 +16135,7 @@ int Plater::new_project(bool skip_confirm, bool silent, const wxString& project_
 
     up_to_date(true, false);
     up_to_date(true, true);
+    Plyo::on_project_changed(); // PLYO: nouveau projet, le panneau Assistant revient à son accueil
     return wxID_YES;
 }
 
@@ -16286,6 +16291,7 @@ void Plater::load_project(wxString const& filename2,
     sidebar().set_flushing_volume_warning(has_modify);
 
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << __LINE__ << " load project done";
+    Plyo::on_project_changed(); // PLYO: projet ouvert, le panneau Assistant revient à son accueil
 }
 
 // BBS: save logic
@@ -19194,7 +19200,7 @@ void Plater::reset_with_confirm()
 // BBS: save logic
 int GUI::Plater::close_with_confirm(std::function<bool(bool)> second_check)
 {
-    if (up_to_date(false, false)) {
+    if (up_to_date(false, false) || Plyo::ProjectFiles::keeps_project()) { // PLYO: plateau d'une conversation, écrit par Plyo dans son 3MF
         if (second_check && !second_check(false)) return wxID_CANCEL;
         model().set_backup_path("");
         return wxID_NO;
@@ -21012,6 +21018,7 @@ void Plater::send_gcode_legacy(int plate_idx, Export3mfProgressFn proFn)
         }
     }
 
+    if (!Plyo::Canvas::fill_armed_upload(upload_job.upload_data, default_output_file.filename().string(), use_3mf, resolved_plate_idx)) // PLYO: envoi armé par le panneau, sans cette fenêtre
     {
         auto        preset_bundle = wxGetApp().preset_bundle;
         auto        config        = get_app_config();
@@ -21152,6 +21159,7 @@ void Plater::send_gcode_legacy(int plate_idx, Export3mfProgressFn proFn)
         upload_job.upload_data.source_path = p->m_print_job_data._3mf_path;
     }
 
+    Plyo::Send::on_upload_handed(); // PLYO: le panneau Assistant ne dit « parti » qu'ici, quand Orca prend vraiment l'envoi
     p->export_gcode(fs::path(), false, std::move(upload_job));
 }
 int Plater::send_gcode(int plate_idx, Export3mfProgressFn proFn)
@@ -21507,6 +21515,7 @@ void Plater::config_change_notification(const DynamicPrintConfig &config, const 
 
 void Plater::on_config_change(const DynamicPrintConfig &config)
 {
+    Plyo::refresh_values(); // PLYO: valeurs du panneau Assistant à jour, même hors des onglets (type de plateau, barre latérale)
     bool update_scheduled = false;
     bool bed_shape_changed = false;
     bool exclusion_preview_changed = false;

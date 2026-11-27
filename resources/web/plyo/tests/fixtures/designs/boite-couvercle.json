@@ -1,0 +1,267 @@
+{
+ "name": "Boîte 60×40×30 avec couvercle",
+ "summary": "Petite boîte de rangement, couvercle qui s’emboîte (jeu 0,3 mm).",
+ "dimensions": [
+  {
+   "label": "largeur",
+   "value_mm": 60,
+   "assumed": false
+  },
+  {
+   "label": "profondeur",
+   "value_mm": 40,
+   "assumed": false
+  },
+  {
+   "label": "hauteur",
+   "value_mm": 30,
+   "assumed": false
+  },
+  {
+   "label": "parois",
+   "value_mm": 2,
+   "assumed": true
+  }
+ ],
+ "root": "plateau",
+ "nodes": [
+  {
+   "id": "plateau",
+   "kind": "union",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "boite",
+    "couvercle_place"
+   ]
+  },
+  {
+   "id": "boite",
+   "kind": "difference",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "ext",
+    "int"
+   ]
+  },
+  {
+   "id": "ext",
+   "kind": "box",
+   "size": [
+    60,
+    40,
+    30
+   ],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": 3,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  },
+  {
+   "id": "int",
+   "kind": "translate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    0,
+    0,
+    2
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "int_box"
+   ]
+  },
+  {
+   "id": "int_box",
+   "kind": "box",
+   "size": [
+    56,
+    36,
+    30
+   ],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": 1.5,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  },
+  {
+   "id": "couvercle_place",
+   "kind": "translate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    0,
+    50,
+    0
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "couvercle"
+   ]
+  },
+  {
+   "id": "couvercle",
+   "kind": "union",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "dessus",
+    "rebord_place"
+   ]
+  },
+  {
+   "id": "dessus",
+   "kind": "box",
+   "size": [
+    60,
+    40,
+    2
+   ],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": 3,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  },
+  {
+   "id": "rebord_place",
+   "kind": "translate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    0,
+    0,
+    2
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "rebord"
+   ]
+  },
+  {
+   "id": "rebord",
+   "kind": "difference",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "rebord_ext",
+    "rebord_int"
+   ]
+  },
+  {
+   "id": "rebord_ext",
+   "kind": "box",
+   "size": [
+    55.4,
+    35.4,
+    3
+   ],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": 1.2,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  },
+  {
+   "id": "rebord_int",
+   "kind": "translate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    0,
+    0,
+    -1
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "rebord_int_box"
+   ]
+  },
+  {
+   "id": "rebord_int_box",
+   "kind": "box",
+   "size": [
+    51.4,
+    31.4,
+    5
+   ],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": 0.5,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  }
+ ]
+}

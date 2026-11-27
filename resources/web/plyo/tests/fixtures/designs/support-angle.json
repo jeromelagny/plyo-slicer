@@ -1,0 +1,271 @@
+{
+ "name": "Support d’angle 40 mm",
+ "summary": "Équerre percée de deux trous de vis (Ø 4,4 mm).",
+ "dimensions": [
+  {
+   "label": "largeur",
+   "value_mm": 40,
+   "assumed": false
+  },
+  {
+   "label": "côtés",
+   "value_mm": 30,
+   "assumed": false
+  },
+  {
+   "label": "épaisseur",
+   "value_mm": 4,
+   "assumed": true
+  }
+ ],
+ "root": "piece",
+ "nodes": [
+  {
+   "id": "piece",
+   "kind": "difference",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "equerre",
+    "trou_bas",
+    "trou_dos"
+   ]
+  },
+  {
+   "id": "equerre",
+   "kind": "union",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "base",
+    "dos",
+    "renfort_place"
+   ]
+  },
+  {
+   "id": "base",
+   "kind": "translate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    0,
+    15,
+    0
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "base_box"
+   ]
+  },
+  {
+   "id": "base_box",
+   "kind": "box",
+   "size": [
+    40,
+    30,
+    4
+   ],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  },
+  {
+   "id": "dos",
+   "kind": "translate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    0,
+    2,
+    0
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "dos_box"
+   ]
+  },
+  {
+   "id": "dos_box",
+   "kind": "box",
+   "size": [
+    40,
+    4,
+    30
+   ],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  },
+  {
+   "id": "renfort_place",
+   "kind": "rotate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    90,
+    0,
+    90
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "renfort"
+   ]
+  },
+  {
+   "id": "renfort",
+   "kind": "extrude",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": 4,
+   "rounding": null,
+   "points": [
+    [
+     4,
+     4
+    ],
+    [
+     18,
+     4
+    ],
+    [
+     4,
+     18
+    ]
+   ],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  },
+  {
+   "id": "trou_bas",
+   "kind": "translate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    10,
+    20,
+    -1
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "vis1"
+   ]
+  },
+  {
+   "id": "vis1",
+   "kind": "cylinder",
+   "size": [],
+   "radius": 2.2,
+   "radius_top": null,
+   "height": 6,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  },
+  {
+   "id": "trou_dos",
+   "kind": "translate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    -10,
+    -1,
+    20
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "vis2_r"
+   ]
+  },
+  {
+   "id": "vis2_r",
+   "kind": "rotate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    -90,
+    0,
+    0
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "vis2"
+   ]
+  },
+  {
+   "id": "vis2",
+   "kind": "cylinder",
+   "size": [],
+   "radius": 2.2,
+   "radius_top": null,
+   "height": 6,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  }
+ ]
+}

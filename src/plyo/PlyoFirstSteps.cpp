@@ -3,29 +3,37 @@
 #include "PlyoSanitize.hpp"
 #include "PlyoGuard.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoLifetime.hpp"
+#include "PlyoOrcaMessages.hpp"
 #include "PlyoAssistant.hpp"
+#include "PlyoContextLogic.hpp"
 #include "PlyoSettingsBridge.hpp"
 #include "PlyoWelcomeDialog.hpp"
+#include "PlyoPrinterSetup.hpp"
+#include "PlyoProjectLogic.hpp"
+#include "PlyoSelfTest.hpp"
+#include "PlyoSend.hpp"
 
+#include "libslic3r/AppConfig.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Utils.hpp"
+#include "slic3r/GUI/BackgroundSlicingProcess.hpp"
 #include "slic3r/GUI/Field.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
-#include "slic3r/GUI/GUI_Factories.hpp"
+#include "slic3r/GUI/GLToolbar.hpp"
 #include "slic3r/GUI/I18N.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
 #include "slic3r/GUI/PartPlate.hpp"
 #include "slic3r/GUI/Plater.hpp"
 #include "slic3r/GUI/Tab.hpp"
-#include "slic3r/GUI/WebGuideDialog.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/log/trivial.hpp>
 
+#include <wx/stdpaths.h>
 #include <wx/timer.h>
-#include <wx/toplevel.h>
 
 #include <cstdlib>
 #include <fstream>
@@ -46,25 +54,25 @@ nlohmann::json load_state() { return Sanitize::first_steps(Store::read(state_pat
 
 void store_state(const nlohmann::json& s) { Store::write(state_path(), Sanitize::first_steps(s)); }
 
-Slic3r::GUI::GuideFrame* visible_guide()
-{
-    for (wxWindow* w : wxTopLevelWindows)
-        if (auto* guide = dynamic_cast<Slic3r::GUI::GuideFrame*>(w); guide != nullptr && guide->IsShown())
-            return guide;
-    return nullptr;
-}
+// L'assistant est la raison d'installer Plyo Slicer : il s'ouvre à chaque lancement, pour tout le monde (décision de Jérôme
+// du 2026-11-24, qui remplace l'exception « Je connais déjà »), et à chaque nouveau projet ou projet ouvert
+// (on_project_changed). Le bouton « Assistant » de la barre du haut le ferme toujours d'un clic.
+} // namespace
 
-// Le panneau s'ouvre à chaque lancement ; le bouton « Assistant » de la barre du haut le ferme d'un clic.
-void open_panel_at_startup()
+void open_panel()
 {
     auto* frame = wxGetApp().mainframe;
-    if (frame == nullptr || is_assistant_shown())
+    if (frame == nullptr || is_assistant_shown() || wxGetApp().is_closing())
         return;
     // Le panneau vit dans le plateau : Orca démarre sur l'Accueil, où il resterait caché. On passe sur « Préparer ».
     if (!frame->is_prepare_or_preview_tab())
         frame->select_tab(TAB_ID_PREPARE);
     toggle_assistant(wxGetApp().plater());
 }
+
+namespace {
+
+void open_panel_at_startup() { open_panel(); }
 
 void show_welcome(wxWindow* parent, bool with_setup_tips)
 {
@@ -75,10 +83,24 @@ void show_welcome(wxWindow* parent, bool with_setup_tips)
     dialog.ShowModal();
     s          = load_state();
     s["level"] = dialog.choice();
+    s["layout"] = "simple"; // barre de réglages repliée pour tout le monde ; « Disposition simple » se décoche dans le menu ⋯
     if (dialog.choice() == "beginner")
         s["tour_step"] = "model";
     store_state(s);
     BOOST_LOG_TRIVIAL(info) << "Plyo: accueil terminé (" << dialog.choice() << ")";
+}
+
+// Premier lancement avec une imprimante déjà installée (parcours débutant, lot 6) : pas de fenêtre. « Je débute / Je connais
+// déjà » est une ligne de l'accueil du panneau ; le niveau part de « débutant », comme après « Je débute ».
+void skip_welcome()
+{
+    nlohmann::json s = load_state();
+    s["seen"]        = true;
+    s["level"]       = "beginner";
+    s["tour_step"]   = "model";
+    s["layout"]      = "simple"; // mode Simple (lot 8) pour une nouvelle installation
+    store_state(s);
+    BOOST_LOG_TRIVIAL(info) << "Plyo: premier lancement, imprimante déjà installée : pas de fenêtre d'accueil";
 }
 
 std::function<void(const nlohmann::json&)> s_focus_listener;
@@ -135,18 +157,18 @@ bool bind_tabs(std::set<Slic3r::GUI::Tab*>& bound)
     return all;
 }
 
-// Le démarrage d'Orca se poursuit après le constructeur de MainFrame : l'écran de configuration (GuideFrame, modal)
-// s'ouvre plus tard, dans post_init. On l'attend en lisant la liste des fenêtres, sans toucher à Orca.
+// Le démarrage d'Orca se poursuit après le constructeur de MainFrame (post_init, chargement des préréglages) : une minuterie
+// attend que la fenêtre principale soit affichée, puis montre l'accueil au premier lancement (après WELCOME_TICKS, le temps
+// qu'Orca finisse de démarrer avant une fenêtre modale) et ouvre le panneau. Elle relie aussi les onglets de réglages dès
+// qu'ils existent (« Explique-moi ce réglage »), puis s'arrête. L'assistant de configuration d'Orca n'est plus lancé au
+// démarrage (GUI_App::config_wizard_startup) : il n'y a plus à l'attendre (ARCH-20).
 class StartupWatcher : public wxTimer
 {
 public:
-    explicit StartupWatcher(bool first_run) : m_first_run(first_run)
-    {
-        // L'écran de configuration d'Orca va s'ouvrir quand il n'y a encore que les imprimantes par défaut
-        // (même condition que GUI_App::config_wizard_startup).
-        m_expect_guide = first_run && wxGetApp().preset_bundle != nullptr && wxGetApp().preset_bundle->printers.only_default_printers();
-        Start(300);
-    }
+    static constexpr int TICK_MS       = 300;
+    static constexpr int WELCOME_TICKS = 8; // 2,4 s
+
+    explicit StartupWatcher(bool first_run) : m_first_run(first_run) { Start(TICK_MS); }
 
     void Notify() override
     {
@@ -154,52 +176,31 @@ public:
         if (!m_tabs_bound)
             m_tabs_bound = bind_tabs(m_bound);
         auto* frame = wxGetApp().mainframe;
-        if (frame == nullptr || !frame->IsShown())
-            return;
-        Slic3r::GUI::GuideFrame* guide = visible_guide();
-        if (m_first_run && !m_welcomed) {
-            if (guide != nullptr) {
-                m_welcomed  = true;
-                m_saw_guide = true;
-                wxWindow* parent = guide;
-                wxGetApp().CallAfter([parent] { guarded("l'accueil", [&] { show_welcome(parent, true); }); });
-                return;
-            }
-            // Pas d'écran de configuration en vue (Orca déjà configuré, ou délai dépassé) : accueil sur la fenêtre principale.
-            const int wait_ticks = m_expect_guide ? 60 : 8; // 18 s ou 2,4 s
-            if (m_ticks < wait_ticks)
-                return;
-            m_welcomed = true;
-            wxGetApp().CallAfter([this] {
-                guarded("l'accueil", [] { show_welcome(wxGetApp().mainframe, false); });
-                finish();
+        if (!m_started && frame != nullptr && frame->IsShown() && (!m_first_run || m_ticks >= WELCOME_TICKS)) {
+            m_started = true;
+            const bool welcome = m_first_run;
+            // L'accueil est modal : le panneau s'ouvre à sa fermeture, selon la réponse (« Je connais déjà » : fermé).
+            wxGetApp().CallAfter([welcome] {
+                // La fenêtre d'accueil ne sert plus qu'à préparer la recherche d'une première imprimante (lot 6).
+                if (welcome)
+                    guarded("l'accueil", [] {
+                        if (PrinterSetup::needs_printer())
+                            show_welcome(wxGetApp().mainframe, true);
+                        else
+                            skip_welcome();
+                    });
+                guarded("l'ouverture du panneau", [] { open_panel_at_startup(); });
             });
-            return;
         }
-        if (m_saw_guide && guide != nullptr)
-            return; // l'écran de configuration est encore ouvert
-        if (!m_first_run || m_saw_guide || m_done)
-            finish();
-    }
-
-private:
-    void finish()
-    {
-        if (!m_done) {
-            m_done = true;
-            wxGetApp().CallAfter([] { guarded("l'ouverture du panneau", [] { open_panel_at_startup(); }); });
-        }
-        if (m_tabs_bound)
+        if (m_started && m_tabs_bound)
             Stop();
     }
 
-    bool m_first_run    = false;
-    bool m_expect_guide = false;
-    bool m_welcomed     = false;
-    bool m_saw_guide    = false;
-    bool m_done         = false;
-    bool m_tabs_bound   = false;
-    int  m_ticks        = 0;
+private:
+    bool m_first_run  = false;
+    bool m_started    = false;
+    bool m_tabs_bound = false;
+    int  m_ticks      = 0;
     std::set<Slic3r::GUI::Tab*> m_bound;
 };
 
@@ -234,7 +235,11 @@ void on_startup()
         if (frame == nullptr || frame == s_watched_frame || !wxGetApp().is_editor())
             return;
         s_watched_frame = frame;
-        new StartupWatcher(!Json::boolean(load_state(), "seen", false)); // s'arrête seul ; vit autant que l'application
+        Lifetime::watch_main_frame(); // drapeau commun « on ferme » des fils de Plyo (ROB-15)
+        Store::claim_instance();      // verrou du dossier de données, avant toute écriture (ROB-16)
+        // Banc d'essai (PLYO_SELFTEST) : jamais l'accueil modal, le panneau s'ouvre directement ; hors banc, inchangé.
+        const bool first_run = !SelfTest::active() && !Json::boolean(load_state(), "seen", false);
+        new StartupWatcher(first_run); // s'arrête seul ; vit autant que l'application
     });
 }
 
@@ -253,32 +258,208 @@ void set_state(const nlohmann::json& patch)
 
 nlohmann::json tour_signals()
 {
-    nlohmann::json      signals = {{"objects", 0}, {"sliced", false}, {"time_s", 0}, {"weight_g", 0}};
+    nlohmann::json      signals = {{"objects", 0}, {"sliced", false}, {"time_s", 0}, {"weight_g", 0}, {"linked", false}};
+    // Imprimante reliée (adresse de connexion dans le profil) : l'étape « Imprimer » n'est pas la même.
+    if (wxGetApp().preset_bundle != nullptr) {
+        const Slic3r::DynamicPrintConfig& printer = wxGetApp().preset_bundle->printers.get_edited_preset().config;
+        signals["linked"] = printer.has("print_host") && !printer.opt_string("print_host").empty();
+    }
     Slic3r::GUI::Plater* plater = wxGetApp().plater();
     if (plater == nullptr)
         return signals;
     signals["objects"]            = plater->model().objects.size();
+    // Nom de la première pièce (fichier d'origine si l'objet n'a pas de nom) : la fiche du projet s'en sert quand la pièce
+    // vient du menu d'Orca et non du panneau.
+    if (!plater->model().objects.empty()) {
+        const Slic3r::ModelObject* first = plater->model().objects.front();
+        std::string                name  = first->name;
+        if (name.empty())
+            name = boost::filesystem::path(first->input_file).filename().string();
+        signals["part_name"] = Json::utf8_prefix(name, 120);
+    }
+    // Orca découpe en ce moment : une découpe demandée qui n'a pas démarré a été refusée sans un mot (le panneau demande pourquoi).
+    signals["slicing"]            = plater->is_background_process_slicing();
+    // Bulles d'Orca que le panneau explique (pièce à cheval sur le bord, mélange PLA/PETG…) : codes seulement, le panneau
+    // demande le détail quand la liste change (ERR-11).
+    signals["notices"]            = OrcaMessages::notice_codes();
     Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
     if (plate != nullptr && plate->is_slice_result_valid()) {
         signals["sliced"] = true;
-        if (const Slic3r::GCodeProcessorResult* result = plate->get_slice_result())
+        // Découpée mais pas imprimable (trajet hors plateau, filament refusé par la surface…) : le parcours ne propose pas d'imprimer.
+        signals["ready_for_print"] = OrcaMessages::ready_for_print();
+        const Slic3r::Print& print = plater->get_partplate_list().get_current_fff_print();
+        if (const Slic3r::GCodeProcessorResult* result = plate->get_slice_result()) {
             signals["time_s"] = result->print_statistics.modes[static_cast<size_t>(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal)].time;
-        signals["weight_g"] = plater->get_partplate_list().get_current_fff_print().print_statistics().total_weight;
+            // Coût du filament, seulement si le préréglage filament a un prix (`filament_cost`) : sinon le panneau masque la case.
+            if (const std::optional<double> cost = ContextLogic::filament_cost(result->print_statistics.total_volumes_per_extruder,
+                                                                               print.config().filament_density.values, print.config().filament_cost.values))
+                signals["cost"] = *cost;
+        }
+        signals["weight_g"] = print.print_statistics().total_weight;
     }
     return signals;
 }
 
-nlohmann::json add_benchy()
+std::string best_filament(const std::string& type)
 {
-    const auto& models = Slic3r::GUI::MenuFactory::handy_models();
-    for (size_t i = 0; i < models.size(); ++i)
-        if (std::string(models[i].key) == "3dbenchy") {
-            if (auto* frame = wxGetApp().mainframe)
-                frame->select_tab(TAB_ID_PREPARE); // le plateau, si Orca est sur l'accueil
-            Slic3r::GUI::MenuFactory::load_handy_model(i);
-            return {{"ok", true}, {"text", "Le petit bateau est sur le plateau."}};
+    if (type.empty() || wxGetApp().preset_bundle == nullptr)
+        return std::string();
+    Slic3r::PresetBundle& bundle = *wxGetApp().preset_bundle;
+    // Le plus simple d'abord : « Generic PLA @… » plutôt que « Generic PLA Silk » ou une marque.
+    const Slic3r::Preset* best       = nullptr;
+    int                   best_score = -1;
+    for (const Slic3r::Preset& p : bundle.filaments.get_presets()) {
+        if (!p.is_visible || !p.is_compatible || p.is_default)
+            continue;
+        const auto* t = p.config.option<Slic3r::ConfigOptionStrings>("filament_type");
+        if (t == nullptr || t->values.empty() || t->values.front() != type)
+            continue;
+        int score = p.is_system ? 1 : 0;
+        if (p.name.rfind("Generic " + type, 0) == 0)
+            score += 2;
+        if (p.name.rfind("Generic " + type + " @", 0) == 0 || p.name == "Generic " + type)
+            score += 4;
+        if (score > best_score) {
+            best       = &p;
+            best_score = score;
         }
-    return {{"ok", false}, {"text", "Le petit bateau est introuvable dans Orca."}};
+    }
+    return best != nullptr ? best->name : std::string();
+}
+
+bool select_filament(const std::string& name, size_t idx)
+{
+    Slic3r::PresetBundle& bundle = *wxGetApp().preset_bundle;
+    if (idx == 0) {
+        // Premier filament : l'onglet d'abord. Orca peut demander d'enregistrer un filament modifié, et l'utilisateur peut
+        // annuler. La liste du plateau ne change qu'ensuite, sinon elle et l'onglet ne diraient plus la même chose.
+        Slic3r::GUI::Tab* tab = wxGetApp().get_tab(Slic3r::Preset::TYPE_FILAMENT);
+        if (tab == nullptr || !tab->select_preset(name))
+            return false;
+    }
+    // Puis comme un choix dans la liste du plateau (Plater::priv::on_select_preset).
+    bundle.set_filament_preset(idx, name);
+    if (Slic3r::GUI::Plater* plater = wxGetApp().plater()) {
+        if (idx == 0)
+            plater->sidebar().update_presets(Slic3r::Preset::TYPE_FILAMENT); // l'onglet l'a rafraîchie avec l'ancien nom
+        plater->update_project_dirty_from_presets();
+        plater->sidebar().update_dynamic_filament_list();
+        plater->on_filament_change(idx);
+    }
+    bundle.export_selections(*wxGetApp().app_config);
+    return true;
+}
+
+namespace {
+
+std::function<void(nlohmann::json)> s_export_done; // export en cours : qui prévenir à sa fin
+
+// Orca propose le dernier dossier d'export, à défaut celui du projet, qui est ici le dossier interne des modèles posés
+// par le panneau (plyo/modeles). On lui donne le Bureau à la place, sans toucher à un dossier choisi par l'utilisateur.
+void prefer_user_folder()
+{
+    Slic3r::AppConfig& config  = *wxGetApp().app_config;
+    const std::string  current = config.get_last_output_dir(std::string(), false);
+    const std::string  inner   = (fs::path(Slic3r::data_dir()) / "plyo").string();
+    if (!current.empty() && current.rfind(inner, 0) != 0)
+        return;
+    const std::string desktop = wxStandardPaths::Get().GetUserDir(wxStandardPaths::Dir_Desktop).ToUTF8().data();
+    boost::system::error_code ec;
+    if (!desktop.empty() && fs::is_directory(desktop, ec))
+        config.update_last_output_dir(desktop, false);
+}
+
+} // namespace
+
+void export_file(std::function<void(nlohmann::json)> done)
+{
+    auto* plater = wxGetApp().plater();
+    if (plater == nullptr) {
+        done({{"ok", false}});
+        return;
+    }
+    Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
+    if (plate == nullptr || !plate->is_slice_result_valid()) {
+        done({{"ok", false}, {"reason", "not_sliced"}});
+        return;
+    }
+    if (s_export_done || plater->is_export_gcode_scheduled()) {
+        done({{"ok", false}, {"reason", "busy"}, {"text", "Un export est déjà en cours : attends qu'il se termine."}});
+        return;
+    }
+    prefer_user_folder();
+    s_export_done = std::move(done);
+    plater->export_gcode(false); // ouvre la fenêtre d'enregistrement et ne revient qu'à sa fermeture
+    // Rien de programmé : fenêtre annulée, ou plaque refusée par Orca (qui l'a dit dans sa propre fenêtre).
+    if (s_export_done && !plater->is_export_gcode_scheduled()) {
+        auto waiting = std::move(s_export_done);
+        s_export_done = nullptr;
+        waiting({{"ok", false}, {"cancelled", true}});
+    }
+}
+
+void on_process_completed(const Slic3r::SlicingProcessCompletedEvent& evt, bool export_scheduled, const std::string& output_path)
+{
+    // Les deux lignes d'avant dans Plater::priv::on_process_completed : les arguments ne sont lus que pendant un export.
+    if (export_scheduled)
+        on_export_done(evt.success(), evt.error() ? evt.format_error_message().first : std::string(), output_path);
+}
+
+void on_export_done(bool finished, const std::string& error, const std::string& path)
+{
+    if (!s_export_done)
+        return; // export lancé depuis les menus d'Orca
+    auto waiting = std::move(s_export_done);
+    s_export_done = nullptr;
+    if (!finished) {
+        if (error.empty())
+            waiting({{"ok", false}, {"cancelled", true}}); // arrêté par « Annuler » d'Orca
+        else {
+            // Famille de l'erreur d'après le type de l'exception (lu juste avant par OrcaMessages), texte sans le dossier.
+            nlohmann::json failed = OrcaMessages::export_failure(error, path);
+            failed["ok"]           = false;
+            failed["reason"]       = "error";
+            waiting(failed);
+        }
+        return;
+    }
+    // Orca peut renommer le fichier en le finalisant : si ce nom n'existe pas, on ne cite que le dossier.
+    boost::system::error_code ec;
+    const fs::path written(path);
+    waiting({{"ok", true}, {"folder", written.parent_path().string()},
+             {"file", fs::exists(written, ec) ? written.filename().string() : std::string()}});
+}
+
+void start_print(std::function<void(nlohmann::json)> done)
+{
+    auto* frame  = wxGetApp().mainframe;
+    auto* plater = wxGetApp().plater();
+    if (frame == nullptr || plater == nullptr) {
+        done({{"ok", false}});
+        return;
+    }
+    Slic3r::GUI::PartPlate* plate = plater->get_partplate_list().get_curr_plate();
+    if (plate == nullptr || !plate->is_slice_result_valid()) {
+        done({{"ok", false}, {"reason", "not_sliced"}});
+        return;
+    }
+    // Même chemin que le bouton « Imprimer la plaque » (MainFrame) : Orca vérifie la plaque et ouvre sa confirmation.
+    plater->apply_background_progress();
+    if (!frame->get_enable_print_status()) {
+        // Pourquoi Orca ne laisse pas imprimer : ce qu'il dit de la plaque (ERR-10), expliqué par le panneau.
+        const nlohmann::json report = OrcaMessages::report();
+        done({{"ok", false}, {"reason", "not_ready"}, {"issues", report.contains("issues") ? report["issues"] : nlohmann::json::array()}});
+        return;
+    }
+    // Même choix que Plater::priv::on_action_print_plate (sentinelle dans test_plyo.cpp) : Bambu Lab et agents d'imprimante
+    // ouvrent la fenêtre de leur module, dont Plyo ne lit rien ; les autres passent par la file d'envoi d'Orca, suivie.
+    Slic3r::PresetBundle& bundle = *wxGetApp().preset_bundle;
+    if (bundle.use_bbl_network() || wxGetApp().app_config->get_bool("use_printer_agents")) {
+        wxPostEvent(plater, Slic3r::GUI::SimpleEvent(Slic3r::GUI::EVT_GLTOOLBAR_PRINT_PLATE));
+        done({{"ok", true}, {"route", "device"}});
+        return;
+    }
+    Send::from_panel(std::move(done));
 }
 
 nlohmann::json explain(const std::string& key)

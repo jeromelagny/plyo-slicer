@@ -1,6 +1,8 @@
 #include "PlyoPreflight.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoOrcaMessages.hpp"
 #include "PlyoPlateActions.hpp"
+#include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/Model.hpp"
 #include "libslic3r/ObjectID.hpp"
@@ -17,6 +19,7 @@
 #include <cmath>
 #include <limits>
 #include <set>
+#include <string>
 #include <vector>
 
 namespace Plyo { namespace Preflight {
@@ -58,12 +61,10 @@ std::set<Slic3r::ObjectID> needing_support(Slic3r::GUI::Plater& plater)
     Slic3r::GUI::PartPlate*              plate = plater.get_partplate_list().get_curr_plate();
     if (plate == nullptr || !plate->is_slice_result_valid())
         return out;
-    for (const Slic3r::PrintObject* po : plater.get_partplate_list().get_current_fff_print().objects()) {
-        const auto state = po->step_state_with_warnings(Slic3r::posSupportMaterial);
-        for (const auto& w : state.warnings)
-            if (w.current && w.message_id == Slic3r::PrintStateBase::SlicingNeedSupportOn)
-                out.insert(po->model_object()->id());
-    }
+    // Lecture commune de tous les avertissements d'étape (OrcaMessages) : seul « supports nécessaires » compte ici.
+    for (const OrcaMessages::StepWarning& w : OrcaMessages::step_warnings(plater.get_partplate_list().get_current_fff_print()))
+        if (w.message_id == Slic3r::PrintStateBase::SlicingNeedSupportOn && w.object_id != 0)
+            out.insert(Slic3r::ObjectID(w.object_id));
     return out;
 }
 
@@ -79,7 +80,14 @@ nlohmann::json measure()
         {"brim_type", print.has("brim_type") ? print.opt_serialize("brim_type") : std::string("no_brim")},
         {"brim_width", print.opt_float("brim_width")},
         {"support", print.opt_bool("enable_support")},
+        // Mode vase, couches pleines du dessus et remplissage : une pièce qui partirait ouverte et creuse hors mode vase.
+        {"spiral_mode", print.opt_bool("spiral_mode")},
+        {"top_shell_layers", print.opt_int("top_shell_layers")},
+        {"sparse_infill_density", print.opt_serialize("sparse_infill_density")},
     };
+    // Réglages laissés par un mode vase désactivé, avec les valeurs à remettre (correction d'un clic).
+    if (!print.opt_bool("spiral_mode"))
+        settings["vase_leftovers"] = SettingsBridge::spiral_leftovers();
     const auto           floating = needing_support(*plater);
     const Slic3r::Vec3d  bed      = PlateActions::bed_size();
     nlohmann::json       objects  = nlohmann::json::array();
@@ -98,9 +106,39 @@ nlohmann::json measure()
                            {"foot", {std::round(size.x() * 10) / 10, std::round(size.y() * 10) / 10}},
                            {"contact_mm2", std::round(contact_area(*object))},
                            {"needs_support", floating.count(object->id()) > 0},
-                           {"fits", PlateActions::fits(size, bed)}});
+                           {"fits", PlateActions::fits_on_plate(*object, bed)}}); // même verdict qu'Orca (ERR-11)
     }
-    return {{"settings", settings}, {"objects", objects}, {"sliced", plate != nullptr && plate->is_slice_result_valid()}};
+    nlohmann::json result{{"settings", settings}, {"objects", objects}, {"sliced", plate->is_slice_result_valid()}};
+    // Conflit de trajets trouvé par la découpe (même source que l'alerte d'Orca, GLCanvas3D) : le panneau ne dit plus « pas de risque ».
+    if (plate->is_slice_result_valid())
+        if (const Slic3r::GCodeProcessorResult* gcode = plate->get_slice_result(); gcode != nullptr && gcode->conflict_result.has_value())
+            result["conflict"] = {{"a", Json::utf8_prefix(gcode->conflict_result->_objName1, 120)},
+                                  {"b", Json::utf8_prefix(gcode->conflict_result->_objName2, 120)},
+                                  {"height", std::round(gcode->conflict_result->_height * 10) / 10}};
+    return result;
+}
+
+nlohmann::json ai_facts()
+{
+    Slic3r::GUI::Plater* plater = wxGetApp().plater();
+    Slic3r::GUI::PartPlate* plate = plater != nullptr ? plater->get_partplate_list().get_curr_plate() : nullptr;
+    if (plate == nullptr)
+        return nullptr;
+    const auto     floating = needing_support(*plater);
+    nlohmann::json objects  = nlohmann::json::object();
+    for (const Slic3r::ModelObject* object : plate->get_objects_on_this_plate()) {
+        if (objects.size() >= 50)
+            break;
+        if (object->instances.empty())
+            continue;
+        objects[std::to_string(object->id().id)] = {{"needs_support", floating.count(object->id()) > 0}, {"contact_mm2", std::round(contact_area(*object))}};
+    }
+    nlohmann::json result{{"objects", objects}};
+    if (plate->is_slice_result_valid()) {
+        const Slic3r::GCodeProcessorResult* gcode = plate->get_slice_result();
+        result["conflict"] = gcode != nullptr && gcode->conflict_result.has_value();
+    }
+    return result;
 }
 
 }} // namespace Plyo::Preflight

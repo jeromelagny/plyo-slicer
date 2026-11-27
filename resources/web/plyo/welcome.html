@@ -55,11 +55,11 @@
         <h1>Bienvenue&#8239;! Je suis l’assistant Plyo.</h1>
       </div>
       <p>Je suis spécialisé en impression 3D et je suis là pour t’accompagner. Pose-moi n’importe quelle question, avec tes mots&nbsp;: il n’y a pas de question bête.</p>
-      <p class="soft">Un slicer, ça peut impressionner au début. Pas d’inquiétude&nbsp;: tu n’as pas besoin de tout connaître pour bien imprimer, on avance ensemble.</p>
+      <p class="soft">Un slicer (le logiciel qui prépare ta pièce pour l’imprimante), ça peut impressionner au début. Pas d’inquiétude&nbsp;: tu n’as pas besoin de tout connaître pour bien imprimer, on avance ensemble.</p>
       <p class="question">Tu débutes en impression 3D, ou tu connais déjà&#8239;?</p>
       <div class="choices">
         <button class="choice" id="beginner" type="button"><strong>Je débute</strong><span>Guide-moi pas à pas.</span></button>
-        <button class="choice" id="expert" type="button"><strong>Je connais déjà</strong><span>Je me débrouille, tu restes à côté.</span></button>
+        <button class="choice" id="expert" type="button"><strong>Je connais déjà</strong><span>Je me débrouille : réponses courtes et techniques, je ne t’explique que l’essentiel.</span></button>
       </div>
     </section>
 
@@ -68,11 +68,11 @@
         <div class="avatar" aria-hidden="true">P</div>
         <h1>D’abord, présentons ton imprimante</h1>
       </div>
-      <p>Juste après, une fenêtre te demande ta machine. Trois repères pour bien la remplir&nbsp;:</p>
+      <p>Dans le panneau à droite, tu choisis d’abord ta pièce, puis je cherche ton imprimante sur le Wi-Fi de ta maison. Pour que je la trouve&nbsp;:</p>
       <ol class="tips">
-        <li><b>1</b><div><strong>Ton imprimante</strong><span class="soft">Son nom est écrit dessus, souvent à l’avant (par exemple «&nbsp;Bambu Lab A1&nbsp;» ou «&nbsp;Creality Ender-3 V3&nbsp;»).</span></div></li>
-        <li><b>2</b><div><strong>La taille de buse</strong><span class="soft">Si tu ne sais pas, c’est presque toujours 0,4 mm&nbsp;: c’est la taille livrée avec l’imprimante.</span></div></li>
-        <li><b>3</b><div><strong>Tes filaments</strong><span class="soft">Coche ceux que tu as. Si tu ne sais pas, prends PLA&nbsp;: c’est le plus courant et le plus facile.</span></div></li>
+        <li><b>1</b><div><strong>Allume-la</strong><span class="soft">L’écran de l’imprimante doit être actif.</span></div></li>
+        <li><b>2</b><div><strong>Connecte-la au Wi-Fi</strong><span class="soft">Sur son écran&nbsp;: Réglages, puis Réseau ou Wi-Fi. Choisis ta box et entre le mot de passe du Wi-Fi.</span></div></li>
+        <li><b>3</b><div><strong>Pas de Wi-Fi&nbsp;?</strong><span class="soft">Aucun souci&nbsp;: tu la choisiras dans la liste, et tu imprimeras avec une clé USB ou une carte SD.</span></div></li>
       </ol>
       <p class="soft" style="margin-top:16px">Ensuite, je te guide pour ta première impression, dans le panneau à droite.</p>
     </section>
@@ -82,8 +82,8 @@
         <div class="avatar" aria-hidden="true">P</div>
         <h1>Parfait, on y va ensemble</h1>
       </div>
-      <p>Je vais te guider pour ta première impression, étape par étape, dans le panneau à droite. À chaque étape, «&nbsp;Montre-moi&nbsp;» t’indique où regarder.</p>
-      <p class="soft">Tu peux me poser une question à tout moment, ou passer une étape si tu la connais déjà.</p>
+      <p>Je vais te guider pour ta première impression, étape par étape, dans le panneau à droite.</p>
+      <p class="soft">Tu peux me poser une question à tout moment.</p>
     </section>
   </main>
   <footer>
@@ -101,8 +101,10 @@
   }
   function done(choice) { toSlicer({ command: 'welcome_choice', choice: choice }); }
 
-  // Appelé par Plyo une fois la page chargée : true quand l'écran de configuration d'Orca suit.
-  window.plyoWelcomeSetup = function (setup) { withSetup = !!setup; };
+  // Appelé par Plyo une fois la page chargée : true quand aucune imprimante n'est installée (le panneau la cherche ensuite).
+  // Parcours débutant, lot 6 : la fenêtre n'est montrée que pour préparer cette recherche ; elle s'ouvre donc sur ses conseils
+  // (« Je débute / Je connais déjà » est une ligne de l'accueil du panneau).
+  window.plyoWelcomeSetup = function (setup) { withSetup = !!setup; if (withSetup) show('setup'); };
 
   document.getElementById('beginner').addEventListener('click', function () { show(withSetup ? 'setup' : 'tour'); });
   document.getElementById('expert').addEventListener('click', function () { done('expert'); });

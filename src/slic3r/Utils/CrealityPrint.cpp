@@ -30,6 +30,7 @@
 #include <curl/curl.h>
 #include <utility>
 #include <vector>
+#include <thread> // PLYO: std::this_thread::sleep_for du bloc Plyo de start_print
 #include <wx/progdlg.h>
 
 #include "PrintHost.hpp"
@@ -38,6 +39,7 @@
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/format.hpp"
 #include "Http.hpp"
+#include "plyo/PlyoHooks.hpp" // PLYO: dossier de démarrage lu sur l'imprimante (Plyo::PrinterStatus::creality_file_dir)
 #include "libslic3r/AppConfig.hpp"
 #include "slic3r/GUI/BonjourDialog.hpp"
 
@@ -275,6 +277,7 @@ static bool is_k1_family(const std::string& model)
         "K1 SE",
         "K1C",
         "K1_CFS-C",
+        "F003", // PLYO: CR-10 SE (code renvoyé par /info) : fichiers dans /usr/data, constaté sur la machine de Jérôme le 2026-11-10
     };
     return k1_models.count(model) > 0;
 }
@@ -359,7 +362,31 @@ bool CrealityPrint::start_print(wxString &msg, const std::string &filename, cons
 {
     try {
         const std::string data_root = is_k1_family(m_model) ? "/usr/data" : "/mnt/UDISK";
-        const std::string gcode_path = data_root + "/printer_data/gcodes/" + filename;
+        std::string gcode_path = data_root + "/printer_data/gcodes/" + filename; // PLYO: plus `const`, remplacé ci-dessous
+        // PLYO: begin le dossier vient de la liste de fichiers de l'imprimante elle-même (lecture seule) ; la liste de modèles
+        // ci-dessus ne sert plus que si elle ne répond pas. Une CR-10 SE inconnue d'Orca recevait le fichier sans démarrer.
+        // Trois essais : juste après l'envoi, la liste peut ne pas encore contenir le fichier.
+        std::string dir;
+        for (int attempt = 0; attempt < 3 && dir.empty(); ++attempt) {
+            if (attempt > 0)
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+            try {
+                net::io_context list_ioc;
+                websocket::stream<beast::tcp_stream> list_ws{list_ioc};
+                ws_connect(list_ioc, list_ws, m_host, "9999");
+                beast::get_lowest_layer(list_ws).expires_after(std::chrono::seconds(6));
+                const std::string reply = ws_send_and_read(list_ws, json{{"method", "get"}, {"params", {{"reqGcodeFile", 1}}}}, "retGcodeFileInfo");
+                beast::error_code list_close;
+                list_ws.close(websocket::close_code::normal, list_close);
+                dir = Plyo::PrinterStatus::creality_file_dir(reply, filename);
+            } catch (const std::exception& e) {
+                BOOST_LOG_TRIVIAL(warning) << "CrealityPrint: file list unavailable (attempt " << attempt + 1 << "): " << e.what();
+            }
+        }
+        if (!dir.empty())
+            gcode_path = dir + "/" + filename;
+        BOOST_LOG_TRIVIAL(info) << "CrealityPrint: start path " << (dir.empty() ? "from model table" : "from printer file list") << ": " << gcode_path;
+        // PLYO: end
 
         net::io_context ioc;
         websocket::stream<beast::tcp_stream> ws{ioc};

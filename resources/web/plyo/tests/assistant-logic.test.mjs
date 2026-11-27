@@ -11,7 +11,7 @@ test('titre d’une conversation : la première demande, raccourcie', () => {
   assert.equal(L.conversationTitle('a'.repeat(80), 0, '2026-10-24'), 'a'.repeat(47) + '…');
   assert.equal(L.conversationTitle('', 2, '2026-10-24'), 'Photos du 24 octobre');
   assert.equal(L.conversationTitle('  ', 1, '2026-10-24'), 'Photo du 24 octobre');
-  assert.equal(L.conversationTitle('', 0, '2026-10-24'), 'Conversation du 24 octobre');
+  assert.equal(L.conversationTitle('', 0, '2026-10-24'), 'Projet du 24 octobre');
 });
 
 test('réponses aux questions de l’IA envoyées ensemble', () => {
@@ -23,7 +23,8 @@ test('réponses aux questions de l’IA envoyées ensemble', () => {
 
 test('jauge du mois : texte court, état et date de renouvellement', () => {
   const g = { plan: 'gratuit', used_pct: 35, resets_at: '2026-11-01T00:00:00.000Z', reserve: 0, state: 'ok' };
-  assert.deepEqual(L.gaugeView(g), { pct: 35, label: '35 %', state: 'ok', plan: 'Gratuit', resets: 'le 1er novembre' });
+  assert.deepEqual(L.gaugeView(g), { pct: 35, label: '35 %', state: 'ok', plan: 'Gratuit', resets: 'le 1er novembre', left: null });
+  assert.equal(L.gaugeView({ ...g, credits_left: 13.4 }).left, 13, 'tarif fixe : crédits restants, arrondis vers le bas');
   assert.equal(L.gaugeView({ ...g, used_pct: 84, state: 'low', plan: 'plus' }).plan, 'Plyo+');
   assert.equal(L.gaugeView({ ...g, resets_at: '2027-01-01T00:00:00.000Z' }).resets, 'le 1er janvier');
   assert.equal(L.gaugeView(null), null);
@@ -49,7 +50,8 @@ test('erreurs : message clair et action suivante', () => {
   assert.equal(L.errorView('quelque_chose').action, 'retry');
   for (const code of ['config_missing', 'assistant_unavailable', 'incomplete_answer', 'upstream_error', 'invalid_request', 'insufficient_credits', 'auth_unavailable', 'internal', 'network', 'timeout', 'unauthorized']) {
     const text = L.errorView(code).text;
-    assert.ok(text && !/npm|plyo-api|vous|votre|Réessayez|crédit|token/.test(text), code + ' : ' + text);
+    // Depuis le tarif fixe (27/11/2026), les crédits sont visibles : le mot est permis, jamais les tokens.
+    assert.ok(text && !/npm|plyo-api|vous|votre|Réessayez|token/.test(text), code + ' : ' + text);
   }
 });
 
@@ -214,11 +216,222 @@ test('gaugeExtraText : une seule jauge, agrandie par les crédits ajoutés', () 
   assert.equal(L.gaugeExtraText({ ...base, extra_pct: 0 }), '');
   assert.equal(L.gaugeExtraText({ ...base }), '');
   assert.equal(L.gaugeExtraText({ ...base, extra_pct: 200 }),
-    'Ta jauge est agrandie de 200 % par des crédits ajoutés : ce que tu n’en utilises pas reste le mois suivant.');
+    'Ta jauge est agrandie de 200 % par une recharge ou un cadeau : ce que tu n’en utilises pas reste le mois suivant.');
 });
 
 test('gaugeResetText : la part incluse se renouvelle, les crédits ajoutés restent', () => {
   const base = { plan: 'gratuit', used_pct: 50, resets_at: '2026-11-01T00:00:00.000Z', state: 'ok' };
   assert.match(L.gaugeResetText({ ...base, extra_pct: 0 }), /^Se recharge le 1er novembre/);
   assert.match(L.gaugeResetText({ ...base, extra_pct: 40 }), /^La part incluse dans ta formule se renouvelle le 1er novembre/);
+});
+
+test('ligne des limites du fabricant', () => {
+  assert.equal(L.limitsLine({ nozzle_min: 225, nozzle_max: 245, bed_min: 60, bed_max: 80 }), 'Fabricant : buse 225–245 °C, plateau 60–80 °C');
+  assert.equal(L.limitsLine({ nozzle_min: 225, nozzle_max: 245 }), 'Fabricant : buse 225–245 °C, plateau à renseigner');
+  assert.equal(L.limitsLine({}), 'Limites du fabricant à renseigner');
+  assert.equal(L.limitsLine(null), 'Limites du fabricant à renseigner');
+});
+
+test('saisie des limites : vides ignorés, min plus grand que max refusé', () => {
+  assert.deepEqual(L.parseLimits({ nozzle_min: '225', nozzle_max: '245', bed_min: '', bed_max: ' ' }), { ok: true, limits: { nozzle_min: 225, nozzle_max: 245 } });
+  assert.equal(L.parseLimits({ nozzle_min: '250', nozzle_max: '245' }).ok, false);
+  assert.equal(L.parseLimits({ nozzle_max: 'abc' }).ok, false);
+  assert.equal(L.parseLimits({ nozzle_max: '900' }).ok, false);
+});
+
+const catalogChange = (over) => ({ key: 'slow_down_layer_time', title_fr: 'Seuil de vitesse maximale du ventilateur · Temps de couche', tab_fr: 'Refroidissement', unit: 's', before: 8, value: 20, before_fr: '', value_fr: '', reason: 'r', risk: 'free', beyond_manufacturer: false, needs_confirmation: false, ...over });
+
+test('réglages du catalogue : ils prennent la forme des propositions de la fiche', () => {
+  const [s] = L.catalogToSuggestions([catalogChange({})]);
+  assert.deepEqual(s, { id: 'slow_down_layer_time', delta: null, value: 20, reason: 'r', catalog: true, label: 'Seuil de vitesse maximale du ventilateur · Temps de couche', tab: 'Refroidissement', unit: 's', before: 8, beforeText: '', valueText: '', confirm: false, beyond: false });
+  assert.deepEqual(L.catalogToSuggestions(undefined), []);
+  assert.deepEqual(L.catalogToSuggestions('nimporte quoi'), []);
+});
+
+test('réglages du catalogue : cochés par défaut sauf les réglages sensibles ou hors plage du fabricant', () => {
+  const [calm, risky, beyond] = L.catalogToSuggestions([catalogChange({}), catalogChange({ key: 'nozzle_temperature', needs_confirmation: true }), catalogChange({ key: 'a', beyond_manufacturer: true, needs_confirmation: true })]);
+  assert.equal(L.defaultChecked(calm), true);
+  assert.equal(L.defaultChecked(risky), false);
+  assert.equal(L.defaultChecked(beyond), false);
+  assert.equal(L.defaultChecked({ id: 'nozzle_temp', delta: -5, value: null }), true);
+});
+
+test('réglages groupés par onglet, dans l’ordre où ils apparaissent', () => {
+  const list = L.catalogToSuggestions([catalogChange({ key: 'a', tab_fr: 'Refroidissement' }), catalogChange({ key: 'b', tab_fr: 'Qualité' }), catalogChange({ key: 'c', tab_fr: 'Refroidissement' })]);
+  const groups = L.groupByTab(list.concat([{ id: 'nozzle_temp', delta: -5, value: null }]));
+  assert.deepEqual(groups.map((g) => [g.tab, g.items.map((s) => s.id)]), [['Refroidissement', ['a', 'c']], ['Qualité', ['b']], ['', ['nozzle_temp']]]);
+});
+
+test('modifications manuelles enregistrées avec le lot : liste courte et lisible', () => {
+  assert.equal(L.manualEditsText([]), '');
+  assert.equal(L.manualEditsText(null), '');
+  assert.equal(L.manualEditsText([{ title: 'Densité de remplissage', before: '15%', after: '20%' }]), 'J’enregistre aussi tes modifications manuelles : Densité de remplissage (15% → 20%).');
+  const many = Array.from({ length: 8 }, (_, i) => ({ title: 'R' + i, before: i, after: i + 1 }));
+  const text = L.manualEditsText(many);
+  assert.ok(text.includes('R0 (0 → 1)') && text.includes('R5 (5 → 6)'));
+  assert.ok(!text.includes('R6'));
+  assert.ok(text.endsWith('et 2 autres.'));
+  assert.equal(L.manualEditsText([{ key: 'x_y', before: true, after: false }]).includes('x_y (oui → non)'), true);
+});
+
+test('texte après l’enregistrement du profil par l’assistant', () => {
+  assert.equal(L.savedText({ saved: [{ type: 'print', name: 'Mon profil', created: false }] }), 'Enregistré dans le profil « Mon profil ».');
+  assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Generic TPU (Plyo)', created: true, from: 'Generic TPU' }] }), 'Enregistré dans une copie à toi, « Generic TPU (Plyo) » : « Generic TPU » est un profil de Plyo Slicer, qui ne se modifie pas.');
+  // Lot 8 (UX-14) : jamais « enregistre-le toi-même » ; la suite est dite (bobine : nouvel essai ; sinon Orca demandera).
+  assert.equal(L.savedText({ saved: [], save_error: 'disque plein' }), 'Appliqué, mais je n’ai pas pu le garder dans ton profil de filament (disque plein) : il reste en place sur ce plateau, et Plyo Slicer te demandera quoi en faire en quittant.');
+  assert.equal(L.savedText({ saved: [], save_error: 'disque plein', save_spool: true }), 'Appliqué, mais je n’ai pas pu le garder dans ta bobine (disque plein) : je réessaie à ta prochaine modification.');
+  assert.doesNotMatch(L.savedText({ save_error: 'x' }) + L.savedText({ save_error: 'x', save_spool: true }), /toi-même|[Ee]nregistre-le/);
+  assert.equal(L.savedText({}), '');
+});
+
+test('collage : seules les images du presse-papier sont gardées', () => {
+  const item = (kind, type, file) => ({ kind, type, getAsFile: () => file });
+  const a = { name: 'a.png' }, b = { name: 'b.jpg' };
+  const items = [item('string', 'text/plain', null), item('file', 'image/png', a), item('file', 'application/pdf', { name: 'x.pdf' }), item('file', 'image/jpeg', b), item('file', 'image/png', null)];
+  assert.deepEqual(L.imageFilesFromClipboard(items), [a, b]);
+  assert.deepEqual(L.imageFilesFromClipboard([]), []);
+  assert.deepEqual(L.imageFilesFromClipboard(null), []);
+  assert.deepEqual(L.imageFilesFromClipboard(undefined), []);
+});
+
+test('réglages appliqués sur les profils de la demande, pas sur ceux d’aujourd’hui', () => {
+  const last = { process: 'Profil B', filament: 'Filament B', printer: 'Imprimante B' };
+  assert.deepEqual(L.namesForApply({ names: { process: 'Profil A', filament: 'Filament A', printer: 'Imprimante A' } }, last), { process: 'Profil A', filament: 'Filament A', printer: 'Imprimante A' });
+  assert.deepEqual(L.namesForApply({}, last), last);
+  assert.deepEqual(L.namesForApply(null, null), { process: '', filament: '', printer: '' });
+});
+
+test('réglages écartés par les contrôles : une phrase honnête, seulement en mode catalogue', () => {
+  assert.equal(L.rejectedNote({ changes: [], rejected_count: 0 }), '');
+  assert.equal(L.rejectedNote({ rejected_count: 2 }), '', 'ancien mode : rien à dire');
+  assert.equal(L.rejectedNote({ changes: [], rejected_count: 1 }), 'J’ai écarté 1 réglage que j’avais envisagé : il s’éloignait trop de ta valeur actuelle ou sortait des limites. Ce que le message annonce peut donc ne pas être dans la fiche ; redemande-moi par petites étapes si besoin.');
+  assert.ok(L.rejectedNote({ changes: [{}], rejected_count: 3 }).startsWith('J’ai écarté 3 réglages que j’avais envisagés'));
+});
+
+test('moreBelow : le badge « scroll pour voir la suite » n’apparaît que si la réponse dépasse nettement en bas', () => {
+  assert.equal(L.moreBelow({ bottom: 900 }, { bottom: 600 }), true);
+  assert.equal(L.moreBelow({ bottom: 610 }, { bottom: 600 }), false); // quelques pixels de dépassement : on lit déjà la fin
+  assert.equal(L.moreBelow({ bottom: 624 }, { bottom: 600 }), false); // 24 px au plus
+  assert.equal(L.moreBelow({ bottom: 625 }, { bottom: 600 }), true);
+  assert.equal(L.moreBelow({ bottom: 300 }, { bottom: 600 }), false);
+  assert.equal(L.moreBelow(null, { bottom: 600 }), false);
+  assert.equal(L.moreBelow({ bottom: 900 }, null), false);
+});
+
+test('tempsFromRange : la température actuelle reste si elle est dans la plage de la bobine, sinon le milieu arrondi à 5', () => {
+  assert.deepEqual(L.tempsFromRange({ nozzle: 220, bed: 60 }, { nozzle_min: 190, nozzle_max: 230, bed_min: 50, bed_max: 70 }), { nozzle: 220, bed: 60 });
+  assert.deepEqual(L.tempsFromRange({ nozzle: 220, bed: 60 }, { nozzle_min: 230, nozzle_max: 250, bed_min: 70, bed_max: 80 }), { nozzle: 240, bed: 75 });
+  assert.deepEqual(L.tempsFromRange({ nozzle: 220, bed: 60 }, { nozzle_min: 190, nozzle_max: 210 }), { nozzle: 200, bed: null });
+  assert.deepEqual(L.tempsFromRange({ nozzle: 220, bed: 60 }, { nozzle_max: 215 }), { nozzle: 215, bed: null });
+  assert.deepEqual(L.tempsFromRange({ nozzle: null, bed: null }, { nozzle_min: 200, nozzle_max: 220 }), { nozzle: 210, bed: null });
+});
+
+test('annulation : dit sobrement que ses crédits ont pu être comptés (l’API débite le prix fixe si l’IA a travaillé)', () => {
+  assert.equal(L.CANCEL_TEXT, 'Demande annulée. Si l’IA avait déjà travaillé, ses crédits ont pu être comptés.');
+  assert.ok(L.errorView('timeout').text.includes('ses crédits ont pu être comptés'), 'le délai dépassé ferme le flux de la même façon');
+  assert.ok(L.errorView('timeout').text.includes('ta demande est gardée'));
+  assert.equal(L.errorView('timeout').action, 'retry');
+});
+
+test('hors-sujet : gratuit dans le quota, rien à dire ; au-delà, la réponse dit qu’elle compte', () => {
+  assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: { charged: 0, balance: 5 } }), '');
+  assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: { charged: 1, balance: 5 } }), 'Cette réponse a compté pour 1 crédit : au-delà de 3 par jour, les questions hors impression 3D sont comptées.');
+  assert.equal(L.offTopicCostNote({ status: 'off_topic' }), '', 'archive sans crédits');
+  assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: null }), '');
+  assert.equal(L.offTopicCostNote({ status: 'ok', credits: { charged: 2 } }), '', 'une réponse normale ne le répète pas');
+});
+
+test('conversation rouverte : ses fiches de réglages non appliquées s’appliquent de nouveau', () => {
+  // Réponse neuve : jamais archivée.
+  assert.equal(L.sheetArchived(false, false, false), false);
+  // Conversation rouverte (redevenue active) : une fiche non appliquée redevient applicable, une fiche appliquée reste un relevé.
+  assert.equal(L.sheetArchived(true, true, false), false);
+  assert.equal(L.sheetArchived(true, true, true), true);
+  // Relecture seule (sans réouverture) : tout est archivé.
+  assert.equal(L.sheetArchived(true, false, false), true);
+});
+
+test('réglages d’impression gardés avec le projet de la conversation', () => {
+  assert.equal(L.savedText({ saved: [], in_project: true }), 'Réglages de la pièce gardés avec ce projet.');
+  assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Sunlu PLA+ noir — CR-10 SE', created: false }], in_project: true }),
+    'Enregistré dans le profil « Sunlu PLA+ noir — CR-10 SE ». Réglages de la pièce gardés avec ce projet.');
+});
+
+test('réglages d’impression jamais enregistrés dans un profil partagé, même sans projet de conversation', () => {
+  // Plateau sans conversation (fichier de l’utilisateur, ancienne conversation) : appliqués, laissés modifiés, sans profil.
+  assert.equal(L.savedText({ saved: [], print_edited: true }), 'Réglages de la pièce appliqués à ce plateau seulement : ton profil d’impression ne change pas.');
+  assert.equal(L.savedText({ saved: [{ type: 'filament', name: 'Sunlu PLA+ noir — CR-10 SE', created: false }], print_edited: true }),
+    'Enregistré dans le profil « Sunlu PLA+ noir — CR-10 SE ». Réglages de la pièce appliqués à ce plateau seulement : ton profil d’impression ne change pas.');
+  // Modifications manuelles : seules celles du filament partent dans un profil ; celles de la pièce restent sur le plateau.
+  assert.equal(L.manualEditsText([{ preset: 'print', title: 'Densité de remplissage', before: '15%', after: '20%' }]),
+    'Tes modifications manuelles de la pièce restent en place : Densité de remplissage (15% → 20%).');
+  assert.equal(L.manualEditsText([{ preset: 'filament', title: 'Débit', before: 1, after: 0.9 }, { preset: 'print', title: 'Parois', before: 2, after: 3 }]),
+    'J’enregistre aussi tes modifications manuelles : Débit (1 → 0.9). Tes modifications manuelles de la pièce restent en place : Parois (2 → 3).');
+});
+
+test('plan_required (plusieurs photos en formule gratuite) : message clair et une issue vers les formules', () => {
+  const v = L.errorView('plan_required', { error: 'plan_required', plan: 'plus' });
+  assert.equal(v.action, 'plans');
+  assert.match(v.text, /Plyo\+/);
+  assert.match(v.text, /une photo à la fois/);
+});
+
+test('« Mon utilisation » : la jauge reste une jauge, les formules disent leurs équivalents sans prix', () => {
+  const fs = require('node:fs');
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(html, /Plyo\+ correspond à environ 100 questions ou 40 photos par mois, Pro à environ 330 questions ou 130 photos/);
+  assert.match(html, /Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne touchent jamais la jauge/);
+  const soon = html.slice(html.indexOf('Les formules arrivent'), html.indexOf('Comment la jauge se remplit'));
+  assert.doesNotMatch(soon, /€|\$/);
+  assert.match(html, /view\.action === 'plans'\) acts\.appendChild\(button\('Voir les formules', openUsage/);
+});
+
+test('tarif fixe : coût d’une demande, crédits restants et équivalent en diagnostics', () => {
+  assert.deepEqual([0, 1, 2, 3, 6].map(L.requestCost), [1, 2, 2, 3, 3]);
+  assert.deepEqual([0, 1, 2, 13].map(L.creditsText), ['0 crédit', '1 crédit', '2 crédits', '13 crédits']);
+  const g = { credits_left: 13, monthly: 2, resets_at: '2026-12-01T00:00:00.000Z' };
+  assert.equal(L.costLine(1, g), '2 crédits · il t’en reste 13');
+  assert.equal(L.costLine(0, { ...g, credits_left: 0 }), '1 crédit · il ne t’en reste plus');
+  assert.equal(L.costLine(3, { ...g, credits_left: 2 }), '3 crédits · il ne t’en reste que 2');
+  assert.equal(L.costLine(1, null), '2 crédits', 'jauge inconnue : le coût seul');
+  assert.equal(L.costLine(0, g, true), 'Gratuit : je réponds avec la fiche du réglage.');
+  assert.equal(L.diagnosticsText(13), 'environ 6 diagnostics photo');
+  assert.equal(L.diagnosticsText(1), 'de quoi poser une question écrite');
+  assert.equal(L.monthlyText({ ...g, monthly: 60 }), 'Tes 60 crédits du mois se renouvellent le 1er décembre.');
+  assert.equal(L.gaugeNoticeText('empty', g), 'Tu as utilisé tous tes crédits. Tes 2 crédits du mois se renouvellent le 1er décembre.');
+});
+
+test('tarif fixe : « Ça n’a pas aidé ? » seulement sous une réponse payée, avec son identifiant', () => {
+  const a = { status: 'ok', credits: { charged: 2 } };
+  assert.equal(L.refundOffer({ requestId: 'r1' }, a).label, 'Ça n’a pas aidé ? Récupérer mes 2 crédits');
+  assert.equal(L.refundOffer({ requestId: 'r1', refunded: true }, a), null);
+  assert.equal(L.refundOffer({}, a), null, 'réponse d’avant : pas d’identifiant');
+  assert.equal(L.refundOffer({ requestId: 'r1' }, { status: 'ok', credits: { charged: 0 } }), null, 'rien payé');
+  assert.equal(L.refundOffer({ requestId: 'r1' }, { ...a, status: 'off_topic' }), null);
+  assert.equal(L.refundDoneText(1), 'C’est rendu : ton crédit est revenu.');
+  assert.equal(L.refundErrorText('already_refunded'), null);
+  assert.equal(L.refundErrorText('refund_limit', { resets_at: '2026-12-01T00:00:00.000Z' }), 'Tu as déjà récupéré des crédits 3 fois ce mois-ci. Ce sera de nouveau possible le 1er décembre.');
+});
+
+test('tarif fixe : limites de sécurité du compte et du service, sans « Réessayer »', () => {
+  const cap = L.errorView('cost_cap', { until: '2026-12-01T00:00:00.000Z' });
+  assert.equal(cap.text, 'Tu as beaucoup utilisé l’IA ce mois-ci : ton compte a atteint sa limite de sécurité. Elle se lève le 1er décembre.');
+  assert.equal(cap.action, 'none');
+  assert.equal(L.errorView('service_cap', {}).action, 'none');
+  assert.match(L.errorView('service_cap').text, /réessaie demain/);
+});
+
+test('paiement : pack au moment du raté seulement s’il ne reste pas de quoi diagnostiquer ; textes des refus', () => {
+  assert.equal(L.packAtFailureText({ credits_left: 5 }), '');
+  assert.equal(L.packAtFailureText({}), '', 'service d’avant le tarif fixe');
+  assert.match(L.packAtFailureText({ credits_left: 1 }), /^Il te reste 1 crédit : un \*\*pack secours\*\* \(25 crédits, 4,99 €/);
+  assert.match(L.packAtFailureText({ credits_left: 0 }), /^Tu n’as plus de crédits/);
+  assert.match(L.plusAfterSuccessText(), /moins d’une demi-bobine/);
+  assert.equal(L.plusAfterPacksText({ count: 1, spent_cents: 499 }), '');
+  assert.equal(L.plusAfterPacksText(null), '');
+  assert.match(L.plusAfterPacksText({ count: 2, spent_cents: 998 }), /^Tu as dépensé 9,98 € en packs\. \*\*Plyo\+\*\* te donne 60 crédits chaque mois pour 9,99 €/);
+  assert.match(L.plusAfterPacksText({ count: 3, spent_cents: 1997 }), /19,97 €/);
+  assert.equal(L.offerView('plus_yearly').label, 'À l’année · 8,25 € par mois');
+  assert.equal(L.offerView('pro_monthly'), null);
+  assert.match(L.buyErrorText('billing_unavailable'), /pas disponible pour le moment/);
 });

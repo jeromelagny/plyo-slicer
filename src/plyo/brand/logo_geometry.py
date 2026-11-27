@@ -4,7 +4,6 @@ Coordonnées dans un carré de 1254 unités (taille de l'image d'origine). `mark
 `svg_d()` les écrit en chemin SVG, `render()` les dessine avec Pillow (sur-échantillonnage, sans outil externe).
 """
 import math
-from PIL import Image, ImageDraw
 
 BG = (0, 241, 207)  # #00F1CF
 BOWL = (140, 100, 80, 140)  # poignées des courbes de la boucle du P, ajustées sur l'image d'origine
@@ -121,6 +120,8 @@ def shapes(bowl):
     return [resolve(p_outer(*bowl)), resolve(SLAB)] + [resolve(band(k)) for k in range(3)]
 
 def render(all_cmds, size, f, ox, oy, ss=4, bg=BG, rounded=None):
+    # Pillow seulement pour dessiner : la géométrie et ses tests (CI) s'en passent.
+    from PIL import Image, ImageDraw
     S = size * ss
     img = Image.new('RGBA', (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)

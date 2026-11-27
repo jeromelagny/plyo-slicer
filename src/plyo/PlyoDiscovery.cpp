@@ -2,6 +2,8 @@
 #include "slic3r/Utils/Bonjour.hpp"
 
 #include "PlyoDiscovery.hpp"
+#include "PlyoLifetime.hpp"
+#include "PlyoStore.hpp"
 
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/Utils/CrealityHostDiscovery.hpp"
@@ -18,6 +20,7 @@
 #include <chrono>
 #include <exception>
 #include <future>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -30,6 +33,8 @@ using namespace std::chrono_literals;
 namespace {
 
 std::atomic<bool> s_running{false};
+std::mutex                         s_serials_mutex;
+std::map<std::string, std::string> s_serials; // adresse → numéro de série, en mémoire seulement
 
 // Adresse de l'ordinateur sur le réseau de la maison. « Connecter » un socket UDP ne fait que choisir la route :
 // aucun paquet ne part vers l'adresse publique utilisée comme repère.
@@ -123,14 +128,50 @@ std::vector<Printer> ask_elegoo()
     return found;
 }
 
+// Elegoo Centauri Carbon 2 : requête JSON-RPC « 7000 » diffusée sur le port UDP 52700 (le SDCP du port 3000 n'y répond pas).
+std::vector<Printer> ask_elegoo_cc2()
+{
+    std::vector<Printer>  found;
+    asio::io_context      io;
+    asio::ip::udp::socket socket(io);
+    boost::system::error_code ec;
+    socket.open(asio::ip::udp::v4(), ec);
+    if (ec)
+        return found;
+    socket.set_option(asio::socket_base::broadcast(true), ec);
+    socket.non_blocking(true, ec);
+    const std::string probe = R"({"id":0,"method":7000,"params":{}})";
+    socket.send_to(asio::buffer(probe), asio::ip::udp::endpoint(asio::ip::address_v4::broadcast(), 52700), 0, ec);
+    if (ec)
+        return found;
+    const auto until = std::chrono::steady_clock::now() + 2500ms;
+    char       buffer[4096];
+    while (std::chrono::steady_clock::now() < until) {
+        asio::ip::udp::endpoint from;
+        const size_t            n = socket.receive_from(asio::buffer(buffer), from, 0, ec);
+        if (ec == asio::error::would_block) {
+            std::this_thread::sleep_for(50ms);
+            continue;
+        }
+        if (ec)
+            break;
+        if (auto p = from_elegoo_cc2(from.address().to_string(), std::string(buffer, n)))
+            found.push_back(*p);
+    }
+    return found;
+}
+
 // Creality K2 et suivantes : recherche d'Orca (annonce mDNS propre à Creality).
 std::vector<Printer> ask_creality()
 {
     std::vector<Printer> found;
+    // Codes appris (choix faits sur cet ordinateur et table partagée du serveur Plyo) : voir PlyoAssistant.cpp, model_learned.
+    const std::map<std::string, std::string> learned = learned_for(Store::read(Store::dir() / "modeles-appris.json"), "Creality");
     for (const Slic3r::CrealityHost& h : Slic3r::CrealityHostDiscovery::scan(true)) {
         Printer p;
         p.ip        = h.ip;
-        p.name      = !h.model_name.empty() ? "Creality " + h.model_name : h.hostname;
+        p.code      = h.model_code;
+        p.name      = creality_mdns_name(h.model_code, h.model_name, learned); // jamais le « K2-xxxx » inventé par Orca
         p.brand     = "Creality";
         p.host_type = "crealityprint";
         p.host      = h.ip;
@@ -154,6 +195,7 @@ std::vector<Printer> ask_flashforge()
         p.brand     = "Flashforge";
         p.host_type = "flashforge";
         p.host      = f.ip_address;
+        p.serial    = valid_serial(f.serial_number) ? f.serial_number : std::string();
         p.priority  = 3;
         found.push_back(p);
     }
@@ -219,6 +261,7 @@ bool start(std::function<void(std::vector<Printer>)> done)
         std::vector<std::future<std::vector<Printer>>> jobs;
         jobs.push_back(launch("Klipper", sweep_moonraker));
         jobs.push_back(launch("Elegoo", ask_elegoo));
+        jobs.push_back(launch("Elegoo CC2", ask_elegoo_cc2));
         jobs.push_back(launch("Creality", ask_creality));
         jobs.push_back(launch("Flashforge", ask_flashforge));
         jobs.push_back(launch("OctoPrint", [] { return ask_bonjour("octoprint", "octoprint", "OctoPrint", 2); }));
@@ -228,13 +271,28 @@ bool start(std::function<void(std::vector<Printer>)> done)
             for (Printer& p : job.get())
                 all.push_back(std::move(p));
         std::vector<Printer> printers = merge(std::move(all));
+        {
+            std::lock_guard<std::mutex> lock(s_serials_mutex);
+            s_serials.clear();
+            for (const Printer& p : printers)
+                if (!p.serial.empty())
+                    s_serials[p.ip] = p.serial;
+        }
         BOOST_LOG_TRIVIAL(info) << "Plyo: recherche d'imprimantes terminée, " << printers.size() << " trouvée(s)";
-        Slic3r::GUI::wxGetApp().CallAfter([done, printers]() mutable {
+        // Orca fermé entre-temps : rien n'est rappelé (s_running reste levé, plus personne ne relance de recherche).
+        Lifetime::post("la recherche d'imprimantes", [done, printers]() {
             s_running = false;
-            done(std::move(printers));
+            done(printers);
         });
     }).detach();
     return true;
+}
+
+std::string known_serial(const std::string& ip)
+{
+    std::lock_guard<std::mutex> lock(s_serials_mutex);
+    const auto                  it = s_serials.find(ip);
+    return it == s_serials.end() ? std::string() : it->second;
 }
 
 }} // namespace Plyo::Discovery

@@ -1,5 +1,7 @@
 #include "PlyoCommands.hpp"
+#include "PlyoCommandsLogic.hpp"
 #include "PlyoJson.hpp"
+#include "PlyoPlateActions.hpp"
 #include "PlyoSettingsBridge.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
@@ -29,6 +31,7 @@
 #include <boost/log/trivial.hpp>
 #include <wx/event.h>
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 #include <optional>
@@ -309,24 +312,26 @@ std::string range_setting(int idx, double from, double to, const std::string& id
     return Json::str(checked, "text");
 }
 
-// Deux exemplaires de la même plaque se chevauchent ou se touchent (vus de dessus, à 1 mm près) :
-// après une coupe, une séparation, des copies ou un agrandissement, il faut réorganiser la plaque.
-bool pieces_overlap()
+// Les exemplaires de la même plaque qui se chevauchent ou se touchent (vus de dessus, à 1 mm près).
+CommandsLogic::OverlapPairs overlapping_pieces()
 {
-    Slic3r::GUI::PartPlateList&                       plates = plater().get_partplate_list();
-    std::map<int, std::vector<Slic3r::BoundingBoxf>> by_plate;
-    const auto&                                       objects = model().objects;
+    Slic3r::GUI::PartPlateList&      plates = plater().get_partplate_list();
+    struct Seen { size_t id; Slic3r::BoundingBoxf box; };
+    std::map<int, std::vector<Seen>> by_plate;
+    CommandsLogic::OverlapPairs      pairs;
+    const auto&                      objects = model().objects;
     for (size_t o = 0; o < objects.size(); ++o)
         for (size_t i = 0; i < objects[o]->instances.size(); ++i) {
             const Slic3r::BoundingBoxf3 box = objects[o]->instance_bounding_box(i);
             const Slic3r::BoundingBoxf  flat(Slic3r::Vec2d(box.min.x() - 0.5, box.min.y() - 0.5), Slic3r::Vec2d(box.max.x() + 0.5, box.max.y() + 0.5));
-            std::vector<Slic3r::BoundingBoxf>& seen = by_plate[plates.find_instance(static_cast<int>(o), static_cast<int>(i))];
-            for (const Slic3r::BoundingBoxf& other : seen)
-                if (flat.overlap(other))
-                    return true;
-            seen.push_back(flat);
+            const size_t       id   = objects[o]->instances[i]->id().id;
+            std::vector<Seen>& seen = by_plate[plates.find_instance(static_cast<int>(o), static_cast<int>(i))];
+            for (const Seen& other : seen)
+                if (flat.overlap(other.box))
+                    pairs.emplace(std::min(id, other.id), std::max(id, other.id));
+            seen.push_back({id, flat});
         }
-    return false;
+    return pairs;
 }
 
 // Exécute un ordre ; rend le texte de vérification à ajouter à la phrase de l'IA (réglage appliqué), ou vide.
@@ -424,10 +429,12 @@ std::string execute(const nlohmann::json& c, const std::optional<Slic3r::ObjectI
 
 nlohmann::json run(const nlohmann::json& commands)
 {
-    if (!commands.is_array() || commands.empty() || commands.size() > 6)
-        return {{"ok", false}, {"text", "Aucun ordre à exécuter."}, {"done", nlohmann::json::array()}};
+    if (!commands.is_array() || commands.empty())
+        return {{"ok", false}, {"text", "Aucun changement à faire sur le plateau."}, {"done", nlohmann::json::array()}};
+    if (commands.size() > 6)
+        return {{"ok", false}, {"text", "Je fais 6 changements au plus à la fois : redemande le reste ensuite."}, {"done", nlohmann::json::array()}};
     if (!plater().get_ui_job_worker().is_idle())
-        return {{"ok", false}, {"text", "Orca est déjà occupé sur le plateau. Réessaie dans un instant."}, {"done", nlohmann::json::array()}};
+        return {{"ok", false}, {"text", "Plyo Slicer est déjà occupé sur le plateau. Réessaie dans un instant."}, {"done", nlohmann::json::array()}};
     if (auto* frame = wxGetApp().mainframe)
         frame->select_tab(TAB_ID_PREPARE);
     canvas().get_gizmos_manager().reset_all_states();
@@ -447,7 +454,7 @@ nlohmann::json run(const nlohmann::json& commands)
     }
     // Découper pendant qu'Orca range ou oriente la plaque donnerait un résultat périmé.
     if (!background.empty() && !slicing.empty()) {
-        skipped.push_back("Découpe la plaque quand Orca a fini : clique sur « Découper la plaque ».");
+        skipped.push_back("Découpe la plaque quand Plyo Slicer a fini : clique sur « Découper la plaque ».");
         slicing.clear();
     }
     ordered.insert(ordered.end(), background.begin(), background.end());
@@ -460,17 +467,21 @@ nlohmann::json run(const nlohmann::json& commands)
 
     nlohmann::json done = nlohmann::json::array();
     std::string    failure;
+    bool           orca_failed = false; // ordre interrompu par une erreur d'Orca : il a pu laisser un état partiel
     long long      undo_token = -1;
     const size_t   first_async = ordered.size() - background.size() - slicing.size();
-    // Après les ordres immédiats : si des pièces se chevauchent, « Organiser » d'Orca les regroupe au plus près
-    // (écart minimal calculé par Orca), sauf si l'utilisateur a déjà demandé de ranger ou d'orienter.
+    // Après un ordre qui crée ou agrandit : si de nouvelles pièces se chevauchent, « Organiser » d'Orca les regroupe au plus
+    // près (écart minimal calculé par Orca), sauf si l'utilisateur a déjà demandé de ranger ou d'orienter. Un chevauchement
+    // déjà là avant le lot est un placement voulu (pièces imbriquées) : il ne déclenche rien.
+    const CommandsLogic::OverlapPairs overlaps_before = overlapping_pieces();
+    bool                              grew            = false;
     const auto rearrange_if_needed = [&]() {
-        if (!failure.empty() || !background.empty() || !pieces_overlap())
+        if (!failure.empty() || !background.empty() || !grew || !CommandsLogic::has_new_overlap(overlaps_before, overlapping_pieces()))
             return;
         plater().arrange();
         done.push_back("J'ai réorganisé la plaque : les pièces se chevauchaient, elles sont maintenant regroupées sans se toucher.");
         if (!slicing.empty()) {
-            skipped.push_back("Découpe la plaque quand Orca a fini de la ranger : clique sur « Découper la plaque ».");
+            skipped.push_back("Découpe la plaque quand Plyo Slicer a fini de la ranger : clique sur « Découper la plaque ».");
             ordered.resize(first_async);
         }
     };
@@ -486,6 +497,7 @@ nlohmann::json run(const nlohmann::json& commands)
             const nlohmann::json& c = ordered[i];
             try {
                 const std::string checked = execute(c, targets[i]);
+                grew = grew || CommandsLogic::grows_plate(Json::str(c, "op"));
                 std::string       said    = Json::str(c, "summary");
                 if (!checked.empty())
                     said += " (" + checked + ")";
@@ -495,12 +507,20 @@ nlohmann::json run(const nlohmann::json& commands)
                 break;
             } catch (const std::exception& e) {
                 BOOST_LOG_TRIVIAL(error) << "Plyo: ordre " << Json::str(c, "op") << " en échec : " << e.what();
-                failure = "Orca n'a pas pu exécuter cet ordre.";
+                failure = "Plyo Slicer n'a pas pu exécuter cet ordre.";
+                orca_failed = true;
                 break;
             }
         }
         if (first_async == ordered.size())
             rearrange_if_needed();
+    }
+    // Tout ou rien : un ordre refusé défait ceux du lot déjà exécutés (l'instantané ci-dessus couvre tout le lot). Si Orca
+    // ne peut pas annuler maintenant, le lot reste signalé tel quel, avec son bouton « Annuler ».
+    if (!failure.empty() && (!done.empty() || orca_failed) && Json::boolean(PlateActions::undo(undo_token), "ok", false)) {
+        done    = nlohmann::json::array();
+        skipped = nlohmann::json::array();
+        failure += " Rien n'a été modifié sur le plateau.";
     }
     canvas().set_as_dirty();
     nlohmann::json result{{"ok", failure.empty()}, {"done", done}, {"text", failure}, {"skipped", skipped}};
@@ -509,7 +529,7 @@ nlohmann::json run(const nlohmann::json& commands)
     return result;
 }
 
-nlohmann::json open_tool(const std::string& tool)
+nlohmann::json open_tool(const std::string& tool, const std::string& object)
 {
     using EType = Slic3r::GUI::GLGizmosManager::EType;
     static const std::map<std::string, std::pair<EType, const char*>> tools = {
@@ -533,12 +553,18 @@ nlohmann::json open_tool(const std::string& tool)
     const auto it = tools.find(tool);
     if (it == tools.end())
         return {{"ok", false}, {"text", "Outil inconnu."}};
-    const std::optional<Slic3r::ObjectID> target = target_of("");
+    // `object` : la pièce choisie dans le panneau (« Couper » avec plusieurs pièces) ; sinon la pièce sélectionnée, ou la seule.
+    const std::optional<Slic3r::ObjectID> target = target_of(object);
     if (!target)
         return {{"ok", false}, {"text", "Clique d'abord sur la pièce, puis redemande-moi d'ouvrir l'outil."}};
+    int idx = -1;
+    try {
+        idx = index_of(*target);
+    } catch (const Refused& e) {
+        return {{"ok", false}, {"text", e.what()}};
+    }
     if (auto* frame = wxGetApp().mainframe)
         frame->select_tab(TAB_ID_PREPARE);
-    const int idx = index_of(*target);
     select_object(idx);
     Slic3r::GUI::GLGizmosManager& gizmos = canvas().get_gizmos_manager();
     // Rouvrir l'outil déjà ouvert le fermerait.

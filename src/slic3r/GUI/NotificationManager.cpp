@@ -3374,6 +3374,16 @@ size_t NotificationManager::get_notification_count() const
 	}
 	return ret;
 }
+// PLYO: begin lecture seule pour le panneau Assistant : les notifications pas encore finies (type, niveau, texte, grisé)
+std::vector<NotificationManager::PlyoNotice> NotificationManager::plyo_notices() const
+{
+	std::vector<PlyoNotice> out;
+	for (const std::unique_ptr<PopNotification>& notification : m_pop_notifications)
+		if (!notification->is_finished())
+			out.push_back({ notification->get_type(), notification->get_data().level, notification->get_text1(), notification->is_gray() });
+	return out;
+}
+// PLYO: end
 
 void NotificationManager::bbl_show_plateinfo_notification(const std::string &text)
 {

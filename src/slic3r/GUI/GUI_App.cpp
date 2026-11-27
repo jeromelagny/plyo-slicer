@@ -6,6 +6,7 @@
 #include "libslic3r/Technologies.hpp"
 #include "libslic3r/Platform.hpp"
 #include "GUI_App.hpp"
+#include "plyo/PlyoHooks.hpp" // PLYO: appels du panneau Assistant Plyo, liste dans docs/plyo/FICHIERS-MODIFIES.md
 #include "Shortcuts.hpp"
 #include "DeviceCore/DevConfigUtil.h"
 #include "BindDialog.hpp"
@@ -2688,10 +2689,7 @@ void GUI_App::init_webview_runtime()
 void GUI_App::init_app_config()
 {
 	// Profiles for the alpha are stored into the PrusaSlicer-alpha directory to not mix with the current release.
-    // PLYO: dossier de réglages propre à Plyo Slicer (« PlyoSlicer » dans Application Support, %APPDATA% ou ~/.config),
-    // pour ne pas partager les préréglages d'un OrcaSlicer installé à côté. SLIC3R_APP_KEY reste « OrcaSlicer »
-    // (nom du fichier de configuration, traductions, métadonnées 3MF/G-code).
-    SetAppName("PlyoSlicer");
+    SetAppName("PlyoSlicer"); // PLYO: dossier de réglages à part d'un OrcaSlicer installé à côté ; SLIC3R_APP_KEY reste « OrcaSlicer »
 //	SetAppName(SLIC3R_APP_KEY "-alpha");
 //  SetAppName(SLIC3R_APP_KEY "-beta");
 //	SetAppDisplayName(SLIC3R_APP_NAME);
@@ -9161,6 +9159,7 @@ std::vector<std::pair<unsigned int, std::string>> GUI_App::get_selected_presets(
 // - Taking snapshot
 bool GUI_App::check_and_save_current_preset_changes(const wxString& caption, const wxString& header, bool remember_choice/* = true*/, bool dont_save_insted_of_discard/* = false*/)
 {
+    if (Plyo::ProjectFiles::take_preset_changes(caption)) return true; // PLYO: fermeture, nouveau projet, ouverture : réglages de la pièce gardés dans le 3MF de la conversation, filament dans sa bobine
     if (has_current_preset_changes()) {
         int act_buttons = ActionButtons::SAVE;
         if (dont_save_insted_of_discard)
@@ -9213,6 +9212,7 @@ void GUI_App::apply_keeped_preset_modifications()
 // Note: no_nullptr postponed_apply_of_keeped_changes indicates that thie function is called after ConfigWizard is closed
 bool GUI_App::check_and_keep_current_preset_changes(const wxString& caption, const wxString& header, int action_buttons, bool* postponed_apply_of_keeped_changes/* = nullptr*/)
 {
+    if (Plyo::ProjectFiles::take_preset_changes(caption)) return true; // PLYO: fermeture, nouveau projet, ouverture : réglages de la pièce gardés dans le 3MF de la conversation, filament dans sa bobine
     if (has_current_preset_changes()) {
         bool is_called_from_configwizard = postponed_apply_of_keeped_changes != nullptr;
 
@@ -10127,6 +10127,7 @@ void GUI_App::window_pos_center(wxTopLevelWindow *window)
 bool GUI_App::config_wizard_startup()
 {
     if (!m_app_conf_exists || preset_bundle->printers.only_default_printers()) {
+        return false; // PLYO: l'assistant Plyo installe l'imprimante (src/plyo/PlyoPrinterSetup.cpp) ; celui d'Orca reste dans les menus.
         BOOST_LOG_TRIVIAL(info) << "run wizard...";
         run_wizard(ConfigWizard::RR_DATA_EMPTY);
         BOOST_LOG_TRIVIAL(info) << "finished run wizard";

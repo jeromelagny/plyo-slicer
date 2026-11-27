@@ -265,7 +265,7 @@
       what: 'Une petite tour imprimée à côté de la pièce pour nettoyer la buse à chaque changement de couleur.',
       high: 'Activée en une seule couleur : temps et plastique perdus.',
       low: 'Désactivée en multicolore : des couleurs qui bavent les unes sur les autres.',
-      touch: 'Utile seulement en multicolore. Orca la gère tout seul.'
+      touch: 'Utile seulement en multicolore. Plyo Slicer la gère tout seul.'
     }
   };
 

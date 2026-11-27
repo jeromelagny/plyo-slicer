@@ -1,6 +1,11 @@
 #include "PlyoPlateActions.hpp"
 #include "PlyoJson.hpp"
 #include "PlyoFirstSteps.hpp"
+#include "PlyoGuard.hpp"
+#include "PlyoOrcaMessages.hpp"
+#include "PlyoOrcaMessagesLogic.hpp"
+#include "PlyoOrcaWindows.hpp"
+#include "PlyoSend.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Model.hpp"
@@ -17,10 +22,17 @@
 #include "slic3r/GUI/Selection.hpp"
 #include "slic3r/Utils/UndoRedo.hpp"
 
+#include <boost/log/trivial.hpp>
+
 #include <wx/event.h>
+#include <wx/timer.h>
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
+#include <functional>
+#include <utility>
+#include <vector>
 
 namespace Plyo { namespace PlateActions {
 
@@ -34,6 +46,106 @@ Slic3r::Vec3d object_size(const Slic3r::ModelObject& object)
 {
     return object.instances.empty() ? Slic3r::Vec3d(0, 0, 0) : object.instance_bounding_box(0).size();
 }
+
+// Taille mesurée de chaque pièce de la plaque en cours : c'est elle que l'on découpe et que l'on réduit.
+std::vector<Slic3r::Vec3d> plate_sizes(Slic3r::GUI::Plater& plater)
+{
+    std::vector<Slic3r::Vec3d> sizes;
+    if (Slic3r::GUI::PartPlate* plate = plater.get_partplate_list().get_curr_plate())
+        for (const Slic3r::ModelObject* object : plate->get_objects_on_this_plate())
+            if (!object->instances.empty())
+                sizes.push_back(object_size(*object));
+    return sizes;
+}
+
+bool all_fit(const std::vector<Slic3r::Vec3d>& sizes, const Slic3r::Vec3d& bed)
+{
+    return std::all_of(sizes.begin(), sizes.end(), [&](const Slic3r::Vec3d& size) { return fits(size, bed); });
+}
+
+// Au centième de millimètre : une réduction a eu lieu ou non, un arrondi ne compte pas.
+bool same_sizes(const std::vector<Slic3r::Vec3d>& a, const std::vector<Slic3r::Vec3d>& b)
+{
+    if (a.size() != b.size())
+        return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if ((a[i] - b[i]).norm() > 0.01)
+            return false;
+    return true;
+}
+
+// Découpe vouée au refus d'Orca, dite avant de la lancer : une pièce plus grande que le plateau (avec sa mesure pour la carte du
+// panneau), ou une plaque qu'Orca n'accepte pas, avec sa vraie raison (Print::validate, lue par OrcaMessages). null si tout va bien.
+nlohmann::json slice_refusal(Slic3r::GUI::Plater& plater)
+{
+    Slic3r::GUI::PartPlate* plate = plater.get_partplate_list().get_curr_plate();
+    if (plate == nullptr)
+        return nullptr;
+    const Slic3r::Vec3d bed      = bed_size();
+    const auto          objects = plate->get_objects_on_this_plate();
+    for (const Slic3r::ModelObject* object : objects) {
+        const Slic3r::Vec3d size = object_size(*object);
+        if (!fits_on_plate(*object, bed)) // jamais « trop grande » pour une pièce qu'Orca juge dans la plaque (ERR-11)
+            return {{"ok", false}, {"reason", "too_big"}, {"text", "« " + Json::utf8_prefix(object->name, 120) + " » ne tient pas sur le plateau : je ne lance pas la découpe."},
+                    {"name", Json::utf8_prefix(object->name, 120)}, {"count", objects.size()}, {"size_mm", size_json(size)}, {"bed_mm", size_json(bed)}, {"fits", false}};
+    }
+    // Un réglage changé à l'instant n'est pas encore lu par Orca (pending) : sa découpe le lira, on ne refuse pas d'après l'ancien
+    // état. Orca qui découpe déjà (busy) : il garde la main.
+    const OrcaMessages::Validation checked = OrcaMessages::validate_plate();
+    if (!checked.busy && !checked.pending && OrcaMessagesLogic::has_error(checked.issues))
+        return {{"ok", false}, {"reason", "orca_refused"}, {"issues", checked.issues},
+                {"text", "Plyo Slicer refuse de découper cette plaque pour l'instant : je t'explique pourquoi juste en dessous."}};
+    return nullptr;
+}
+
+// Découpe demandée juste après un réglage changé (lot de l'assistant, correction d'une carte, « Tout corriger », remise de
+// réglages) : Tab::load_config reprogramme la mise à jour d'Orca dans 500 ms (Plater::priv::schedule_background_process).
+// Tant qu'elle n'est pas passée, Orca garde l'état d'erreur d'avant (process_completed_with_error, remis à zéro par
+// update_background_process) et Plater::reslice s'arrête sans rien dire. On attend donc le passage de la minuterie, puis on
+// vérifie la plaque (son vrai refus s'il y en a un) et on découpe. Les demandes arrivées pendant l'attente partent ensemble.
+constexpr int SLICE_POLL_MS     = 100;
+constexpr int SLICE_MAX_WAIT_MS = 3000;
+
+class SliceWait : public wxTimer
+{
+public:
+    void add(std::function<void(nlohmann::json)> reply)
+    {
+        m_replies.push_back(std::move(reply));
+        if (!IsRunning()) {
+            m_waited_ms = 0;
+            step();
+        }
+    }
+    void Notify() override { guarded("la découpe demandée par le panneau", [this] { step(); }); }
+
+private:
+    void step()
+    {
+        Slic3r::GUI::Plater* plater = wxGetApp().plater();
+        if (plater != nullptr && OrcaMessagesLogic::slice_must_wait(plater->is_background_process_update_scheduled(), m_waited_ms, SLICE_MAX_WAIT_MS)) {
+            m_waited_ms += SLICE_POLL_MS;
+            StartOnce(SLICE_POLL_MS);
+            return;
+        }
+        std::vector<std::function<void(nlohmann::json)>> replies = std::move(m_replies);
+        m_replies.clear();
+        nlohmann::json done;
+        try {
+            done = run("slice");
+        } catch (const std::exception& e) {
+            BOOST_LOG_TRIVIAL(error) << "Plyo: découpe demandée par le panneau : " << e.what();
+            done = {{"ok", false}, {"text", "Je n'ai pas pu lancer la découpe. Réessaie dans un instant."}};
+        }
+        for (auto& reply : replies)
+            reply(done);
+    }
+
+    std::vector<std::function<void(nlohmann::json)>> m_replies;
+    int                                              m_waited_ms = 0;
+};
+
+SliceWait* s_slice_wait = nullptr; // jamais détruite (minuterie wx après la fermeture d'Orca)
 
 } // namespace
 
@@ -61,6 +173,16 @@ bool fits(const Slic3r::Vec3d& size, const Slic3r::Vec3d& bed)
     return (flat(size.x(), size.y()) || flat(size.y(), size.x())) && (bed.z() <= 0 || size.z() <= bed.z() + 1e-6);
 }
 
+bool fits_on_plate(const Slic3r::ModelObject& object, const Slic3r::Vec3d& bed)
+{
+    // État tenu à jour par Orca à chaque mise à jour du plateau (Plater::priv::update_print_volume_state, forme réelle de la
+    // plaque en cours, zones par buse comprises). « Limited » : dedans, Orca découpe.
+    const bool orca_inside = std::any_of(object.instances.begin(), object.instances.end(), [](const Slic3r::ModelInstance* i) {
+        return i->print_volume_state == Slic3r::ModelInstancePVS_Inside || i->print_volume_state == Slic3r::ModelInstancePVS_Limited;
+    });
+    return orca_inside || fits(object_size(object), bed);
+}
+
 nlohmann::json context()
 {
     Slic3r::GUI::Plater* plater = wxGetApp().plater();
@@ -77,14 +199,28 @@ nlohmann::json context()
         const Slic3r::ModelObject* object = model_objects[i];
         nlohmann::json item{{"ref", std::to_string(object->id().id)}, {"name", Json::utf8_prefix(object->name, 120)}, {"size_mm", size_json(object_size(*object))},
                             {"copies", std::max<size_t>(1, std::min<size_t>(object->instances.size(), 200))}};
+        // Échelle de la pièce (premier exemplaire, plus grand facteur), en % : « Taille » part de la taille de chaque pièce.
+        if (!object->instances.empty()) {
+            const Slic3r::Vec3d f   = object->instances.front()->get_scaling_factor();
+            const double        pct = std::max({std::abs(f.x()), std::abs(f.y()), std::abs(f.z())}) * 100.0;
+            if (pct > 0.0 && pct < 100000.0)
+                item["scale_pct"] = static_cast<int>(std::lround(pct));
+        }
         if (selected.count(static_cast<int>(i)))
             item["selected"] = true;
         if (const int plate = plates.find_instance(static_cast<int>(i), 0); plate >= 0 && plate < 100)
             item["plate"] = plate + 1;
         objects.push_back(item);
     }
+    // Ce qu'Orca dit de la plaque (refus, avertissements, contrôles du G-code), 10 au plus, textes nettoyés : l'IA l'explique.
+    // Lot 10 : avec, en tête, le dernier échec d'envoi et les dernières fenêtres d'erreur d'Orca (sans adresse ni chemin).
+    nlohmann::json issues = Send::recent_issues();
+    for (const nlohmann::json& i : OrcaWindows::recent_issues())
+        issues.push_back(i);
+    for (const nlohmann::json& i : OrcaMessages::report()["issues"])
+        issues.push_back(i);
     return {{"objects", objects}, {"bed_mm", size_json(bed_size())}, {"sliced", Json::boolean(signals, "sliced", false)},
-            {"time_s", Json::num(signals, "time_s", 0.0)}, {"weight_g", Json::num(signals, "weight_g", 0.0)}};
+            {"time_s", Json::num(signals, "time_s", 0.0)}, {"weight_g", Json::num(signals, "weight_g", 0.0)}, {"issues", issues}};
 }
 
 nlohmann::json run(const std::string& kind)
@@ -96,7 +232,7 @@ nlohmann::json run(const std::string& kind)
         return {{"ok", false}, {"text", "Le plateau est vide : ajoute d'abord un modèle."}};
     // Orienter et organiser tournent en tâche de fond : une seule à la fois, comme dans Orca.
     if (!plater->get_ui_job_worker().is_idle())
-        return {{"ok", false}, {"text", "Orca est déjà occupé sur le plateau. Réessaie dans un instant."}};
+        return {{"ok", false}, {"reason", "busy"}, {"text", "Plyo Slicer est déjà occupé sur le plateau. Réessaie dans un instant."}};
     if (auto* frame = wxGetApp().mainframe)
         frame->select_tab(TAB_ID_PREPARE);
     // Une action annulable prend un instantané d'Orca ; s'il n'y en a pas de nouveau, rien n'a été fait.
@@ -120,17 +256,41 @@ nlohmann::json run(const std::string& kind)
         return done(before, one ? "Je place la pièce sur le plateau." : "Je range les pièces sur le plateau.", "Je n'ai pas pu ranger le plateau. Réessaie dans un instant.");
     }
     if (kind == "scale_to_fit") {
+        const Slic3r::Vec3d              bed          = bed_size();
+        const std::vector<Slic3r::Vec3d> sizes_before = plate_sizes(*plater);
+        // Orca agrandirait aussi une pièce qui tient : on ne l'appelle que s'il y a vraiment quelque chose à réduire.
+        if (all_fit(sizes_before, bed))
+            return {{"ok", false}, {"text", one ? "La pièce tient déjà sur le plateau : rien à réduire." : "Les pièces de cette plaque tiennent déjà : rien à réduire."}};
         plater->select_all();
         const long long before = snapshot();
         plater->scale_selection_to_fit_print_volume();
+        // La mesure dit la vérité : un instantané pris n'a pas toujours réduit la pièce (vue encore sur une plaque refusée par Orca).
+        const std::vector<Slic3r::Vec3d> sizes_after = plate_sizes(*plater);
+        if (same_sizes(sizes_before, sizes_after))
+            return {{"ok", false}, {"reason", "no_effect"}, {"text", "Je n'ai pas réussi à réduire la pièce : sa taille n'a pas changé. Réessaie dans un instant."}};
+        if (!all_fit(sizes_after, bed))
+            return {{"ok", false}, {"reason", "still_too_big"}, {"text", "J'ai réduit la pièce, mais elle ne tient toujours pas sur le plateau."}};
         return done(before, one ? "J'ai réduit la pièce pour qu'elle tienne sur le plateau." : "J'ai réduit les pièces de cette plaque pour qu'elles tiennent.",
-                    one ? "La pièce tient déjà sur le plateau : rien à réduire." : "Les pièces de cette plaque tiennent déjà : rien à réduire.");
+                    "Je n'ai pas réussi à réduire la pièce : sa taille n'a pas changé. Réessaie dans un instant.");
     }
     if (kind == "slice") {
+        if (nlohmann::json refused = slice_refusal(*plater); !refused.is_null())
+            return refused;
         wxPostEvent(plater, Slic3r::GUI::SimpleEvent(Slic3r::GUI::EVT_GLTOOLBAR_SLICE_PLATE));
         return {{"ok", true}, {"text", "Je découpe la plaque : le temps d'impression s'affichera dans l'aperçu."}};
     }
     return {{"ok", false}, {"text", "Action inconnue."}};
+}
+
+void run_when_ready(const std::string& kind, std::function<void(nlohmann::json)> reply)
+{
+    if (kind != "slice") {
+        reply(run(kind));
+        return;
+    }
+    if (s_slice_wait == nullptr)
+        s_slice_wait = new SliceWait();
+    s_slice_wait->add(std::move(reply));
 }
 
 nlohmann::json undo(long long undo_token)

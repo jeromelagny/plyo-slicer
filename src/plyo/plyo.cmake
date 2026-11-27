@@ -15,41 +15,145 @@ set(PLYO_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPhoneDialog.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibration.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibration.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCalibrationLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCommands.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoCommands.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCommandsLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoFirstSteps.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoFirstSteps.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoWelcomeDialog.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoWelcomeDialog.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoHighlight.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoHighlight.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoHooks.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoModelImport.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoModelImport.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoFiles.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoFiles.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoGuard.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoLifetime.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoLifetime.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoLifetimeLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPageLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPageLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJson.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoMemoryLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoContextLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoContextLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoMemoryLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSanitize.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoSanitize.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSelfTest.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSelfTest.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoStore.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoStore.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoConversations.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoConversations.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoDictation.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoDictation.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscovery.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscovery.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscoveryLogic.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoDiscoveryLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterStatus.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterStatus.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterStatusLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterStatusLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProject.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProject.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProjectLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProjectLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoBedLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJournal.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoJournal.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoHabits.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoHabits.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCC2.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCC2.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCC2Logic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCC2Logic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSlots.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSlots.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSlotsLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSlotsLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCfs.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCfs.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCfsLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCfsLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoIfs.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoIfs.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoIfsLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoIfsLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoU1.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoU1.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoU1Logic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoU1Logic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSpoolsLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSpoolsLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSpools.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSpools.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoBrandsLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoBrandsLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoBrands.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoBrands.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoAutoSave.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoAutoSave.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProjectFiles.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProjectFiles.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProjectFilesLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCanvas.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCanvas.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCanvasLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCanvasLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoColours.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoColours.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoColoursLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoColoursLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoGalleryLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoGalleryLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalog.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalog.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalogPolicy.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoCatalogPolicy.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoConfigRulesLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoConfigRulesLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoLimits.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoLimits.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoLimitsLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProfiles.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProfiles.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoProfilesLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoMemory.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoMemory.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPlateActions.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPlateActions.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPreflight.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPreflight.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRawTests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRawTests.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaMessages.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaMessages.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaMessagesLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaMessagesLogic.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaWindows.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoOrcaWindows.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSend.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSend.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSendLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoSendLogic.hpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterLink.cpp
     ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterLink.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterSetup.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoPrinterSetup.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRetouches.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRetouches.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRetouchesLogic.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/PlyoRetouchesLogic.hpp
 )
+# Dictée vocale du système : sur macOS, l'appel passe par AppKit (fichier Objective-C++).
+if (APPLE)
+    list(APPEND PLYO_SOURCES ${CMAKE_CURRENT_LIST_DIR}/PlyoDictationMac.mm)
+endif ()
 target_sources(libslic3r_gui PRIVATE ${PLYO_SOURCES})
 
 # Adresse du service Plyo compilée dans l'app (remplaçable au lancement par la variable d'environnement PLYO_API_URL).

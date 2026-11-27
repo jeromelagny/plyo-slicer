@@ -281,8 +281,7 @@ if (APPLE)
     if (CMAKE_MACOSX_BUNDLE)
         set(CMAKE_INSTALL_RPATH @executable_path/../Frameworks)
     endif()
-    # PLYO: identifiant macOS propre à Plyo Slicer (sinon macOS le confond avec OrcaSlicer) ; aussi dans cmake/modules/MacOSXBundleInfo.plist.in
-    SET(CMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "fr.codika.PlyoSlicer")
+    SET(CMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "fr.codika.PlyoSlicer") # PLYO: identifiant macOS propre (aussi dans MacOSXBundleInfo.plist.in)
 
     # The macOS CI jobs build with Ninja (build_release_macos.sh -x), so the Xcode generator
     # is not covered. Xcode adds -Wshorten-64-to-32 by default ("Implicit Conversion to 32 Bit
@@ -1345,15 +1344,12 @@ endif ()
 install(FILES ${CMAKE_SOURCE_DIR}/LICENSE.txt DESTINATION ".")
 configure_file(${LIBDIR}/dev-utils/platform/unix/fhs.hpp.in ${LIBDIR_BIN}/dev-utils/platform/unix/fhs.hpp)
 
-# PLYO: installateur Windows « Plyo Slicer », installé à côté d'OrcaSlicer (dossier, raccourcis et clé de registre à part :
-# avec la clé « OrcaSlicer », la désinstallation avant installation supprimerait un OrcaSlicer déjà présent).
-# Le nom du fichier produit reste celui d'Orca, attendu par .github/workflows/build_orca.yml.
-set (CPACK_PACKAGE_NAME "Plyo Slicer")
-set (CPACK_PACKAGE_VENDOR "Codika")
+set (CPACK_PACKAGE_NAME "Plyo Slicer") # PLYO: installateur Windows « Plyo Slicer », installé à côté d'OrcaSlicer
+set (CPACK_PACKAGE_VENDOR "Codika") # PLYO: éditeur
 set (CPACK_PACKAGE_VERSION_MAJOR "${ORCA_VERSION_MAJOR}")
 set (CPACK_PACKAGE_VERSION_MINOR "${ORCA_VERSION_MINOR}")
 set (CPACK_PACKAGE_VERSION_PATCH "${ORCA_VERSION_PATCH}")
-set (CPACK_PACKAGE_FILE_NAME "PlyoSlicer_Windows_Installer_V${SoftFever_VERSION}") # PLYO: nom du fichier téléchargé
+set (CPACK_PACKAGE_FILE_NAME "PlyoSlicer_Windows_Installer_V${SoftFever_VERSION}") # PLYO: nom du fichier produit (motif adapté dans build_orca.yml)
 # Suffix the Windows installer with its target arch so the x64 and arm64 builds
 # produce distinct filenames (matches ARCH_SUFFIX in build_orca.yml). Same
 # CMAKE_SYSTEM_PROCESSOR mapping used by orcaslicer_copy_dlls() above.
@@ -1364,8 +1360,8 @@ if (WIN32)
         string (APPEND CPACK_PACKAGE_FILE_NAME "_x64")
     endif ()
 endif ()
-set (CPACK_PACKAGE_DESCRIPTION_SUMMARY "Plyo Slicer, based on Orca Slicer, an open source slicer for FDM printers") # PLYO
-set (CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/jeromelagny/plyo-slicer") # PLYO
+set (CPACK_PACKAGE_DESCRIPTION_SUMMARY "Plyo Slicer, based on Orca Slicer, an open source slicer for FDM printers") # PLYO: description
+set (CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/jeromelagny/plyo-slicer") # PLYO: page du projet
 set (CPACK_PACKAGE_INSTALL_DIRECTORY ${CPACK_PACKAGE_NAME})
 set (CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}/resources/images\\\\OrcaSlicer.ico")
 set (CPACK_NSIS_MUI_ICON "${CPACK_PACKAGE_ICON}")
@@ -1373,7 +1369,7 @@ set (CPACK_NSIS_MUI_UNIICON "${CPACK_PACKAGE_ICON}")
 # Relative to the install dir: CPack's NSIS template prefixes $INSTDIR itself.
 set (CPACK_NSIS_INSTALLED_ICON_NAME "orca-slicer.exe")
 set (CPACK_PACKAGE_CHECKSUM SHA256)
-set (CPACK_PACKAGE_INSTALL_REGISTRY_KEY "PlyoSlicer") # PLYO
+set (CPACK_PACKAGE_INSTALL_REGISTRY_KEY "PlyoSlicer") # PLYO: clé à part, sinon « désinstaller avant d'installer » retirerait OrcaSlicer
 set (CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 set (CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
 # set (CPACK_NSIS_MODIFY_PATH "ON")

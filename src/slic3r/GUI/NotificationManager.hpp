@@ -377,6 +377,10 @@ public:
 	bool update_notifications(GLCanvas3D& canvas);
 	// returns number of all notifications shown
 	size_t get_notification_count() const;
+	// PLYO: begin lecture seule des notifications affichées, pour que le panneau Assistant les explique (src/plyo/PlyoOrcaMessages.cpp)
+	struct PlyoNotice { NotificationType type; NotificationLevel level; std::string text; bool gray; };
+	std::vector<PlyoNotice> plyo_notices() const;
+	// PLYO: end
 
 
 	//BBS Notice

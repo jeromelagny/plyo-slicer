@@ -1,0 +1,89 @@
+{
+ "name": "Entretoise M4 12 mm",
+ "summary": "Entretoise pour une vis M4, 12 mm de haut.",
+ "dimensions": [
+  {
+   "label": "hauteur",
+   "value_mm": 12,
+   "assumed": false
+  },
+  {
+   "label": "diamètre extérieur",
+   "value_mm": 9,
+   "assumed": true
+  },
+  {
+   "label": "trou",
+   "value_mm": 4.4,
+   "assumed": false
+  }
+ ],
+ "root": "piece",
+ "nodes": [
+  {
+   "id": "piece",
+   "kind": "difference",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "corps",
+    "trou"
+   ]
+  },
+  {
+   "id": "corps",
+   "kind": "cylinder",
+   "size": [],
+   "radius": 4.5,
+   "radius_top": null,
+   "height": 12,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  },
+  {
+   "id": "trou",
+   "kind": "translate",
+   "size": [],
+   "radius": null,
+   "radius_top": null,
+   "height": null,
+   "rounding": null,
+   "points": [],
+   "vector": [
+    0,
+    0,
+    -1
+   ],
+   "count": [],
+   "spacing": [],
+   "children": [
+    "trou_cyl"
+   ]
+  },
+  {
+   "id": "trou_cyl",
+   "kind": "cylinder",
+   "size": [],
+   "radius": 2.2,
+   "radius_top": null,
+   "height": 14,
+   "rounding": null,
+   "points": [],
+   "vector": [],
+   "count": [],
+   "spacing": [],
+   "children": []
+  }
+ ]
+}

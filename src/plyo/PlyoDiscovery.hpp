@@ -3,6 +3,7 @@
 #include "PlyoDiscoveryLogic.hpp"
 
 #include <functional>
+#include <string>
 #include <vector>
 
 // Recherche des imprimantes sur le réseau de la maison (jamais au-delà) : réutilise les recherches d'Orca
@@ -13,5 +14,8 @@ namespace Plyo { namespace Discovery {
 // Lance la recherche en arrière-plan (une dizaine de secondes) ; `done` est appelé sur le fil de l'interface.
 // Une recherche déjà en cours n'est pas relancée : renvoie false.
 bool start(std::function<void(std::vector<Printer>)> done);
+// Numéro de série vu à la dernière recherche pour cette adresse (Flashforge), vide si inconnu. Il reste côté C++ : le
+// panneau ne reçoit que l'adresse, et ne renvoie que l'adresse pour relier l'imprimante.
+std::string known_serial(const std::string& ip);
 
 }} // namespace Plyo::Discovery

@@ -7,10 +7,9 @@ PRODUCTVERSION @SLIC3R_VERSION@
   BLOCK "040904E4"
   {
    VALUE "CompanyName", "SoftFever"
-   // PLYO: nom affiché par Windows (Gestionnaire des tâches, propriétés du fichier)
-   VALUE "FileDescription", "Plyo Slicer"
+   VALUE "FileDescription", "Plyo Slicer" // PLYO: nom affiché par Windows (Gestionnaire des tâches)
    VALUE "FileVersion", "@SLIC3R_BUILD_ID@"
-   VALUE "ProductName", "Plyo Slicer"
+   VALUE "ProductName", "Plyo Slicer" // PLYO: nom affiché par Windows (propriétés du fichier)
    VALUE "ProductVersion", "@SLIC3R_BUILD_ID@"
    VALUE "InternalName", "@SLIC3R_APP_NAME@"
    VALUE "LegalCopyright", ""

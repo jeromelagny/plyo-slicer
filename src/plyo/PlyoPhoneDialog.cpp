@@ -26,12 +26,17 @@ PhoneDialog::PhoneDialog(wxWindow* parent, std::string access_token, nlohmann::j
 
 PhoneDialog::~PhoneDialog() { m_alive->store(false, std::memory_order_release); }
 
-// Jeton de connexion et lien téléphone transmis à la page avant son chargement : elle affiche le QR et suit l'état.
+// Jeton de connexion et lien téléphone transmis à la page avant son chargement : elle affiche le QR et suit l'état. Le but
+// (défaut, test, croquis) et le nom du projet lui donnent le même titre que la page du téléphone.
 void PhoneDialog::add_user_scripts()
 {
     if (wxWebView* view = browser()) {
         const nlohmann::json plyo{{"accessToken", m_access_token},
-                                  {"link", {{"id", Json::str(m_link, "id")}, {"qr_svg", Json::str(m_link, "qr_svg")}}}};
+                                  {"link",
+                                   {{"id", Json::str(m_link, "id")},
+                                    {"qr_svg", Json::str(m_link, "qr_svg")},
+                                    {"purpose", Json::str(m_link, "purpose", 20)},
+                                    {"label", Json::str(m_link, "label", 200)}}}};
         const std::string script = "window.PLYO = " + plyo.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) + ";";
         view->AddUserScript(wxString::FromUTF8(script));
         view->AddUserScript(wxString::FromUTF8(Config::api_url_script()));
@@ -54,6 +59,12 @@ void PhoneDialog::handle_command(const nlohmann::json& payload)
     if (Json::str(payload, "command") == "phone_done") {
         m_closing = true;
         EndModal(wxID_OK);
+        return;
+    }
+    // « Choisir des photos sur l'ordinateur » : la fenêtre se ferme, le panneau propose le choix des fichiers.
+    if (Json::str(payload, "command") == "pick_files") {
+        m_closing = true;
+        EndModal(wxID_NO);
         return;
     }
     if (handle_common_script_command(payload, wxID_CANCEL)) // « close_page » : bouton Fermer

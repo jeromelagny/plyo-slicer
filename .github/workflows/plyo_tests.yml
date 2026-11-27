@@ -1,0 +1,67 @@
+# Plyo : tests de la logique du panneau et du slicer (JavaScript, Python, C++), sans compiler Orca ni ses dépendances.
+# Lancé quand un fichier de Plyo change (push ou pull request), ou à la main (onglet Actions → « Plyo tests »).
+# Mêmes commandes qu'en local (docs/plyo/FICHIERS-MODIFIES.md, « Mettre à jour Orca »), boost venant des paquets d'Ubuntu.
+name: Plyo tests
+
+on:
+  push:
+    paths:
+      - 'src/plyo/**'
+      - 'resources/web/plyo/**'
+      - 'resources/plyo/**'
+      - 'docs/plyo/**'
+      - '.github/workflows/plyo_tests.yml'
+  pull_request:
+    paths:
+      - 'src/plyo/**'
+      - 'resources/web/plyo/**'
+      - 'resources/plyo/**'
+      - 'docs/plyo/**'
+      - '.github/workflows/plyo_tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plyo-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests Plyo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # test_orca_footprint.py compare la branche à `main` (Orca officiel)
+
+      - name: Branche main locale (garde de l'empreinte sur Orca)
+        run: |
+          git show-ref --verify --quiet refs/heads/main || git branch main origin/main || echo "main absente, garde de l'empreinte ignorée"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Tests du panneau (JavaScript)
+        run: node --test resources/web/plyo/tests/*.test.mjs
+
+      - name: Tests Python (catalogue, traductions, marque, empreinte sur Orca)
+        run: python3 -I -m unittest discover -s src/plyo/tests
+
+      - name: boost (paquets du système)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libboost-dev libboost-filesystem-dev libboost-nowide-dev
+
+      - name: Tests C++ de la logique (sans Orca)
+        env:
+          PLYO_DEPS: system
+          CXX: clang++
+        run: bash src/plyo/tests/cpp/run.sh
