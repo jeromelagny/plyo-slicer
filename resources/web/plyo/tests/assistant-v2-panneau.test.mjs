@@ -54,9 +54,10 @@ test('lot 1 : en-tête, barre des trois étapes, carte de l’étape, objectifs 
   } finally { p.stop(); }
 });
 
-test('lot 1 : la page n’affiche jamais de nombre de questions, de crédits ni de tokens', () => {
+// Depuis le tarif fixe (27/11/2026), les crédits sont visibles ; jamais les tokens ni un nombre de questions.
+test('lot 1 : la page n’affiche jamais de tokens ni de nombre de questions', () => {
   const sources = [read('v2/index.html'), read('v2/panneau.js'), read('v2/discussion.js'), read('v2/etapes.js'), read('v2/ui.js')].join('\n');
-  assert.ok(!/crédit|token|questions restantes|environ \d+ questions/i.test(sources.replace(/\/\/.*$/gm, '')));
+  assert.ok(!/token|questions restantes|environ \d+ questions/i.test(sources.replace(/\/\/.*$/gm, '')));
 });
 
 test('lot 1 : une question part au service (même flux que le classique) et la réponse s’affiche ; jauge en % ; conversation enregistrée', async () => {

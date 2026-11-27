@@ -90,7 +90,7 @@
     return e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229;
   }
 
-  // Jauge d'utilisation du mois : un pourcentage, jamais de tokens ni de crédits par message.
+  // Jauge d'utilisation du mois : un pourcentage (barre) et, depuis le tarif fixe (plyo-api, 27/11), les crédits restants.
   var PLAN_NAMES = { gratuit: 'Gratuit', plus: 'Plyo+', pro: 'Pro' };
   function resetText(iso) {
     var d = new Date(iso);
@@ -106,9 +106,89 @@
       label: pct + ' %',
       state: ['ok', 'low', 'empty'].indexOf(g.state) >= 0 ? g.state : 'ok',
       plan: PLAN_NAMES[g.plan] || 'Gratuit',
-      resets: resetText(g.resets_at)
+      resets: resetText(g.resets_at),
+      // Crédits encore utilisables, ou null avec un service d'avant le tarif fixe.
+      left: creditsLeft(g)
     };
   }
+
+  // ---------- Crédits à tarif fixe (plyo-api, credits.ts : PRICES, diagnoseCredits) ----------
+  // Une demande coûte toujours le même nombre de crédits : 1 écrite, 2 avec 1 ou 2 photos, 3 à partir de trois.
+  var PRICES = { question: 1, photo: 2, photos: 3 };
+  var MANY_PHOTOS = 3;
+  function requestCost(photoCount) {
+    var n = Number(photoCount) || 0;
+    return n <= 0 ? PRICES.question : n < MANY_PHOTOS ? PRICES.photo : PRICES.photos;
+  }
+  // « 0 crédit », « 1 crédit », « 2 crédits » (en français, 0 et 1 au singulier).
+  function creditsText(n) {
+    n = Math.max(0, Math.floor(Number(n) || 0));
+    return n + (n <= 1 ? ' crédit' : ' crédits');
+  }
+  function creditsLeft(g) {
+    return g && typeof g.credits_left === 'number' ? Math.max(0, Math.floor(g.credits_left)) : null;
+  }
+  // Équivalent parlant d'un solde : un diagnostic photo coûte 2 crédits.
+  function diagnosticsText(n) {
+    var d = Math.floor((Number(n) || 0) / PRICES.photo);
+    if (d >= 2) return 'environ ' + d + ' diagnostics photo';
+    if (d === 1) return '1 diagnostic photo';
+    return n >= 1 ? 'de quoi poser une question écrite' : '';
+  }
+  // Ligne sous le champ, avant l'envoi : ce que la demande coûtera et ce qu'il reste. `free` : réponse par la fiche du
+  // réglage (« c'est quoi la rétraction ? »), sans IA.
+  function costLine(photoCount, g, free) {
+    if (free) return 'Gratuit : je réponds avec la fiche du réglage.';
+    var cost = creditsText(requestCost(photoCount)), left = creditsLeft(g);
+    if (left === null) return cost;
+    if (left === 0) return cost + ' · il ne t’en reste plus';
+    if (left < requestCost(photoCount)) return cost + ' · il ne t’en reste que ' + left;
+    return cost + ' · il t’en reste ' + left;
+  }
+  // Renouvellement de la part du mois (« Tes 2 crédits du mois se renouvellent le 1er décembre. »).
+  function monthlyText(g) {
+    var when = resetText(g && g.resets_at);
+    if (!when) return '';
+    return g && g.monthly > 0 ? 'Tes ' + creditsText(g.monthly) + ' du mois se renouvellent ' + when + '.' : 'Tes crédits du mois se renouvellent ' + when + '.';
+  }
+  // Infobulle de la jauge : « Il te reste 13 crédits, environ 6 diagnostics photo. Tes 2 crédits du mois… ».
+  function gaugeTitle(g) {
+    var left = creditsLeft(g);
+    if (left === null) return '';
+    var d = diagnosticsText(left);
+    return 'Il te reste ' + creditsText(left) + (d ? ', ' + d : '') + '. ' + monthlyText(g);
+  }
+  // Message doux à l'approche de la fin des crédits (« low ») puis quand il n'en reste plus (« empty »).
+  function gaugeNoticeText(kind, g) {
+    var left = creditsLeft(g);
+    if (kind === 'low') return 'Il te reste **' + creditsText(left || 0) + '**. ' + monthlyText(g);
+    return 'Tu as utilisé tous tes crédits. ' + monthlyText(g);
+  }
+
+  // « Ça n'a pas aidé ? » sous une réponse payée (plyo-api, POST /api/refunds) : une fois par demande, 3 fois par mois.
+  function refundOffer(entry, a) {
+    var charged = a && a.credits && a.credits.charged;
+    if (!entry || entry.refunded || !entry.requestId || !(charged > 0) || a.status === 'off_topic') return null;
+    return { label: 'Ça n’a pas aidé ? Récupérer mes ' + creditsText(charged), charged: charged };
+  }
+  function refundDoneText(n) {
+    n = Math.max(0, Math.floor(Number(n) || 0));
+    return n <= 1 ? 'C’est rendu : ton crédit est revenu.' : 'C’est rendu : tes ' + n + ' crédits sont revenus.';
+  }
+  // Refus du service ; null pour « déjà rendu » (le panneau l'affiche comme fait).
+  function refundErrorText(code, g) {
+    if (code === 'already_refunded') return null;
+    if (code === 'refund_limit') {
+      var when = resetText(g && g.resets_at);
+      return 'Tu as déjà récupéré des crédits 3 fois ce mois-ci.' + (when ? ' Ce sera de nouveau possible ' + when + '.' : '');
+    }
+    if (code === 'refund_too_old') return 'Cette réponse a plus de 30 jours : ses crédits ne peuvent plus être rendus.';
+    if (code === 'usage_not_found' || code === 'nothing_to_refund') return 'Cette réponse n’a rien pris sur tes crédits : il n’y a rien à rendre.';
+    if (code === 'unauthorized') return 'Ta session a expiré : reconnecte-toi, puis réessaie.';
+    return 'Le service Plyo ne répond pas : réessaie dans un instant.';
+  }
+  // Phrase ajoutée à « plus assez de crédits » : quand la part du mois revient.
+  function insufficientMore(g) { return monthlyText(g); }
   // Une seule jauge : les crédits ajoutés (recharges, offerts) l'agrandissent ; la part incluse dans la formule se
   // renouvelle chaque mois, les crédits ajoutés non utilisés restent.
   function gaugeExtraText(g) {
@@ -135,12 +215,12 @@
   // login, photo, plans (« Voir les formules »). Une demande qui échouerait de la même façon (à reformuler, trop lourde) n'a jamais « Réessayer ».
   var ERRORS = {
     // `more` : dit après la date de recharge (index.html, showError) ; ce qui reste gratuit sans jauge (aide du panneau).
-    insufficient_credits: { text: 'Ta jauge du mois est pleine : je ne peux pas lancer de nouvelle demande pour l’instant.', more: 'En attendant, les étapes, les explications des réglages (le « ? ») et « Montre-moi où il est » restent gratuits.', action: 'credits' },
+    insufficient_credits: { text: 'Il ne te reste plus assez de crédits pour cette demande.', more: 'En attendant, les étapes, les explications des réglages (le « ? ») et « Montre-moi où il est » restent gratuits.', action: 'credits' },
     unauthorized: { text: 'Ta session a expiré : reconnecte-toi, ta demande est gardée.', action: 'login' },
     network: { text: 'Le service Plyo ne répond pas. Vérifie ta connexion ou réessaie plus tard.', action: 'retry' },
     // Coupure pendant la réponse : le service a pu la finir (gardée 10 minutes par son identifiant) ou s'arrêter en route.
-    stream_cut: { text: 'La connexion a été coupée pendant ma réponse. Réessaie : si elle était déjà prête, tu la récupères sans la payer une seconde fois. Sinon, ce que l’IA avait déjà fait peut compter sur ta jauge.', action: 'retry' },
-    timeout: { text: 'La réponse prend trop de temps. Réessaie : ta demande est gardée. Ce que l’IA a déjà fait peut compter sur ta jauge.', action: 'retry' },
+    stream_cut: { text: 'La connexion a été coupée pendant ma réponse. Réessaie : si elle était déjà prête, tu la récupères sans la payer une seconde fois. Sinon, si l’IA avait déjà travaillé, ses crédits ont pu être comptés.', action: 'retry' },
+    timeout: { text: 'La réponse prend trop de temps. Réessaie : ta demande est gardée. Si l’IA avait déjà travaillé, ses crédits ont pu être comptés.', action: 'retry' },
     upstream_error: { text: 'L’IA est momentanément indisponible. Réessaie dans un instant.', action: 'retry' },
     assistant_unavailable: { text: 'Je n’ai pas pu répondre à cette demande. Essaie de la formuler autrement.', action: 'edit' },
     incomplete_answer: { text: 'Ma réponse a été coupée en route. Réessaie, ça passe en général du premier coup.', action: 'retry' },
@@ -154,19 +234,28 @@
     invalid_image: { text: 'Cette photo n’est pas lisible (JPEG, PNG ou WebP) : reprends-la.', action: 'photo' },
     // 403 plan_required : fonction réservée aux abonnés (plyo-api). Pour l'assistant, seulement plusieurs photos dans une
     // même demande en formule gratuite ; « plans » ouvre « Mon utilisation », où sont décrites les formules.
+    // Coupe-circuit de coût (plyo-api, reserve_credits) : limite de sécurité d'un compte pour le mois, ou du service
+    // entier pour la journée. Rien à réessayer tout de suite ; errorView ajoute la date de levée (champ `until`).
+    cost_cap: { text: 'Tu as beaucoup utilisé l’IA ce mois-ci : ton compte a atteint sa limite de sécurité.', more: 'Les étapes, les explications des réglages (le « ? ») et « Montre-moi où il est » restent gratuits.', action: 'none' },
+    service_cap: { text: 'L’IA de Plyo a atteint sa limite du jour : réessaie demain.', more: 'Les étapes, les explications des réglages (le « ? ») et « Montre-moi où il est » restent gratuits.', action: 'none' },
     plan_required: { text: 'Plusieurs photos dans une même demande font partie de Plyo+. Avec la formule gratuite, envoie une photo à la fois.', action: 'plans' }
   };
   // Annuler ferme le flux : le service facture l'usage déjà publié par l'IA, sans ligne « final » (plyo-api, diagnose/route.ts).
-  var CANCEL_TEXT = 'Demande annulée. Ce que l’IA a déjà fait peut compter sur ta jauge.';
-  // Hors-sujet au-delà du quota gratuit du jour : débité, sans aucun autre signe que la jauge qui bouge.
+  var CANCEL_TEXT = 'Demande annulée. Si l’IA avait déjà travaillé, ses crédits ont pu être comptés.';
+  // Hors-sujet au-delà du quota gratuit du jour (3) : débité au prix fixe, dit sous la réponse.
   function offTopicCostNote(a) {
-    return a && a.status === 'off_topic' && a.credits && a.credits.charged > 0 ? 'Cette réponse compte sur ta jauge.' : '';
+    return a && a.status === 'off_topic' && a.credits && a.credits.charged > 0
+      ? 'Cette réponse a compté pour ' + creditsText(a.credits.charged) + ' : au-delà de 3 par jour, les questions hors impression 3D sont comptées.' : '';
   }
   // `data` : le corps de l'erreur (rate_limited porte retry_after, en secondes). `wait` : secondes avant de réessayer.
   function errorView(code, data) {
     if (code === 'rate_limited') {
       var wait = retryAfter(data, null);
       return { text: 'Trop de demandes d’un coup : réessaie dans ' + (wait ? wait + ' s.' : 'un instant.'), action: 'retry', wait: wait };
+    }
+    if ((code === 'cost_cap' || code === 'service_cap') && data && data.until) {
+      var when = resetText(data.until), base = ERRORS[code];
+      if (code === 'cost_cap' && when) return { text: base.text + ' Elle se lève ' + when + '.', more: base.more, action: base.action };
     }
     return ERRORS[code] || ERRORS.internal;
   }
@@ -1053,6 +1142,8 @@
     changeLine: changeLine, sameSetting: sameSetting, revertPlan: revertPlan, revertText: revertText, batchesOf: batchesOf, mergeCorrections: mergeCorrections, outcomeCard: outcomeCard, reliablePreview: reliablePreview, valueText: valueText, alsoChangedText: alsoChangedText, alsoChangedList: alsoChangedList, addedList: addedList, addedText: addedText, keptText: keptText, restoreLabel: restoreLabel, restoreChanges: restoreChanges, confirmedChanges: confirmedChanges, sheetChange: sheetChange, refusalActions: refusalActions, noteHint: noteHint, journalProblem: journalProblem, exportedText: exportedText, plateRetryDelay: plateRetryDelay, moreBelow: moreBelow, rejectedNote: rejectedNote, namesForApply: namesForApply, imageFilesFromClipboard: imageFilesFromClipboard, manualEditsText: manualEditsText, manualEditsNote: manualEditsNote, splitManualEdits: splitManualEdits, noteWritten: noteWritten, forgetBatch: forgetBatch, savedText: savedText, sheetArchived: sheetArchived, catalogToSuggestions: catalogToSuggestions, defaultChecked: defaultChecked, groupByTab: groupByTab, limitsLine: limitsLine, parseLimits: parseLimits, tempsFromRange: tempsFromRange, gaugeExtraText: gaugeExtraText, gaugeResetText: gaugeResetText, retryAfter: retryAfter, missingPhotosText: missingPhotosText, calibOrder: calibOrder, journalStatus: journalStatus, shortMachine: shortMachine, dayText: dayText, revertChanges: revertChanges, retryPrompt: retryPrompt, plateText: plateText, fr: fr, convLoaded: convLoaded, choiceLabel: choiceLabel, commandTool: commandTool, commandsForHistory: commandsForHistory, firstDueOutcome: firstDueOutcome, newSlice: newSlice, journalGroups: journalGroups, journalOutcome: journalOutcome, reapplyChanges: reapplyChanges, outcomeDue: outcomeDue, outcomeQuestion: outcomeQuestion, outcomePayload: outcomePayload, conversationTitle: conversationTitle, projectEntry: projectEntry, resumeCandidate: resumeCandidate, RESUME_MS: RESUME_MS, deleteQuestion: deleteQuestion, prunedText: prunedText, allAnswered: allAnswered, combineAnswers: combineAnswers,
     newRequestId: newRequestId, formatUuid: formatUuid, resendRequestId: resendRequestId, sameQuestion: sameQuestion, inProgressDelay: inProgressDelay, waitingText: waitingText,
     utf8Bytes: utf8Bytes, sizePlan: sizePlan, limitFrom413: limitFrom413, MAX_SEND_BYTES: MAX_SEND_BYTES, SHRINK_STEPS: SHRINK_STEPS, unansweredView: unansweredView, projectSwitchText: projectSwitchText, STALE_PROJECT_TEXT: STALE_PROJECT_TEXT,
+    requestCost: requestCost, creditsText: creditsText, creditsLeft: creditsLeft, diagnosticsText: diagnosticsText, costLine: costLine, monthlyText: monthlyText, gaugeTitle: gaugeTitle, gaugeNoticeText: gaugeNoticeText,
+    refundOffer: refundOffer, refundDoneText: refundDoneText, refundErrorText: refundErrorText, insufficientMore: insufficientMore,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

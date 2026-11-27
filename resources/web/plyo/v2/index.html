@@ -492,6 +492,7 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
   html .focus-chip .x > svg.i { display: block; }
   .cbox { border: 1.5px solid var(--border); border-radius: 14px; padding: 8px 8px 6px 12px; background: var(--bg); }
   .cbox:focus-within { border-color: var(--accent); }
+  .cost { margin: 5px 4px 0; font-size: 12px; color: var(--muted); }
   .cbox textarea { width: 100%; border: 0; outline: 0; resize: none; background: none; min-height: 24px; font-size: 14px; display: block; }
   .cbar { display: flex; align-items: center; gap: 2px; }
   html .cbar .iconbtn { width: 32px; height: 32px; }
@@ -563,6 +564,7 @@ html .colours-box .colour-chips .chip.on { border-color: var(--accent); backgrou
         <button class="send" id="c-send" type="button" title="Envoyer" aria-label="Envoyer"></button>
       </div>
     </div>
+    <p class="cost hidden" id="c-cost"></p>
     <input type="file" id="file-input" class="hidden" accept="image/*,.stl,.3mf,.obj,.step,.stp,.amf" multiple>
   </div>
 <!--plyo-config-->

@@ -17,17 +17,19 @@
   var lists = { convs: null, parts: null, journal: null, spools: null, machines: null };
 
   // « Mon utilisation » : le paiement n'est pas branché. La formule en cours, sans boutons factices (comme le classique).
-  var PLAN_TEXT = { gratuit: 'Pour découvrir l’assistant : une jauge qui se recharge chaque mois.',
-    plus: 'Pour imprimer chaque semaine et demander de l’aide sans compter.',
-    pro: 'Pour un usage intensif ou professionnel : une jauge beaucoup plus grande.' };
+  // Grille du 26/11 (stratégie de prix) : Pro est défini mais caché au lancement (« un écran, peu de choix »).
+  var PLAN_TEXT = { gratuit: 'Pour découvrir l’assistant : 15 crédits de bienvenue, puis 2 crédits chaque mois.',
+    plus: 'Pour imprimer chaque semaine : 60 crédits chaque mois, environ 30 diagnostics photo.',
+    pro: 'Pour un usage intensif ou professionnel : 160 crédits chaque mois.' };
   // Bloc des formules du brief « coût IA », repris tel quel du panneau classique (ni prix ni promesse) : la v2 l'affiche
   // dans sa propre fenêtre, la seule où paraît « environ N questions ».
   var FORMULES = [
-    'Bientôt : Plyo+ et Pro pour une jauge plus grande chaque mois. Plyo+ correspond à environ 100 questions ou 40 photos par mois, Pro à environ 330 questions ou 130 photos. Plyo+ ouvre aussi les pièces sur mesure et plusieurs photos dans une même demande. Une recharge sans abonnement agrandira aussi ta jauge (ce que tu n’en utilises pas reste le mois suivant).',
-    'Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne touchent jamais la jauge. Tu verras les formules ici dès qu’elles seront prêtes ; d’ici là, ta jauge gratuite se recharge chaque mois.'
+    'Bientôt : Plyo+, 60 crédits chaque mois (environ 30 diagnostics photo), avec les pièces sur mesure et plusieurs photos dans une même demande. Et des packs sans abonnement, valables 12 mois.',
+    'Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne coûtent jamais de crédits. Tu verras les formules ici dès qu’elles seront prêtes ; d’ici là, tes 2 crédits gratuits reviennent chaque mois.'
   ];
   var HOW = [
-    'Chaque demande à l’IA remplit un peu ta jauge : un peu plus avec des photos, rien quand la demande sort de l’impression 3D. Une réponse commencée va toujours jusqu’au bout.',
+    'Chaque demande à l’IA coûte toujours le même nombre de crédits : **1** pour une question écrite, **2** avec une ou deux photos, **3** à partir de trois photos. Le coût s’affiche sous le champ avant l’envoi. Une réponse commencée va toujours jusqu’au bout.',
+    'Une réponse ne t’a pas aidé ? « Récupérer mes crédits », sous la réponse, te les rend (3 fois par mois). Une question hors impression 3D ne coûte rien, jusqu’à 3 par jour.',
     'Toujours gratuit : l’accueil, le parcours en étapes, les explications des réglages (le « ? » à côté d’un réglage, ou « c’est quoi la rétraction ? »), « Montre-moi où il est », la pose d’un modèle sur le plateau et le lancement des tests de calibration.'
   ];
   // Aide (audit du 24/11) : premiers pas, pendant l'impression, si ça rate, annuler un changement, glossaire, puis le reste.
@@ -38,9 +40,9 @@
     ['Annuler un changement', 'Chaque réglage que je change s’affiche « avant → après » avec **Annuler**. Ils restent listés dans « Changé par l’assistant », sur l’écran « Tout est prêt ».'],
     ['Glossaire', '- **Couche** : la pièce est imprimée tranche par tranche ; plus elles sont fines, plus c’est beau et long.\n- **Parois** : le tour de la pièce ; plus il y en a, plus elle est solide.\n- **Remplissage** : le quadrillage à l’intérieur, en pourcentage.\n- **Bordure** : un fin rebord autour de la pièce, pour qu’elle ne se décolle pas.\n- **Supports** : des piliers qui tiennent les parties dans le vide ; ils se détachent à la main.\n- **Rétraction** : le fil tiré un peu en arrière avant un déplacement, contre les fils entre les parties.\n- **Buse** : la pointe chaude d’où sort le plastique.\n- **Plateau** : la surface sur laquelle la pièce est imprimée.'],
     ['Une IA qui te guide', 'L’assistant est une IA : il peut se tromper. Il propose, et **tu valides chaque réglage** avant qu’il soit appliqué. Les réglages restent toujours dans des plages sûres, vérifiées par Plyo, et tout s’annule d’un clic.'],
-    ['Ce que je sais faire', '- Regarder la photo d’une impression ratée et te dire ce qui cloche\n- Proposer des réglages : tu choisis ce qu’on applique, et tout s’annule d’un clic\n- Répondre à tes questions d’impression 3D, avec tes mots\n- Te montrer où se trouve un bouton ou un réglage dans la fenêtre de Plyo\n- Orienter, ranger, réduire ou découper tes pièces quand tu me le demandes\n- Te guider pour calibrer ta bobine : « Améliorer ma bobine », dans le menu, pose le test (gratuit) ; seule la lecture de la photo du test utilise ta jauge'],
+    ['Ce que je sais faire', '- Regarder la photo d’une impression ratée et te dire ce qui cloche\n- Proposer des réglages : tu choisis ce qu’on applique, et tout s’annule d’un clic\n- Répondre à tes questions d’impression 3D, avec tes mots\n- Te montrer où se trouve un bouton ou un réglage dans la fenêtre de Plyo\n- Orienter, ranger, réduire ou découper tes pièces quand tu me le demandes\n- Te guider pour calibrer ta bobine : « Améliorer ma bobine », dans le menu, pose le test (gratuit) ; seule la lecture de la photo du test coûte 1 crédit'],
     ['Gratuit, sans compte', 'Le parcours en étapes, les explications des réglages (le « ? » à côté d’un réglage, ou « c’est quoi la rétraction ? »), « Montre-moi où il est », la pose d’un modèle sur le plateau et le lancement des tests de calibration.'],
-    ['Avec ton compte', 'Les réponses de l’IA et la lecture des photos remplissent ta jauge du mois, en haut à droite. Elle se recharge chaque mois.'],
+    ['Avec ton compte', 'Les réponses de l’IA et la lecture des photos coûtent des crédits : il te reste le nombre affiché en haut à droite, et le coût d’une demande s’affiche sous le champ avant l’envoi. Une réponse qui ne t’a pas aidé ? Tu récupères ses crédits sous la réponse.'],
     ['Astuces', '- **Entrée** envoie, **Maj + Entrée** va à la ligne\n- Clique dans un réglage des onglets de Plyo : je te propose de l’expliquer\n- Glisse une photo ou le fichier 3D de ta pièce (STL, 3MF…) directement dans ce panneau\n- Le panneau d’avant reste là : « Revenir à l’ancien assistant », en bas de ce menu'],
     ['Tes données', 'Tes projets et tes discussions avec moi restent sur cet ordinateur. Tes photos servent seulement à répondre à ta demande. Une réponse te semble fausse ? Clique sur « Signaler » sous la réponse : ça nous aide à corriger l’assistant.']
   ];
@@ -368,7 +370,7 @@
 
   // ---------- Compte : « Mon utilisation » et « Les formules » ----------
   function openUsage() {
-    if (panel.requireLogin('Ta jauge est liée à ton compte. Pour la voir, connecte-toi : pas de mot de passe, tu reçois un code par e-mail.', openUsage)) return;
+    if (panel.requireLogin('Tes crédits sont liés à ton compte. Pour les voir, connecte-toi : pas de mot de passe, tu reçois un code par e-mail.', openUsage)) return;
     W.open({ title: 'Mon utilisation', sub: null,
       foot: [ui.button('Voir les formules', function () { openPlans(); }, 'btn sm'), ui.el('span', 'grow'), ui.button('Fermer', function () { W.close(); }, 'btn sm')],
       fill: function (body) {
@@ -393,16 +395,24 @@
         function show(g) {
           var v = Logic.gaugeView(g);
           if (!v) return;
-          // Ce qu'il reste (comme l'en-tête), pas ce qui est utilisé.
+          // Ce qu'il reste (comme l'en-tête), pas ce qui est utilisé ; en crédits depuis le tarif fixe.
           var left = Math.max(0, 100 - v.pct);
-          name.textContent = ui.fr('IA restante · formule ' + v.plan);
-          pct.textContent = ui.fr(left + ' %');
           fill.style.width = Math.max(2, left) + '%';
           big.classList.toggle('low', v.state === 'low');
           big.classList.toggle('empty', v.state === 'empty');
-          when.textContent = ui.fr(Logic.gaugeResetText(g));
-          extra.textContent = ui.fr(Logic.gaugeExtraText(g));
-          extra.classList.toggle('hidden', !extra.textContent);
+          if (v.left !== null) {
+            name.textContent = ui.fr('Crédits restants · formule ' + v.plan);
+            pct.textContent = ui.fr(Logic.creditsText(v.left));
+            used.textContent = ui.fr(Logic.diagnosticsText(v.left) || 'plus rien pour l’instant');
+            when.textContent = ui.fr(Logic.monthlyText(g));
+            extra.classList.add('hidden');
+          } else {
+            name.textContent = ui.fr('IA restante · formule ' + v.plan);
+            pct.textContent = ui.fr(left + ' %');
+            when.textContent = ui.fr(Logic.gaugeResetText(g));
+            extra.textContent = ui.fr(Logic.gaugeExtraText(g));
+            extra.classList.toggle('hidden', !extra.textContent);
+          }
           planName.textContent = ui.fr(v.plan);
           planText.textContent = ui.fr(PLAN_TEXT[g.plan] || PLAN_TEXT.gratuit);
         }
@@ -416,11 +426,12 @@
       } });
   }
   function openPlans() {
-    W.open({ title: 'Les formules', wide: true, sub: 'Le parcours, les explications des réglages, la galerie et les tests de calibration sont gratuits. La jauge sert aux réponses de l’IA et à la lecture des photos.',
+    W.open({ title: 'Les formules', wide: true, sub: 'Le parcours, les explications des réglages, la galerie et les tests de calibration sont gratuits. Les crédits servent aux réponses de l’IA et à la lecture des photos.',
       fill: function (body) {
         var g = panel.gauge(), cur = g && g.plan ? g.plan : 'gratuit';
         var plans = ui.el('div', 'plans');
-        [['gratuit', 'Gratuit'], ['plus', 'Plyo+'], ['pro', 'Pro']].forEach(function (x) {
+        // Pro n'apparaît que pour un compte déjà en Pro.
+        [['gratuit', 'Gratuit'], ['plus', 'Plyo+'], ['pro', 'Pro']].filter(function (x) { return x[0] !== 'pro' || cur === 'pro'; }).forEach(function (x) {
           var b = ui.el('div', 'plan' + (cur === x[0] ? ' cur' : ''));
           b.appendChild(ui.el('h4', '', x[1]));
           b.appendChild(ui.el('p', 'hint', PLAN_TEXT[x[0]]));
@@ -435,7 +446,7 @@
         FORMULES.forEach(function (t) { sb.appendChild(ui.el('p', '', t)); });
         soon.appendChild(sb);
         body.appendChild(soon);
-        body.appendChild(ui.el('h4', 'mh', 'Comment la jauge se remplit'));
+        body.appendChild(ui.el('h4', 'mh', 'Comment les crédits se dépensent'));
         HOW.forEach(function (t) { body.appendChild(ui.rich(t, 'hint')); });
       } });
   }

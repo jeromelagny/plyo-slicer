@@ -116,13 +116,13 @@ test('UX-29 : chaque erreur a un texte vrai et une action qui lui correspond', (
   for (const [code, action] of Object.entries(expect)) {
     const v = L.errorView(code, {});
     assert.equal(v.action, action, code);
-    assert.ok(v.text && !/npm|plyo-api|vous|votre|Réessayez|crédit|token|409|413|500/.test(v.text + (v.more || '')), code + ' : ' + v.text);
+    assert.ok(v.text && !/npm|plyo-api|vous|votre|Réessayez|token|409|413|500/.test(v.text + (v.more || '')), code + ' : ' + v.text);
     // Un message qui dit de reformuler ou d'alléger ne propose jamais de renvoyer la même chose.
     if (/formuler|enlève|Modifie/.test(v.text)) assert.equal(v.action, 'edit', code);
   }
   assert.equal(L.errorView('payload_too_large').text, 'Tes photos sont trop lourdes ensemble : enlève-en une, puis renvoie.');
   assert.match(L.errorView('stream_cut').text, /sans la payer une seconde fois/);
-  assert.match(L.errorView('stream_cut').text, /peut compter sur ta jauge/);
+  assert.match(L.errorView('stream_cut').text, /ses crédits ont pu être comptés/);
   // UX-25 : ce qui reste gratuit, dit après la date de recharge.
   assert.equal(L.errorView('insufficient_credits').more, 'En attendant, les étapes, les explications des réglages (le « ? ») et « Montre-moi où il est » restent gratuits.');
   const page = read('index.html');

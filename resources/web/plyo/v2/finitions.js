@@ -1,5 +1,6 @@
 // Assistant v2 (lot 5) : ce que le panneau classique fait en marge du parcours, repris dans la discussion de la v2.
 // - « Signaler » sous une réponse de l'IA (/api/feedback, gratuit) ;
+// - « Ça n'a pas aidé ? Récupérer mes N crédits » sous une réponse payée (/api/refunds, une fois par demande) ;
 // - retouches faites à la main dans Orca : retouches d'impression laissées avec le projet d'avant (print_retouches,
 //   confirmé seulement), retouche du filament gardée dans la bobine (spool_kept), valeurs du filament d'un fichier ouvert
 //   non reprises (file_filament) — mêmes textes que le classique (retouches-logic.js) ;
@@ -10,6 +11,7 @@
   var V2 = root.PlyoV2 = root.PlyoV2 || {};
   var ui = V2.ui;
   var R = root.PlyoRetouches;
+  var Logic = root.PlyoLogic;
   var panel = null, level = '';
   var rt = { card: null, asked: '', printUndo: null, spoolUndo: null, spoolToken: 0, fileTake: null };
 
@@ -17,11 +19,52 @@
   function undoLink(run) { return ui.button('Annuler', run, 'link', 'undo'); }
   function append(box, node) { box.body.appendChild(node); return node; }
 
+  // ---------- « Ça n'a pas aidé ? » ----------
+  // Un clic rend les crédits de la demande (plyo-api, refund_usage) ; la jauge est remise à jour.
+  function refundLink(entry, a, foot) {
+    var offer = Logic.refundOffer(entry, a);
+    if (!offer) return null;
+    var link = ui.button(offer.label, null, 'link muted', 'undo');
+    link.title = ui.fr('La réponse ne t’a pas aidé ? Tes crédits te sont rendus, au plus 3 fois par mois.');
+    var line = null;
+    function done(text, ok) {
+      link.remove();
+      if (line) line.remove();
+      line = ui.el('span', 'done-line' + (ok ? ' ok' : ''), text);
+      foot.insertBefore(line, foot.firstChild);
+    }
+    link.addEventListener('click', function () {
+      link.disabled = true;
+      panel.apiFetch('/api/refunds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ request_id: entry.requestId }) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (data) { return { ok: r.ok, status: r.status, data: data }; }); })
+        .then(function (r) {
+          if (r.ok || r.data.error === 'already_refunded') {
+            entry.refunded = true;
+            panel.scheduleSave();
+            if (r.data.gauge) panel.setGauge(r.data.gauge, true);
+            done(Logic.refundDoneText(r.ok ? r.data.refunded : offer.charged), true);
+            return;
+          }
+          var code = r.status === 401 ? 'unauthorized' : r.data.error;
+          // Refus définitif (limite du mois, trop ancienne, rien à rendre) : le lien disparaît ; panne : il revient.
+          if (code === 'refund_limit' || code === 'refund_too_old' || code === 'usage_not_found' || code === 'nothing_to_refund') { done(Logic.refundErrorText(code, panel.gauge()), false); return; }
+          link.disabled = false;
+          done(Logic.refundErrorText(code, panel.gauge()), false);
+          foot.insertBefore(link, line.nextSibling);
+        })
+        .catch(function () { link.disabled = false; done(Logic.refundErrorText('network'), false); foot.insertBefore(link, line.nextSibling); });
+    });
+    foot.appendChild(link);
+    return link;
+  }
+
   // ---------- « Signaler » ----------
   function answerFoot(entry, box) {
     var a = entry.data || {};
-    if (!panel.session() || a.status === 'off_topic' || entry.flagged) return;
+    if (!panel.session() || a.status === 'off_topic') return;
     var foot = ui.el('div', 'ai-foot');
+    refundLink(entry, a, foot);
+    if (entry.flagged) { if (foot.children.length) box.appendChild(foot); return; }
     var link = ui.button('Signaler', null, 'link muted', 'flag');
     link.title = ui.fr('Cette réponse te semble fausse ou inutile ? Dis-le-nous : c’est gratuit, et ça sert à corriger l’assistant.');
     link.addEventListener('click', function () {
@@ -41,7 +84,7 @@
           context: v && v.context ? { printer: v.context.printer, filament: v.context.filament } : undefined
         }) })
           .then(function (r) { return r.ok ? null : Promise.reject(); })
-          .then(function () { foot.textContent = ''; foot.appendChild(ui.el('span', 'done-line ok', 'Merci, c’est noté : on s’en sert pour corriger l’assistant.')); entry.flagged = true; panel.scheduleSave(); })
+          .then(function () { form.remove(); foot.appendChild(ui.el('span', 'done-line ok', 'Merci, c’est noté : on s’en sert pour corriger l’assistant.')); entry.flagged = true; panel.scheduleSave(); })
           .catch(function () { go.disabled = false; go.textContent = ui.fr('Réessayer l’envoi'); });
       }, 'btn sm');
       acts.appendChild(go);

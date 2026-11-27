@@ -14,6 +14,8 @@ const PROJECT = { part: { name: 'Petit bateau' }, printer: { preset: K1C, name: 
 const conversation = (patch) => ({ title: 'Petit bateau', updated: '2026-11-23T10:00:00Z', history: [], entries: [], project: Object.assign(JSON.parse(JSON.stringify(PROJECT)), patch || {}) });
 const SESSION = { access_token: 'a', refresh_token: 'r', expires_at: 9999999999, email: 'a@b.fr' };
 const gauge = (pct, state) => ({ plan: 'gratuit', used_pct: pct, state: state || 'ok', resets_at: '2026-12-01T00:00:00Z' });
+// Jauge du service au tarif fixe (plyo-api, credits.ts gaugeView) : crédits restants et part du mois.
+const credits = (left, extra = {}) => ({ plan: 'gratuit', used_pct: 20, state: 'ok', resets_at: '2026-12-01T00:00:00Z', credits_left: left, monthly: 2, monthly_left: 2, ...extra });
 const CONVS = [{ id: 'c-1', title: 'Petit bateau', updated: '2026-11-23T10:00:00Z', project: { part: { name: 'Petit bateau' } } },
   { id: 'c-2', title: 'Crochet mural', updated: '2026-11-22T10:00:00Z', project: { part: { name: 'Crochet mural' }, step: 'done', success: true } },
   { id: 'c-3', title: 'Pourquoi des fils ?', updated: '2026-11-20T10:00:00Z', project: {} }];
@@ -52,9 +54,9 @@ function service(cfg = {}) {
     if (url.endsWith('/api/me')) return response(200, { gauge: cfg.gauge || gauge(41), email: 'a@b.fr' });
     if (url.endsWith('/api/me/credits')) return response(200, { gauge: cfg.gauge || gauge(41) });
     if (url.endsWith('/api/feedback')) return response(200, { ok: true });
+    if (url.endsWith('/api/refunds')) { (cfg.refunds = cfg.refunds || []).push(JSON.parse(init.body)); return cfg.refund ? response(cfg.refund.status, cfg.refund.body) : response(200, { refunded: 2, balance: 15, gauge: credits(15) }); }
     if (url.endsWith('/api/outcomes')) return response(200, { ok: true });
     if (url.endsWith('/api/diagnose')) return cfg.error ? response(cfg.error.status, cfg.error.body) : response(200, null, { lines: [cfg.answer] });
-    void init;
     return response(404, {});
   };
 }
@@ -171,20 +173,21 @@ test('lot 5 : jauge en pourcentage, « Mon utilisation » au clic, « Les formul
     await sleep(20);
     assert.match(texts(win(p)), /Mon utilisation/);
     assert.match(texts(win(p)), /IA restante.*59 %.*te restent ce mois-ci/);
-    assert.doesNotMatch(texts(win(p)), /questions|crédit|token/i, 'pas de nombre de questions dans « Mon utilisation »');
+    assert.doesNotMatch(texts(win(p)), /questions|token/i, 'pas de nombre de questions dans « Mon utilisation »');
     byText(win(p), /Voir les formules/).click();
     assert.match(texts(win(p)), /Les formules arrivent/);
-    assert.match(texts(win(p)), /environ 100 questions ou 40 photos par mois, Pro à environ 330 questions ou 130 photos/);
+    assert.match(texts(win(p)), /Plyo\+, 60 crédits chaque mois \(environ 30 diagnostics photo\)/);
     assert.doesNotMatch(texts(win(p)), /€|\$/);
+    assert.doesNotMatch(texts(win(p)), /160 crédits/, 'Pro caché au lancement');
     p.ctx.PlyoV2.fenetre.close();
     assert.doesNotMatch(texts(p.document.body), /environ \d+ questions/);
   } finally { p.stop(); }
 });
 
-test('lot 5 : bloc des formules repris tel quel du classique ; plan_required garde sa logique et ouvre les formules', async () => {
-  const classic = read('index.html'), v2 = read('v2/menu.js');
-  for (const t of ['Plyo+ correspond à environ 100 questions ou 40 photos par mois, Pro à environ 330 questions ou 130 photos.', 'Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne touchent jamais la jauge.'])
-    assert.ok(classic.includes(t) && v2.includes(t), t);
+test('lot 5 : bloc des formules à la grille du 26/11 ; plan_required garde sa logique et ouvre les formules', async () => {
+  const v2 = read('v2/menu.js');
+  for (const t of ['60 crédits chaque mois (environ 30 diagnostics photo)', 'Le slicer, l’onglet Étapes et l’envoi à l’imprimante ne coûtent jamais de crédits.'])
+    assert.ok(v2.includes(t), t);
   const p = await start({ session: SESSION, error: { status: 403, body: { error: 'plan_required', plan: 'plus' } } });
   try {
     await sleep(30);
@@ -341,4 +344,62 @@ test('lot 5 : la page v2 inclut le menu, les fenêtres et les finitions ; la val
   }
   // Le bouton plein de la carte n'est plus collé par-dessus le contenu : rien n'est masqué.
   assert.doesNotMatch(page.slice(page.indexOf('.stepcard .foot'), page.indexOf('.stepcard .foot') + 200), /sticky/);
+});
+
+test('tarif fixe : la jauge dit les crédits restants, « Mon utilisation » les diagnostics et la part du mois', async () => {
+  const p = await start({ session: SESSION, gauge: credits(13) });
+  try {
+    await sleep(40);
+    assert.match(texts(p.$('gauge')), /13 crédits/);
+    // ui.fr met des espaces insécables (« 13 crédits », « 1er décembre ») : comparées comme des espaces.
+    assert.match(p.$('gauge').title.replace(/[\u00a0\u202f]/g, ' '), /^Il te reste 13 crédits, environ 6 diagnostics photo\. Tes 2 crédits du mois se renouvellent le 1er décembre\.$/u);
+    p.$('gauge').click();
+    await sleep(20);
+    assert.match(texts(win(p)), /Crédits restants · formule Gratuit.*13 crédits.*environ 6 diagnostics photo.*Tes 2 crédits du mois se renouvellent le 1er décembre/);
+  } finally { p.stop(); }
+});
+
+test('tarif fixe : le coût s’affiche sous le champ avant l’envoi ; une question de fiche est gratuite', async () => {
+  const p = await start({ session: SESSION, gauge: credits(13) });
+  try {
+    await sleep(40);
+    assert.equal(p.$('c-cost').classList.contains('hidden'), true, 'champ vide : rien');
+    p.$('note').value = 'Mes coins se décollent';
+    p.$('note').dispatch('input');
+    assert.equal(p.$('c-cost').classList.contains('hidden'), false);
+    assert.equal(texts(p.$('c-cost')), '1 crédit · il t’en reste 13');
+  } finally { p.stop(); }
+});
+
+test('tarif fixe : « Ça n’a pas aidé ? » rend les crédits de la demande, une fois', async () => {
+  const answer = { type: 'final', status: 'ok', defect: { key: 'stringing', name: 'Des fils' }, message: 'Baisse la température.', suggestions: [], questions: [], actions: [], credits: { charged: 2, gauge: credits(11) } };
+  const cfg = { session: SESSION, answer, gauge: credits(13) };
+  const p = await start(cfg);
+  try {
+    await sleep(40);
+    p.$('note').value = 'Des fils partout';
+    p.$('c-send').click();
+    await sleep(80);
+    const link = byText(p.$('msgs'), /Ça n’a pas aidé \? Récupérer mes 2 crédits/);
+    assert.ok(link, 'lien sous la réponse payée');
+    link.click();
+    await sleep(40);
+    assert.equal(cfg.refunds.length, 1);
+    assert.match(cfg.refunds[0].request_id, /^[0-9a-f-]{36}$/);
+    assert.match(texts(p.$('msgs')), /C’est rendu : tes 2 crédits sont revenus\./);
+    assert.ok(!byText(p.$('msgs'), /Récupérer mes 2 crédits/), 'plus de lien après');
+    assert.match(texts(p.$('gauge')), /15 crédits/);
+  } finally { p.stop(); }
+});
+
+test('tarif fixe : limite de sécurité atteinte → message clair avec la date, sans « Réessayer »', async () => {
+  const p = await start({ session: SESSION, gauge: credits(13), error: { status: 429, body: { error: 'cost_cap', until: '2026-12-01T00:00:00.000Z' } } });
+  try {
+    await sleep(30);
+    p.$('note').value = 'Encore une question';
+    p.$('c-send').click();
+    await sleep(60);
+    assert.match(texts(p.$('msgs')), /ton compte a atteint sa limite de sécurité\. Elle se lève le 1er décembre\./);
+    assert.ok(!byText(p.$('msgs'), /^Réessayer$/));
+  } finally { p.stop(); }
 });

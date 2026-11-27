@@ -435,9 +435,10 @@
     }
 
     // ---------- En-tête : jauge, téléphone, menu ----------
-    function showLoggedIn(on) { $('gauge').classList.toggle('hidden', !on); }
-    // Jauge du mois en pourcentage (assistant-logic.js, gaugeView). La v2 montre ce qu'il reste (« IA restante », 100 % en
-    // début de mois, audit du 24/11) ; le service et le classique comptent ce qui est utilisé.
+    function showLoggedIn(on) { $('gauge').classList.toggle('hidden', !on); updateCost(); }
+    // Jauge du mois (assistant-logic.js, gaugeView) : la barre montre ce qu'il reste (100 % en début de mois, audit du
+    // 24/11) ; depuis le tarif fixe, le chiffre est le nombre de crédits restants (décision du 27/11). Un service d'avant
+    // le tarif fixe (sans credits_left) garde le pourcentage.
     // `quiet` : relevé sans message doux (fenêtre « Mon utilisation », erreur « jauge pleine » déjà affichée).
     function setGauge(g, quiet) {
       var v = Logic.gaugeView(g);
@@ -448,12 +449,13 @@
       if (quiet) { noticeShown = Logic.noticeKey(v.state, g); try { root.localStorage.setItem(NOTICE_KEY, noticeShown); } catch (e) { /* stockage indisponible */ } }
       else setTimeout(function () { gaugeNotice(g, v, prev); }, 0);
       var left = leftPct(v);
-      $('gauge-pct').textContent = ui.fr(left + ' %');
+      $('gauge-pct').textContent = ui.fr(v.left === null ? left + ' %' : Logic.creditsText(v.left));
       $('gauge-fill').style.width = Math.max(3, left) + '%';
       $('gauge').classList.toggle('low', v.state === 'low');
       $('gauge').classList.toggle('empty', v.state === 'empty');
-      $('gauge').title = ui.fr('Il te reste ' + left + ' % d’IA ce mois-ci. Elle se recharge ' + v.resets + '.');
-      $('gauge').setAttribute('aria-label', ui.fr('IA restante ce mois-ci : ' + left + ' %'));
+      $('gauge').title = ui.fr(v.left === null ? 'Il te reste ' + left + ' % d’IA ce mois-ci. Elle se recharge ' + v.resets + '.' : Logic.gaugeTitle(g));
+      $('gauge').setAttribute('aria-label', ui.fr(v.left === null ? 'IA restante ce mois-ci : ' + left + ' %' : 'Crédits restants : ' + v.left));
+      updateCost();
     }
     function leftPct(v) { return Math.max(0, 100 - v.pct); }
     // Message doux vers 80 %, puis quand la jauge est pleine : une seule fois par mois (comme le classique, assistant-logic.js).
@@ -464,7 +466,9 @@
       if (!kind || !thread.children.length) return;
       noticeShown = Logic.noticeKey(kind, g);
       try { root.localStorage.setItem(NOTICE_KEY, noticeShown); } catch (e) { /* idem */ }
-      say(kind === 'low' ? 'Il te reste **' + leftPct(v) + ' %** d’IA ce mois-ci. Elle se recharge ' + v.resets + '.' : 'Tu as utilisé toute ton IA du mois. Elle se recharge ' + v.resets + '.', 'warn',
+      var text = v.left !== null ? Logic.gaugeNoticeText(kind, g)
+        : kind === 'low' ? 'Il te reste **' + leftPct(v) + ' %** d’IA ce mois-ci. Elle se recharge ' + v.resets + '.' : 'Tu as utilisé toute ton IA du mois. Elle se recharge ' + v.resets + '.';
+      say(text, 'warn',
         [{ label: 'Voir mon utilisation', run: function () { if (V2.menu) V2.menu.openUsage(); } }]);
     }
     // Vérifie la session (et la renouvelle au besoin) ; met à jour la jauge. Résout à true si la session est valide.
@@ -524,6 +528,7 @@
     function growNote() {
       input.style.height = 'auto';
       input.style.height = Math.min(input.scrollHeight, 132) + 'px';
+      updateCost(); // le champ vidé ou rempli par le panneau (envoi, brouillon remis) n'émet pas d'« input »
     }
     input.addEventListener('input', growNote);
     input.addEventListener('keydown', function (e) { if (Logic.isSendKey(e)) { e.preventDefault(); send(input.value); } });
@@ -599,6 +604,19 @@
         item.appendChild(remove);
         box.appendChild(item);
       });
+      updateCost();
+    }
+
+    // Coût de la demande en cours, avant l'envoi (décision du 27/11) : seulement connecté et quand il y a quelque chose
+    // à envoyer. Une question sur un réglage connu est gratuite (réponse par la fiche, comme send).
+    function updateCost() {
+      var line = $('c-cost'), note = input.value.trim();
+      if (!line) return;
+      var show = !!session && (note !== '' || attachments.length > 0);
+      line.classList.toggle('hidden', !show);
+      if (!show) return;
+      var free = !attachments.length && !!root.PlyoFirstSteps.matchSettingQuestion(note, root.PLYO_FICHES);
+      line.textContent = ui.fr(Logic.costLine(attachments.length, lastGauge, free));
     }
 
     // Micro : un appui lance la dictée du système dans le champ, un second l'arrête (rien n'est enregistré par Plyo).
@@ -855,6 +873,8 @@
         Conv.normalizeAnswer(a, sentNames);
         var hist = Conv.exchange(target, note, photos.length, a, MAX_HISTORY);
         var entry = record(Conv.answerEntry(a, photos.length, note, iso()), target);
+        // Identifiant de la demande, gardé avec la réponse : « Ça n'a pas aidé ? » rend ses crédits (v2/finitions.js).
+        entry.requestId = req.id;
         // Ligne de l'historique de cette réponse (non enregistrée avec l'entrée) : les ordres faits sur le plateau s'y ajoutent.
         Object.defineProperty(entry, 'hist', { value: hist, enumerable: false, writable: true });
         if (switched) { say(Logic.projectSwitchText(!!(a.commands && a.commands.length), true), 'warn'); return; }
@@ -870,8 +890,8 @@
     // Erreur : ce qui s'est passé et l'action suivante (assistant-logic.js, errorView). La demande est gardée.
     function showError(code, data, retry) {
       var view = Logic.errorView(code, data);
-      var g = code === 'insufficient_credits' ? Logic.gaugeView(lastGauge) : null;
-      var text = view.text + (g && g.resets ? ' Elle se recharge ' + g.resets + '.' : '') + (view.more ? ' ' + view.more : '');
+      var monthly = code === 'insufficient_credits' ? Logic.insufficientMore(lastGauge) : '';
+      var text = view.text + (monthly ? ' ' + monthly : '') + (view.more ? ' ' + view.more : '');
       var acts = [];
       if (view.action === 'login') acts.push({ label: 'Me reconnecter', run: openLogin, primary: true });
       // plan_required : les formules (fenêtre de la v2, v2/menu.js) ; jauge pleine : « Mon utilisation ». Logique inchangée.

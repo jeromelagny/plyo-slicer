@@ -6724,9 +6724,10 @@
     if (hereError) { hereError.remove(); hereError = null; }
     if (!here) showConversation();
     var view = Logic.errorView(code, data);
-    var g = code === 'insufficient_credits' ? Logic.gaugeView(lastGauge) : null;
+    // Tarif fixe (27/11) : la part du mois qui revient, dite en crédits (assistant-logic.js, insufficientMore).
+    var monthly = code === 'insufficient_credits' ? Logic.insufficientMore(lastGauge) : '';
     var box = view.action === 'none' ? alertBox('info', view.text, 'info')
-      : alertBox('error', view.text + (g && g.resets ? ' Elle se recharge ' + g.resets + '.' : '') + (view.more ? ' ' + view.more : ''), 'alert');
+      : alertBox('error', view.text + (monthly ? ' ' + monthly : '') + (view.more ? ' ' + view.more : ''), 'alert');
     var acts = el('div', 'row-acts');
     if (view.action === 'credits') acts.appendChild(button('Voir mon utilisation', openUsage, 'btn sm'));
     else if (view.action === 'plans') acts.appendChild(button('Voir les formules', openUsage, 'btn sm'));

@@ -23,7 +23,8 @@ test('réponses aux questions de l’IA envoyées ensemble', () => {
 
 test('jauge du mois : texte court, état et date de renouvellement', () => {
   const g = { plan: 'gratuit', used_pct: 35, resets_at: '2026-11-01T00:00:00.000Z', reserve: 0, state: 'ok' };
-  assert.deepEqual(L.gaugeView(g), { pct: 35, label: '35 %', state: 'ok', plan: 'Gratuit', resets: 'le 1er novembre' });
+  assert.deepEqual(L.gaugeView(g), { pct: 35, label: '35 %', state: 'ok', plan: 'Gratuit', resets: 'le 1er novembre', left: null });
+  assert.equal(L.gaugeView({ ...g, credits_left: 13.4 }).left, 13, 'tarif fixe : crédits restants, arrondis vers le bas');
   assert.equal(L.gaugeView({ ...g, used_pct: 84, state: 'low', plan: 'plus' }).plan, 'Plyo+');
   assert.equal(L.gaugeView({ ...g, resets_at: '2027-01-01T00:00:00.000Z' }).resets, 'le 1er janvier');
   assert.equal(L.gaugeView(null), null);
@@ -49,7 +50,8 @@ test('erreurs : message clair et action suivante', () => {
   assert.equal(L.errorView('quelque_chose').action, 'retry');
   for (const code of ['config_missing', 'assistant_unavailable', 'incomplete_answer', 'upstream_error', 'invalid_request', 'insufficient_credits', 'auth_unavailable', 'internal', 'network', 'timeout', 'unauthorized']) {
     const text = L.errorView(code).text;
-    assert.ok(text && !/npm|plyo-api|vous|votre|Réessayez|crédit|token/.test(text), code + ' : ' + text);
+    // Depuis le tarif fixe (27/11/2026), les crédits sont visibles : le mot est permis, jamais les tokens.
+    assert.ok(text && !/npm|plyo-api|vous|votre|Réessayez|token/.test(text), code + ' : ' + text);
   }
 });
 
@@ -324,16 +326,16 @@ test('tempsFromRange : la température actuelle reste si elle est dans la plage 
   assert.deepEqual(L.tempsFromRange({ nozzle: null, bed: null }, { nozzle_min: 200, nozzle_max: 220 }), { nozzle: 210, bed: null });
 });
 
-test('annulation : dit sobrement que ça peut compter sur la jauge (l’API facture l’usage déjà publié)', () => {
-  assert.equal(L.CANCEL_TEXT, 'Demande annulée. Ce que l’IA a déjà fait peut compter sur ta jauge.');
-  assert.ok(L.errorView('timeout').text.includes('peut compter sur ta jauge'), 'le délai dépassé ferme le flux de la même façon');
+test('annulation : dit sobrement que ses crédits ont pu être comptés (l’API débite le prix fixe si l’IA a travaillé)', () => {
+  assert.equal(L.CANCEL_TEXT, 'Demande annulée. Si l’IA avait déjà travaillé, ses crédits ont pu être comptés.');
+  assert.ok(L.errorView('timeout').text.includes('ses crédits ont pu être comptés'), 'le délai dépassé ferme le flux de la même façon');
   assert.ok(L.errorView('timeout').text.includes('ta demande est gardée'));
   assert.equal(L.errorView('timeout').action, 'retry');
 });
 
 test('hors-sujet : gratuit dans le quota, rien à dire ; au-delà, la réponse dit qu’elle compte', () => {
   assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: { charged: 0, balance: 5 } }), '');
-  assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: { charged: 2, balance: 5 } }), 'Cette réponse compte sur ta jauge.');
+  assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: { charged: 1, balance: 5 } }), 'Cette réponse a compté pour 1 crédit : au-delà de 3 par jour, les questions hors impression 3D sont comptées.');
   assert.equal(L.offTopicCostNote({ status: 'off_topic' }), '', 'archive sans crédits');
   assert.equal(L.offTopicCostNote({ status: 'off_topic', credits: null }), '');
   assert.equal(L.offTopicCostNote({ status: 'ok', credits: { charged: 2 } }), '', 'une réponse normale ne le répète pas');
@@ -382,4 +384,39 @@ test('« Mon utilisation » : la jauge reste une jauge, les formules disent leur
   const soon = html.slice(html.indexOf('Les formules arrivent'), html.indexOf('Comment la jauge se remplit'));
   assert.doesNotMatch(soon, /€|\$/);
   assert.match(html, /view\.action === 'plans'\) acts\.appendChild\(button\('Voir les formules', openUsage/);
+});
+
+test('tarif fixe : coût d’une demande, crédits restants et équivalent en diagnostics', () => {
+  assert.deepEqual([0, 1, 2, 3, 6].map(L.requestCost), [1, 2, 2, 3, 3]);
+  assert.deepEqual([0, 1, 2, 13].map(L.creditsText), ['0 crédit', '1 crédit', '2 crédits', '13 crédits']);
+  const g = { credits_left: 13, monthly: 2, resets_at: '2026-12-01T00:00:00.000Z' };
+  assert.equal(L.costLine(1, g), '2 crédits · il t’en reste 13');
+  assert.equal(L.costLine(0, { ...g, credits_left: 0 }), '1 crédit · il ne t’en reste plus');
+  assert.equal(L.costLine(3, { ...g, credits_left: 2 }), '3 crédits · il ne t’en reste que 2');
+  assert.equal(L.costLine(1, null), '2 crédits', 'jauge inconnue : le coût seul');
+  assert.equal(L.costLine(0, g, true), 'Gratuit : je réponds avec la fiche du réglage.');
+  assert.equal(L.diagnosticsText(13), 'environ 6 diagnostics photo');
+  assert.equal(L.diagnosticsText(1), 'de quoi poser une question écrite');
+  assert.equal(L.monthlyText({ ...g, monthly: 60 }), 'Tes 60 crédits du mois se renouvellent le 1er décembre.');
+  assert.equal(L.gaugeNoticeText('empty', g), 'Tu as utilisé tous tes crédits. Tes 2 crédits du mois se renouvellent le 1er décembre.');
+});
+
+test('tarif fixe : « Ça n’a pas aidé ? » seulement sous une réponse payée, avec son identifiant', () => {
+  const a = { status: 'ok', credits: { charged: 2 } };
+  assert.equal(L.refundOffer({ requestId: 'r1' }, a).label, 'Ça n’a pas aidé ? Récupérer mes 2 crédits');
+  assert.equal(L.refundOffer({ requestId: 'r1', refunded: true }, a), null);
+  assert.equal(L.refundOffer({}, a), null, 'réponse d’avant : pas d’identifiant');
+  assert.equal(L.refundOffer({ requestId: 'r1' }, { status: 'ok', credits: { charged: 0 } }), null, 'rien payé');
+  assert.equal(L.refundOffer({ requestId: 'r1' }, { ...a, status: 'off_topic' }), null);
+  assert.equal(L.refundDoneText(1), 'C’est rendu : ton crédit est revenu.');
+  assert.equal(L.refundErrorText('already_refunded'), null);
+  assert.equal(L.refundErrorText('refund_limit', { resets_at: '2026-12-01T00:00:00.000Z' }), 'Tu as déjà récupéré des crédits 3 fois ce mois-ci. Ce sera de nouveau possible le 1er décembre.');
+});
+
+test('tarif fixe : limites de sécurité du compte et du service, sans « Réessayer »', () => {
+  const cap = L.errorView('cost_cap', { until: '2026-12-01T00:00:00.000Z' });
+  assert.equal(cap.text, 'Tu as beaucoup utilisé l’IA ce mois-ci : ton compte a atteint sa limite de sécurité. Elle se lève le 1er décembre.');
+  assert.equal(cap.action, 'none');
+  assert.equal(L.errorView('service_cap', {}).action, 'none');
+  assert.match(L.errorView('service_cap').text, /réessaie demain/);
 });
