@@ -434,7 +434,8 @@
         if (!r.ok || !r.data.url) { panel.say(Logic.buyErrorText(r.status === 401 ? 'unauthorized' : r.data.error), 'warn'); if (done) done(false); return; }
         panel.post({ type: 'open_payment', url: r.data.url });
         W.close();
-        panel.say(opened, 'info');
+        // tell, pas say : la conversation est repliée par défaut, l'avis doit se voir en haut de la carte.
+        panel.tell(opened, 'info');
         refreshAfterPayment();
         if (done) done(true);
       })
@@ -497,7 +498,7 @@
     try { last = root.localStorage.getItem(PLUS_SUGGEST_KEY); } catch (e) { /* stockage indisponible */ }
     if (last === month) return;
     try { root.localStorage.setItem(PLUS_SUGGEST_KEY, month); } catch (e) { /* idem */ }
-    panel.say(Logic.plusAfterSuccessText(), 'info', [{ label: 'Voir Plyo+', run: openPlans }]);
+    panel.tell(Logic.plusAfterSuccessText(), 'info', [{ label: 'Voir Plyo+', run: openPlans }]);
   }
 
   // Au 2e pack payé, puis à chaque nouveau pack, en formule gratuite : Plyo+ face à ce que les packs ont coûté. Le
@@ -510,7 +511,7 @@
     try { root.localStorage.setItem(key, String(packs.count)); } catch (e) { /* idem */ }
     if (seen === null || packs.count <= Number(seen) || !gauge || gauge.plan !== 'gratuit') return;
     var text = Logic.plusAfterPacksText(packs);
-    if (text) panel.say(text, 'info', [{ label: 'Voir Plyo+', run: openPlans }]);
+    if (text) panel.tell(text, 'info', [{ label: 'Voir Plyo+', run: openPlans }]);
   }
 
   // ---------- Aide ----------

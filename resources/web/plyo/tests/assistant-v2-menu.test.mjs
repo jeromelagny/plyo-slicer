@@ -470,6 +470,7 @@ test('paiement : au 2e pack payé, en gratuit, Plyo+ face à ce que les packs on
     cfg.packs = { count: 2, spent_cents: 998 };
     await refresh();
     assert.match(texts(p.$('msgs')), /Tu as dépensé 9,98 € en packs\. Plyo\+ te donne 60 crédits chaque mois pour 9,99 €/);
+    assert.match(texts(p.$('stepalert')), /Tu as dépensé 9,98 € en packs/, 'visible en haut de la carte, conversation repliée');
     await refresh();
     assert.equal(nudges(), 1, 'pas de nouveau message sans nouveau pack');
     byText(p.$('msgs'), /Voir Plyo\+/).click();
