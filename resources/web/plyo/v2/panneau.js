@@ -478,7 +478,12 @@
         .then(function (r) {
           if (r.status === 401) { logout('Ta session a expiré : reconnecte-toi pour continuer.'); return false; }
           if (r.status === 503) { $('gauge-pct').textContent = ui.fr('Indisponible'); return false; }
-          return r.ok ? r.json().then(function (me) { email = me && me.email ? String(me.email) : ''; setGauge(me.gauge); return true; }) : false;
+          return r.ok ? r.json().then(function (me) {
+            email = me && me.email ? String(me.email) : '';
+            setGauge(me.gauge);
+            if (V2.menu && V2.menu.onPacks) V2.menu.onPacks(me.packs, me.gauge, email);
+            return true;
+          }) : false;
         })
         .catch(function () { $('gauge-pct').textContent = ui.fr('Hors ligne'); return false; });
     }

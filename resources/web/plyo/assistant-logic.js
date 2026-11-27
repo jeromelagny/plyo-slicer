@@ -208,6 +208,12 @@
   function plusAfterSuccessText() {
     return 'Content que ça ait marché ! Si tu imprimes chaque semaine, **Plyo+** te donne 60 crédits chaque mois, environ 30 diagnostics photo. ' + FILAMENT_COMPARE;
   }
+  // Au 2e pack payé (et aux suivants), en formule gratuite : ce qu'il a déjà coûté, face à Plyo+ (stratégie de prix).
+  function plusAfterPacksText(packs) {
+    if (!packs || !(packs.count >= 2) || !(packs.spent_cents > 0)) return '';
+    var spent = (packs.spent_cents / 100).toFixed(2).replace('.', ',');
+    return 'Tu as dépensé ' + spent + ' € en packs. **Plyo+** te donne 60 crédits chaque mois pour 9,99 €, environ 30 diagnostics photo, résiliable en un clic.';
+  }
   // Au moment du raté, quand il ne reste pas de quoi faire un diagnostic photo.
   function packAtFailureText(g) {
     var left = creditsLeft(g);
@@ -1176,7 +1182,7 @@
     newRequestId: newRequestId, formatUuid: formatUuid, resendRequestId: resendRequestId, sameQuestion: sameQuestion, inProgressDelay: inProgressDelay, waitingText: waitingText,
     utf8Bytes: utf8Bytes, sizePlan: sizePlan, limitFrom413: limitFrom413, MAX_SEND_BYTES: MAX_SEND_BYTES, SHRINK_STEPS: SHRINK_STEPS, unansweredView: unansweredView, projectSwitchText: projectSwitchText, STALE_PROJECT_TEXT: STALE_PROJECT_TEXT,
     requestCost: requestCost, creditsText: creditsText, creditsLeft: creditsLeft, diagnosticsText: diagnosticsText, costLine: costLine, monthlyText: monthlyText, gaugeTitle: gaugeTitle, gaugeNoticeText: gaugeNoticeText,
-    offerView: offerView, PAYMENT_OPENED: PAYMENT_OPENED, PORTAL_OPENED: PORTAL_OPENED, FILAMENT_COMPARE: FILAMENT_COMPARE, plusAfterSuccessText: plusAfterSuccessText, packAtFailureText: packAtFailureText, buyErrorText: buyErrorText,
+    offerView: offerView, PAYMENT_OPENED: PAYMENT_OPENED, PORTAL_OPENED: PORTAL_OPENED, FILAMENT_COMPARE: FILAMENT_COMPARE, plusAfterSuccessText: plusAfterSuccessText, plusAfterPacksText: plusAfterPacksText, packAtFailureText: packAtFailureText, buyErrorText: buyErrorText,
     refundOffer: refundOffer, refundDoneText: refundDoneText, refundErrorText: refundErrorText, insufficientMore: insufficientMore,
     CANCEL_TEXT: CANCEL_TEXT, offTopicCostNote: offTopicCostNote, gaugeView: gaugeView, gaugeNotice: gaugeNotice, noticeKey: noticeKey, errorView: errorView, ndjsonReader: ndjsonReader, isSendKey: isSendKey };
   root.PlyoLogic = api;

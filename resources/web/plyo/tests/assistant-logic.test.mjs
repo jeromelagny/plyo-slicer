@@ -427,6 +427,10 @@ test('paiement : pack au moment du raté seulement s’il ne reste pas de quoi d
   assert.match(L.packAtFailureText({ credits_left: 1 }), /^Il te reste 1 crédit : un \*\*pack secours\*\* \(25 crédits, 4,99 €/);
   assert.match(L.packAtFailureText({ credits_left: 0 }), /^Tu n’as plus de crédits/);
   assert.match(L.plusAfterSuccessText(), /moins d’une demi-bobine/);
+  assert.equal(L.plusAfterPacksText({ count: 1, spent_cents: 499 }), '');
+  assert.equal(L.plusAfterPacksText(null), '');
+  assert.match(L.plusAfterPacksText({ count: 2, spent_cents: 998 }), /^Tu as dépensé 9,98 € en packs\. \*\*Plyo\+\*\* te donne 60 crédits chaque mois pour 9,99 €/);
+  assert.match(L.plusAfterPacksText({ count: 3, spent_cents: 1997 }), /19,97 €/);
   assert.equal(L.offerView('plus_yearly').label, 'À l’année · 8,25 € par mois');
   assert.equal(L.offerView('pro_monthly'), null);
   assert.match(L.buyErrorText('billing_unavailable'), /pas disponible pour le moment/);

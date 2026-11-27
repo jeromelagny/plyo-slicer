@@ -51,7 +51,7 @@ function bridge(cfg = {}) {
 }
 function service(cfg = {}) {
   return async (url, init) => {
-    if (url.endsWith('/api/me')) return response(200, { gauge: cfg.gauge || gauge(41), email: 'a@b.fr' });
+    if (url.endsWith('/api/me')) return response(200, { gauge: cfg.gauge || gauge(41), email: 'a@b.fr', ...(cfg.packs ? { packs: cfg.packs } : {}) });
     if (url.endsWith('/api/me/credits')) return response(200, { gauge: cfg.gauge || gauge(41) });
     if (url.endsWith('/api/feedback')) return response(200, { ok: true });
     if (url.endsWith('/api/checkout')) { (cfg.checkouts = cfg.checkouts || []).push(JSON.parse(init.body)); return cfg.checkout ? response(cfg.checkout.status, cfg.checkout.body) : response(200, { url: 'https://checkout.stripe.com/c/pay/cs_test_1' }); }
@@ -452,5 +452,33 @@ test('paiement : abonné → « Gérer mon abonnement » ouvre le portail Stripe
     byText(win(p), /Gérer mon abonnement/).click();
     await sleep(40);
     assert.deepEqual(sent(p, 'open_payment').map((m) => m.url), ['https://billing.stripe.com/p/session/test_1']);
+  } finally { p.stop(); }
+});
+
+test('paiement : au 2e pack payé, en gratuit, Plyo+ face à ce que les packs ont coûté ; une fois par nouveau pack', async () => {
+  const cfg = { session: SESSION, gauge: credits(30), packs: { count: 1, spent_cents: 499 } };
+  const p = await start(cfg);
+  const store = new Map();
+  p.ctx.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) };
+  const refresh = async () => { await p.ctx.PlyoV2.panel.refreshAccount(); await sleep(20); };
+  const nudges = () => (texts(p.$('msgs')).match(/en packs/g) || []).length;
+  try {
+    await sleep(30);
+    await refresh();
+    assert.equal(store.get('plyo.packsSeen:a@b.fr'), '1', 'premier passage : noté, sans message');
+    assert.equal(nudges(), 0);
+    cfg.packs = { count: 2, spent_cents: 998 };
+    await refresh();
+    assert.match(texts(p.$('msgs')), /Tu as dépensé 9,98 € en packs\. Plyo\+ te donne 60 crédits chaque mois pour 9,99 €/);
+    await refresh();
+    assert.equal(nudges(), 1, 'pas de nouveau message sans nouveau pack');
+    byText(p.$('msgs'), /Voir Plyo\+/).click();
+    await sleep(20);
+    assert.ok(byText(win(p), /Plyo\+ · 9,99 € par mois/), 'les formules s’ouvrent');
+    cfg.packs = { count: 3, spent_cents: 1997 };
+    cfg.gauge = credits(80, { plan: 'plus', monthly: 60 });
+    await refresh();
+    assert.equal(nudges(), 1, 'abonné : rien');
+    assert.equal(store.get('plyo.packsSeen:a@b.fr'), '3');
   } finally { p.stop(); }
 });

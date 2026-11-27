@@ -500,6 +500,19 @@
     panel.say(Logic.plusAfterSuccessText(), 'info', [{ label: 'Voir Plyo+', run: openPlans }]);
   }
 
+  // Au 2e pack payé, puis à chaque nouveau pack, en formule gratuite : Plyo+ face à ce que les packs ont coûté. Le
+  // nombre de packs déjà vus est gardé par compte ; au premier passage, il est seulement noté (pas de message).
+  var PACKS_SEEN_KEY = 'plyo.packsSeen:';
+  function onPacks(packs, gauge, email) {
+    if (!packs || typeof packs.count !== 'number' || !email) return;
+    var key = PACKS_SEEN_KEY + email, seen = null;
+    try { seen = root.localStorage.getItem(key); } catch (e) { /* stockage indisponible */ }
+    try { root.localStorage.setItem(key, String(packs.count)); } catch (e) { /* idem */ }
+    if (seen === null || packs.count <= Number(seen) || !gauge || gauge.plan !== 'gratuit') return;
+    var text = Logic.plusAfterPacksText(packs);
+    if (text) panel.say(text, 'info', [{ label: 'Voir Plyo+', run: openPlans }]);
+  }
+
   // ---------- Aide ----------
   function openHelp() {
     W.open({ title: 'Aide', fill: function (body) {
@@ -556,6 +569,6 @@
   }
   (V2.plugins = V2.plugins || []).push(plug);
 
-  V2.menu = { render: renderMenu, openUsage: openUsage, openPlans: openPlans, buy: buy, openPortal: openPortal, suggestPlus: suggestPlus, openProjects: openProjects, openParts: openParts, openMachines: openMachines,
+  V2.menu = { render: renderMenu, openUsage: openUsage, openPlans: openPlans, buy: buy, openPortal: openPortal, suggestPlus: suggestPlus, onPacks: onPacks, openProjects: openProjects, openParts: openParts, openMachines: openMachines,
     openSpools: openSpools, openCalib: openCalib, openJournal: openJournal, openHelp: openHelp, state: function () { return fs; } };
 })(typeof window !== 'undefined' ? window : globalThis);
